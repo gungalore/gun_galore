@@ -114,6 +114,30 @@ export async function dismissNotifications(
   }
 }
 
+/**
+ * The page an inbox row opens.
+ *
+ * ⚠️ A CREDENTIAL REMINDER MUST OPEN THE CREDENTIAL, NOT THE ROOT OF THE CENTRE.
+ * The expiry sweep and the confirm-date nudge both set `url: '/documents'` and
+ * carry the credential's id in `linkedId`; the Document Centre opens on its
+ * first row, so tapping "Act" landed beside the document the reminder was
+ * about. The backend now writes `/documents?doc=<id>`, and legacy rows — which
+ * are already sitting in members' inboxes — get the same target from the
+ * `linkedId` they already carry.
+ */
+export function notificationHref(item: NotificationItem): string {
+  const url = item.url ?? '#';
+  if (item.linkedType !== 'credential' || !item.linkedId) return url;
+
+  const [path, query = ''] = url.split('?');
+  if (path !== '/documents' && path !== '/licence-centre') return url;
+
+  const params = new URLSearchParams(query);
+  if (params.has('doc')) return url;
+  params.set('doc', item.linkedId);
+  return `${path}?${params.toString()}`;
+}
+
 // Lightweight "x ago" formatter for the inbox row timestamps.
 export function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

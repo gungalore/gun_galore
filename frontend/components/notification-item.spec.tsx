@@ -66,3 +66,35 @@ describe('NotificationItem — clear control', () => {
     expect(queryByRole('button', { name: /clear this notification/i })).toBeNull();
   });
 });
+
+describe('NotificationItem — acting on the row', () => {
+  it('makes the Act pill part of the link, not a dead span beside it', () => {
+    const { getByText } = render(
+      <NotificationItem
+        item={item({ type: 'new_sale', dismissible: false })}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(getByText('Act').closest('a')?.getAttribute('href')).toBe(
+      '/community/p/1',
+    );
+  });
+
+  it('opens the credential a legacy reminder was raised for', () => {
+    const { container } = render(
+      <NotificationItem
+        item={item({
+          type: 'licence_centre_expiry_100',
+          url: '/documents',
+          linkedType: 'credential',
+          linkedId: 'ccred123',
+          dismissible: false,
+        })}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(container.querySelector('a')?.getAttribute('href')).toBe(
+      '/documents?doc=ccred123',
+    );
+  });
+});

@@ -4,6 +4,7 @@ import {
   chipCounts,
   competencySubline,
   defaultOpenSections,
+  deepLinkedDocument,
   firearmName,
   firearmSubline,
   matchesQuery,
@@ -107,6 +108,22 @@ describe('placing a row', () => {
       ...s.photos.map((n) => n.row.id),
     ]);
     expect(seen.sort()).toEqual(rows.map((r) => r.id).sort());
+  });
+});
+
+describe('a ?doc= reminder deep link', () => {
+  it('returns the row AND the section that has to be opened', () => {
+    const target = row({ kind: 'ADDRESS_CONFIRMATION' });
+    const hit = deepLinkedDocument([row(), target], target.id);
+    expect(hit?.row.id).toBe(target.id);
+    expect(hit?.section).toBe('about-you');
+  });
+
+  it('returns null until the rows have loaded, or when the id is unknown', () => {
+    expect(deepLinkedDocument(null, 'c1')).toBeNull();
+    expect(deepLinkedDocument([], 'c1')).toBeNull();
+    expect(deepLinkedDocument([row()], null)).toBeNull();
+    expect(deepLinkedDocument([row()], 'gone')).toBeNull();
   });
 });
 

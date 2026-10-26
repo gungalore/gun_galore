@@ -5360,7 +5360,14 @@ export class NotificationsService {
   }) {
     // ⚠️ THE MEMBER-FACING PATH, WHICH IS NOW /documents. The backend
     // prefix is unchanged; only what a person clicks moved.
-    const url = `${this.appUrl}/documents`;
+    //
+    // ⚠️ AND IT CARRIES THE CREDENTIAL, NOT JUST THE CENTRE. The Centre opens
+    // folded and selects its first row, so a bare `/documents` sent the member
+    // to the list beside the document this reminder is about — "Tap to act" did
+    // not open the thing that needs attention. `?doc=` is read by the page;
+    // see deepLinkedDocument in the frontend.
+    const docPath = `/documents?doc=${encodeURIComponent(d.credentialId)}`;
+    const url = `${this.appUrl}${docPath}`;
     const on = d.expiresOn.toISOString().slice(0, 10);
     const gone = d.stage === 'D0';
     // The last two stages and the expiry itself are the ones worth a push and
@@ -5383,7 +5390,7 @@ export class NotificationsService {
         // The 517(g) advice rides on every channel, because the visit to the
         // DFO is one visit and the second form has to be in the same hand.
         (d.competencyNote ? ` ${d.competencyNote}` : ''),
-      url: '/documents',
+      url: docPath,
       iconKey: 'kyc',
       // linkedType + linkedId give the push a stable tag, so a later stage
       // REPLACES the earlier notification instead of stacking on it.

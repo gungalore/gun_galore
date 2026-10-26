@@ -1,7 +1,15 @@
 'use client';
 
 import { useAuth } from '../../lib/auth';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import DocumentCentreAdd from '@/components/document-centre-add';
 import CredentialCard from '@/components/document-centre/credential-card';
@@ -49,6 +57,7 @@ import {
   ChipId,
   buildSections,
   chipCounts,
+  deepLinkedDocument,
   pageLabel,
   pageSide,
   placeRow,
@@ -175,9 +184,35 @@ function BannerDocLinks({
   );
 }
 
+/**
+ * ⚠️ THE SUSPENSE BOUNDARY IS FOR `useSearchParams`, NOT FOR DATA. A reminder
+ * now lands on `/documents?doc=<credentialId>`, so this page reads the query.
+ * Next de-opts a route out of static rendering when a client component reads
+ * the search params, and without a boundary above it that is a BUILD error
+ * rather than a runtime one. `fallback={null}` because the page draws its own
+ * skeletons; a second shape here would flash first.
+ */
 export default function LicenceCentrePage() {
+  return (
+    <Suspense fallback={null}>
+      <DocumentCentre />
+    </Suspense>
+  );
+}
+
+function DocumentCentre() {
   const { getToken } = useAuth();
   const token = useCallback(() => getToken(), [getToken]);
+  /**
+   * The document a reminder asked the member to open.
+   *
+   * ⚠️ IT IS A DEEP LINK, NOT A LANDING PAD. The Centre opens folded and
+   * selects its first row; a credential reminder used to point at the bare
+   * `/documents`, so "Tap to act" opened the list beside the document it was
+   * about. See `deepLinkedDocument` and the effect below.
+   */
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get('doc');
 
   /**
    * Whether the Centre is open, and — crucially — WHY it is not.
@@ -250,6 +285,11 @@ export default function LicenceCentrePage() {
   const [batchOpen, setBatchOpen] = useState(false);
   /** The detail column, so a phone can be scrolled to it on selection. */
   const detailRef = useRef<HTMLElement | null>(null);
+  /**
+   * The `?doc=` id already opened, so a filter change or a refetch cannot yank
+   * the panel back to the reminder's document after the member picks another.
+   */
+  const deepLinkApplied = useRef<string | null>(null);
   const [query, setQuery] = useState('');
   /**
    * The add controls, so an empty section's Add link can put the member in
@@ -446,6 +486,26 @@ export default function LicenceCentrePage() {
     if (selectedId && visible.some((r) => r.id === selectedId)) return;
     setSelectedId(visible[0].id);
   }, [visible, selectedId]);
+
+  /**
+   * Open the document a reminder deep-linked to.
+   *
+   * ⚠️ THIS RUNS AFTER THE "land on something" EFFECT ABOVE, DELIBERATELY. Both
+   * fire on the commit where the rows arrive, and both set `selectedId`; the
+   * later write wins. Declared first, this would be overwritten by the default
+   * first-row selection on exactly the visit it exists for.
+   */
+  useEffect(() => {
+    if (!deepLinkId) {
+      deepLinkApplied.current = null;
+      return;
+    }
+    const target = deepLinkedDocument(rows, deepLinkId);
+    if (!target || deepLinkApplied.current === deepLinkId) return;
+    deepLinkApplied.current = deepLinkId;
+    setOpenSections((prev) => ({ ...prev, [target.section]: true }));
+    openFromBanner(target.row.id);
+  }, [deepLinkId, rows, openFromBanner]);
 
   const refresh = useCallback(async () => {
     try {

@@ -14,7 +14,11 @@
 //   * The × dismiss button (only for dismissible: true items).
 
 import Link from 'next/link';
-import { timeAgo, type NotificationItem as N } from '@/lib/notifications';
+import {
+  notificationHref,
+  timeAgo,
+  type NotificationItem as N,
+} from '@/lib/notifications';
 
 // Inline SVG icon set. iconKey is set by the backend; if it's missing
 // or unknown we fall back to a generic bell.
@@ -141,7 +145,7 @@ export function NotificationItem({
   onDismiss: (id: string) => void;
 }) {
   const resolved = item.resolvedAt != null;
-  const url = item.url ?? '#';
+  const url = notificationHref(item);
 
   const inner = (
     <>
@@ -257,6 +261,32 @@ export function NotificationItem({
         }}
       >
         {inner}
+
+        {/*
+          ⚠️ THE ACT PILL IS INSIDE THE LINK, NOT BESIDE IT. It was a plain
+          <span> rendered outside the anchor, so it looked like the control the
+          row was advertising and did nothing when tapped — the literal "Tap to
+          act" that never acted. Everything that says "act" now navigates.
+        */}
+        {!resolved && !item.dismissible && (
+          <span
+            aria-label="Action needed"
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+              padding: '4px 8px',
+              borderRadius: 6,
+              background: 'rgba(227, 6, 19, 0.10)',
+              color: 'var(--red)',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Act
+          </span>
+        )}
       </Link>
 
       {!resolved && item.dismissible && (
@@ -298,26 +328,6 @@ export function NotificationItem({
           </span>
           Clear
         </button>
-      )}
-
-      {!resolved && !item.dismissible && (
-        <span
-          aria-label="Action needed"
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: 0.6,
-            padding: '4px 8px',
-            borderRadius: 6,
-            background: 'rgba(227, 6, 19, 0.10)',
-            color: 'var(--red)',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Act
-        </span>
       )}
     </li>
   );

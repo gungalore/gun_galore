@@ -508,7 +508,7 @@ describe('a read date that could not be armed', () => {
       // could never be resolved by the action it is asking for.
       linkedType: 'credential',
       linkedId: 'cred-new',
-      url: '/documents',
+      url: '/documents?doc=cred-new',
       // Dismissible: the member may reasonably decide the date is fine and
       // never touch it. An action-required row they cannot clear would sit in
       // the inbox for the life of the document.

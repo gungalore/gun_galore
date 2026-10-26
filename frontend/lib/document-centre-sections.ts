@@ -407,8 +407,7 @@ export interface SectionView {
 }
 
 /** Which section a row belongs to. Falls through, never drops. */
-export function placeRow(row: CredentialRow): DocSectionId {
-  // ⚠️ coversKinds FIRST, and only for the firearms section. One page can be
+export function placeRow(row: CredentialRow): DocSectionId {  // ⚠️ coversKinds FIRST, and only for the firearms section. One page can be
   // a licence and something else at the same time, and the licence half is
   // what a member goes looking for it under.
   if (
@@ -419,6 +418,25 @@ export function placeRow(row: CredentialRow): DocSectionId {
   }
   const hit = SECTIONS.find((s) => s.kinds.includes(row.kind));
   return hit ? hit.id : 'other';
+}
+
+/**
+ * The document a `?doc=<id>` deep link is asking for, and the section it
+ * lives in.
+ *
+ * ⚠️ WITHOUT THIS, A REMINDER OPENS THE CENTRE AND NOT THE DOCUMENT. The page
+ * selects the first visible row on arrival, so a member who tapped "Act" on
+ * "your proof of address expires" landed on whatever sorted first. The section
+ * comes back with the row because the section starts folded every visit — the
+ * caller has to open it or the selected row is not on screen.
+ */
+export function deepLinkedDocument(
+  rows: CredentialRow[] | null,
+  id: string | null,
+): { row: CredentialRow; section: DocSectionId } | null {
+  if (!rows || !id) return null;
+  const row = rows.find((r) => r.id === id);
+  return row ? { row, section: placeRow(row) } : null;
 }
 
 function groupKey(row: CredentialRow, section: DocSection): string {

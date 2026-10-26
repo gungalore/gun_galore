@@ -1634,7 +1634,10 @@ export class LicenceCentreService {
           type: 'credential_date_needs_check',
           title: 'Check a date we read off your document',
           body: `We read an expiry date off ${clean || derived || DEFAULT_TITLE[resolved]} but we are not sure enough of it to remind you from it. Open it and confirm the date, and we will start watching it.`,
-          url: '/documents',
+          // ⚠️ DEEP-LINKED. The Centre selects its first row on arrival, so
+          // the bare `/documents` opened beside the document this row is
+          // asking about. `?doc=` opens this one, in its section.
+          url: `/documents?doc=${created.id}`,
           iconKey: 'kyc',
           linkedType: 'credential',
           linkedId: created.id,
