@@ -5,7 +5,23 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-24**.
+Last updated: **2026-10-26**.
+
+## 2026-10-26 - AUCTION MINIMUM VALUES RAISED (DEPLOYED)
+
+**Floors are now 3 days R2,500; 5 days R5,000; 7 days R7,500; 14 days
+R10,000.** Changed in `backend/src/listings/listings.service.ts`
+(`AUCTION_MIN_VALUE_CENTS`) and the frontend mirror
+(`frontend/lib/auction-minimums.ts`), with the spec's boundary cases updated.
+`COMPLIANCE-RULES.md` §4 matches. Terms §10 now states the same table and
+explains that the floor is measured against the reserve, or the typed starting
+bid when there is no reserve.
+
+Deploy at 17:01 SAST (commits `02aad04c`, `08379000`): rollback
+`alloutdoor-20261026-170043.dump` (33 823 121 bytes), no pending migrations,
+health x2 OK, public 200 x2, three PM2 services online. Frontend suite reported
+one timeout in `lib/no-self-recursive-callbacks.spec.ts` under parallel load;
+it passes standalone (2/2).
 
 ## 2026-10-24 - PRECINCT CARD ON THE LICENCE SHEET (DEPLOYED)
 
