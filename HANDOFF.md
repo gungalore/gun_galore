@@ -7,6 +7,58 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - MOTIVATIONS + DOCUMENT LIBRARY AUDIT FIXES (DEPLOYED)
+
+**A document's printed date is not always an expiry.** The reported 100-day
+"proof of address expires" reminder came from vision reading a payment/statement
+date into `expiresOn` and the batch commit confirming it. Proof of address,
+employment letters and activity logs are now dateless: no `expires_on` is read
+from them, and the expiry sweep skips them.
+
+- **Proof of address gets the check the operator asked for:** one "Is your proof
+  of address still valid?" reminder from `issuedOn`, a month before the 90-day
+  DFO window closes (`licence-centre-reminders.service.ts`,
+  `NotificationsService.credentialStillValid`). Correcting the printed date
+  re-arms it. Two migrations cleared the false dates already stored; the
+  production row now has `expiresOn` null, `neverExpires` true and will be
+  checked on the next 03:20 sweep.
+
+Other fixes in the same batch:
+
+- **Document Centre:** batch `identify`/`commit` now sniff magic bytes and
+  enforce the MIME allowlist; deleting a credential or erasing a user forgets
+  its page rasters and OCR cache; `rotate` forgets the old hash and turns
+  motion copies matched by sha256; competency batch-confirm no longer clears its
+  derived date; pairing is guarded against a third upload; endorsement
+  duplicates fingerprint on number/serial; the 30-item evidence cap applies to
+  the batch door; admin health counts `dateSource` as settled; ASSOCIATION
+  fingerprints added.
+- **Motivations:** S14 renders press clippings and SAPS crime tables and
+  prefills the station; combination-gun auto-link no longer accepts a
+  handgun-only certificate; held section 14 cards are read and offered;
+  `section_held` includes 14; first-time TOC counts purpose plates, evidence and
+  the battery heading; the retry window is 15 min; single-motivation erasure
+  removes witness/seller signatures, cover photo and caches; refiling clears the
+  endorsement-mismatch sentinel; `keepInCentre` pairs proficiencies and carries
+  `firearmSelfLoading`; generation provenance is stamped; seller consent
+  re-derives the competency.
+- **Frontend:** `?doc=` resolves a paired document to its lead page; banner
+  links open the section; batch preview resets when emptied; the partner tab
+  gets its own copies; competency "Change" edits instead of re-saving; autosave
+  keeps newer keystrokes, flushes before Write and reports `refused`; the pack
+  poll refetches the sheet and stops claiming to be working after its deadline;
+  completed rows open the pack; phone hand-off applies its stored reading;
+  danger-area ticks re-seed for a new station; the footer syncs `declared`; the
+  consent notice uses the server's retention window; unresolved evidence can be
+  described on its card.
+
+Deployed `d6920b8c` at 21:44 SAST (full; rollback
+`alloutdoor-20261026-214452.dump`, 32,057,829 bytes) and `b3d6fad4` at 21:48
+(backend-only; rollback `alloutdoor-20261026-214757.dump`, 32,058,034 bytes).
+Migrations applied; backend/frontend health x2, public 200 x2, three PM2
+services online. Gates: backend tsc + 380 suites / 5,822 tests (8 skipped);
+frontend tsc + 158 files / 1,815 tests (1 skipped) + production build clean.
+
 ## 2026-10-26 - CREDENTIAL REMINDERS OPEN THE DOCUMENT (DEPLOYED)
 
 **"Tap to act" now opens the document that is expiring.** Two defects:
