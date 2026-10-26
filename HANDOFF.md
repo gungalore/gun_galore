@@ -7,25 +7,24 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
-## 2026-10-26 - DEALER FORM BCC TO OPS (DEPLOYED)
+## 2026-10-26 - DEALER FORM TEST EMAIL, NOT A BCC (DEPLOYED)
 
-**The dealer stock-confirmation form is now BCC'd to the ops mailbox.** The
-email still goes to the dealer; `DEALER_FORM_COPY_EMAIL` receives an invisible
-copy so the team sees the exact form/link sent.
+**The BCC copy was removed; the operator only wants on-demand test emails.**
+Dealer invitations go to the dealer and nowhere else.
 
-- `NotificationsService.send()` accepts an optional BCC.
-- `dealerPortalRequest()` reads `DEALER_FORM_COPY_EMAIL` at send time; unset
-  means no copy, set means BCC. No address is hard-coded.
-- Box env: `DEALER_FORM_COPY_EMAIL=gerhard.fourie@alloutdoor.co.za` appended to
-  `backend/.env` (backup `.env.bak-dealer-copy-20261026`).
-- No dealer-transfer transaction exists in production right now, so no email
-  was sent during this deploy. The next firearm dealer-transfer acceptance
-  BCCs the form to that address.
+- `NotificationsService.dealerPortalRequestEmail()` holds the one template;
+  both the real invitation and the test send use it.
+- `npm run dealer-form:test -- <email>` boots an app context and sends that
+  template with sample data (Wildman Cape Gate / TEST-1234; the CTA points at
+  `/dealer-portal/test-preview`, so the link is a preview only). It creates no
+  transaction or portal request.
+- The `DEALER_FORM_COPY_EMAIL` line was removed from the box's `backend/.env`
+  (backup `.env.bak-dealer-copy-removed-20261026`).
 
-Deploy at 18:05 SAST, backend-only (commit `8448ed99`): rollback
-`alloutdoor-20261026-180515.dump` (33 826 945 bytes), no migrations, health x2
-OK, public 200 x2, three PM2 services online. Notifications + dealer-portal
-suites 9 files / 67 tests green; backend tsc clean.
+Deploy at 18:09 SAST, backend-only (commit `...`): rollback
+`alloutdoor-20261026-...dump`, no migrations, health x2 OK, public 200 x2,
+three PM2 services online. Notifications suites 8 files / 62 tests green;
+backend tsc clean.
 
 ## 2026-10-26 - ADDRESS AUTOCOMPLETE NOW GOES THROUGH THE BACKEND (DEPLOYED)
 
