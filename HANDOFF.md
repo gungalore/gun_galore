@@ -7,6 +7,69 @@ overwritten.
 
 Last updated: **2026-10-26**.
 
+## 2026-10-26 - MO000100 PACK REVIEW: LAYOUT, 5.2 FALLBACK, 271 GAPS (DEPLOYED)
+
+Deployed `6c74db02`, backend-only, rollback `alloutdoor-20261026-223543.dump`.
+
+**The pack the operator generated was read page by page** (text extracted from
+both PDFs; the PDFs themselves cannot be opened as images here). The applicant's
+own licence in the test data belongs to the applicant — treated as a
+third-party firearm, so the empty battery table and the blank Section F are
+correct, not faults.
+
+- **Annexure captions were drawn at the page margin**, so on the 2×2 safe sheet
+  the left cell's caption printed twice (over itself) and the right cell had
+  none; and every one-item annexure printed its heading and then the identical
+  sentence again as a caption. `PlacedImage` now carries `captionX/captionW`
+  (the cell for the safe sheet) and a headered page prints only
+  `Annexure A (n of m)` — nothing when there is one copy (`compactCaption`).
+- **The PAJA running banner** read "REQUEST FOR PRIOR NOTICE AND WRITTEN
+  REASO…" wrapped over two lines: `RUNNING_LABELS` was looked up
+  case-sensitively against an ALL-CAPS title. Now a case-folded Map.
+- **Contents:** the "last sheets are yours… checklist" line printed although
+  the take-with-you pages were removed in October; it is now conditional. The
+  gap note said "2, 4 or 10" on a section 13 that prints 2 and 4 and omits 8 and
+  10 — `gapNumbers()` derives the list from `printedNumbers`.
+- **5.2 suitability fallback** was third person ("the applicant is alone",
+  "a combination he can keep") and filled one column of two. Extracted to
+  `motivation-suitability-fallback.ts`, first person, enough bullets to close
+  the sheet, no ammunition-availability claim and no dimension recital.
+- **Writer prompt:** the S13 authority to call the round a "common service
+  calibre with readily available ammunition" is gone (it rested on holding a
+  Bench dimension sheet, and 6.35mm Browning disproves it), and
+  `storage_safety` may no longer name the current holder or the transfer route
+  — MO000100 wrote "formal transfer to occur via a licensed dealer" into a pack
+  whose own 271 ticks the private-owner block. `calibre_fact_sheet` retired with
+  the claim. **Prompt cache re-baselined** in `motivation-prompt-cache.spec.ts`.
+- **Action label:** the choice string "Semi-automatic (self-loading)" reached
+  the writer and the cover verbatim and came back as "semi-loading" three
+  times. `displayAction()` prints "Semi-automatic" everywhere prose appears.
+- **Exhibit scenes read `premises_type`, which is not a registry field** — so
+  the matcher never fired and MO000100's townhouse led with "Communal access"
+  (an apartment block). Now reads `residence_type` (falling back to the retired
+  key) and a townhouse leads with the driveway gate.
+- **`firearmLine()`** was make + type + serial ("CZ Handgun, serial 81815").
+  Now make, model, calibre, serial — the PAJA letter and the footer name the
+  firearm a reviewer can find.
+- **271:** a printed competency issue date is exempt from the settled-date gate
+  so box 1.6 fills off an unconfirmed certificate (the expiry stays gated —
+  that is what the reminder sweep reads); a private sale with no signed consent
+  records in `leftBlank` that the current owner completes Section F.
+- **Precinct table:** `precinctTablesFor` retries without the province filter
+  and warns for the home station when nothing resolves. MO000100's body cites
+  Durbanville figures with no table under them; the retry should print it on
+  the next download, and the warning names the station if the answer moved
+  after generation.
+
+**Not changed:** G.61's MO reference and the "ALL Outdoor" disclaimer (attorney
+sign-off), the cover logo, the `firearm_source` picker. **Deferred:**
+`leftBlank` is still computed and dropped at the controller, so the 271 notes
+above do not reach the member yet — that needs its own endpoint and panel.
+
+**Verification:** backend tsc clean; 381 suites / 5,845 tests; deploy health ×2,
+public 200 ×2, all three services online. Repo-wide prettier stays red
+(pre-existing drift in untouched files; not a deploy gate).
+
 ## 2026-10-26 - MOTIVATIONS + DOCUMENT LIBRARY AUDIT FIXES (DEPLOYED)
 
 **A document's printed date is not always an expiry.** The reported 100-day
