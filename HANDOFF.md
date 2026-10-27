@@ -7,6 +7,42 @@ overwritten.
 
 Last updated: **2026-10-27**.
 
+## 2026-10-27 - SELLER FAILURE CHARGES: COST RECOVERY FROM THE NEXT PAYOUT
+
+Deployed `cd067374` (rollback `alloutdoor-20261027-130940.dump`, migration
+`20261027130000_seller_failure_charges` applied, health ×2, public 200 ×2, three
+services online).
+
+A PAID sale that ends because the seller declined it, never dispatched, or never
+delivered now recovers the platform's unrecoverable cost: **4% of the amount
+refunded** (the gateway round trip) plus the **committed courier rate** when a
+waybill exists. It is deliberately **not** the Platform Fee — that is returned to
+the buyer, so docking it would be lost margin, not an indemnity.
+
+- **Ledger, not a column.** The failed sale is refunded and its `sellerPayout` is
+  already zero, so the debt lives in `SellerCharge` and is set off FIFO against a
+  later payout through `SellerChargeRecovery` (RESERVED in the payout claim,
+  SETTLED on PayoutComplete, RELEASED on failure/return so it is never
+  double-recovered). `netPayoutCents` subtracts the reserved slice;
+  `getHeldFundsReport` nets outstanding charges out of `owedToSellers`.
+- **Triggers:** `rejectTransaction` (only when the reason earns a strike, so
+  `BUYER_SUSPICIOUS` is not billed), `autoRefundStale` (only when the seller is
+  not blameless), and an explicit admin `chargeSeller` flag on
+  `refundTransaction`. The admin refund dialog now takes an amount and the
+  charge, with a live preview.
+- **Notice:** one email only, 48h after payment
+  (`DELIVERY_OBLIGATION_AFTER_HOURS`) to a paid, undispatched seller, stating the
+  exact 4% + courier amount and why. `deliveryObligationNotifiedAt` makes it fire
+  once; no inbox row, no SMS, no seller-facing UI copy. Terms §11 carries the
+  indemnity + set-off clause.
+- **Admin:** seller dossier gets a failure-charges panel (waive = the credit path
+  when a Bob Go charge is reclaimed by hand) and a reject-strike ledger with
+  per-strike **Remove** (the API already existed; only the UI was missing).
+
+**Gates:** backend tsc clean + 5 893 tests; frontend tsc clean + 1 815 tests;
+production build clean.
+
+
 ## 2026-10-27 - DEALER STOCK-IN: STAMP + SAPS 350(a), CIPC AND JEV 70%
 
 Operator, 2026-10-27: *"We can only mark the firearm stocked once the dealer
