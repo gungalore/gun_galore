@@ -89,11 +89,11 @@ export class BobGoWebhookService {
    * exists to catch, arriving in seconds instead of up to five minutes.
    *
    * It deliberately does NOT finish the booking itself. Completing one means
-   * stamping shipmentBookedAt AND sending the seller a `critical: true` SMS
-   * that bypasses their mute — that belongs in exactly one place, and it is
-   * already written and tested in ShippingService. All this does is make the
-   * row eligible so the very next sweep finishes it. A webhook that races the
-   * sweep to send the same SMS twice is a worse outcome than a short wait.
+   * stamping shipmentBookedAt AND writing the seller's in-app shipment row —
+   * that belongs in exactly one place, and it is already written and tested in
+   * ShippingService. All this does is make the row eligible so the very next
+   * sweep finishes it. A webhook that races the sweep to write the same row
+   * twice is a worse outcome than a short wait.
    */
   private async onSubmissionStatus(
     body: Record<string, unknown>,

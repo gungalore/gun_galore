@@ -1813,11 +1813,8 @@ export class NotificationsService {
   // Buyer: item dispatched
   // ---------------------------------------------------------------
   async itemDispatched(d: DispatchDetails) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    // In-app inbox: BUYER gets the "your order is on the way" alert.
-    // Action-required (must confirm delivery to release payout) —
-    // cleared when TransactionsService.confirmDelivery fires
-    // resolveByEntity('transaction', txId, buyerUserId).
+    // In-app + push only. Bob Go owns the buyer's shipping messages; this
+    // path covers a manual dispatch, so the row is all we add.
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'order_dispatched',
@@ -1829,29 +1826,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: false,
     });
-    const rows: { label: string; value: string }[] = [
-      { label: 'Courier', value: prettyCourier(d.shippingMethod) },
-    ];
-    if (d.trackingReference) {
-      rows.push({ label: 'Tracking', value: d.trackingReference });
-    }
-    const html = this.email({
-      status: { tone: 'success', label: 'Dispatched' },
-      headline: 'Your order is on its way',
-      body: `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been dispatched by the seller. Follow the parcel's progress on your order page — carrier scans land on the live tracking timeline as they happen. Once you receive your item, please confirm delivery so payment can be released to the seller.`,
-      rows,
-      cta: { label: 'Track & confirm delivery', url: txUrl },
-      preheader: `Dispatched — ${d.listingTitle}`,
-    });
-    await this.send(d.buyerEmail, 'Dispatched: ' + d.listingTitle, html);
-    // SMS body deep-links to the transaction page where the tracking
-    // timeline lives. The title is truncated hard so the URL fits in
-    // a single 160-char segment even with a long tracking reference.
-    await this.sendSms(
-      d.buyerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
-      `dispatched-${d.transactionId}`,
-    );
   }
 
   // ---------------------------------------------------------------
@@ -1995,17 +1969,9 @@ export class NotificationsService {
     trackingReference: string;
     dropoffPin?: string | null;
   }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    // Bob Go is the only courier rail and it always collects from the seller's
-    // ADDRESS: verified against a real shipment, which carried
-    // collection_location_type "door" and an 08:00-17:00 collection window even
-    // for a booking delivering to a Bob Box, and exposes no collection-side
-    // pickup-point field at all. There is no locker drop-off any more, so the
-    // seller is never told to visit one.
-    const courier = 'Bob Go';
-    const handover =
-      'A courier collects from your address between 08:00 and 17:00 — have the parcel packed and ready.';
-
+    // In-app only. Bob Go owns every shipping message: it emails the seller
+    // the PDF waybill at creation and sends the tracking updates. AllOutdoor
+    // must not also send WhatsApp/email/SMS here or the seller gets doubles.
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_booked',
@@ -2017,49 +1983,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: false,
     });
-
-    const rows: { label: string; value: string }[] = [
-      { label: 'Courier', value: courier },
-      { label: 'Waybill / tracking', value: d.trackingReference },
-    ];
-    if (d.dropoffPin) {
-      rows.push({
-        label: 'Collection PIN',
-        value: d.dropoffPin,
-      });
-    }
-
-    const html = this.email({
-      status: { tone: 'success', label: 'Ready to ship' },
-      headline: 'Your sale is booked — ship it now',
-      body:
-        `Hi ${b(d.sellerName)}, great news — ${b(d.listingTitle)} is paid and we've booked the courier for you. ${handover}` +
-          `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
-          `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
-          (d.dropoffPin
-            ? `<br><br>Your collection PIN is ${b(d.dropoffPin)} — give it to the courier.`
-            : ''),
-      rows,
-      cta: { label: 'Print waybill & view details', url: txUrl },
-      preheader: `${d.listingTitle} is booked — waybill ${d.trackingReference}`,
-    });
-    await this.send(
-      d.sellerEmail,
-      `Ready to ship — ${d.listingTitle}`,
-      html,
-    );
-
-    const smsHandover = `Courier collects from your address 08:00-17:00${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`;
-    await this.sendSms(
-      d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
-      `booked-${d.transactionId}`,
-      {
-        // Waybill + collection PIN are delivery-essential — without them the
-        // parcel physically can't be handed over. Bypasses the SMS mute.
-        critical: true,
-      },
-    );
   }
 
   // ---------------------------------------------------------------
@@ -2072,7 +1995,7 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
   }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app only — Bob Go sends the seller the collection update.
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_collected',
@@ -2084,19 +2007,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: true,
     });
-    const html = this.email({
-      status: { tone: 'success', label: 'Collected' },
-      headline: 'Your parcel was collected',
-      body: `Hi ${b(d.sellerName)}, the courier has collected ${b(d.listingTitle)}. We'll let you know the moment it's delivered to the buyer.`,
-      cta: { label: 'View sale', url: txUrl },
-      preheader: `${d.listingTitle} was collected by the courier`,
-    });
-    await this.send(d.sellerEmail, 'Collected — ' + d.listingTitle, html);
-    await this.sendSms(
-      d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
-      `seller-collected-${d.transactionId}`,
-    );
   }
 
   // ---------------------------------------------------------------
@@ -2109,7 +2019,7 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
   }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app only — Bob Go sends the seller the delivery update.
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_delivered_seller',
@@ -2121,21 +2031,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: true,
     });
-    const html = this.email({
-      status: { tone: 'success', label: 'Delivered' },
-      headline: 'Delivered to the buyer',
-      // NO auto-release exists (operator policy) — the real backstop is the
-      // stuck-held-funds admin follow-up. Never promise a 7-day release.
-      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was delivered to the buyer. Your payment will be released once the buyer confirms receipt — if they don't confirm within a few days, our team follows up.`,
-      cta: { label: 'View sale', url: txUrl },
-      preheader: `${d.listingTitle} was delivered to the buyer`,
-    });
-    await this.send(d.sellerEmail, 'Delivered — ' + d.listingTitle, html);
-    await this.sendSms(
-      d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
-      `seller-delivered-${d.transactionId}`,
-    );
   }
 
   // ---------------------------------------------------------------
@@ -2151,7 +2046,8 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
   }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app + push only — Bob Go has no shipment to notify because the
+    // booking never succeeded. AllOutdoor still must not email/SMS it.
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_booking_failed',
@@ -2163,19 +2059,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: false,
     });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'Please arrange dispatch yourself',
-      body: `Hi ${b(d.sellerName)}, we couldn't automatically book the courier for ${b(d.listingTitle)} this time. Please book the shipment with your courier as usual, then open your sale and enter the tracking number so the buyer can follow it.`,
-      cta: { label: 'Open sale & add tracking', url: txUrl },
-      preheader: `Arrange dispatch for ${d.listingTitle}`,
-    });
-    await this.send(d.sellerEmail, 'Action needed — arrange dispatch for ' + d.listingTitle, html);
-    await this.sendSms(
-      d.sellerPhone,
-      `ALL Outdoor: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
-      `booking-failed-${d.transactionId}`,
-    );
   }
 
   // ---------------------------------------------------------------
@@ -3522,43 +3405,7 @@ export class NotificationsService {
       linkedId: transactionId,
       dismissible: false,
     });
-    const html = this.email({
-      status: { tone: 'success', label: 'Dispatched' },
-      headline: 'Dispatched',
-      body: `Hi ${b(buyerName)}, ${b(listingTitle)} is on its way. We'll email you again when it's out for delivery.`,
-      cta: {
-        label: 'Track order',
-        url: `${this.appUrl}/transactions/${transactionId}`,
-      },
-      preheader: `${listingTitle} is on its way`,
-    });
-    await this.send(buyerEmail, 'Dispatched — ' + listingTitle, html);
-  }
-
-  async shippingOutForDelivery(
-    buyerEmail: string,
-    buyerName: string,
-    listingTitle: string,
-    transactionId: string,
-    buyerPhone?: string | null,
-  ) {
-    const html = this.email({
-      status: { tone: 'pending', label: 'Out for delivery' },
-      headline: 'Out for delivery today',
-      body: `Hi ${b(buyerName)}, ${b(listingTitle)} is out for delivery. Please be available to receive it.`,
-      cta: {
-        label: 'Track order',
-        url: `${this.appUrl}/transactions/${transactionId}`,
-      },
-      preheader: `${listingTitle} is out for delivery today`,
-    });
-    await this.send(buyerEmail, 'Out for delivery — ' + listingTitle, html);
-    // High-value SMS — the buyer wants to be home for it.
-    await this.sendSms(
-      buyerPhone,
-      `ALL Outdoor: ${truncate(listingTitle, 34)} is out for delivery today.`,
-      `buyer-out-for-delivery-${transactionId}`,
-    );
+    // In-app + push only — Bob Go handles the buyer's shipping messages.
   }
 
   /**
@@ -3585,19 +3432,7 @@ export class NotificationsService {
       linkedId: transactionId,
       dismissible: false,
     });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Ready to collect' },
-      headline: 'Ready to collect',
-      body: `Hi ${b(buyerName)}, ${b(listingTitle)} has arrived at your chosen pickup point and is ready to collect. Please collect it as soon as you can — you have up to 8 days.`,
-      cta: { label: 'View collection details', url },
-      preheader: `${listingTitle} is ready to collect`,
-    });
-    await this.send(buyerEmail, 'Ready to collect — ' + listingTitle, html);
-    await this.sendSms(
-      buyerPhone,
-      `ALL Outdoor: ${truncate(listingTitle, 30)} is ready to collect at your pickup point. View details: ${url}`,
-      `buyer-ready-for-pickup-${transactionId}`,
-    );
+    // In-app + push only — Bob Go handles the buyer's shipping messages.
   }
 
   async shippingDelivered(
@@ -3623,20 +3458,8 @@ export class NotificationsService {
       linkedId: transactionId,
       dismissible: false,
     });
-    const html = this.email({
-      status: { tone: 'success', label: 'Delivered' },
-      headline: 'Delivered',
-      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm it is good or raise a dispute within 24 hours. If anything is wrong, don't confirm — raise an issue from the order page and attach at least one photo so our team can review it.`,
-      cta: { label: 'Confirm receipt', url },
-      preheader: `${listingTitle} was delivered`,
-    });
-    await this.send(buyerEmail, 'Delivered — ' + listingTitle, html);
-    // High-value SMS — tells the buyer to confirm or dispute within 24 hours.
-    await this.sendSms(
-      buyerPhone,
-      `ALL Outdoor: ${truncate(listingTitle, 25)} delivered. Confirm it is good or dispute within 24h: ${url}`,
-      `buyer-delivered-${transactionId}`,
-    );
+    // In-app + push only. The "confirm receipt" row above is what drives
+    // payout release; Bob Go sends the delivered message itself.
   }
 
   async shippingFailed(
@@ -3660,17 +3483,7 @@ export class NotificationsService {
       dismissible: true,
       forcePush: true,
     });
-    const html = this.email({
-      status: { tone: 'error', label: 'Delivery failed' },
-      headline: 'Delivery failed',
-      body: `Hi ${b(buyerName)}, we couldn't deliver ${b(listingTitle)}. The courier will retry. If you need to update your address or have questions, contact support.`,
-      cta: {
-        label: 'View order',
-        url: `${this.appUrl}/transactions/${transactionId}`,
-      },
-      preheader: `Delivery of ${listingTitle} failed`,
-    });
-    await this.send(buyerEmail, 'Delivery failed — ' + listingTitle, html);
+    // In-app + push only — Bob Go sends the buyer the delivery-failure notice.
   }
 
   // ---------------------------------------------------------------
@@ -3749,10 +3562,8 @@ export class NotificationsService {
     hoursElapsed: number;
     autoRefundDays: number;
   }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    // In-app inbox: action-required (seller must dispatch to avoid
-    // auto-refund + strike). Cleared by resolveByEntity('transaction')
-    // when TransactionsService.markDispatched fires.
+    // In-app + push only — Bob Go owns shipping messages; this row still
+    // warns the seller about the auto-refund deadline and strike.
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'dispatch_nudge',
@@ -3764,28 +3575,6 @@ export class NotificationsService {
       linkedId: d.transactionId,
       dismissible: false,
     });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'Please dispatch your sold item',
-      body: `Hi ${b(d.sellerName)}, it's been ${b(d.hoursElapsed + 'h')} since the buyer paid for ${b(d.listingTitle)} and the parcel hasn't been dispatched yet. Dispatch within the next ${b(d.autoRefundDays + ' days')} or the order will be automatically refunded to the buyer and a strike added to your account. If you can't ship for any reason, message support so we can refund the buyer cleanly.`,
-      rows: [
-        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        { label: 'Time elapsed', value: `${d.hoursElapsed}h` },
-        { label: 'Auto-refund in', value: `${d.autoRefundDays} days` },
-      ],
-      cta: { label: 'Mark as dispatched', url: txUrl },
-      preheader: `Dispatch ${d.listingTitle} or it'll be auto-refunded`,
-    });
-    await this.send(
-      d.sellerEmail,
-      'Action needed: dispatch ' + d.listingTitle,
-      html,
-    );
-    await this.sendSms(
-      d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
-      `dispatch-nudge-${d.transactionId}`,
-    );
   }
 
   // ---------------------------------------------------------------

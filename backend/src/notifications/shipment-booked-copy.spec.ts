@@ -2,61 +2,35 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { NotificationsService } from './notifications.service';
 
-// What the seller is TOLD TO DO when a shipment is booked.
+// Shipping comms belong to Bob Go.
 //
-// This is the single most consequential piece of copy in the shipping rail: it
-// goes out as a `critical: true` SMS that bypasses the seller's SMS mute, so it
-// is the one message guaranteed to reach their phone. If it describes the wrong
-// hand-over, they act on it.
-//
-// Bob Go is the only courier rail and it always collects from the seller's
-// address — verified against a real shipment, which carried
-// collection_location_type "door" and an 08:00-17:00 window even when
-// delivering to a Bob Box. Lockers were retired with Pudo, so the copy must
-// never tell a seller to go to one: they would make a wasted trip and miss the
-// courier.
+// Bob Go emails the seller the waybill PDF at booking and sends every tracking
+// update to both parties (email, plus WhatsApp with SMS fallback for buyers).
+// AllOutdoor must only write the in-app row so its own WhatsApp/email/SMS
+// rails never duplicate — and never pay for — a message Bob Go already sends.
 
 function makeService() {
-  const sent: {
-    sms: string[];
-    emails: string[];
-    inbox: string[];
-    whatsapp: (string | null)[];
-    critical: (boolean | undefined)[];
-  } = {
-    sms: [],
-    emails: [],
-    inbox: [],
-    whatsapp: [],
-    critical: [],
-  };
+  const inbox: { email: string; n: Record<string, unknown> }[] = [];
+  const external = { emails: [] as string[], sms: [] as string[] };
   const svc = Object.create(
     NotificationsService.prototype,
   ) as NotificationsService;
   Object.assign(svc as unknown as Record<string, unknown>, {
     appUrl: 'https://alloutdoor.co.za',
-    persistByEmail: jest.fn(async (_e: string, n: { body: string }) => {
-      sent.inbox.push(n.body);
-    }),
-    send: jest.fn(async (_to: string, _subj: string, html: string) => {
-      sent.emails.push(html);
-    }),
-    sendSms: jest.fn(
-      async (
-        _to: unknown,
-        body: string,
-        _ref?: unknown,
-        opts?: { critical?: boolean; whatsapp?: { templateKey?: string } },
-      ) => {
-        sent.sms.push(body);
-        sent.critical.push(opts?.critical);
-        sent.whatsapp.push(opts?.whatsapp?.templateKey ?? null);
+    persistByEmail: jest.fn(
+      async (email: string, n: Record<string, unknown>) => {
+        inbox.push({ email, n });
       },
     ),
-    email: (a: { body: string; rows?: { label: string; value: string }[] }) =>
-      a.body + '||ROWS||' + JSON.stringify(a.rows ?? []),
+    email: jest.fn(() => 'html'),
+    send: jest.fn(async (_to: string, subject: string) => {
+      external.emails.push(subject);
+    }),
+    sendSms: jest.fn(async (_to: unknown, body: string) => {
+      external.sms.push(body);
+    }),
   });
-  return { svc, sent };
+  return { svc, inbox, external };
 }
 
 const BASE = {
@@ -65,55 +39,105 @@ const BASE = {
   sellerPhone: '0820000000',
   listingTitle: 'Camping lantern',
   transactionId: 'TX1',
-  trackingReference: 'UASS9DLM',
 };
 
-describe('shipmentBooked copy', () => {
-  it('tells the seller a courier collects from their address, NOT to visit a locker', async () => {
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE });
+function expectNoExternal(external: ReturnType<typeof makeService>['external']) {
+  expect(external.emails).toEqual([]);
+  expect(external.sms).toEqual([]);
+}
 
-    const all = [...sent.sms, ...sent.emails].join(' ');
-    expect(all).not.toMatch(/locker/i);
-    expect(all).not.toMatch(/Pudo/i);
-    expect(all).not.toMatch(/drop[- ]?off/i);
-    expect(sent.sms[0]).toMatch(/collects from your address/i);
+describe('shipping notifications are inbox-only', () => {
+  it('booked: keeps the waybill in the inbox and sends nothing externally', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.shipmentBooked({
+      ...BASE,
+      trackingReference: 'UASS9DLM',
+      dropoffPin: '4821',
+    });
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].email).toBe(BASE.sellerEmail);
+    expect(inbox[0].n.title).toBe('Ship your sale');
+    expect(inbox[0].n.body).toContain('UASS9DLM');
+    expect(inbox[0].n.body).toContain('4821');
+    expectNoExternal(external);
   });
 
-  it('gives the collection window, since the seller has to be there', async () => {
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE });
-    expect(sent.sms[0]).toContain('08:00-17:00');
-    expect(sent.emails[0]).toMatch(/between 08:00 and 17:00/);
+  it('collected: keeps the seller inbox row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.sellerParcelCollected(BASE);
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.type).toBe('shipment_collected');
+    expectNoExternal(external);
   });
 
-  it('names Bob Go, not The Courier Guy', async () => {
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE });
-    expect(sent.emails[0]).toContain('Bob Go');
-    expect(sent.emails[0]).not.toContain('The Courier Guy');
+  it('delivered (seller): keeps the seller inbox row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.sellerParcelDelivered(BASE);
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.type).toBe('shipment_delivered_seller');
+    expectNoExternal(external);
   });
 
-  it('labels a PIN as a collection PIN, never a locker drop-off PIN', async () => {
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE, dropoffPin: '4821' });
-    expect(sent.emails[0]).toContain('Collection PIN');
-    expect(sent.emails[0]).not.toMatch(/locker screen/i);
-    expect(sent.emails[0]).not.toMatch(/drop-off PIN/i);
+  it('dispatched (buyer): keeps the action-required row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.shippingDispatched(
+      'b@x.co',
+      'Buyer',
+      BASE.listingTitle,
+      BASE.transactionId,
+    );
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.title).toBe('Dispatched');
+    expectNoExternal(external);
   });
 
-  it('says nothing about a PIN when none was issued', async () => {
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE });
-    expect([...sent.sms, ...sent.emails].join(' ')).not.toMatch(/PIN/);
+  it('ready for pickup (buyer): keeps the action-required row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.shippingReadyForPickup(
+      'b@x.co',
+      'Buyer',
+      BASE.listingTitle,
+      BASE.transactionId,
+      '0830000000',
+    );
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.title).toBe('Ready to collect');
+    expectNoExternal(external);
   });
 
-  it('sends the critical SMS and nothing over WhatsApp, even with a PIN', async () => {
-    // Shipping is Bob Go's channel. The SMS bypasses the seller's mute and
-    // carries the waybill/PIN; WhatsApp must not receive a shipment template.
-    const { svc, sent } = makeService();
-    await svc.shipmentBooked({ ...BASE, dropoffPin: '4821' });
-    expect(sent.critical[0]).toBe(true);
-    expect(sent.whatsapp[0]).toBeNull();
+  it('delivered (buyer): keeps the confirm-receipt row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.shippingDelivered(
+      'b@x.co',
+      'Buyer',
+      BASE.listingTitle,
+      BASE.transactionId,
+      '0830000000',
+    );
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.title).toBe('Delivered — confirm receipt');
+    expect(inbox[0].n.dismissible).toBe(false);
+    expectNoExternal(external);
+  });
+
+  it('delivery failed (buyer): keeps the push row, no external send', async () => {
+    const { svc, inbox, external } = makeService();
+    await svc.shippingFailed(
+      'b@x.co',
+      'Buyer',
+      BASE.listingTitle,
+      BASE.transactionId,
+    );
+
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].n.type).toBe('shipment_failed');
+    expect(inbox[0].n.forcePush).toBe(true);
+    expectNoExternal(external);
   });
 });

@@ -759,9 +759,9 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   `PATCH /webhooks` — **not POST**, which returns 200 and silently creates nothing.
 
 Handlers are idempotent, share `findTransactionByTrackingNumber`, map provider
-status to internal `shippingStatus`, fire notifications, always return 200, and
-handle unknown tracking numbers gracefully. ⚠️ Absolute URLs registered with a
-provider must point at **alloutdoor.co.za**.
+status to internal `shippingStatus`, write the in-app notification row, always
+return 200, and handle unknown tracking numbers gracefully. ⚠️ Absolute URLs
+registered with a provider must point at **alloutdoor.co.za**.
 
 ---
 
@@ -827,7 +827,8 @@ rifle does not get a human look. Three settings keys survive in the admin UI
 
 Four channels, one source of truth in `NotificationsService`:
 
-1. **Email** (Resend) — every event, every recipient.
+1. **Email** (Resend) — every non-shipping event, every recipient. Shipping
+   email is sent by Bob Go, never by AllOutdoor.
 2. **SMS** (SMSPortal) — every event with a phone. Action SMSes embed
    single-use tokens with 48h expiry.
 3. **In-app inbox** (`Notification` model) — drives the bell badge and
@@ -846,6 +847,15 @@ handover and Licence Centre motivations. **Shipping is sent by Bob Go
 directly**; there are no shipment/delivery templates in the registry, and a
 missing or failed WhatsApp send falls back to SMS. Template bodies never carry
 a listing title (Meta commerce policy / regulated goods).
+
+**Shipping comms are Bob Go's end to end.** Bob Go emails the seller the PDF
+waybill at booking, then sends both parties the tracking updates (email, plus
+WhatsApp with SMS fallback for buyers — the seller's only Bob Go WhatsApp event
+is locker/counter drop-off, which the door-only rail never uses). AllOutdoor
+writes only the in-app row, plus push for action-required events: no WhatsApp,
+email or SMS for any shipment/tracking event, including booking failure and the
+dispatch nudge. Firearm dealer handover and private-arrange notices remain
+AllOutdoor messages.
 
 ⚠️ **Every transactional email is rendered by ONE in-code helper** —
 `renderEmail()` in `notifications.service.ts`, from an `EmailContent` object

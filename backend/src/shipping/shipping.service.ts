@@ -1173,9 +1173,10 @@ export class ShippingService {
         `Shipment booked for ${transactionId}: ${result.provider} waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
       );
 
-      // Notify the seller (SMS + email + inbox) with the waybill and the
-      // "write it on the package" fallback. Best-effort — the booking already
-      // succeeded; a notification hiccup must not undo it.
+      // Write the seller's in-app shipment row. Bob Go emails the waybill
+      // itself and owns every tracking message, so this is inbox-only.
+      // Best-effort — the booking already succeeded; a notification hiccup
+      // must not undo it.
       const sellerName =
         [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
         tx.seller.username ||
@@ -1195,8 +1196,8 @@ export class ShippingService {
           this.logger.warn(
             `shipmentBooked notify failed for ${transactionId}: ${(e as Error).message}`,
           );
-          // Booking is charged + persisted but the seller has no PIN/waybill
-          // in hand — surface to admins (same dedup'd queue) for manual
+          // Booking is charged + persisted but the seller's in-app row is
+          // missing — surface to admins (same dedup'd queue) for manual
           // follow-up. Do NOT roll back the booking (the carrier is committed).
           void this.raiseBookingFailedAlert(
             transactionId,
@@ -1605,15 +1606,15 @@ export class ShippingService {
   }
 
   /**
-   * Send the seller their "ship it now" pack (inbox + email + critical SMS).
+   * Write the seller's "ship it now" in-app row.
    *
    * Loads its own row rather than taking a payload, because it is called from
    * two places that know very different things: bookForTransaction, which has
    * everything in hand, and resolvePendingBobGoBookings, which is finishing a
    * booking made minutes or hours earlier in a different process.
    *
-   * The SMS this triggers is sent `critical: true` — it bypasses the seller's
-   * SMS mute. Only ever call it once a courier has actually accepted the job.
+   * Inbox-only by design: Bob Go emails the seller the waybill and owns the
+   * tracking messages. Only ever call it once a courier has accepted the job.
    */
   private async notifySellerShipmentBooked(
     transactionId: string,
@@ -1850,17 +1851,17 @@ export class ShippingService {
       switch (newStatus) {
         case 'COLLECTED':
         case 'IN_TRANSIT':
-          // Fire the buyer "on its way" notice ONCE — on the first move into a
-          // collected-or-later state. A carrier scans a parcel through several hubs
-          // (collected → at-hub → in-transit → at-destination-hub), and all of
-          // those land here; without this guard the buyer would be emailed +
-          // pushed on every hub scan.
+          // Fire the buyer's in-app "on its way" row ONCE — on the first move
+          // into a collected-or-later state. A carrier scans a parcel through
+          // several hubs (collected → at-hub → in-transit → at-destination-hub),
+          // and all of those land here; without this guard the buyer would get
+          // a row + push on every hub scan. Bob Go sends the external message.
           if (!current || STATUS_RANK[current] < STATUS_RANK.COLLECTED) {
             void this.notifications.shippingDispatched(buyerEmail, buyerName, title, transactionId);
           }
           break;
         case 'OUT_FOR_DELIVERY':
-          void this.notifications.shippingOutForDelivery(buyerEmail, buyerName, title, transactionId, buyerPhone);
+          // Bob Go owns the buyer's shipping messages. No AllOutdoor send.
           break;
         case 'READY_FOR_PICKUP':
           // STORE_PICKUP: at the counter awaiting the buyer.
