@@ -148,6 +148,36 @@ describe('⚠️ an empty string is not an answer', () => {
     expect(values.competency_number).toBe('C7276902');
   });
 
+  it('⚠️ never carries a proficiency’s endorsement into the competency declaration', () => {
+    // Rows read before 2026-10-27 hold a `competency_for` off a statement of
+    // results. The 524 declares competency; training does not, and the handgun
+    // statement is on every rifle application because it carries 117705.
+    // Newest wins on every other key, so the proficiency is deliberately the
+    // LATER row: without the exclusion it would overwrite the certificate.
+    const { values, from } = priorReadings([
+      row('PROFICIENCY_CERTIFICATE', '2026-07-01', {
+        competency_for: 'Handgun',
+      }),
+      row('COMPETENCY_CERTIFICATE', '2026-06-01', {
+        competency_number: 'C10167347',
+        competency_for: 'Rifle or carbine - semi-automatic (self-loading)',
+      }),
+    ]);
+    expect(values.competency_for).toBe(
+      'Rifle or carbine - semi-automatic (self-loading)',
+    );
+    expect(from.competency_for).toBe('COMPETENCY_CERTIFICATE');
+
+    // And on its own, it is simply not offered.
+    expect(
+      priorReadings([
+        row('PROFICIENCY_CERTIFICATE', '2026-05-01', {
+          competency_for: 'Handgun',
+        }),
+      ]).values.competency_for,
+    ).toBeUndefined();
+  });
+
   it('survives a row whose blob would not decrypt', () => {
     // An unreadable blob costs the prefill, not the application.
     const { values } = priorReadings([

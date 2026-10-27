@@ -113,6 +113,27 @@ function build(
   return { prefill, updates, written, provenanceWritten };
 }
 
+/** A SAPS 524, in the shape credentialsFor selects and decrypts. */
+function competencyRow(details: Record<string, string>, over: { id?: string } = {}) {
+  return {
+    id: over.id ?? 'cred-comp',
+    kind: 'COMPETENCY_CERTIFICATE',
+    title: 'Competency - Semi-auto Rifle + Shotgun',
+    // Dates, not strings: credentialsFor runs toIsoDay over the columns.
+    expiresOn: new Date('2030-06-06T00:00:00.000Z'),
+    issuedOn: new Date('2025-06-06T00:00:00.000Z'),
+    confirmedAt: null,
+    dateSource: 'derived',
+    extractionOk: true,
+    detailsEncrypted: encryptJson(details),
+  };
+}
+
+const RIFLE_ANSWERS = {
+  firearm_type: 'Rifle',
+  firearm_action: 'Semi-automatic (self-loading)',
+};
+
 const ASSOCIATION_UPLOAD = {
   id: 'up-1',
   kind: 'ASSOCIATION_CARD',
@@ -178,5 +199,96 @@ describe('re-running the offer when a document lands', () => {
     const r = await t.prefill.reapplyOffer('clerk-1', 'mo-1');
     expect(r.changed).toEqual([]);
     expect(t.updates).toHaveLength(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// AND THE COMPETENCY IS RE-PICKED, NOT LEFT ON WHATEVER WAS WRITTEN FIRST.
+//
+// Operator, 2026-10-27: a rifle application whose item 1.4 said "Handgun",
+// while the 524 covering the semi-automatic rifle sat in the same vault — and
+// adding it changed nothing, because offer() never revisits a filled box. The
+// warning then told the member their own certificate did not cover their own
+// firearm. These pin the correction and the two cases that must NOT move: a
+// member's own tick, and a vault that genuinely holds nothing that covers it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('re-picking the competency when a document lands', () => {
+  const HANDGUN_STATEMENT = {
+    competency_for: 'Handgun',
+    competency_number: 'C9000000',
+    competency_issued: '2020-01-15',
+  };
+  const readEntry = {
+    source: 'READ' as const,
+    from: 'a document you uploaded',
+    at: '2026-10-20T00:00:00.000Z',
+  };
+  const readFromUpload = {
+    competency_for: readEntry,
+    competency_number: readEntry,
+    competency_issued: readEntry,
+  } as unknown as ProvenanceMap;
+
+  it('⚠️ REPLACES A "HANDGUN" READ FROM A PROFICIENCY WITH THE 524 THAT COVERS THE RIFLE', async () => {
+    const t = build({
+      answers: { ...RIFLE_ANSWERS, ...HANDGUN_STATEMENT },
+      provenance: readFromUpload,
+      credentials: [
+        competencyRow({
+          competency_number: 'C10167347',
+          covers: 'S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN',
+        }),
+      ],
+    });
+    const r = await t.prefill.reapplyOffer('clerk-1', 'mo-1');
+    expect(r.changed).toContain('competency_for');
+    expect(t.written().competency_for).toBe(
+      'Rifle or carbine - semi-automatic (self-loading), Shotgun',
+    );
+    expect(t.written().competency_number).toBe('C10167347');
+    // The chip must say where it came from, or the member is told we invented it.
+    expect(t.provenanceWritten().competency_for?.source).toBe('VAULT');
+  });
+
+  it('⚠️ LEAVES A MEMBER-TICKED COMPETENCY ALONE', async () => {
+    const t = build({
+      answers: { ...RIFLE_ANSWERS, ...HANDGUN_STATEMENT },
+      provenance: {
+        competency_for: {
+          source: 'MEMBER',
+          from: 'you',
+          at: '2026-10-20T00:00:00.000Z',
+        },
+      } as unknown as ProvenanceMap,
+      credentials: [
+        competencyRow({
+          competency_number: 'C10167347',
+          covers: 'S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN',
+        }),
+      ],
+    });
+    const r = await t.prefill.reapplyOffer('clerk-1', 'mo-1');
+    expect(r.changed).not.toContain('competency_for');
+    expect(t.written().competency_for).toBe('Handgun');
+  });
+
+  it('⚠️ NEVER CLEARS A BOX: no covering certificate leaves the warning standing', async () => {
+    // The member really does hold a handgun competency only. The eligibility
+    // blocker must go on saying so — a blank 1.4 would silence it, and blank is
+    // not the same statement as "not covered".
+    const t = build({
+      answers: { ...RIFLE_ANSWERS, ...HANDGUN_STATEMENT },
+      provenance: readFromUpload,
+      credentials: [
+        competencyRow({
+          competency_number: 'C9000000',
+          covers: 'HANDGUN',
+        }),
+      ],
+    });
+    const r = await t.prefill.reapplyOffer('clerk-1', 'mo-1');
+    expect(r.changed).not.toContain('competency_for');
+    expect(t.written().competency_for).toBe('Handgun');
   });
 });

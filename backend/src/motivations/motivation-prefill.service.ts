@@ -132,6 +132,18 @@ const REPLACEABLE: ReadonlySet<ProvenanceSource> = new Set<ProvenanceSource>([
 ]);
 
 /**
+ * What the COMPETENCY block may be re-picked from when a document lands.
+ *
+ * ⚠️ READ IS HERE, AND ONLY FOR THIS BLOCK, BECAUSE OF ONE BUG. A proficiency
+ * read off an upload used to write item 1.4 — a training endorsement captioned
+ * as declared competency — and the value, once written, was unreachable by
+ * every later pass. It is reachable here because reapplyOffer cannot clear a
+ * box: it writes only what the offer produced. See the note at its use.
+ */
+const COMPETENCY_REPLACEABLE: ReadonlySet<ProvenanceSource> =
+  new Set<ProvenanceSource>(['VAULT', 'DERIVED', 'READ']);
+
+/**
  * What the re-derivation decided, for one competency block.
  *
  * ⚠️ RETURNED TO THE CALLER RATHER THAN WRITTEN AND FORGOTTEN. A server-side
@@ -1004,10 +1016,47 @@ export class MotivationPrefillService {
       return { changed: [] };
     }
 
+    /**
+     * ⚠️ THE COMPETENCY BLOCK IS RE-PICKED, NOT MERELY TOPPED UP.
+     *
+     * `offer()` refuses any key that already holds a value ("theirs wins,
+     * always"), so a competency the application already names could never be
+     * corrected here — and this function is the door the member is promised
+     * when we tell them "add it to your Document Centre and we will read it
+     * in". Operator, 2026-10-27: an application captioned "Handgun" while the
+     * 524 covering the semi-automatic rifle sat in the same vault, and adding
+     * it changed nothing.
+     *
+     * So the four competency boxes are blanked BEFORE the offer when they are
+     * ours or were READ, which lets the endorsement test choose the certificate
+     * again with the firearm now known. Two properties make this safe:
+     *
+     *   · NOTHING IS EVER CLEARED. This function only writes values the offer
+     *     actually produced (`if (!next) continue`), so a vault with no covering
+     *     certificate leaves the box exactly as it was — the eligibility
+     *     warning keeps saying "does not cover", which is true.
+     *   · MEMBER IS STILL ABSORBING. A box the member ticked or typed is not
+     *     blanked and not written, on the same rule as everywhere else.
+     *
+     * ⚠️ AND `READ` IS REPLACEABLE HERE, THOUGH NOT IN competencyOffer(). That
+     * function may CLEAR a ruled-out certificate, so a direct upload that the
+     * vault does not hold would be emptied by it. This one cannot clear, so the
+     * worst case is that the value stands.
+     */
+    const competencyReplaceable = (key: string): boolean => {
+      const source = provenance[key]?.source;
+      if (source) return COMPETENCY_REPLACEABLE.has(source);
+      return !(answers[key] ?? '').trim();
+    };
+    const answered = { ...answers };
+    for (const key of COMPETENCY_KEYS) {
+      if (competencyReplaceable(key)) answered[key] = '';
+    }
+
     const offer = credentialOffer(
       row.licenceType,
       sources,
-      answers,
+      answered,
       requiredEndorsement(answers),
     );
     const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
@@ -1018,7 +1067,11 @@ export class MotivationPrefillService {
       if (!next) continue;
       const source = provenance[key]?.source;
       if (source === 'MEMBER') continue;
-      const ours = source === 'VAULT' || source === 'DERIVED';
+      const competency = (COMPETENCY_KEYS as readonly string[]).includes(key);
+      const ours =
+        source === 'VAULT' ||
+        source === 'DERIVED' ||
+        (competency && source === 'READ');
       const empty = !(answers[key] ?? '').trim();
       if (!ours && !empty) continue;
       if ((answers[key] ?? '').trim() === next) continue;

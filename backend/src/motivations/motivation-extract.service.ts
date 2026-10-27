@@ -268,7 +268,30 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'competency_issued',
     'competency_for',
   ],
-  PROFICIENCY_CERTIFICATE: ['competency_for'],
+  /**
+   * ⚠️ NOTHING, AND THIS USED TO READ `['competency_for']`.
+   *
+   * A statement of results is TRAINING. Item 1.4 of the SAPS 271 — "what your
+   * competency covers" — is DECLARED COMPETENCY, which only the SAPS 524
+   * awards, and the two are different documents with different weight. Letting
+   * the proficiency write it produced a false declaration beside a true one:
+   * the operator's handgun statement of results (117705 + 119649, supplied on
+   * every firearm application because the Act unit lives on it) wrote
+   * "Handgun" into a self-loading RIFLE application, and once the box held a
+   * value nothing would correct it — the 524 that covers the rifle could not
+   * replace it, and the eligibility check then told the member their own
+   * certificate does not cover their own firearm.
+   *
+   * ⚠️ THE 117705 RULE IS UNAFFECTED. proficiencyPackGap reads unit standards
+   * off the page's own OCR text (ocrTextEncrypted is written whether or not
+   * extraction runs), and the vault route reads the credential's parsed
+   * `unit_standard` — neither goes through this map.
+   *
+   * ⚠️ EMPTY RATHER THAN OMITTED, because canExtract() reads `.length`: an
+   * omitted key would read the same, but this one is a decision and belongs
+   * where the next reader will see it.
+   */
+  PROFICIENCY_CERTIFICATE: [],
   ADDRESS_CONFIRMATION: ['residential_address', 'residential_postal_code'],
   ASSOCIATION_CARD: [
     'association_name',

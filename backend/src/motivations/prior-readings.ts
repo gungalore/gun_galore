@@ -149,6 +149,22 @@ export function priorReadings(rows: readonly StoredReading[]): {
 
   for (const row of usable) {
     for (const [key, value] of Object.entries(row.values ?? {})) {
+      /**
+       * ⚠️ A PROFICIENCY DOES NOT CARRY A COMPETENCY DECLARATION FORWARD.
+       *
+       * A statement of results proves what somebody was TAUGHT; item 1.4 of the
+       * SAPS 271 declares what SAPS has declared them competent in, and only
+       * the 524 says that. The extractor no longer writes `competency_for` from
+       * a proficiency, but rows read before that rule still hold one — and
+       * folding it forward would caption this year's rifle application with
+       * last year's handgun training, on every new application, for ever.
+       */
+      if (
+        row.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE &&
+        key === 'competency_for'
+      ) {
+        continue;
+      }
       // See the note above: a blank and a card's "nothing here" are the same
       // absence to a form, and answerValue collapses them into one.
       const answer = answerValue(value);

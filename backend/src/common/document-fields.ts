@@ -220,7 +220,12 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
   PROFICIENCY: [
     { vault: 'certificate_number', motivation: null },
     { vault: 'holder_name', motivation: null },
-    { vault: 'unit_standard', motivation: 'competency_for' },
+    // ⚠️ NULL, NOT `competency_for`. A training statement proves what somebody
+    // was TAUGHT; item 1.4 of the SAPS 271 declares what SAPS has DECLARED them
+    // competent in, and only the 524 says that. This alias let the handgun
+    // statement — the one that carries 117705, supplied on every firearm
+    // application — caption a rifle application as "Handgun" (2026-10-27).
+    { vault: 'unit_standard', motivation: null },
     // Printed on both sides of the pair; what joins them. Not a form field.
     { vault: 'scv_number', motivation: null },
     { vault: 'issuer', motivation: null },

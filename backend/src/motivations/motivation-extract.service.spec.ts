@@ -204,6 +204,30 @@ describe('which documents are worth reading', () => {
       expect(MotivationExtractService.canExtract(k)).toBe(false);
     }
   });
+
+  it('⚠️ DOES NOT READ A PROFICIENCY INTO THE COMPETENCY DECLARATION', () => {
+    // Training proves what somebody was taught; item 1.4 of the SAPS 271
+    // declares what SAPS has declared them competent in, and only the 524 says
+    // that. The handgun statement of results carries 117705, so it is on EVERY
+    // firearm application — and it used to caption a rifle application
+    // "Handgun", a fact nothing later would correct (2026-10-27).
+    expect(
+      MotivationExtractService.wantedFor(
+        MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+      ),
+    ).toEqual([]);
+    expect(
+      MotivationExtractService.canExtract(
+        MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+      ),
+    ).toBe(false);
+    // The certificate still declares it, and must keep doing so.
+    expect(
+      MotivationExtractService.wantedFor(
+        MotivationUploadKind.COMPETENCY_CERTIFICATE,
+      ),
+    ).toContain('competency_for');
+  });
 });
 
 describe('what it accepts', () => {
