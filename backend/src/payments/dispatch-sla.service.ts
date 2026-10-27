@@ -7,6 +7,8 @@ import { ShippingService } from '../shipping/shipping.service';
 import { pickupDeadline } from '../shipping/pickup-dates';
 import { PAYMENT_MODE } from './transactions.service';
 import { reversalListingData } from './inventory';
+import { isShipmentCommitted } from './cancellation';
+import { raiseSellerCharge } from '../common/seller-charges';
 
 // Two thresholds for courier-shipped orders (COURIER only —
 // PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
@@ -18,6 +20,11 @@ import { reversalListingData } from './inventory';
 // the Phase 1 deploy so the clock still starts cleanly for them too.
 const NUDGE_BEFORE_REFUND_HOURS = 24;
 const DISPATCH_WINDOW_DAYS = 5;
+
+// How long after payment the delivery-obligation notice goes out. Matches the
+// seller's 48h accept window: by then the buyer's cooling-off has passed and
+// the order is the seller's to fulfil.
+const DELIVERY_OBLIGATION_AFTER_HOURS = 48;
 
 /**
  * Was the seller actually at fault for an undispatched courier order?
@@ -267,6 +274,23 @@ export class DispatchSlaService {
               },
             });
           }
+
+          // Recover the gateway + committed carrier cost of the refund. Only
+          // on the blame-bearing branch: a blameless seller (the courier never
+          // gave them a waybill) must not be billed for our carrier failure.
+          void raiseSellerCharge(this.prisma, {
+            sellerId: tx.sellerId,
+            transactionId: tx.id,
+            kind: 'NO_DISPATCH',
+            reason: `Auto-refunded after ${DISPATCH_WINDOW_DAYS} days without dispatch`,
+            refundedTotalCents: tx.buyerTotal,
+            shipmentCommitted: isShipmentCommitted(tx),
+            shippingCost: tx.shippingCost,
+          }).catch((err) =>
+            this.logger.warn(
+              `seller charge failed for ${tx.id}: ${(err as Error).message}`,
+            ),
+          );
         }
 
         void this.tracking.recordInternal(tx.id, 'AUTO_REFUNDED_NO_DISPATCH', {
@@ -310,6 +334,82 @@ export class DispatchSlaService {
       }
     }
     return { scanned: stale.length, refunded };
+  }
+
+  // ------------------------------------------------------------------
+  // Delivery-obligation notice (operator 2026-10-27).
+  //
+  // Once the buyer's cooling-off window has passed, a paid order that still
+  // hasn't shipped is the seller's to fulfil. This sends them ONE email
+  // stating the costs we will recover from their next sale if they don't
+  // deliver — the seller's only notice under clause 11. Email only; no inbox
+  // row and no SMS. Idempotent via deliveryObligationNotifiedAt.
+  // ------------------------------------------------------------------
+  async notifyDeliveryObligation(): Promise<{
+    scanned: number;
+    notified: number;
+  }> {
+    const cutoff = new Date(
+      Date.now() - DELIVERY_OBLIGATION_AFTER_HOURS * 3_600_000,
+    );
+    const due = await this.prisma.transaction.findMany({
+      where: {
+        paidAt: { lte: cutoff },
+        paymentStatus: 'HELD',
+        // Money-bearing sales only: a swap leg carries no payout and must not
+        // trigger a cost-recovery notice.
+        buyerTotal: { gt: 0 },
+        swapId: null,
+        dispatchedAt: null,
+        rejectedAt: null,
+        // A pending cancellation may still end in a full buyer refund, which
+        // is not the seller's failure — don't warn them mid-review.
+        cancellationRequestedAt: null,
+        deliveryObligationNotifiedAt: null,
+      },
+      include: {
+        listing: { select: { title: true } },
+        seller: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
+      },
+      take: 50,
+    });
+
+    let notified = 0;
+    for (const tx of due) {
+      try {
+        const committed = isShipmentCommitted(tx);
+        await this.notifications.deliveryObligationSeller({
+          sellerEmail: tx.seller.email,
+          sellerName:
+            [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+            tx.seller.username ||
+            'there',
+          listingTitle: tx.listing.title,
+          transactionId: tx.id,
+          buyerTotal: tx.buyerTotal,
+          shippingCost: tx.shippingCost,
+          shipmentCommitted: committed,
+        });
+        // CAS so overlapping cron runs can't send the same notice twice.
+        await this.prisma.transaction.updateMany({
+          where: { id: tx.id, deliveryObligationNotifiedAt: null },
+          data: { deliveryObligationNotifiedAt: new Date() },
+        });
+        notified += 1;
+      } catch (err) {
+        this.logger.warn(
+          `delivery-obligation notice failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { scanned: due.length, notified };
   }
 
   // ------------------------------------------------------------------

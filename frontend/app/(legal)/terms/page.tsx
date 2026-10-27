@@ -496,6 +496,27 @@ export default function TermsPage() {
         Buyer</strong> (CPA s17(5)). This paragraph does not limit the
         Buyer&apos;s statutory rights.
       </p>
+      <p
+        id="seller-failure-charge"
+        style={{
+          border: '1px solid var(--red)',
+          borderRadius: 8,
+          padding: 16,
+          background: 'rgba(227,6,19,0.04)',
+        }}
+      >
+        <strong>Seller failure charge.</strong> If a paid sale ends because the
+        Seller declined it, failed to dispatch it, or failed to deliver it, the
+        Seller indemnifies ALL Outdoor for the costs of that refund that ALL
+        Outdoor cannot recover: a payment-gateway charge of{' '}
+        <strong>4% of the amount refunded</strong>, and the courier charge for
+        any waybill already booked. ALL Outdoor may set that amount off against
+        any amount it later owes the Seller, including a later payout, and will
+        email the Seller once the Buyer&apos;s cooling-off period has passed to
+        state the amount and the reason. The charge is a recovery of cost, not a
+        penalty, and does not apply where the failure was not the Seller&apos;s
+        (for example, a courier failure or a Buyer-caused problem).
+      </p>
 
       <h2>12. Suspension and termination</h2>
       <p>

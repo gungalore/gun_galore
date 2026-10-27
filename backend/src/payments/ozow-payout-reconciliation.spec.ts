@@ -35,6 +35,11 @@ function setup(completedAt: Date | null = null) {
       }),
     },
     adminAlert: { create: jest.fn().mockResolvedValue(undefined) },
+    // The payout outcome also settles/releases any seller-charge recovery
+    // reserved against this payout.
+    sellerChargeRecovery: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   };
   const prisma = {
     ...transactionClient,

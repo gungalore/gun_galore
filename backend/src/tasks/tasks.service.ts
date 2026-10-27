@@ -1081,6 +1081,20 @@ export class TasksService {
     } catch (err) {
       this.logger.warn(`In-transit stall sweep failed: ${(err as Error).message}`);
     }
+    // Delivery obligation — one email after the cooling-off window, stating
+    // the costs recovered from the seller's next sale if they don't deliver.
+    try {
+      const obligation = await this.dispatchSla.notifyDeliveryObligation();
+      if (obligation.notified > 0) {
+        this.logger.log(
+          `Delivery-obligation notices: ${obligation.notified} of ${obligation.scanned}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Delivery-obligation notice failed: ${(err as Error).message}`,
+      );
+    }
     await this.recordCronRun('dispatch-sla');
   }
 

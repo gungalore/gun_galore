@@ -1891,6 +1891,12 @@ model Transaction {
   // window passes.
   dispatchNudgedAt DateTime?
 
+  // Set once when the post-cooling-off delivery-obligation email is sent to
+  // the seller: "deliver, or we recover the refund's gateway cost and any
+  // committed courier charge from your next sale". Email only, per operator
+  // decision 2026-10-27. The IS NULL filter makes it fire exactly once.
+  deliveryObligationNotifiedAt DateTime?
+
   // P5.3 — set once when the stuck-funds cron alerts the admin that this
   // courier order was delivered (carrier DELIVERED) but the buyer never
   // confirmed receipt and funds are still HELD. IS NULL filter in the cron
@@ -3748,6 +3754,82 @@ model SellerStrike {
 
   @@index([userId, removedAt])
   @@index([userId, createdAt])
+}
+
+// ── Seller failure charges ─────────────────────────────────────────
+// Money the seller owes the platform because a PAID sale ended through
+// the seller's own failure: they declined it, never dispatched, or never
+// delivered. The charge recovers the costs the platform could not get
+// back — the payment-gateway cost of the refund (4% of the amount
+// refunded) and any courier charge already committed — and is set off
+// against what the seller is later owed.
+//
+// It is a LEDGER, not a column on Transaction: the failed sale is
+// refunded, so its sellerPayout is already zero and there is nothing
+// left to dock. The debt therefore has to survive the sale and be
+// recovered from a later payout.
+//
+// No FK to User or Transaction on purpose (same reasoning as
+// SellerStrike): the charge is an audit + money record that must
+// outlive account deletion rather than cascade away with it.
+enum SellerChargeKind {
+  SELLER_CANCELLED
+  NO_DISPATCH
+  NOT_DELIVERED
+  DEALER_TRANSFER_FAILED
+}
+
+enum SellerChargeRecoveryStatus {
+  RESERVED
+  SETTLED
+  RELEASED
+}
+
+model SellerCharge {
+  id            String   @id @default(cuid())
+  sellerId      String
+  // The failed sale this charge came from.
+  transactionId String
+  kind          SellerChargeKind
+  reason        String?
+  // Split so the two recoveries stay explainable: the gateway slice can
+  // accumulate across partial refunds, the carrier slice is charged once.
+  handlingCents Int      @default(0)
+  shippingCents Int      @default(0)
+  amountCents   Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  // Admin waiver. Also the credit path when a booked Bob Go charge is
+  // reclaimed manually in the carrier portal.
+  waivedAt      DateTime?
+  waivedById    String?
+  waivedReason  String?
+
+  recoveries    SellerChargeRecovery[]
+
+  @@unique([transactionId, kind])
+  @@index([sellerId, waivedAt])
+  @@index([sellerId, createdAt])
+}
+
+// One row per payout a charge was applied to. RESERVED when the payout is
+// requested (the amount sent to the gateway is already net), SETTLED when
+// the payout completes, RELEASED if it fails/returns so the charge stays
+// outstanding and is re-applied to the next payout — never double-recovered.
+model SellerChargeRecovery {
+  id            String   @id @default(cuid())
+  chargeId      String
+  charge        SellerCharge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  // The sale whose payout paid this slice.
+  transactionId String
+  amountCents   Int
+  status        SellerChargeRecoveryStatus @default(RESERVED)
+  createdAt     DateTime @default(now())
+  settledAt     DateTime?
+  releasedAt    DateTime?
+
+  @@index([chargeId])
+  @@index([transactionId])
 }
 
 // ── Multi-item orders (Phase 8b) ───────────────────────────────────

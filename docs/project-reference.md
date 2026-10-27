@@ -564,6 +564,22 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   the `getpayout` fallback reconcile the attempt; final failures put the
   transaction on payout hold for admin review rather than automatically
   resubmitting it.
+- **Seller failure charges (2026-10-27):** when a PAID sale ends because the
+  seller declined it, never dispatched, or never delivered, the platform
+  recovers the refund's gateway cost (**4% of the amount refunded**) plus any
+  **committed courier rate** (`carrierShipmentId` exists). This is a **cost
+  recovery, not a penalty** — the refunded Platform Fee itself is not recovered.
+  The failed sale's payout is already zero, so the debt lives in the
+  `SellerCharge` ledger and is **set off FIFO against a later payout** via
+  `SellerChargeRecovery` (RESERVED on request, SETTLED on PayoutComplete,
+  RELEASED on failure/return so it is never double-recovered). `netPayoutCents`
+  subtracts the reserved slice; `getHeldFundsReport` nets outstanding charges out
+  of `owedToSellers`. Triggers: `rejectTransaction` (only when the reason earns
+  a strike), `autoRefundStale` (only when the seller is not blameless), and an
+  explicit admin `chargeSeller` flag on `refundTransaction`. The seller's ONLY
+  notice is one email after `DELIVERY_OBLIGATION_AFTER_HOURS` (48h) —
+  `deliveryObligationNotifiedAt` makes it fire once. The rule is in Terms §11;
+  admin waiver is the credit path when a Bob Go charge is reclaimed by hand.
 - **Refunds:** `ozow.refundPayment(...)` is called BEFORE flipping the row to
   `REFUNDED`. Money moves first, ledger second — never the other way around.
 - **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,

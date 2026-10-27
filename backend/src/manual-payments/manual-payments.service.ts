@@ -8,6 +8,12 @@ import {
   OzowPayoutResult,
 } from '../payments/ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from '../payments/ozow-banks';
+import {
+  reserveSellerChargesForPayout,
+  settleSellerChargeRecoveries,
+  releaseSellerChargeRecoveries,
+  outstandingSellerChargeCents,
+} from '../common/seller-charges';
 
 // Manual-EFT reconciliation (the inContact inbox scan + FNB statement CSV
 // upload + unmatched queue + FNB payout-batch builder) has been REMOVED with
@@ -47,11 +53,16 @@ export function netPayoutCents(p: {
   sellerPayout: number;
   failedShipmentChargeCents?: number | null;
   refundChildren?: { buyerTotal: number }[] | null;
+  /** Slice of this payout withheld to recover a seller failure charge. */
+  chargeRecoveryCents?: number | null;
 }): number {
   const refunded = (p.refundChildren ?? []).reduce((s, x) => s + x.buyerTotal, 0);
   return Math.max(
     0,
-    p.sellerPayout - refunded - (p.failedShipmentChargeCents ?? 0),
+    p.sellerPayout -
+      refunded -
+      (p.failedShipmentChargeCents ?? 0) -
+      (p.chargeRecoveryCents ?? 0),
   );
 }
 
@@ -107,11 +118,21 @@ export class ManualPaymentsService {
 
     // Ozow payouts: one requestpayout per seller. Rows whose bank can't be
     // mapped are skipped WITH a reason, never guessed.
+    //
+    // amountCents here is the GROSS net (before failure-charge recovery). The
+    // charge slice can only be fixed inside the atomic claim below, because
+    // that is where the reservation is written; docking it here would let the
+    // preview and the real payout disagree.
     const notifyUrl = this.publicApiBase() + '/payments/webhook/ozow-payout';
-    const beneficiaries: OzowPayoutBeneficiary[] = [];
+    type Candidate = OzowPayoutBeneficiary & {
+      sellerId: string;
+      availableCents: number;
+      orderReference: string | null;
+    };
+    const candidates: Candidate[] = [];
     for (const p of payable) {
-      const amountCents = netPayoutCents(p);
-      if (amountCents <= 0) {
+      const availableCents = netPayoutCents({ ...p, chargeRecoveryCents: 0 });
+      if (availableCents <= 0) {
         collected.skipped.push({
           kind: 'PAYOUT',
           ref: p.orderReference ?? p.id,
@@ -128,7 +149,7 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      beneficiaries.push({
+      candidates.push({
         txId: p.id,
         merchantReference: `AO${p.id.replace(/[^a-zA-Z0-9]/g, '').slice(-18)}`,
         customerBankReference: (p.orderReference ?? `AO ${p.id.slice(-8)}`)
@@ -138,11 +159,14 @@ export class ManualPaymentsService {
         accountHolder: p.seller.bankAccountHolder ?? '',
         bankAccountNumber: p.seller.bankAccountNumber,
         branchCode: p.seller.bankBranchCode,
-        amountCents,
+        amountCents: availableCents,
         notifyUrl,
+        sellerId: p.sellerId,
+        availableCents,
+        orderReference: p.orderReference ?? null,
       });
     }
-    if (beneficiaries.length === 0) {
+    if (candidates.length === 0) {
       return {
         attempted: 0,
         accepted: 0,
@@ -158,25 +182,74 @@ export class ManualPaymentsService {
     let attempted = 0;
     let totalCents = 0;
     const failures: string[] = [];
-    for (const b of beneficiaries) {
-      // Claim the due row before any outbound call. This prevents overlapping
-      // admin runs from sending two payout requests for the same transaction.
-      const claim = await this.prisma.transaction.updateMany({
-        where: {
-          id: b.txId,
-          releasedAt: { not: null },
-          payoutRequestedAt: null,
-          paidOutAt: null,
-          payoutHeldAt: null,
-        },
-        data: {
-          payoutHeldAt: new Date(),
-          payoutHoldReason: 'Ozow payout request in progress',
-          payoutHeldById: null,
-        },
+    for (const candidate of candidates) {
+      // Claim the due row and reserve the recoverable charge slice in ONE
+      // transaction, so a payout is never sent without its reservation (or a
+      // reservation written without a payout).
+      const now = new Date();
+      let applied = 0;
+      const claimed = await this.prisma.$transaction(async (txc) => {
+        const claim = await txc.transaction.updateMany({
+          where: {
+            id: candidate.txId,
+            releasedAt: { not: null },
+            payoutRequestedAt: null,
+            paidOutAt: null,
+            payoutHeldAt: null,
+          },
+          data: {
+            payoutHeldAt: now,
+            payoutHoldReason: 'Ozow payout request in progress',
+            payoutHeldById: null,
+          },
+        });
+        if (claim.count === 0) return false;
+        applied = await reserveSellerChargesForPayout(txc, {
+          sellerId: candidate.sellerId,
+          transactionId: candidate.txId,
+          availableCents: candidate.availableCents,
+        });
+        return true;
       });
-      if (claim.count === 0) continue;
+      if (!claimed) continue;
+
+      const amountCents = Math.max(0, candidate.availableCents - applied);
+      if (amountCents === 0) {
+        // The payout is fully consumed by the recovered costs. The seller is
+        // owed nothing on this sale, the debt shrinks by the full payout, and
+        // no bank payment is made. Stamp it so it leaves the due queue.
+        await this.prisma.$transaction(async (txc) => {
+          await settleSellerChargeRecoveries(txc, candidate.txId);
+          await txc.transaction.updateMany({
+            where: { id: candidate.txId, paidOutAt: null },
+            data: {
+              paidOutAt: now,
+              payoutRequestedAt: null,
+              payoutHeldAt: null,
+              payoutHoldReason: null,
+              payoutHeldById: null,
+            },
+          });
+        });
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: candidate.orderReference ?? candidate.txId,
+          reason: `Payout fully recovered against seller charges (R${(applied / 100).toFixed(2)}); settled without a bank payment`,
+        });
+        continue;
+      }
+
       attempted += 1;
+      const b: OzowPayoutBeneficiary = {
+        txId: candidate.txId,
+        merchantReference: candidate.merchantReference,
+        customerBankReference: candidate.customerBankReference,
+        accountHolder: candidate.accountHolder,
+        bankAccountNumber: candidate.bankAccountNumber,
+        branchCode: candidate.branchCode,
+        amountCents,
+        notifyUrl: candidate.notifyUrl,
+      };
 
       let res: OzowPayoutResult;
       let persistedAttemptId: string | undefined;
@@ -214,6 +287,13 @@ export class ManualPaymentsService {
         }
         failures.push(`${b.txId.slice(0, 8)}: ${message}`);
         await this.holdFailedPayout(b.txId, message, !!persistedAttemptId);
+        // A request that never reached the gateway cannot have paid the
+        // seller, so free the withheld slice. If an attempt row WAS persisted
+        // the payout may be in flight — leave the reservation in place and let
+        // the status webhook settle or release it.
+        if (!persistedAttemptId) {
+          await releaseSellerChargeRecoveries(this.prisma, b.txId);
+        }
         continue;
       }
 
@@ -260,6 +340,9 @@ export class ManualPaymentsService {
         }
         failures.push(`${b.txId.slice(0, 8)}: ${reason}`);
         await this.holdFailedPayout(b.txId, reason);
+        // Ozow refused the request outright: no payout happened, so the
+        // charge must go back on the books for the next payout.
+        await releaseSellerChargeRecoveries(this.prisma, b.txId);
       }
     }
 
@@ -451,6 +534,7 @@ export class ManualPaymentsService {
         refundOfId: null,
       },
       select: {
+        sellerId: true,
         sellerPayout: true,
         // REQUIRED by netPayoutCents — omit it and the deduction is silently
         // zero, which looks exactly like a working payout.
@@ -458,12 +542,29 @@ export class ManualPaymentsService {
         refundChildren: { select: { buyerTotal: true } },
       },
     });
+    const owedBySeller = new Map<string, number>();
+    for (const r of payoutRows) {
+      const owed = Math.max(
+        0,
+        r.sellerPayout -
+          childrenSum(r.refundChildren) -
+          (r.failedShipmentChargeCents ?? 0),
+      );
+      owedBySeller.set(r.sellerId, (owedBySeller.get(r.sellerId) ?? 0) + owed);
+    }
+    let owedToSellersCents = [...owedBySeller.values()].reduce(
+      (s, x) => s + x,
+      0,
+    );
+    // Failure charges reduce what we still owe the seller, but never invert
+    // the position into money owed to us on a payout run.
+    for (const [sellerId, owed] of owedBySeller) {
+      const charges = await outstandingSellerChargeCents(this.prisma, sellerId);
+      owedToSellersCents -= Math.min(owed, charges);
+    }
     const owedToSellers = {
       count: payoutRows.length,
-      cents: payoutRows.reduce(
-        (s, r) => s + Math.max(0, r.sellerPayout - childrenSum(r.refundChildren)),
-        0,
-      ),
+      cents: Math.max(0, owedToSellersCents),
     };
 
     // (3) Owed to buyers — refunds not yet paid (manual mode only; a card
@@ -577,6 +678,9 @@ export class ManualPaymentsService {
       orderBy: { releasedAt: 'asc' },
       select: {
         id: true,
+        // Needed to spread one seller's outstanding charges across their due
+        // payouts (FIFO) instead of docking the full balance on each row.
+        sellerId: true,
         orderReference: true,
         sellerPayout: true,
         // REQUIRED by netPayoutCents — omit it and the deduction is silently
@@ -648,7 +752,29 @@ export class ManualPaymentsService {
         },
       },
     });
-    return { payouts, refunds };
+    // Spread each seller's outstanding failure charges across their due
+    // payouts, oldest payout first. Read-only: the real reservation happens
+    // atomically inside runDuePayouts. This is what the preview shows, and
+    // netPayoutCents subtracts it everywhere.
+    const outstanding = new Map<string, number>();
+    for (const p of payouts) {
+      if (!outstanding.has(p.sellerId)) {
+        outstanding.set(
+          p.sellerId,
+          await outstandingSellerChargeCents(this.prisma, p.sellerId),
+        );
+      }
+    }
+    const remaining = new Map(outstanding);
+    const payoutsWithCharges = payouts.map((p) => {
+      const gross = netPayoutCents({ ...p, chargeRecoveryCents: 0 });
+      const owed = remaining.get(p.sellerId) ?? 0;
+      const chargeRecoveryCents = Math.min(gross, owed);
+      remaining.set(p.sellerId, owed - chargeRecoveryCents);
+      const amountCents = netPayoutCents({ ...p, chargeRecoveryCents });
+      return { ...p, chargeRecoveryCents, amountCents };
+    });
+    return { payouts: payoutsWithCharges, refunds };
   }
 
   // Owed-money math for the payouts-due preview: which rows are payable, which
@@ -684,8 +810,12 @@ export class ManualPaymentsService {
       // the buyer (minted children). Legacy pre-deploy refundedAmount without
       // children never moved money.
       const covered = childrenSum(p.refundChildren);
+      // Eligibility is decided on the GROSS net (refunds + shipment charges),
+      // because a row fully consumed by a seller charge still has to run so
+      // the reservation can be settled. The payout total uses the NET.
+      const grossPayout = netPayoutCents({ ...p, chargeRecoveryCents: 0 });
       const payoutAmount = netPayoutCents(p);
-      if (payoutAmount <= 0) {
+      if (grossPayout <= 0) {
         // Fully consumed by refunds — nets to R0.
         zeroNetIds.push(p.id);
         skipped.push({
@@ -695,6 +825,13 @@ export class ManualPaymentsService {
             'Nets to R0 — fully consumed by refund slices; settled without a payout (no action needed)',
         });
         continue;
+      }
+      if (payoutAmount <= 0) {
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Nets to R0 after recovering R${(((p.chargeRecoveryCents ?? 0) / 100)).toFixed(2)} of seller charges — settled without a bank payment`,
+        });
       }
       if (!hasBank(p.seller)) {
         skipped.push({

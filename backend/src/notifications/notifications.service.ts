@@ -3789,6 +3789,65 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Delivery obligation + cost warning.
+  //
+  // Sent ONCE, after the buyer's cooling-off window, to the seller of a paid
+  // order that still has not shipped. This is the seller's ONLY notice under
+  // clause 11 that a failure to deliver lets us recover the refund's gateway
+  // cost and any committed courier charge from their next sale. Email only,
+  // by operator decision 2026-10-27 — no inbox row, no SMS.
+  // ---------------------------------------------------------------
+  async deliveryObligationSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    transactionId: string;
+    buyerTotal: number;
+    shippingCost: number;
+    shipmentCommitted: boolean;
+  }) {
+    const handling = Math.max(
+      0,
+      Math.round(Math.max(0, d.buyerTotal) * 0.04),
+    );
+    const shipping = d.shipmentCommitted ? Math.max(0, d.shippingCost) : 0;
+    const total = handling + shipping;
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Deliver the item you sold',
+      body:
+        `Hi ${b(d.sellerName)}, the buyer's cooling-off period for ` +
+        `${b(d.listingTitle)} has passed, and the order is now yours to ` +
+        `fulfil. If you do not deliver it, we refund the buyer in full and ` +
+        `recover our costs from your next sale: ${b(formatRand(handling))} ` +
+        `(4% of what the buyer paid, covering the payment-gateway cost of the ` +
+        `refund)${
+          shipping > 0
+            ? ` plus ${b(formatRand(shipping))} for the courier waybill that is ` +
+              `already booked`
+            : ''
+        }. Total ${b(formatRand(total))}. These terms are in clause 11 of our ` +
+        `Terms of Service.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Gateway recovery (4%)', value: formatRand(handling) },
+        ...(shipping > 0
+          ? [{ label: 'Committed courier', value: formatRand(shipping) }]
+          : []),
+        { label: 'Recoverable from next sale', value: formatRand(total) },
+      ],
+      cta: { label: 'View the order', url: txUrl },
+      preheader: `Deliver ${d.listingTitle} to avoid a cost recovery on your next sale`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Deliver your sold item — ' + d.listingTitle,
+      html,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // FLOW-F4 (H15) — DEALER_TRANSFER stall nudge. A firearm sale routes
   // through a licensed dealer, not a courier, so the standard dispatch
   // nudge above (parcel / auto-refund / strike) is wrong for it. This

@@ -11,6 +11,7 @@
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { AdminRole, Prisma } from '@prisma/client';
+import type { SellerChargeKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../auth/session.service';
 import { UsersService } from '../users/users.service';
@@ -18,6 +19,13 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { removeSellerStrike } from '../common/seller-reject-policy';
+import {
+  raiseSellerCharge,
+  waiveSellerCharge,
+  listSellerCharges,
+  outstandingSellerChargeCents,
+  releaseSellerChargeRecoveries,
+} from '../common/seller-charges';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
 import { DiditService } from '../didit/didit.service';
@@ -965,6 +973,50 @@ export class AdminService {
       reason: 'Individual seller strike removed after review',
     });
     return result;
+  }
+
+  // ── Seller failure charges ─────────────────────────────────────────
+  // The ledger of costs recovered (or still owed) because a paid sale ended
+  // through the seller's failure. Admin can waive one — the credit path for a
+  // booked Bob Go charge reclaimed by hand in the carrier portal.
+  async listSellerCharges(sellerId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: sellerId },
+      select: { id: true, username: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const [charges, outstandingCents] = await Promise.all([
+      listSellerCharges(this.prisma, sellerId),
+      outstandingSellerChargeCents(this.prisma, sellerId),
+    ]);
+    return { seller: user, outstandingCents, charges };
+  }
+
+  async waiveSellerCharge(
+    chargeId: string,
+    adminId: string,
+    reason: string,
+  ) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 3) {
+      throw new BadRequestException('A reason is required to waive a charge.');
+    }
+    const waived = await waiveSellerCharge(this.prisma, {
+      chargeId,
+      adminId,
+      reason: trimmed,
+    });
+    if (!waived) {
+      throw new NotFoundException('Charge not found or already waived');
+    }
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'SELLER_CHARGE_WAIVED',
+      resourceType: 'SellerCharge',
+      resourceId: chargeId,
+      reason: trimmed,
+    });
+    return { waived: true };
   }
 
   // ---------------------------------------------------------------
@@ -2639,7 +2691,12 @@ export class AdminService {
     adminId: string,
     note?: string,
     amountZarCents?: number,
-    opts?: { resolveCancellation?: boolean },
+    opts?: {
+      resolveCancellation?: boolean;
+      /** Admin has judged the refund a seller failure; recover our costs. */
+      chargeSeller?: boolean;
+      chargeKind?: SellerChargeKind;
+    },
   ) {
     const resolveCancellation = opts?.resolveCancellation === true;
     const tx = await this.prisma.transaction.findUnique({
@@ -2853,6 +2910,38 @@ export class AdminService {
     const updated = await this.prisma.transaction.findUnique({
       where: { id: txId },
     });
+
+    // Seller-fault refund: recover the gateway + committed carrier cost. The
+    // refund already moved, so a ledger failure must not fail the request —
+    // it raises an alert instead, and the admin can retry from the dossier.
+    if (opts?.chargeSeller) {
+      try {
+        await raiseSellerCharge(this.prisma, {
+          sellerId: tx.sellerId,
+          transactionId: txId,
+          kind: opts.chargeKind ?? 'NOT_DELIVERED',
+          reason: note?.trim() || 'Admin marked the sale a seller failure',
+          refundedTotalCents:
+            updated?.refundedAmount ?? tx.refundedAmount + amount,
+          shipmentCommitted: isShipmentCommitted(tx),
+          shippingCost: tx.shippingCost,
+        });
+      } catch (err) {
+        this.logger.error(
+          `seller charge failed for ${txId}: ${(err as Error).message}`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'SELLER_CHARGE_FAILED',
+              referenceId: txId,
+              urgent: true,
+              context: `Refund ${amount}c was issued but the seller charge could not be recorded: ${(err as Error).message}`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
 
     // Only a terminal refund (full, or a resolved cancellation) clears the
     // dispute alert + inbox and reverses the listing, since a partial leaves
@@ -3139,6 +3228,11 @@ export class AdminService {
         payoutHeldById: null,
       },
     });
+
+    // A reservation made for a payout that never completed must go back on
+    // the books, or the charge would look recovered without the seller ever
+    // having been short-paid.
+    await releaseSellerChargeRecoveries(this.prisma, txId);
 
     await this.audit.record({
       adminUserId: adminId,

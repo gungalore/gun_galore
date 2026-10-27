@@ -12,6 +12,8 @@ import {
   type AdminTone,
 } from '@/components/admin/admin-ui';
 import { UserActions } from '@/components/admin/user-actions';
+import { SellerChargesPanel } from '@/components/admin/seller-charges-panel';
+import { SellerStrikesPanel } from '@/components/admin/seller-strikes-panel';
 import { useAdminSession } from '@/components/admin/admin-session';
 import { useAdminPoll } from '@/lib/use-admin-poll';
 import {
@@ -351,6 +353,16 @@ export default function MemberProfilePage() {
           isGod={isGod}
           onChanged={() => dossier.refresh()}
         />
+      </NeonCard>
+
+      {/* ── Failure charges (recovered from later payouts) ─────────── */}
+      <NeonCard title="Seller failure charges">
+        <SellerChargesPanel userId={user.id} />
+      </NeonCard>
+
+      {/* ── Reject-strike ledger — remove one, not all ────────────── */}
+      <NeonCard title="Reject-strike ledger">
+        <SellerStrikesPanel userId={user.id} />
       </NeonCard>
 
       {/* ── Recent audit trail ────────────────────────────────────── */}

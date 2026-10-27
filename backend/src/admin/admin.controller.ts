@@ -24,6 +24,8 @@ import { Throttle } from '@nestjs/throttler';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { ShippingService } from '../shipping/shipping.service';
 import { isShipmentFailureReason } from '../common/shipment-failure-policy';
+import { SELLER_CHARGE_REASONS } from '../common/seller-failure-policy';
+import type { SellerChargeKind } from '@prisma/client';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { ReadShapedRoute } from './decorators/read-shaped-route.decorator';
@@ -130,6 +132,11 @@ const ADMIN_ACCESS_COOKIE = 'gg_admin_sess';
  * attaches it to all ~148 admin requests.
  */
 const ADMIN_REFRESH_COOKIE = 'gg_admin_rt';
+
+/** Reject an unknown charge reason before it can move a seller's money. */
+function isSellerChargeKind(value: unknown): value is SellerChargeKind {
+  return SELLER_CHARGE_REASONS.some((r) => r.value === value);
+}
 
 @Controller('admin/auth')
 export class AdminAuthController {
@@ -741,6 +748,29 @@ export class AdminUsersController {
     return this.adminService.removeStrike(strikeId, admin.sub);
   }
 
+  // Seller failure charges: what we have recovered (or still owe ourselves)
+  // because a paid sale ended through this seller's failure.
+  @Get(':id/seller-charges')
+  listSellerCharges(@Param('id') id: string) {
+    return this.adminService.listSellerCharges(id);
+  }
+
+  // Waive one charge — also the credit path when a booked Bob Go charge is
+  // reclaimed by hand in the carrier portal.
+  @Post('seller-charges/:chargeId/waive')
+  @HttpCode(200)
+  waiveSellerCharge(
+    @Param('chargeId') chargeId: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.waiveSellerCharge(
+      chargeId,
+      admin.sub,
+      body?.reason ?? '',
+    );
+  }
+
   // Claude-KYC human review — decide an UNDER_REVIEW verification from
   // the dossier. Guarded transition; reason required for the audit row.
   @Post(':id/kyc-review')
@@ -902,8 +932,27 @@ export class AdminTransactionsController {
     // Optional partial-refund amount in ZAR cents. Omit for a full refund
     // of the remaining balance.
     @Body('amountZarCents') amountZarCents?: number,
+    // Seller-fault refund: recover the gateway + committed carrier cost.
+    // Requires an explicit reason code so the ledger is explainable.
+    @Body('chargeSeller') chargeSeller?: boolean,
+    @Body('chargeKind') chargeKind?: string,
   ) {
-    return this.adminService.refundTransaction(id, admin.sub, note, amountZarCents);
+    if (chargeSeller && !isSellerChargeKind(chargeKind)) {
+      throw new BadRequestException(
+        'chargeKind must be one of ' +
+          SELLER_CHARGE_REASONS.map((r) => r.value).join(', '),
+      );
+    }
+    return this.adminService.refundTransaction(
+      id,
+      admin.sub,
+      note,
+      amountZarCents,
+      {
+        chargeSeller: chargeSeller === true,
+        chargeKind: chargeSeller ? (chargeKind as SellerChargeKind) : undefined,
+      },
+    );
   }
 
   // Resolve a buyer's cancellation REQUEST: refund minus the irrecoverable

@@ -45,4 +45,27 @@ describe('netPayoutCents', () => {
       netPayoutCents({ sellerPayout: 50000, failedShipmentChargeCents: null }),
     ).toBe(50000);
   });
+
+  it('withholds the reserved seller-failure slice', () => {
+    expect(
+      netPayoutCents({ sellerPayout: 50000, chargeRecoveryCents: 12648 }),
+    ).toBe(37352);
+  });
+
+  it('deducts refund slices, the courier charge and the failure slice together', () => {
+    expect(
+      netPayoutCents({
+        sellerPayout: 50000,
+        failedShipmentChargeCents: 11495,
+        refundChildren: [{ buyerTotal: 10000 }],
+        chargeRecoveryCents: 5000,
+      }),
+    ).toBe(23505);
+  });
+
+  it('never returns a negative when the failure slice exceeds the payout', () => {
+    expect(
+      netPayoutCents({ sellerPayout: 5000, chargeRecoveryCents: 12648 }),
+    ).toBe(0);
+  });
 });

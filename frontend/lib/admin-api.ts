@@ -1309,3 +1309,78 @@ export function formatWhen(value: string | Date | null | undefined): string {
     hour12: false,
   });
 }
+
+// -- Seller failure charges + strike ledger ---------------------------
+
+export interface SellerChargeRow {
+  id: string;
+  transactionId: string;
+  kind:
+    | 'SELLER_CANCELLED'
+    | 'NO_DISPATCH'
+    | 'NOT_DELIVERED'
+    | 'DEALER_TRANSFER_FAILED';
+  reason: string | null;
+  handlingCents: number;
+  shippingCents: number;
+  amountCents: number;
+  createdAt: string;
+  waivedAt: string | null;
+  waivedReason: string | null;
+  recoveries: {
+    amountCents: number;
+    status: 'RESERVED' | 'SETTLED' | 'RELEASED';
+    transactionId: string;
+    createdAt: string;
+  }[];
+}
+
+export interface SellerCharges {
+  seller: { id: string; username: string | null };
+  outstandingCents: number;
+  charges: SellerChargeRow[];
+}
+
+export function sellerCharges(userId: string): Promise<SellerCharges> {
+  return adminFetch<SellerCharges>(`/admin/users/${userId}/seller-charges`);
+}
+
+export function waiveSellerCharge(
+  chargeId: string,
+  reason: string,
+): Promise<{ waived: boolean }> {
+  return adminFetch<{ waived: boolean }>(
+    `/admin/users/seller-charges/${chargeId}/waive`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+}
+
+export interface SellerStrikeRow {
+  id: string;
+  source: string;
+  reason: string;
+  referenceId: string | null;
+  listingId: string | null;
+  note: string | null;
+  createdAt: string;
+  removedAt: string | null;
+  removedById: string | null;
+}
+
+export interface SellerStrikes {
+  sellerRejectStrikes: number;
+  sellingBannedAt: string | null;
+  strikes: SellerStrikeRow[];
+}
+
+export function sellerStrikes(userId: string): Promise<SellerStrikes> {
+  return adminFetch<SellerStrikes>(`/admin/users/${userId}/strikes`);
+}
+
+export function removeSellerStrike(
+  strikeId: string,
+): Promise<{ removed: boolean; totalStrikes: number; unbanned: boolean }> {
+  return adminFetch(`/admin/users/strikes/${strikeId}/remove`, {
+    method: 'POST',
+  });
+}

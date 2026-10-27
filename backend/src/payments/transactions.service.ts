@@ -73,6 +73,13 @@ import {
   applySellerRejectPenalty,
   consequencesForSaleReject,
 } from '../common/seller-reject-policy';
+import { isShipmentCommitted } from './cancellation';
+import {
+  raiseSellerCharge,
+  settleSellerChargeRecoveries,
+  releaseSellerChargeRecoveries,
+} from '../common/seller-charges';
+import { sellerPaysForSaleReject } from '../common/seller-failure-policy';
 export { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive };
 
 // Ozow's terminal payout failure sub-statuses, from the Payouts API OpenAPI
@@ -2371,6 +2378,8 @@ export class TransactionsService {
         if (transactionPaid.count !== 1) {
           throw new Error(`Could not mark Ozow payout ${evt.payoutId} complete`);
         }
+        // The withheld seller-failure slice is now genuinely recovered.
+        await settleSellerChargeRecoveries(tx, txId);
         return true;
       });
       if (!completed) return;
@@ -2438,6 +2447,9 @@ export class TransactionsService {
       if (transactionHeld.count !== 1) {
         throw new Error(`Could not place failed Ozow payout ${evt.payoutId} on hold`);
       }
+      // The payout never happened, so the withheld charge goes back on the
+      // books for the next payout.
+      await releaseSellerChargeRecoveries(tx, txId);
       return true;
     });
     if (!terminal) return;
@@ -3008,6 +3020,24 @@ export class TransactionsService {
     }).catch((err) =>
       this.logger.warn(`sale-reject penalty failed: ${(err as Error).message}`),
     );
+
+    // Recover the costs the refund left with us. Only when the rejection is
+    // the seller's fault (the strike matrix above decides that — a
+    // BUYER_SUSPICIOUS rejection is trust review, not a bill). Fire-and-forget
+    // for the same reason as the strike: the buyer's refund already committed.
+    if (sellerPaysForSaleReject(saleReasonCode)) {
+      void raiseSellerCharge(this.prisma, {
+        sellerId: seller.id,
+        transactionId,
+        kind: 'SELLER_CANCELLED',
+        reason: trimmedReason.slice(0, 500),
+        refundedTotalCents: tx.buyerTotal,
+        shipmentCommitted: isShipmentCommitted(tx),
+        shippingCost: tx.shippingCost,
+      }).catch((err) =>
+        this.logger.warn(`seller charge failed: ${(err as Error).message}`),
+      );
+    }
 
     // Timeline + buyer notification + clear seller's accept-pending
     // inbox row. Fire-and-forget; UI feedback already returned to the

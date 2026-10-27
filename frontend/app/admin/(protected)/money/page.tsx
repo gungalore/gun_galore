@@ -12,6 +12,7 @@ import {
   type AdminTone,
 } from '@/components/admin/admin-ui';
 import { ConfirmDialog, ReasonDialog } from '@/components/admin/admin-confirm';
+import { RefundDialog } from '@/components/admin/refund-dialog';
 import { AdminDrawer } from '@/components/admin/admin-drawer';
 import { useAdminSession } from '@/components/admin/admin-session';
 import { useAdminPoll } from '@/lib/use-admin-poll';
@@ -490,7 +491,18 @@ export default function MoneyPage() {
         onConfirm={runPayouts}
       />
 
-      {lever ? (
+      {lever?.kind === 'refund' ? (
+        <RefundDialog
+          open
+          row={rows.find((r) => r.id === lever.id) ?? null}
+          onClose={() => setLever(null)}
+          onDone={() => {
+            toast('Refund submitted to the gateway.');
+            txns.refresh();
+            held.refresh();
+          }}
+        />
+      ) : lever ? (
         <ReasonDialog
           open
           title={leverBody(lever).title}
