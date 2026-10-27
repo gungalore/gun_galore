@@ -213,6 +213,37 @@ describe('the hunting plates come from the research', () => {
     ).toEqual([]);
   });
 
+  it('⚠️ PUTS DRY-LAND SPECIES IN THEIR OWN SETTING, NOT THE CLASS DEFAULT (2026-10-27)', () => {
+    // The class default was applied to every bird, so guineafowl and francolin
+    // were pictured at a reed-fringed waterhole; jackal and springhare were
+    // put on a rocky outcrop. Both are wrong for the animal.
+    const birds = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        firearm_type: 'Shotgun',
+        firearm_calibre: '12 GAUGE',
+        hunt_game_class: 'wingshooting',
+      },
+      research: 'helmeted guineafowl and francolin',
+    });
+    expect(birds[0].title).toBe('Helmeted guineafowl');
+    expect(birds[0].prompt).toMatch(/thorn scrub/i);
+    expect(birds[0].prompt).not.toMatch(/waterhole/i);
+
+    const smallGame = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        firearm_type: 'Rifle',
+        firearm_calibre: '.22 HORNET',
+        hunt_game_class: 'small',
+      },
+      research: 'black-backed jackal and springhare',
+    });
+    const springhare = smallGame.find((p) => p.title === 'Springhare');
+    expect(springhare?.prompt).toMatch(/open sandy grassland/i);
+    expect(springhare?.prompt).not.toMatch(/rocky outcrop|dry riverbed/i);
+  });
+
   it('⚠️ MIXES ANIMALS AND ACTIVITIES FOR A FIREARM THAT DOES BOTH (2026-10-17)', () => {
     const plates = buildPlateSpecs({
       licenceType: S15,
@@ -377,6 +408,69 @@ describe('the sport plates are the courses of fire for the firearm', () => {
         expect(plate.prompt).toMatch(/unedited and straight out of camera/i);
         expect(plate.prompt).toMatch(/no firearms/i);
       }
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE PROMPT ORDER IS THE IMAGE MODEL'S GUIDE (2026-10-27).
+//
+// xAI's Imagine guide is explicit: lead with the subject, then describe it as
+// something you could point at, then art direction, light, colour and lens,
+// and only then the exclusions. A prompt that opens with a film stock or a
+// wall of "No ..." clauses draws a styled scene whose subject is a stand-in.
+// ────────────────────────────────────────────────────────────────────
+
+function everyPlate() {
+  return [
+    ...buildPlateSpecs({ licenceType: S13, answers: {} }),
+    ...buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        firearm_type: 'Rifle',
+        firearm_action: 'Bolt action',
+        firearm_calibre: '.308 WINCHESTER',
+      },
+      research: 'impala, kudu and gemsbok at bushveld distances',
+    }),
+    ...buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: { firearm_type: 'Rifle' },
+    }),
+  ];
+}
+
+describe('the image prompts follow the xAI guide', () => {
+  it('⚠️ LEADS WITH THE SUBJECT, NOT THE FILM STOCK (2026-10-27)', () => {
+    for (const plate of everyPlate()) {
+      expect(plate.prompt).not.toMatch(
+        /^(A quick handheld|Amateur handheld|A hurried phone photo|A quick phone snap|A phone snap|Photorealistic)/i,
+      );
+      // A real subject, named before any treatment or exclusion.
+      expect(plate.prompt.split(' ').length).toBeGreaterThan(60);
+    }
+  });
+
+  it('⚠️ PUTS THE EXCLUSIONS LAST (2026-10-27)', () => {
+    for (const plate of everyPlate()) {
+      const exclusions = plate.prompt.lastIndexOf('No people');
+      expect(exclusions).toBeGreaterThan(0);
+      expect(exclusions).toBeGreaterThan(plate.prompt.length * 0.7);
+    }
+  });
+
+  it('⚠️ ASKS FOR A READABLE EXPOSURE, NOT A DEGRADED SNAPSHOT (2026-10-27)', () => {
+    for (const plate of everyPlate()) {
+      expect(plate.prompt).toMatch(/exposed so .* read/i);
+      expect(plate.prompt).not.toMatch(
+        /motion blur|soft focus|smudged lens|crushed shadows/i,
+      );
+    }
+  });
+
+  it('⚠️ KEEPS THE SUBJECT INSIDE A CROP-SAFE MIDDLE (2026-10-27)', () => {
+    for (const plate of everyPlate()) {
+      expect(plate.prompt).toMatch(/middle two-thirds/i);
     }
   });
 });

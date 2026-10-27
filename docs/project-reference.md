@@ -1289,7 +1289,52 @@ as a Form XObject and pdf.js threw out of `paintFormXObjectBegin` on every
 render for an afternoon. **Still unproven** — never reproduced outside the
 running service.
 
+### Motivation purpose exhibits (the live AI images)
+
+One to two pages of photographs under heading 3: four plates at two to a page
+(`MAX_PLATES`), drawn once during **generation** by `MotivationPlatesService`
+and stored in `MotivationPlate` with the prompt that drew them. Hunting packs
+picture the quarry, sport packs the course of fire, self-defence packs the
+place, and a firearm that lawfully does both shows two of each. The composite
+quarry plate below is retired; this is the live image path.
+
+- ⚠️ **THE PROMPTS FOLLOW xAI'S IMAGINE GUIDE.** Subject first (what it is, its
+  form, what holds it, the setting), then details/count/where the eye enters,
+  art direction, light with a readable exposure, colour, lens/framing, the
+  snapshot treatment, and the exclusions last. `imageBrief()` in
+  `motivation-image-brief.ts` assembles that order for the species and scene
+  prompts; the course prompts use the same order through the shared tail
+  constants in `motivation-courses.ts`. Do not append a new "No ..." clause to
+  the subject paragraph.
+- ⚠️ **AUTHENTIC, NOT DEGRADED.** The 2026-10-25 brief wants unedited phone
+  snapshots, so the treatment keeps imperfect framing, ordinary light and
+  clutter. It deliberately does **not** ask for motion blur, soft focus,
+  crushed shadows or a dirty lens: the subject has to read in a document that
+  is signed and lodged.
+- ⚠️ **CROP-SAFE BY PROMPT.** Plates are requested at `21:9`
+  (`PLATE_REQUEST_RATIO`, the supported ratio closest to the 2:1 print slot)
+  and centre-cropped to 1800×900 at store time. Every prompt keeps the subject
+  inside the middle two-thirds, so the crop cannot cut its head or feet.
+- ⚠️ **VERSIONED.** `PLATES_PROMPT_VERSION` must be bumped whenever any wording
+  changes; a stored plate keeps the prompt and version that drew it. The
+  2026-10-27 brief is `2026-10-27a`. New/regenerated motivations use it;
+  existing packs keep their stored bytes until regenerated.
+- **Cost and preview.** One 2K/medium `grok-imagine-image-2.0` plate is $0.08,
+  so a four-plate pack is $0.32 and a regeneration pays again. Before shipping
+  a wording change, run `npm run motivation:plates:preview -- --draw` from
+  `backend/`: it builds the real prompts for the hunting, sport and
+  self-defence cases and writes raw + 2:1-cropped JPEGs to
+  `backend/tmp/plate-preview/`. Add `--limit 4` for a full pack, or
+  `--case hunt,sport,defence,both` for the mixed case. The script routes
+  through `LlmService` but uses a no-op ledger, so it does not touch member
+  spend.
+
 ### Quarry plates
+
+⚠️ **RETIRED 2026-10-15.** Nothing draws this any more; each quarry species now
+has its own exhibit under heading 3 (see “Motivation purpose exhibits” above).
+The text below records the old design and the `QuarryPlate` rows that still
+exist for packs generated before the change.
 
 A photorealistic line-up of the game a cartridge suits, across the foot of the
 feature page. One per motivation (~3.4 US cents), drawn during **generation**

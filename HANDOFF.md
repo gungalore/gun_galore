@@ -7,6 +7,37 @@ overwritten.
 
 Last updated: **2026-10-27**.
 
+## 2026-10-27 - MOTIVATION EXHIBIT PROMPTS REWRITTEN TO THE IMAGINE GUIDE
+
+**What changed.** The purpose exhibits now use a shared prompt builder
+(`motivation-image-brief.ts`) that follows xAI's Imagine order: subject first,
+then detail/angle, art direction, light with a readable exposure, colour,
+lens/framing, the snapshot treatment, and the exclusions last.
+
+- **Authentic but readable.** Kept the 2026-10-25 unedited-phone-snapshot look
+  (imperfect framing, ordinary light, clutter) but removed the demands for
+  motion blur, soft focus, crushed shadows and a smudged lens. Every prompt
+  keeps the subject inside the middle two-thirds so the 21:9 → 2:1 centre crop
+  cannot cut it.
+- **Scope.** Species, all six self-defence scenes and both fallbacks
+  (`motivation-plates.ts`), and the shared course-of-fire tail
+  (`motivation-courses.ts`). Quarry stays retired and untouched. Per-species
+  habitat overrides fix springhare/jackal/caracal/bushpig/nyala/hippo and the
+  dry-land birds, which were inheriting a waterhole or rocky outcrop.
+- **Version.** `PLATES_PROMPT_VERSION` → `2026-10-27a`. Existing stored plates
+  keep their old bytes; new/regenerated motivations use the new brief. One
+  four-plate pack still costs $0.32 (2K/medium, $0.08 a plate).
+- **Preview.** New `npm run motivation:plates:preview` from `backend/` builds
+  the real prompts for hunting, sport and self-defence (add `--draw` to spend
+  ~$0.48 on six 2K/medium plates, `--limit 4` for a full pack, `--case both`).
+  It routes through `LlmService` with a no-op ledger and writes raw + 2:1 JPEGs
+  to `backend/tmp/plate-preview/`.
+- **Gates.** `tsc --noEmit` clean; full backend suite 5,918 passed / 8 skipped
+  (1 suite skipped). The draw step was not run in this session because the
+  safety net blocked reading `backend/.env` to confirm `GROK_API_KEY`.
+  **Next:** run the preview draw, inspect the six images, then commit/deploy if
+  they are right.
+
 ## 2026-10-27 - SELLER FAILURE CHARGES: COST RECOVERY FROM THE NEXT PAYOUT
 
 Deployed `cd067374` (rollback `alloutdoor-20261027-130940.dump`, migration

@@ -3,6 +3,12 @@ import { QUARRY, quarriesFor, type QuarrySpecies } from './motivation-quarry';
 import { classifyCalibre } from './motivation-overlap';
 import { resolveSportingPurpose, weaponClass } from './motivation-purpose';
 import { coursesFor, type CourseSpec } from './motivation-courses';
+import {
+  SCENE_AVOID,
+  SNAPSHOT_TREATMENT,
+  SPECIES_AVOID,
+  imageBrief,
+} from './motivation-image-brief';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PURPOSE EXHIBITS — ONE TO TWO PAGES OF PICTURES UNDER HEADING 3.
@@ -31,7 +37,7 @@ import { coursesFor, type CourseSpec } from './motivation-courses';
 // reads "self-defence scenario" as violence. So the self-defence plates
 // picture the PLACE (a gate, a road, a corridor) and never a person, a firearm
 // or an act. The sport plates picture the COURSE OF FIRE — an empty range, no
-// shooter — and the caption explains the course. See the shared NEGATIVES and
+// shooter — and the caption explains the course. See SCENE_AVOID and
 // motivation-courses.ts.
 // ────────────────────────────────────────────────────────────────────
 
@@ -43,7 +49,7 @@ import { coursesFor, type CourseSpec } from './motivation-courses';
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-25a';
+export const PLATES_PROMPT_VERSION = '2026-10-27a';
 
 /** Which of the purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'sport' | 'both' | 'self_defence';
@@ -117,21 +123,15 @@ export function purposeFor(
 /**
  * The shared close of every prompt.
  *
- * ⚠️ AN UNEDITED PHONE SNAPSHOT, NOT A PHOTOGRAPH. Operator, 2026-10-25: the
- * exhibit pages must "look like unedited raw pictures taken to make it more
- * realistic and authentic". A polished stock photograph reads as something
- * supplied for the file; a slightly crooked, grainy, badly lit snapshot reads
- * as the applicant's own record of the place. The safety and no-overlay rules
- * are unchanged — the picture is still of a PLACE or an ANIMAL, never a person,
- * a firearm or an act, and it carries no text or mark of ours.
+ * ⚠️ THE ORDER IS THE IMAGE MODEL'S OWN GUIDE, NOT OUR PREFERENCE. The old
+ * tail led with "Amateur handheld phone snapshot" — a style instruction ahead
+ * of the subject — then asked for motion blur, soft focus, crushed shadows and
+ * a smudged lens. That is a picture the applicant's own record would not
+ * contain, and it makes the animal or the course harder to identify. The
+ * shared builder in motivation-image-brief.ts now holds the snapshot look,
+ * the readable exposure and the safety exclusions in the order xAI documents:
+ * subject, detail, art direction, light, colour, lens, treatment, exclusions.
  */
-const NEGATIVES = [
-  'Amateur handheld phone snapshot, unedited and straight out of camera, the kind of picture somebody takes quickly without composing it.',
-  'Imperfect framing: the subject sits slightly off-centre or is clipped at an edge, the horizon is a degree or two off level, and everyday clutter is left in frame.',
-  'Natural uneven lighting with blown highlights and crushed shadows, visible sensor noise in the dark areas, mild JPEG compression, a little motion blur or soft focus, and dust or a smudge on the lens.',
-  'No professional or studio lighting, no colour grading, no HDR, no deliberate shallow-depth-of-field effect, no posed composition, no text, no watermark, no logo, no overlay, no borders.',
-  'No people, no firearms, no weapons, no vehicles in motion.',
-].join(' ');
 
 // ── hunting ───────────────────────────────────────────────────────────
 
@@ -198,8 +198,16 @@ const CLASS_RATIONALE: Record<string, string> = {
     'shot pattern is what the shot depends on',
 };
 
-function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'plateIndex'> {
-  const habitat = HABITAT[species.klass] ?? HABITAT.plains_medium;
+/** Start a species subject with a capital, since the table stores it lower-case. */
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function speciesPlate(
+  species: QuarrySpecies,
+): Omit<PlateSpec, 'pageIndex' | 'plateIndex'> {
+  const habitat =
+    species.setting ?? HABITAT[species.klass] ?? HABITAT.plains_medium;
   const range = RANGE[species.klass] ?? RANGE.plains_medium;
   const label = CLASS_LABEL[species.klass] ?? CLASS_LABEL.plains_medium;
   const why = CLASS_RATIONALE[species.klass] ?? CLASS_RATIONALE.plains_medium;
@@ -209,16 +217,33 @@ function speciesPlate(species: QuarrySpecies): Omit<PlateSpec, 'pageIndex' | 'pl
       `${species.name} is ${label}, ${range}. The cartridge applied for is ` +
       `matched to this class of game, and this is why: ${why}. It is pictured ` +
       `in ${habitat}, the setting a licence for this purpose is intended for.`,
-    prompt:
-      `A quick handheld phone photo of ${species.subject} in ${habitat}, taken ` +
-      'by somebody who stopped a vehicle or paused on foot and snapped it before ' +
-      'the animal moved on. The animal is side-on but not perfectly centred, ' +
-      'partly obscured by grass, scrub or a fence post, with its head turned or ' +
-      'one leg lifted as it walks. Long grass and a few twigs sit in the ' +
-      'foreground, and a vehicle window frame, wing mirror or fence wire may ' +
-      'intrude at the edge of the frame. Harsh or flat natural daylight, heat ' +
-      'haze and dust in the air, the sky blown out in places, the animal a ' +
-      `little soft from distance and handheld shake. ${NEGATIVES}`,
+    prompt: imageBrief({
+      subject:
+        `${capitalise(species.subject)}, standing broadside in ${habitat}, ` +
+        'seen from eye level through a vehicle window',
+      detail:
+        'One animal, about a third of the frame wide, held inside the middle ' +
+        'two-thirds of the frame with clear space around it; the body, the ' +
+        'head and the eye are in focus, a few grass stems cross its lower ' +
+        'legs, and the animal is seen from eye level through a vehicle window',
+      art:
+        'Pale dry grass, the edge of a vehicle window frame or a strand of ' +
+        'fence wire at one edge, red-brown earth and a line of flat-topped ' +
+        'thorn trees far behind',
+      light:
+        'Warm low sun from behind the camera and to the left, hard enough to ' +
+        'rim the animal, with open shade holding detail on the near side, ' +
+        'exposed so the whole animal reads clearly against the grass',
+      colour:
+        "The animal's own natural colour against pale gold grass, a " +
+        'washed-out blue sky and red-brown earth',
+      lens:
+        "A phone's wide camera at eye level, the whole animal inside the " +
+        'frame with a little room at nose and tail, and the background ' +
+        'softly out of focus from distance rather than by a studio lens',
+      treatment: SNAPSHOT_TREATMENT,
+      avoid: SPECIES_AVOID,
+    }),
   };
 }
 
@@ -256,15 +281,37 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'On a rural property the nearest police station is many minutes away, ' +
       'and a fence line stretches further than a single person can watch. A ' +
       'resident is on their own for the whole of that response time.',
-    prompt:
-      'A hurried phone photo taken from beside a vehicle on a gravel farm track ' +
-      'at dusk: a galvanised steel farm gate and a long wire-and-post fence ' +
-      'running away across dry veld, the gate slightly off-centre and the ' +
-      'horizon a little crooked. Weathered timber strainer posts, red-brown ' +
-      'compacted gravel, dry highveld grass, a white-plastered farmhouse with ' +
-      'one lit porch far off, and a single harsh floodlight over the gate that ' +
-      'leaves the rest of the frame in deep shadow. Low light, grainy, a little ' +
-      `blurred at the edges, dust on the lens, the sky blown out near the horizon. ${NEGATIVES}`,
+    prompt: imageBrief({
+      subject:
+        'A closed galvanised steel farm gate and a long wire-and-post fence ' +
+        'running away across dry veld on a rural property at dusk, with a ' +
+        'white-plastered farmhouse far off and one floodlight over the gate',
+      detail:
+        'The gate sits a little left of centre inside the middle two-thirds ' +
+        'of the frame, with the fence line leading the eye away to the ' +
+        'right; weathered timber strainer posts, red-brown compacted gravel ' +
+        'and dry highveld grass are in focus, and the house is small in the ' +
+        'distance. The view is from beside a vehicle on the farm track, ' +
+        'standing at eye level about five metres from the gate',
+      art:
+        'Red-brown gravel, a white farmhouse, a row of fence posts and a ' +
+        'single steel gate; a jerrycan or a parked farm bakkie at the edge ' +
+        'of the frame',
+      light:
+        'The last daylight comes from behind the camera, with the floodlight ' +
+        'over the gate throwing one hard pool of light, exposed so the gate, ' +
+        'fence and grass read clearly and the shadows keep detail instead of ' +
+        'going black',
+      colour:
+        'Cool blue-grey dusk sky, warm cream plaster, galvanised grey steel, ' +
+        'red-brown gravel and dry ochre grass',
+      lens:
+        "A phone's main camera at eye level from the track, the gate and " +
+        'fence filling the frame, the farmhouse small and the background ' +
+        'softly out of focus',
+      treatment: SNAPSHOT_TREATMENT,
+      avoid: SCENE_AVOID,
+    }),
   },
   {
     when: (a) => /apartment|flat|communal|block/i.test(premisesOf(a)),
@@ -273,14 +320,34 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'A shared entrance and parking area is a door many people hold a key ' +
       'to, and a dim passage between a vehicle and a front door is where a ' +
       'resident is most exposed.',
-    prompt:
-      'A quick phone snap from the car park of a low-rise brick apartment block ' +
-      'at night: the communal palisade gate and the paved walkway leading to a ' +
-      'solid timber door, angled slightly up and off-centre, with a security ' +
-      'light glaring into the lens. Face-brick columns, numbered parking bays ' +
-      'under a corrugated-steel carport, a wheelie bin and a parked car at the ' +
-      'edge of the frame, paving that looks damp. Harsh pools of white light ' +
-      `and deep shadow, noise in the dark areas, a little smeared highlight. ${NEGATIVES}`,
+    prompt: imageBrief({
+      subject:
+        'A low-rise brick apartment block at night, with a communal palisade ' +
+        'gate, a paved walkway and a solid timber front door under a ' +
+        'security light',
+      detail:
+        'The gate and walkway sit inside the middle two-thirds of the frame, ' +
+        'with numbered parking bays and a corrugated-steel carport to the ' +
+        'left and a wheelie bin at the right edge; face-brick columns and ' +
+        'damp paving are in focus. The view is from the car park, standing ' +
+        'at eye level about 15 metres from the gate',
+      art:
+        'Face-brick red, charcoal palisade steel, damp grey paving, a parked ' +
+        'car and a wheelie bin; a downpipe runs down the wall',
+      light:
+        'A single hard white security light above the door, with the sky ' +
+        'still holding a little blue, exposed so the gate, walkway and door ' +
+        'read clearly and the shadows keep their shape',
+      colour:
+        'Warm face-brick red, cool grey paving, charcoal steel and a deep ' +
+        'blue night sky',
+      lens:
+        'A phone camera held at eye level, the gate and door filling the ' +
+        'middle of the frame, the carport clipped at one edge, the ' +
+        'background softly out of focus',
+      treatment: SNAPSHOT_TREATMENT,
+      avoid: SCENE_AVOID,
+    }),
   },
   {
     when: (a) =>
@@ -292,13 +359,35 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'A regular route through known high-crime precincts, often at the same ' +
       'hours each day, is a predictable and stationary exposure that no ' +
       'alarm or wall can cover.',
-    prompt:
-      'A phone photo taken from the pavement or through a windscreen at a busy ' +
-      'urban intersection in late afternoon: several lanes of stained tar, a red ' +
-      'traffic signal, plastered shopfronts with roller shutters, a few cars and ' +
-      'a minibus taxi waiting at the light at the edge of the frame, and the ' +
-      'corner of the dashboard or window pillar intruding. Low sun flaring ' +
-      `across the lens, uneven exposure, patchy road repairs, some motion blur. ${NEGATIVES}`,
+    prompt: imageBrief({
+      subject:
+        'A busy urban intersection in late afternoon, with several lanes of ' +
+        'stained tar, a red traffic signal, plastered shopfronts with roller ' +
+        'shutters and a minibus taxi waiting at the light',
+      detail:
+        'The traffic signal and the lanes ahead sit inside the middle ' +
+        'two-thirds of the frame, with the corner of a dashboard and the ' +
+        'window pillar intruding at the bottom and right; road repairs, ' +
+        'faded lane paint and the stopped taxi are in focus. The view is ' +
+        'from the driver’s seat through the windscreen, at eye level about ' +
+        'two car lengths back from the light',
+      art:
+        'Grey tar, a red signal, cream and faded green shopfronts, a yellow ' +
+        'minibus taxi; a plastic packet and a patch of weeds at the kerb',
+      light:
+        'Low sun ahead and to the left, flaring a little across the ' +
+        'windscreen, exposed so the signal, shopfronts and lane markings ' +
+        'read clearly',
+      colour:
+        'Warm late-afternoon sun, grey tar, a red signal and faded cream and ' +
+        'green shopfronts',
+      lens:
+        'A phone camera held at eye level behind the windscreen, the ' +
+        'intersection filling the frame, the dashboard corner intruding, ' +
+        'the background softly out of focus',
+      treatment: SNAPSHOT_TREATMENT,
+      avoid: SCENE_AVOID,
+    }),
   },
   {
     when: (a) =>
@@ -310,14 +399,34 @@ const SELF_DEFENCE_SCENES: readonly Scene[] = [
       'A vehicle stopped at an automated gate is stationary and boxed in, ' +
       'waiting for a gate to open or close — the moment at home when a ' +
       'resident is least able to move.',
-    prompt:
-      "A phone snap taken from the driver's seat of a car stopped at a closed " +
-      'sliding steel gate at dusk: the gate fills most of the frame, slightly ' +
-      'off-centre, with the top of the boundary wall clipped and the wing mirror ' +
-      'or A-pillar intruding at one edge. Charcoal powder-coated slats, a cream ' +
-      'plastered wall with electric-fence brackets, brick paving, a suburban ' +
-      'roof beyond, two harsh security lights flaring. Washed-out sky, grain in ' +
-      `the shadows, a touch of handheld blur. ${NEGATIVES}`,
+    prompt: imageBrief({
+      subject:
+        'A closed charcoal powder-coated sliding steel driveway gate in a ' +
+        'cream plastered boundary wall at dusk, with brick paving in front ' +
+        'and a suburban roof beyond',
+      detail:
+        'The gate fills the middle two-thirds of the frame, slightly left of ' +
+        'centre, with the top of the boundary wall and a gatepost clipped at ' +
+        'the edges; the slats, electric-fence brackets and brick paving are ' +
+        'in focus. The view is from the driver’s seat of a car stopped in ' +
+        'the driveway, at eye level about three metres back, with the wing ' +
+        'mirror intruding at the lower right',
+      art:
+        'Charcoal slats, cream plaster, red-brown brick paving, a wheelie ' +
+        'bin and a garden hose; two security lights above the wall',
+      light:
+        'Cool dusk sky behind the camera with two warm security lights above ' +
+        'the gate, exposed so the gate, wall and paving read clearly and the ' +
+        'shadows hold detail',
+      colour:
+        'Charcoal grey, warm cream, red-brown brick and a blue-grey dusk sky',
+      lens:
+        "A phone's main camera at eye level from the driver’s seat, the gate " +
+        'filling the frame, the wing mirror intruding, the background softly ' +
+        'out of focus',
+      treatment: SNAPSHOT_TREATMENT,
+      avoid: SCENE_AVOID,
+    }),
   },
 ];
 
@@ -333,13 +442,32 @@ const UNLIT_REGIONAL_ROAD: Scene = {
     'Regional routes between towns run through open veld with no lighting ' +
     'and long gaps between police stations. A breakdown or a forced stop ' +
     'there leaves a motorist entirely without help.',
-  prompt:
-    'A phone photo taken from the road shoulder or through a windscreen at ' +
-    'last light: a straight two-lane tar road running toward distant ' +
-    'flat-topped hills, the horizon off level and the road slightly ' +
-    'off-centre, a reflector post clipped at the edge. Weathered asphalt with ' +
-    'faded paint, a graded red-gravel verge, low karoo scrub, the sky blown ' +
-    `out and the foreground in shadow. Grain and a slight blur in low light. ${NEGATIVES}`,
+  prompt: imageBrief({
+    subject:
+      'A straight two-lane tar road running toward distant flat-topped hills ' +
+      'at last light, through open karoo scrub with no street lighting',
+    detail:
+      'The road runs from the bottom of the frame into the middle two-thirds, ' +
+      'slightly right of centre, with a reflector post clipped at the left ' +
+      'edge; weathered asphalt, faded paint and a graded red-gravel verge ' +
+      'are in focus. The view is from the road shoulder, standing at eye ' +
+      'level about a metre above the tar',
+    art:
+      'Grey asphalt, faded white paint, red gravel, low karoo scrub and a ' +
+      'single reflector post; a drift of sand across the verge',
+    light:
+      'The last warm light comes from low behind the camera and to the ' +
+      'right, with the sky still bright, exposed so the road surface, verge ' +
+      'and reflector post read clearly and the foreground holds detail',
+    colour:
+      'Warm ochre light, grey tar, red-brown gravel, olive scrub and a pale ' +
+      'sky',
+    lens:
+      'A phone camera at eye level, the road leading to the hills, the ' +
+      'foreground sharp and the hills softly hazed',
+    treatment: SNAPSHOT_TREATMENT,
+    avoid: SCENE_AVOID,
+  }),
 };
 
 const HOME_AT_NIGHT: Scene = {
@@ -348,13 +476,33 @@ const HOME_AT_NIGHT: Scene = {
     'A break-in at a home happens at night, when the occupants are asleep ' +
     'and the first alarm is the sound of an intruder already inside. ' +
     'Response times make the first minutes the occupant\u2019s own.',
-  prompt:
-    'A phone snap from the pavement outside a suburban house at night: the ' +
-    'front boundary wall, steel gate and lit windows, framed a little crooked ' +
-    'with the roof or a gatepost cut off. Cream plaster, a steel pedestrian ' +
-    'gate and burglar bars, a bright floodlight flaring over the garage, deep ' +
-    'shadows, a garden bin or hose lying in the foreground. Noise and smeared ' +
-    `highlights, the sky black and empty. ${NEGATIVES}`,
+  prompt: imageBrief({
+    subject:
+      'A suburban house at night behind a cream plastered boundary wall and ' +
+      'a steel pedestrian gate, with lit windows and a bright floodlight ' +
+      'over the garage',
+    detail:
+      'The wall, gate and lit windows fill the middle two-thirds of the ' +
+      'frame, slightly crooked, with the roof or a gatepost cut off at an ' +
+      'edge; the burglar bars, gate and garden are in focus. The view is ' +
+      'from the pavement, standing at eye level about four metres from the ' +
+      'gate',
+    art:
+      'Cream plaster, charcoal burglar bars, a steel gate, a garden bin and ' +
+      'a coiled hose; a bright floodlight above the garage',
+    light:
+      'A bright floodlight over the garage and warm light from the windows, ' +
+      'with the sky deep blue, exposed so the wall, gate and window frames ' +
+      'read clearly and the shadows hold their shape',
+    colour:
+      'Warm cream plaster, charcoal steel, green garden and a deep blue ' +
+      'night sky',
+    lens:
+      'A phone camera at eye level from the pavement, the house filling the ' +
+      'frame, the roof clipped, the background dark but readable',
+    treatment: SNAPSHOT_TREATMENT,
+    avoid: SCENE_AVOID,
+  }),
 };
 
 /**
@@ -525,7 +673,9 @@ function huntingSpecs(
         ? 'dangerous'
         : klass === 'rimfire'
           ? 'small'
-          : klass === 'varmint' || klass === 'medium_game' || klass === 'large_game'
+          : klass === 'varmint' ||
+              klass === 'medium_game' ||
+              klass === 'large_game'
             ? 'plains_medium'
             : klass === 'handgun'
               ? null

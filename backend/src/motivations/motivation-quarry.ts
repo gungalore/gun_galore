@@ -44,6 +44,16 @@ export interface QuarrySpecies {
    * species has no meaningful horn difference the plain noun is right.
    */
   subject: string;
+  /**
+   * The real setting this species is found in, when its class default would
+   * put it somewhere it does not live.
+   *
+   * ⚠️ A WATERHOLE IS NOT A GUINEAFOWL'S HABITAT. The class default was
+   * applied to every bird, so guineafowl and francolin — dry-land birds — were
+   * pictured at a reed-fringed waterhole. The class is still the fallback;
+   * this field is the correction.
+   */
+  setting?: string;
   /** Which of the wizard's classes this animal belongs to. */
   klass: GameClass;
   /**
@@ -85,31 +95,31 @@ export const QUARRY: readonly QuarrySpecies[] = [
   { key: 'black_wildebeest', name: 'Black wildebeest', subject: 'an adult black wildebeest bull', klass: 'plains_medium', aliases: ['black wildebeest'] },
   { key: 'red_hartebeest', name: 'Red hartebeest', subject: 'an adult red hartebeest bull', klass: 'plains_medium', aliases: ['hartebeest'] },
   { key: 'waterbuck', name: 'Waterbuck', subject: 'a mature waterbuck bull', klass: 'plains_medium' },
-  { key: 'nyala', name: 'Nyala', subject: 'a mature nyala bull', klass: 'plains_medium' },
+  { key: 'nyala', name: 'Nyala', subject: 'a mature nyala bull', klass: 'plains_medium', setting: 'dense riverine bush in the South African bushveld' },
   { key: 'zebra', name: 'Burchell’s zebra', subject: 'an adult Burchell’s plains zebra stallion', klass: 'plains_medium', aliases: ['burchell', 'plains zebra'] },
   { key: 'eland', name: 'Eland', subject: 'a mature eland bull', klass: 'plains_medium' },
   { key: 'sable', name: 'Sable', subject: 'a mature sable antelope bull', klass: 'plains_medium', aliases: ['sable antelope'] },
   { key: 'roan', name: 'Roan', subject: 'a mature roan antelope bull', klass: 'plains_medium', aliases: ['roan antelope'] },
   { key: 'tsessebe', name: 'Tsessebe', subject: 'an adult tsessebe', klass: 'plains_medium' },
-  { key: 'bushpig', name: 'Bushpig', subject: 'an adult bushpig boar', klass: 'plains_medium' },
+  { key: 'bushpig', name: 'Bushpig', subject: 'an adult bushpig boar', klass: 'plains_medium', setting: 'dense riverine thicket in the South African bushveld' },
 
   // ── dangerous game ───────────────────────────────────────────────
   { key: 'buffalo', name: 'Cape buffalo', subject: 'a mature Cape buffalo bull with a hard boss', klass: 'dangerous', aliases: ['cape buffalo'] },
   { key: 'elephant', name: 'Elephant', subject: 'a mature African elephant bull', klass: 'dangerous' },
   { key: 'lion', name: 'Lion', subject: 'a mature male lion', klass: 'dangerous' },
   { key: 'leopard', name: 'Leopard', subject: 'an adult leopard', klass: 'dangerous' },
-  { key: 'hippo', name: 'Hippopotamus', subject: 'an adult hippopotamus out of the water', klass: 'dangerous', aliases: ['hippopotamus'] },
+  { key: 'hippo', name: 'Hippopotamus', subject: 'an adult hippopotamus out of the water', klass: 'dangerous', setting: 'a muddy river bank in the South African bushveld', aliases: ['hippopotamus'] },
 
   // ── small game and varmints ──────────────────────────────────────
-  { key: 'jackal', name: 'Black-backed jackal', subject: 'an adult black-backed jackal', klass: 'small', aliases: ['black-backed jackal', 'black backed jackal'] },
-  { key: 'caracal', name: 'Caracal', subject: 'an adult caracal', klass: 'small', aliases: ['rooikat'] },
+  { key: 'jackal', name: 'Black-backed jackal', subject: 'an adult black-backed jackal', klass: 'small', setting: 'open grassland with scattered scrub in the South African bushveld', aliases: ['black-backed jackal', 'black backed jackal'] },
+  { key: 'caracal', name: 'Caracal', subject: 'an adult caracal', klass: 'small', setting: 'thick scrub and rocky hillside in the South African bushveld', aliases: ['rooikat'] },
   { key: 'dassie', name: 'Rock hyrax', subject: 'an adult rock hyrax (dassie) on rock', klass: 'small', aliases: ['rock hyrax', 'hyrax'] },
-  { key: 'springhare', name: 'Springhare', subject: 'an adult springhare', klass: 'small' },
+  { key: 'springhare', name: 'Springhare', subject: 'an adult springhare', klass: 'small', setting: 'open sandy grassland in the South African bushveld' },
   { key: 'baboon', name: 'Chacma baboon', subject: 'an adult chacma baboon', klass: 'small', aliases: ['chacma'] },
 
   // ── birds ────────────────────────────────────────────────────────
-  { key: 'guineafowl', name: 'Helmeted guineafowl', subject: 'an adult helmeted guineafowl', klass: 'wingshooting', aliases: ['helmeted guineafowl'] },
-  { key: 'francolin', name: 'Francolin', subject: 'an adult Natal francolin', klass: 'wingshooting', aliases: ['spurfowl'] },
+  { key: 'guineafowl', name: 'Helmeted guineafowl', subject: 'an adult helmeted guineafowl', klass: 'wingshooting', setting: 'dry grassland at the edge of thorn scrub in the South African bushveld', aliases: ['helmeted guineafowl'] },
+  { key: 'francolin', name: 'Francolin', subject: 'an adult Natal francolin', klass: 'wingshooting', setting: 'thorn scrub and dry grass in the South African bushveld', aliases: ['spurfowl'] },
   { key: 'sandgrouse', name: 'Sandgrouse', subject: 'an adult Namaqua sandgrouse', klass: 'wingshooting' },
   { key: 'yellowbill_duck', name: 'Yellow-billed duck', subject: 'an adult yellow-billed duck', klass: 'wingshooting', aliases: ['yellow-billed duck', 'yellowbill'] },
   { key: 'egyptian_goose', name: 'Egyptian goose', subject: 'an adult Egyptian goose', klass: 'wingshooting', aliases: ['egyptian goose', 'spurwing goose'] },

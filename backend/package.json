@@ -28,6 +28,7 @@
       "motivation:eval": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-eval.ts",
       "motivation:golden": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts",
       "motivation:golden:init": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts --init",
+    "motivation:plates:preview": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/preview-motivation-plates.ts",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
     "dealer-form:test": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/send-dealer-form-test.ts",
     "listings:backfill-locality": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/backfill-public-locality.ts",

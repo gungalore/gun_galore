@@ -29,29 +29,62 @@ import type { WeaponClass } from './motivation-plates';
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * The tail of every prompt.
+ * The shared tail of every course prompt.
  *
- * ⚠️ TAKEN OUT OF THE PICTURE, EVERY TIME. The operator's word was "take out
- * any humans and action", and a course picture is at its most useful when the
- * range is empty — a documentary photograph of the place the shooting happens,
- * not of somebody doing it.
+ * ⚠️ THE ORDER IS THE IMAGE MODEL'S GUIDE. Each entry below names the course
+ * and its targets first; this tail then adds where the eye enters, the art
+ * direction, the light, the colour, the lens, the snapshot treatment and only
+ * then the exclusions. It used to open with "Amateur handheld phone snapshot",
+ * which put the film stock ahead of the subject and buried the light and
+ * framing that make a range photograph readable.
+ *
+ * ⚠️ NO PEOPLE, NO ACTION, AND THAT IS A RULE, NOT A STYLE. An empty range
+ * between strings makes no claim about the applicant and cannot be read as
+ * "this is him shooting". The words carry the activity; the picture carries the
+ * place.
  */
-const EMPTY = [
-  'Amateur handheld phone snapshot of an empty course of fire, taken by a club',
-  'member standing behind the firing line, unedited and straight out of camera.',
-  'The stage is roughly in frame but the framing is imperfect: the shooting box',
-  'and painted fault lines in the foreground, barricades, props and steel targets',
-  'mid-ground, cardboard targets and the back berm downrange, with a corner of',
-  'the range shed, a water bottle, a range bag, a weed patch or a parked bakkie',
-  'intruding at the edge. Harsh or flat natural daylight, uneven exposure with a',
-  'blown sky and shadowed berms, visible grain, a little motion blur or soft',
-  'focus, dust in the air, worn paint, scuffed timber and patched, stained earth.',
-  'Scale and spacing between targets are roughly right but not textbook.',
-  'No professional lighting, no colour grading, no HDR, no text, no watermark,',
-  'no logo, no overlay, no borders. No people, no shooter, no hands, no',
-  'firearms, no muzzle, no muzzle flash, no motion or action, no vehicles in',
-  'motion.',
-].join(' ');
+const COURSE_ART =
+  'A range bag, a water bottle and a folded shooting mat sit at the edge of ' +
+  'the frame';
+
+const COURSE_LIGHT =
+  'Late afternoon sun from the left, hard on the berms with open shade ' +
+  'across the bay, exposed so the targets, painted lines and props read ' +
+  'clearly';
+
+const COURSE_COLOUR =
+  'Khaki sand or mown grass, red-brown earth, brown cardboard or paper ' +
+  'targets, white painted lines and dry grass under a pale blue sky';
+
+const COURSE_LENS =
+  "A phone's wide camera at eye level behind the firing line, the course " +
+  'filling the frame from the shooting box to the back berm, the background ' +
+  'softly out of focus from distance';
+
+const COURSE_TREATMENT =
+  'Snapshot framing, unedited and straight out of camera: the horizon a ' +
+  'degree or two off level, the stage slightly off-centre inside the middle ' +
+  'two-thirds of the frame, a weed patch or a parked bakkie at the edge, ' +
+  'mild grain and ordinary daylight';
+
+const COURSE_AVOID =
+  'No people, no shooter, no hands, no firearms, no weapons, no muzzle, no ' +
+  'muzzle flash, no motion or action and no vehicles in motion. No ' +
+  'professional studio lighting, no colour grading, no HDR, no text, no ' +
+  'watermark, no logo, no overlay and no borders';
+
+const EMPTY =
+  [
+    'The view is from behind the firing line at eye level, with the shooting ' +
+      'box in the foreground and the stage roughly in frame but imperfectly ' +
+      'composed',
+    COURSE_ART,
+    COURSE_LIGHT,
+    COURSE_COLOUR,
+    COURSE_LENS,
+    COURSE_TREATMENT,
+    COURSE_AVOID,
+  ].join('. ') + '.';
 
 export interface CourseSpec {
   /** Stable key. Never changes once a plate can be stored under it. */
@@ -264,7 +297,15 @@ const COURSES: readonly CourseSpec[] = [
     title: 'SA Hunters bolt-action exercises',
     classes: ['rifle'],
     action: 'manual',
-    match: ['hunters', 'bolt', '100 m', '200 m', '300 m', 'standing', 'sitting'],
+    match: [
+      'hunters',
+      'bolt',
+      '100 m',
+      '200 m',
+      '300 m',
+      'standing',
+      'sitting',
+    ],
     description:
       'The SA Hunters (SA Jagters) hunting-rifle exercises are shot from the ' +
       'field positions the body sets out — standing, sitting off sticks and ' +
@@ -284,7 +325,13 @@ const COURSES: readonly CourseSpec[] = [
     title: 'Fullbore / Precision Long-Range',
     classes: ['rifle'],
     action: 'manual',
-    match: ['fullbore', 'full-bore', 'long-range', 'long range', 'target rifle'],
+    match: [
+      'fullbore',
+      'full-bore',
+      'long-range',
+      'long range',
+      'target rifle',
+    ],
     description:
       'Fullbore and precision long-range shooting is prone at long, fixed ' +
       'distances: the shooter lies on a mat behind a sling-supported or ' +
