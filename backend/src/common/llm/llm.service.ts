@@ -123,6 +123,11 @@ const DOCUMENT_PURPOSES: ReadonlySet<string> = new Set([
   'motivation.transcribe',
   'motivation.source.face',
   'motivation.evidence.classify',
+  // The dealer stock-in reader: the stamp (name, CIPC number, address,
+  // contact, SAPS licence) and the SAPS 350(a). Operator, 2026-10-27: "use
+  // gemini 3.1 flash lite as OCR" — both are transcription, not judgement.
+  'dealer.stamp.ocr',
+  'dealer.saps350.ocr',
 ]);
 
 function isDocumentPurpose(purpose: string): boolean {

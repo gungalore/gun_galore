@@ -68,7 +68,7 @@ export default function DealerPortalPage() {
   const [serial, setSerial] = useState('');
   const [dealerName, setDealerName] = useState('');
   const [stamp, setStamp] = useState<File | null>(null);
-  const [saps534, setSaps534] = useState<File | null>(null);
+  const [saps350, setSaps350] = useState<File | null>(null);
   const [ack, setAck] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<
@@ -127,7 +127,7 @@ export default function DealerPortalPage() {
       form.set('dealerName', dealerName);
       form.set('acknowledgement', ack ? 'true' : 'false');
       if (stamp) form.set('stamp', stamp);
-      if (saps534) form.set('saps534', saps534);
+      if (saps350) form.set('saps350', saps350);
       const res = await fetch(`${API_URL}/dealer-portal/${token}`, {
         method: 'POST',
         body: form,
@@ -257,27 +257,29 @@ export default function DealerPortalPage() {
         />
       </label>
 
-      {summary.requiresIdentity && (
-        <label className="block mb-3">
-          <span style={labelStyle}>
-            Dealer stamp (must show your business name and SAPS number)
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-            onChange={(e) => setStamp(e.target.files?.[0] ?? null)}
-            className="block w-full text-sm"
-            style={{ color: 'var(--text-secondary)' }}
-          />
-        </label>
-      )}
+      <label className="block mb-3">
+        <span style={labelStyle}>
+          Dealer stamp — must show your business name, company registration
+          number, address, contact number and SAPS dealer licence number
+        </span>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          onChange={(e) => setStamp(e.target.files?.[0] ?? null)}
+          className="block w-full text-sm"
+          style={{ color: 'var(--text-secondary)' }}
+        />
+      </label>
 
       <label className="block mb-3">
-        <span style={labelStyle}>SAPS 534 transfer form (optional here)</span>
+        <span style={labelStyle}>
+          SAPS 350(a) — Dealer&rsquo;s Return: Stock Received, filled in with
+          this firearm&rsquo;s make, model, calibre and serial number
+        </span>
         <input
           type="file"
           accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
-          onChange={(e) => setSaps534(e.target.files?.[0] ?? null)}
+          onChange={(e) => setSaps350(e.target.files?.[0] ?? null)}
           className="block w-full text-sm"
           style={{ color: 'var(--text-secondary)' }}
         />
@@ -313,7 +315,8 @@ export default function DealerPortalPage() {
           isPreview ||
           !ack ||
           !serial.trim() ||
-          (summary.requiresIdentity && !stamp)
+          !stamp ||
+          !saps350
         }
         className="w-full py-3 rounded-[8px] text-sm"
         style={{

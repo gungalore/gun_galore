@@ -104,6 +104,58 @@ export function normaliseLicence(raw: string | null | undefined): string | null 
 }
 
 /**
+ * Canonical CIPC company-registration number, or null when the string is not
+ * one. CIPC prints `YYYY/NNNNNN/NN` (close corporations also prefix `CK`), and
+ * a stamp may write it with dashes, spaces or no separators at all.
+ *
+ * ⚠️ THIS IS THE KEY WE SEND TO THE REGISTRY, so it must be the registered
+ * form and nothing else. A number that does not parse is returned as null
+ * rather than passed through — Didit would bill a lookup for garbage and the
+ * dealer would be told their stamp is wrong when it is our parser that is.
+ */
+export function normaliseRegistrationNumber(
+  raw: string | null | undefined,
+): string | null {
+  const c = clean(raw);
+  if (!c) return null;
+  const compact = c
+    .toUpperCase()
+    .replace(/^CK\s*/, '')
+    .replace(/[^0-9]/g, '');
+  const m = /^(\d{4})(\d{4,9})(\d{2})$/.exec(compact);
+  if (!m) return null;
+  const year = Number(m[1]);
+  if (year < 1900 || year > 2099) return null;
+  return `${m[1]}/${m[2]}/${m[3]}`;
+}
+
+/**
+ * The registration number as it appears anywhere in a page of OCR text, in the
+ * canonical form, or null. Deliberately anchored on the printed separators so
+ * a serial number or a phone number cannot be mistaken for it.
+ */
+export function findRegistrationNumber(
+  text: string | null | undefined,
+): string | null {
+  if (typeof text !== 'string' || !text) return null;
+  const m = /(?:CK\s*)?(\d{4})\s*[/\-.]\s*(\d{4,9})\s*[/\-.]\s*(\d{2})(?!\d)/i.exec(
+    text,
+  );
+  return m ? normaliseRegistrationNumber(`${m[1]}/${m[2]}/${m[3]}`) : null;
+}
+
+/** Do two registration-number strings name the same registration? */
+export function registrationNumbersMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const left = normaliseRegistrationNumber(a);
+  const right = normaliseRegistrationNumber(b);
+  if (!left || !right) return false;
+  return left === right;
+}
+
+/**
  * Build the directory entry from the verification findings + the seller-typed
  * stocked-at details. The seller-typed name/address/phone are preferred for
  * the structured fields (human-typed at upload, always present, more reliable

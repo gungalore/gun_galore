@@ -1484,6 +1484,11 @@ model Dealer {
   name          String
   licenceNumber String    @unique
   address       String
+  // CIPC company registration number (YYYY/NNNNNN/NN), read off the dealer
+  // stamp. Nullable because a curated row may predate the stamp check and an
+  // admin fills it during review. It is NOT unique: the same company can hold
+  // more than one SAPS dealer licence at different premises.
+  regNumber     String?
   // Address components are nullable so an AUTO_VERIFICATION entry (harvested
   // from an approved firearm dealer-transfer, which may only carry a raw OCR
   // address) can be stored. Curated MANUAL entries keep all four — the admin
@@ -1546,6 +1551,10 @@ model DealerPortalRequest {
   expiresAt       DateTime
   stampPhotoUrl   String?
   saps534PhotoUrl String?
+  // The SAPS 350(a) "Dealer's Return: Stock Received" the dealer submits with
+  // the stamp. It is the document the stock-in rests on: Section B must show
+  // this firearm's make, model, calibre and serial.
+  saps350PhotoUrl String?
   form            Json?
   aiFindings      Json?
   aiConfidence    Float?

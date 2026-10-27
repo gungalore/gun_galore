@@ -6,6 +6,7 @@ import {
   DiditDecision,
   DiditError,
   DiditMediaResult,
+  DiditRegistryLookup,
   DiditSessionImageKind,
 } from './didit.types';
 
@@ -239,6 +240,115 @@ export class DiditService implements OnModuleInit {
   }
 
   /**
+   * SOUTH AFRICA — COMPANY REGISTRY (CIPC).
+   *
+   * Given the registration number read off a dealer stamp, ask Didit to
+   * resolve it against CIPC and tell us whether the company name we hold
+   * belongs to it. This is the one check a stamp cannot fake: OCR proves what
+   * is printed, the registry proves the number and the name are the same
+   * business.
+   *
+   * ⚠️ MULTIPART, NOT JSON, AND THAT IS DIDIT'S DOCUMENTED SHAPE for this
+   * endpoint (`curl ... -F "issuing_state=ZAF"`). The generic `call` helper
+   * JSON-encodes, so this method carries its own request.
+   *
+   * ⚠️ NEVER THROWS. A dealer verification must survive a Didit outage: the
+   * caller reads `reason` and routes to a human. Treating an outage as a
+   * mismatch would reject an honest dealer, and treating it as a pass would
+   * approve an unverified one.
+   */
+  async validateCompanyRegistry(input: {
+    registrationNumber: string;
+    companyName?: string | null;
+    timeoutMs?: number;
+  }): Promise<DiditRegistryLookup> {
+    if (!this.apiKey) {
+      return registryMiss('not_configured');
+    }
+
+    const form = new FormData();
+    form.set('issuing_state', 'ZAF');
+    form.set('services', 'zaf_company_registry');
+    form.set('company_registration_number', input.registrationNumber);
+    if (input.companyName?.trim()) {
+      form.set('company_name', input.companyName.trim());
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/v3/database-validation/`, {
+        method: 'POST',
+        headers: { 'x-api-key': this.apiKey },
+        body: form,
+        signal: AbortSignal.timeout(input.timeoutMs ?? 20_000),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Didit registry lookup could not reach the API: ${(err as Error).message}`,
+      );
+      return registryMiss('unavailable');
+    }
+
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      json = { detail: text.slice(0, 300) };
+    }
+
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 401) {
+        this.logger.warn(
+          `Didit registry lookup rejected the API key (HTTP ${res.status}).`,
+        );
+        return registryMiss('not_configured');
+      }
+      this.logger.warn(
+        `Didit registry lookup failed (HTTP ${res.status}): ${
+          (json as { detail?: string }).detail ?? `HTTP ${res.status}`
+        }`,
+      );
+      return registryMiss('unavailable');
+    }
+
+    const matchType =
+      typeof json.match_type === 'string' ? json.match_type : null;
+    const status = typeof json.status === 'string' ? json.status : null;
+    const source = (json.source_data ?? {}) as Record<string, unknown>;
+    const companyName = firstString(
+      source.company_name,
+      source.business_name,
+      source.name,
+      (json as Record<string, unknown>).company_name,
+    );
+    const registrationNumber = firstString(
+      source.registration_number,
+      source.company_registration_number,
+      input.registrationNumber,
+    );
+
+    // ⚠️ A PARTIAL MATCH STILL COUNTS. CIPC's legal name regularly carries the
+    // "(Pty) Ltd" / trading-style differences the stamp omits, and Didit calls
+    // that `partial_match` only after resolving the NUMBER — which is what we
+    // asked. `no_match` and a missing verdict do not count.
+    const matched =
+      matchType === 'full_match' ||
+      matchType === 'exact_match' ||
+      matchType === 'partial_match';
+
+    return {
+      ok: matched,
+      matchType,
+      status,
+      companyName,
+      registrationNumber,
+      reason: matched ? null : matchType ? 'declined' : 'unavailable',
+      raw: json,
+    };
+  }
+
+  /**
    * Fetch one of a member's verification images, fresh, from Didit.
    *
    * ⚠️ THIS IS A VIEW, NOT A STORE, AND THE DIFFERENCE IS LOAD-BEARING. We
@@ -413,6 +523,28 @@ function pickSessionImageUrl(
   for (const id of decision.id_verifications ?? []) {
     const url = id?.full_front_image ?? id?.front_image;
     if (url) return url;
+  }
+  return null;
+}
+
+/** A lookup that produced no verdict, with the reason it did not. */
+function registryMiss(
+  reason: 'not_configured' | 'unavailable',
+): DiditRegistryLookup {
+  return {
+    ok: false,
+    matchType: null,
+    status: null,
+    companyName: null,
+    registrationNumber: null,
+    reason,
+  };
+}
+
+/** First non-empty string among the candidate fields Didit may use. */
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
 }

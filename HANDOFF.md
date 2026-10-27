@@ -5,7 +5,62 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-26**.
+Last updated: **2026-10-27**.
+
+## 2026-10-27 - DEALER STOCK-IN: STAMP + SAPS 350(a), CIPC AND JEV 70%
+
+Operator, 2026-10-27: *"We can only mark the firearm stocked once the dealer
+filled in the form we sent them and also attached their dealer stamp, and the
+350 form filled in with the correct firearm details"*, *"Jev needs 70% upwards
+on all fields to pass the dealer"*, and *"use gemini 3.1 flash lite as OCR"*.
+
+**The pipeline is now Gemini reads → Jev judges → Didit proves.** One service,
+`DealerStampVerificationService`, is shared by BOTH surfaces (the dealer portal
+and the seller's SAPS 534 upload):
+
+- **OCR** (`gemini-3.1-flash-lite`, new purposes `dealer.stamp.ocr` and
+  `dealer.saps350.ocr` added to `DOCUMENT_PURPOSES`): the stamp is read into a
+  small JSON envelope (verbatim text plus name / CIPC number / address /
+  contact / licence) so the directory row is built from what the page PRINTS,
+  not from a model's opinion. The 350(a) is transcribed verbatim.
+- **Jev** (`dealer.stamp.verify`, one batched call) returns a probability per
+  field: dealer name, registration number, address, contact number, SAPS
+  licence, then the stock document's serial / make+model / calibre / dealer
+  named / signed. **Every field must be ≥ 70%**; a missing answer scores zero.
+- **Didit** (`DiditService.validateCompanyRegistry`) asks the CIPC registry
+  (`/v3/database-validation/`, `issuing_state=ZAF`, `services=zaf_company_registry`,
+  multipart as Didit documents it) whether the registration number belongs to
+  the business we hold. `full_match` and `partial_match` pass; `no_match` is a
+  mismatch; an outage is `unavailable`.
+- **Three outcomes, not two.** All fields + CIPC → `APPROVED` (stocked, payout
+  gate opens). A mismatch → `REJECTED` **and the seller is emailed the exact
+  fields that failed** (`dealerVerificationRejected` gained `issues`). An outage
+  → `PENDING_ADMIN_REVIEW`. An outage can never approve and a mismatch can never
+  read as "we could not check".
+
+**The portal now demands both documents.** `saps350` is a required multipart
+field (`saps534` still accepted as the legacy alias), the stamp is required for
+every dealer — trusted or not — and the auto-approve fast path is gone. The
+dealer invitation email and the seller's verification tips were rewritten to
+name the 350(a) and the five stamp fields.
+
+**Schema:** `Dealer.regNumber` (the CIPC number, nullable, not unique — one
+company can hold several licences) and `DealerPortalRequest.saps350PhotoUrl`.
+Migration `20261027120000_dealer_stamp_saps350`. The auto-registration hook now
+stores the stamp's registration number on the directory row.
+
+**Know.** `getByToken` still returns `requiresIdentity`; the page no longer
+branches on it (the stamp is always required) and the field is kept only so an
+open client build does not break. A deployment without `JEV_API_KEY` or a Didit
+key routes every dealer check to a human, by design.
+
+**Firefox/Didit console:** the Playwright MCP now launches with a persistent
+profile (`--user-data-dir C:\Users\gerha\AppData\Local\opencode-playwright-firefox`,
+`~/.config/opencode/opencode.json`, backup `.bak-playwright-profile-20261027`).
+Restart opencode, sign in once at business.didit.me, and the session survives.
+
+**Verification:** backend tsc clean, 382 suites / 5,871 tests; frontend tsc
+clean, 158 files / 1,815 tests; frontend production build OK.
 
 ## 2026-10-26 - MO000100 PACK REVIEW: LAYOUT, 5.2 FALLBACK, 271 GAPS (DEPLOYED)
 

@@ -141,6 +141,32 @@ export interface DiditOtpResult {
   [key: string]: unknown;
 }
 
+/**
+ * The answer to one company-registry validation (`zaf_company_registry`).
+ *
+ * ⚠️ `ok` IS THE ONLY THING A CALLER MAY GATE ON, and it is false for a
+ * mismatch AND for "we never got an answer". `reason` is what tells those two
+ * apart: a `declined` lookup is evidence against the dealer, while
+ * `not_configured` / `unavailable` is evidence of nothing and must not be
+ * allowed to read as a rejection.
+ */
+export interface DiditRegistryLookup {
+  /** Didit resolved the number and the name it holds matches. */
+  ok: boolean;
+  /** Didit's own field verdict, e.g. full_match / partial_match / no_match. */
+  matchType: string | null;
+  /** Didit's session status, e.g. Approved / Declined / In Review. */
+  status: string | null;
+  /** The legal name the registry has for that number, when Didit returns it. */
+  companyName: string | null;
+  /** The registration number the registry has, normalised by Didit. */
+  registrationNumber: string | null;
+  /** Why there is no verdict. Null when Didit answered. */
+  reason: 'not_configured' | 'unavailable' | 'declined' | null;
+  /** The raw payload, kept for the admin dossier. */
+  raw?: unknown;
+}
+
 export type DiditErrorCode =
   | 'not_configured'
   | 'rate_limited'

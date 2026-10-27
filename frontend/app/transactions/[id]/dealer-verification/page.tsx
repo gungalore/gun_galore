@@ -39,7 +39,8 @@ const SLOTS: SlotConfig[] = [
     what: "The completed SAP 534 (Transfer of Firearm Ownership) form, stamped by the dealer. Upload a clear photo or a PDF scan.",
     tips: [
       'BLOCK LETTERS only — cursive or mixed-case slows the process down.',
-      'The dealer stamp OR a clear signature + printed dealer name must be visible.',
+      'The dealer stamp must show the business name, company registration number, address, contact number and SAPS dealer licence number.',
+      'The firearm details in Section D (make, model, calibre, serial) must match the listing.',
       'A PDF scan of the stamped form works too — or a clear photo.',
       'Capture the full page edge-to-edge with all fields readable.',
     ],

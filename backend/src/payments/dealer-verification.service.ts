@@ -9,6 +9,10 @@ import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { extractDealerFromVerification } from './dealer-registry.util';
+import {
+  DealerStampVerificationService,
+  type DealerStampVerification,
+} from './dealer-stamp-verification.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 /**
@@ -107,6 +111,11 @@ export interface DealerVerificationFindings {
   // Cross-photo coherence: does the serial number appear consistently
   // across SAPS 534, register entry, and the firearm photo?
   serial_consistency_across_photos: number;
+  /**
+   * The dealer stamp + firearm-details battery run on the returned 534.
+   * Optional because an older row's persisted findings predate it.
+   */
+  dealerStamp?: DealerStampVerification;
   overall_confidence: number;           // weighted average, 0..100
   recommendation: 'APPROVE' | 'ADMIN_REVIEW' | 'REJECT';
   recommendation_reason: string;
@@ -142,6 +151,10 @@ export class DealerVerificationService {
     // one, and `isConfigured()` is false when it is absent, which routes to a
     // human exactly as a missing key did.
     private readonly llm?: LlmService,
+    // The dealer stamp + SAPS 350(a) / 534 Section D battery. Optional so the
+    // registry spec can construct this service without a model; a missing one
+    // downgrades an approval to a human, never upgrades anything.
+    private readonly stampVerification?: DealerStampVerificationService,
   ) {
     if (!this.llm?.isConfigured()) {
       this.logger.warn(
@@ -367,6 +380,52 @@ export class DealerVerificationService {
         status = 'PENDING_ADMIN_REVIEW';
         scanUnavailable = true;
       }
+
+      // ── The dealer's stamp, read off the returned 534 ──────────────
+      // ⚠️ ONLY EVER DOWNGRADES. The vision rubric above already decided the
+      // status; this battery can take an APPROVED away when the stamp cannot
+      // be tied to the named business (five fields at 70% + CIPC), but it can
+      // never grant one — it has not seen the register line or the serial
+      // photograph.
+      if (findings && this.stampVerification) {
+        try {
+          const stampPart: LlmPart = saps534IsPdf
+            ? {
+                type: 'document',
+                mimeType: 'application/pdf',
+                data: files.saps534.buffer.toString('base64'),
+              }
+            : await this.inlineFromUrl(saps534Upload.url);
+          const stampCheck = await this.stampVerification.verify({
+            // The 534 carries BOTH: the inked dealer stamp and Section D's
+            // firearm details, so one page answers both halves.
+            stamp: stampPart,
+            stockForm: stampPart,
+            expected: {
+              name: stockedAtDealer.name,
+              address: stockedAtDealer.address,
+              phone: stockedAtDealer.phone,
+              licenceNumber: '',
+              make: tx.listing.make,
+              model: tx.listing.model,
+              calibre: tx.listing.calibre,
+              serialNumber: expectedSerial,
+            },
+          });
+          findings.dealerStamp = stampCheck;
+          if (!stampCheck.pass) {
+            status = stampCheck.unavailable
+              ? 'PENDING_ADMIN_REVIEW'
+              : 'REJECTED';
+          }
+        } catch (err) {
+          // A failure to even read the page is our problem, not the seller's.
+          this.logger.warn(
+            `Dealer stamp battery could not run for ${transactionId}: ${(err as Error).message}`,
+          );
+          status = 'PENDING_ADMIN_REVIEW';
+        }
+      }
     }
 
     await this.prisma.transaction.update({
@@ -412,6 +471,7 @@ export class DealerVerificationService {
         transactionId,
         'REJECTED',
         findings?.recommendation_reason,
+        findings?.dealerStamp?.issues,
       );
     } else if (status === 'PENDING_ADMIN_REVIEW') {
       // FLOW-F4 (H17) — a firearm verification lands here whenever the review
@@ -751,6 +811,8 @@ export class DealerVerificationService {
           extracted_dealer_city?: string | null;
           extracted_dealer_province?: string | null;
         };
+        // The stamp battery's own read of the CIPC number; newer rows only.
+        dealerStamp?: { extracted?: { registrationNumber?: string | null } };
       } | null;
 
       const extracted = extractDealerFromVerification({
@@ -825,6 +887,9 @@ export class DealerVerificationService {
           city: extracted.city,
           province: extracted.province,
           phone: extracted.phone,
+          // The CIPC number the stamp printed, kept so the registry row can be
+          // cross-checked without re-reading the 534. Null on older findings.
+          regNumber: findings?.dealerStamp?.extracted?.registrationNumber ?? null,
           source: 'AUTO_VERIFICATION',
           isVerified: false,
           isActive: false,
@@ -868,6 +933,7 @@ export class DealerVerificationService {
     transactionId: string,
     outcome: 'APPROVED' | 'REJECTED',
     reason?: string,
+    issues?: string[],
   ): Promise<void> {
     try {
       const tx = await this.prisma.transaction.findUnique({
@@ -898,6 +964,7 @@ export class DealerVerificationService {
           listingTitle: tx.listing.title,
           transactionId,
           reason,
+          issues,
         });
       }
     } catch (err) {

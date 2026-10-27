@@ -5,6 +5,7 @@ import { DispatchSlaService } from './dispatch-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
 import { DealerPortalService } from './dealer-portal.service';
 import { DealerPortalController } from './dealer-portal.controller';
+import { DealerStampVerificationService } from './dealer-stamp-verification.service';
 import { ReceiptService } from './receipt.service';
 import { RemittanceService } from './remittance.service';
 import { FraudRiskService } from './fraud-risk.service';
@@ -29,6 +30,9 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     DispatchSlaService,
     DealerVerificationService,
     DealerPortalService,
+    // The stamp + SAPS 350(a) battery, shared by the dealer portal and the
+    // seller-side verification page.
+    DealerStampVerificationService,
     ReceiptService,
     RemittanceService,
     FraudRiskService,

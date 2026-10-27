@@ -347,3 +347,96 @@ describe('DiditService.fetchSessionImage', () => {
     });
   });
 });
+
+describe('DiditService.validateCompanyRegistry', () => {
+  const realFetch = global.fetch;
+  let fetchMock: jest.Mock;
+  let service: DiditService;
+
+  function reply(status: number, body: unknown) {
+    fetchMock.mockResolvedValueOnce({
+      ok: status < 400,
+      status,
+      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+      headers: { get: () => 'application/json' },
+    } as unknown as Response);
+  }
+
+  beforeEach(() => {
+    process.env.DIDIT_API_KEY = 'test-key';
+    delete process.env.NODE_ENV;
+    fetchMock = jest.fn();
+    (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    service = new DiditService();
+  });
+
+  afterEach(() => {
+    (global as unknown as { fetch: unknown }).fetch = realFetch;
+    delete process.env.DIDIT_API_KEY;
+  });
+
+  it('⚠️ asks CIPC with the registration number and the name we hold', async () => {
+    reply(200, {
+      status: 'Approved',
+      match_type: 'full_match',
+      source_data: { company_name: 'BOOMSTICKS CAPE TOWN (PTY) LTD', registration_number: '2019/139703/07' },
+    });
+
+    const out = await service.validateCompanyRegistry({
+      registrationNumber: '2019/139703/07',
+      companyName: 'Boomsticks Cape Town',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://verification.didit.me/v3/database-validation/');
+    expect(init.method).toBe('POST');
+    expect(init.headers['x-api-key']).toBe('test-key');
+    // Multipart, exactly as Didit documents it — not a JSON body.
+    const form = init.body as FormData;
+    expect(form.get('issuing_state')).toBe('ZAF');
+    expect(form.get('services')).toBe('zaf_company_registry');
+    expect(form.get('company_registration_number')).toBe('2019/139703/07');
+    expect(form.get('company_name')).toBe('Boomsticks Cape Town');
+    expect(out).toMatchObject({
+      ok: true,
+      matchType: 'full_match',
+      companyName: 'BOOMSTICKS CAPE TOWN (PTY) LTD',
+      reason: null,
+    });
+  });
+
+  it('treats a partial match as matched (Pty Ltd / trading-style differences)', async () => {
+    reply(200, { status: 'Approved', match_type: 'partial_match', source_data: {} });
+    const out = await service.validateCompanyRegistry({ registrationNumber: '2019/139703/07' });
+    expect(out.ok).toBe(true);
+  });
+
+  it('⚠️ a no_match is a declined verdict, not an outage', async () => {
+    reply(200, { status: 'Declined', match_type: 'no_match', source_data: {} });
+    const out = await service.validateCompanyRegistry({ registrationNumber: '2019/139703/07' });
+    expect(out).toMatchObject({ ok: false, reason: 'declined', matchType: 'no_match' });
+  });
+
+  it('never throws: a 5xx is "unavailable", a bad key is "not_configured"', async () => {
+    reply(503, { detail: 'down' });
+    expect(await service.validateCompanyRegistry({ registrationNumber: '2019/139703/07' })).toMatchObject({
+      ok: false,
+      reason: 'unavailable',
+    });
+
+    reply(403, { detail: 'invalid key' });
+    expect(await service.validateCompanyRegistry({ registrationNumber: '2019/139703/07' })).toMatchObject({
+      ok: false,
+      reason: 'not_configured',
+    });
+  });
+
+  it('is inert without a key rather than spending a request', async () => {
+    delete process.env.DIDIT_API_KEY;
+    const out = await new DiditService().validateCompanyRegistry({
+      registrationNumber: '2019/139703/07',
+    });
+    expect(out.reason).toBe('not_configured');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

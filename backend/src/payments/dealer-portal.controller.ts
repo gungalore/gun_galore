@@ -37,6 +37,9 @@ export class DealerPortalController {
     FileFieldsInterceptor(
       [
         { name: 'stamp', maxCount: 1 },
+        // The SAPS 350(a) is the stock proof; `saps534` is the pre-350 field
+        // name, still accepted so an open tab from the old form can finish.
+        { name: 'saps350', maxCount: 1 },
         { name: 'saps534', maxCount: 1 },
       ],
       { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
@@ -47,6 +50,7 @@ export class DealerPortalController {
     @UploadedFiles()
     files: {
       stamp?: Express.Multer.File[];
+      saps350?: Express.Multer.File[];
       saps534?: Express.Multer.File[];
     },
     @Body()
@@ -57,17 +61,17 @@ export class DealerPortalController {
     },
   ) {
     const stamp = files?.stamp?.[0];
-    const saps534 = files?.saps534?.[0];
+    const saps350 = files?.saps350?.[0] ?? files?.saps534?.[0];
     if (stamp && !PHOTO_RE.test(stamp.mimetype)) {
       throw new BadRequestException(
         'Upload the dealer stamp as a JPEG, PNG, WebP or HEIC photo.',
       );
     }
-    if (saps534 && !DOC_RE.test(saps534.mimetype)) {
+    if (saps350 && !DOC_RE.test(saps350.mimetype)) {
       throw new BadRequestException(
-        'Upload the SAP 534 as a PDF or a JPEG/PNG/WebP/HEIC photo.',
+        'Upload the SAPS 350(a) as a PDF or a JPEG/PNG/WebP/HEIC photo.',
       );
     }
-    return this.portal.submit(token, { stamp, saps534 }, body);
+    return this.portal.submit(token, { stamp, saps350 }, body);
   }
 }

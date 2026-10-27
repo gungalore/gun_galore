@@ -1636,7 +1636,8 @@ export class NotificationsService {
       headline: 'Confirm the firearm is stocked with you',
       body:
         `Hi ${b(d.dealerName)}, ${b(d.listingTitle)} has sold through ALL Outdoor and the seller has nominated you as the stocking dealer. ` +
-        `Open the secure link to upload a photo of your <strong>dealer stamp showing your business name and SAPS number</strong>, confirm the firearm details and acknowledge that the firearm is in your stock.`,
+        `Open the secure link to upload <strong>your dealer stamp</strong> (business name, company registration number, address, contact number and SAPS dealer licence number) and the completed <strong>SAPS 350(a) &ldquo;Dealer&rsquo;s Return: Stock Received&rdquo;</strong> for this firearm. ` +
+        `The firearm can only be marked as stocked with you once both have passed our check.`,
       rows: [
         { label: 'Firearm', value: d.listingTitle },
         { label: 'Serial', value: d.serial || '—' },
@@ -1758,8 +1759,15 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
     reason?: string;
+    /**
+     * One sentence per field that failed the dealer stamp / SAPS 350(a)
+     * check. The seller cannot fix what we do not name, and the dealer is the
+     * one who has to correct the paperwork.
+     */
+    issues?: string[];
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}/dealer-verification`;
+    const issues = (d.issues ?? []).filter((i) => i && i.trim());
     // In-app inbox: action-required — seller must reshoot photos.
     // Cleared when DealerVerificationService transitions the verification
     // to APPROVED → resolveByEntity('transaction', txId).
@@ -1777,10 +1785,15 @@ export class NotificationsService {
     const reasonLine = d.reason
       ? `<p style="margin: 8px 0;"><b>Admin note:</b> ${d.reason}</p>`
       : '';
+    const issuesBlock = issues.length
+      ? `<p style="margin: 12px 0 4px;"><b>What did not match:</b></p><ul style="margin: 0 0 8px; padding-left: 18px;">${issues
+          .map((issue) => `<li>${issue}</li>`)
+          .join('')}</ul>`
+      : '';
     const html = this.email({
       status: { tone: 'pending', label: 'Reshoot needed' },
       headline: 'Dealer verification — please reshoot',
-      body: `Hi ${b(d.sellerName)}, our verification check couldn't approve the photos for ${b(d.listingTitle)}. Please retake the photos and upload again. ${reasonLine}<p style="margin-top: 10px;"><b>Most common cause:</b> the SAPS 534 form was not filled in BLOCK LETTERS. Ask the dealer to redo the form in capital letters — our automated check cannot reliably read cursive or mixed-case handwriting and that means up to 48 hours of human review before your payout.</p>`,
+      body: `Hi ${b(d.sellerName)}, our verification check couldn't approve the dealer paperwork for ${b(d.listingTitle)}.${reasonLine}${issuesBlock}<p style="margin-top: 10px;">Ask the dealer to correct the item(s) above and upload the dealer stamp and the completed <b>SAPS 350(a)</b> ("Dealer's Return: Stock Received") again. The firearm cannot be marked as stocked — and your payout cannot be released — until the stamp and the 350(a) both pass.</p>`,
       cta: { label: 'Upload photos again', url: txUrl },
       preheader: 'Reshoot dealer photos',
     });

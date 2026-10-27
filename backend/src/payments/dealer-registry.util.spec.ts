@@ -4,6 +4,9 @@ import {
   normaliseLicence,
   canonicaliseLicence,
   extractDealerFromVerification,
+  normaliseRegistrationNumber,
+  findRegistrationNumber,
+  registrationNumbersMatch,
 } from './dealer-registry.util';
 
 describe('canonicaliseLicence', () => {
@@ -110,5 +113,50 @@ describe('extractDealerFromVerification', () => {
     expect(out.licenceNumber).toBeNull();
     expect(out.name).toBe('Unnamed dealer');
     expect(out.address).toBe('');
+  });
+});
+
+describe('normaliseRegistrationNumber', () => {
+  it('canonicalises every way a CIPC number is printed', () => {
+    expect(normaliseRegistrationNumber('2019/139703/07')).toBe('2019/139703/07');
+    expect(normaliseRegistrationNumber('2019-139703-07')).toBe('2019/139703/07');
+    expect(normaliseRegistrationNumber('2019 139703 07')).toBe('2019/139703/07');
+    expect(normaliseRegistrationNumber('201913970307')).toBe('2019/139703/07');
+    expect(normaliseRegistrationNumber('CK 2019/139703/07')).toBe('2019/139703/07');
+    expect(normaliseRegistrationNumber('Reg No: 2019/139703/07')).toBe('2019/139703/07');
+  });
+
+  it('rejects anything that is not a registration number', () => {
+    expect(normaliseRegistrationNumber('')).toBeNull();
+    expect(normaliseRegistrationNumber(null)).toBeNull();
+    expect(normaliseRegistrationNumber('061 583 0442')).toBeNull();
+    expect(normaliseRegistrationNumber('101091')).toBeNull();
+    expect(normaliseRegistrationNumber('1899/123456/07')).toBeNull();
+  });
+});
+
+describe('findRegistrationNumber', () => {
+  it('finds the number inside a page of stamp text', () => {
+    const text = [
+      'BOOMSTICKS CAPE TOWN (PTY) LTD',
+      'Reg No: 2019/139703/07',
+      '73 HARRINGTON STR, CAPE TOWN, 8001',
+      'Contact: 061 583 0442 / 021 0200620',
+      'Dealer Licence: 101091',
+    ].join('\n');
+    expect(findRegistrationNumber(text)).toBe('2019/139703/07');
+  });
+
+  it('does not mistake a phone number or a licence number for it', () => {
+    expect(findRegistrationNumber('Contact: 061 583 0442')).toBeNull();
+    expect(findRegistrationNumber('Dealer Licence: 101091')).toBeNull();
+  });
+});
+
+describe('registrationNumbersMatch', () => {
+  it('matches across separators but not across businesses', () => {
+    expect(registrationNumbersMatch('2019/139703/07', '201913970307')).toBe(true);
+    expect(registrationNumbersMatch('2019/139703/07', '2019/139704/07')).toBe(false);
+    expect(registrationNumbersMatch(null, '2019/139703/07')).toBe(false);
   });
 });
