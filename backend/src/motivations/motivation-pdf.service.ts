@@ -2356,7 +2356,37 @@ export class MotivationPdfService {
         ).size +
         ((input.evidencePages?.length ?? 0) > 0 ? 1 : 0) +
         (input.batteryHeading ? 0 : 1);
-      const contentsPages = Math.max(1, Math.ceil(estimatedEntries / 24));
+      /**
+       * ⚠️ THE DIVISOR IS MEASURED, NOT REMEMBERED, AND 24 WAS WRONG.
+       *
+       * A contents page holds about thirty entries at the drawing loop's own
+       * metrics (px(13.5) * 1.15 + mm(3) per line, from bodyTop to
+       * BODY_BOTTOM - mm(12)). Dividing by 24 therefore reserved a second sheet
+       * for any pack of 25 to 30 entries — and the drawing loop then found it
+       * had room for all of them on the first, left the reserved sheet
+       * untouched, and produced a COMPLETELY BLANK PAGE between the contents and
+       * the Introduction. MO000102 printed exactly that at page 3 and had every
+       * later page number one higher than it needed to be.
+       *
+       * ⚠️ THE ESTIMATE ABOVE STAYS. Counting the entries up front is right;
+       * only the divide was wrong. The capacity is computed from the same two
+       * constants the drawing loop uses, so the reservation and the drawing can
+       * never drift apart again — and it is floored, so a pack at the boundary
+       * loses nothing and reserves nothing it will not fill.
+       */
+      const tocEntryH = K.px(13.5) * 1.15 + K.mm(3);
+      doc.font(F.sans).fontSize(K.px(22));
+      const tocTitleH = doc.heightOfString('CONTENTS', { width: contentWidth });
+      const tocStartY =
+        bodyTop + (K.px(8.5) * 1.2 + K.mm(3)) + tocTitleH + K.mm(3) + K.mm(7);
+      const tocCapacity = Math.max(
+        1,
+        Math.floor((K.BODY_BOTTOM - K.mm(12) - tocStartY) / tocEntryH),
+      );
+      const contentsPages = Math.max(
+        1,
+        Math.ceil(estimatedEntries / tocCapacity),
+      );
       for (let page = 1; page < contentsPages; page++) {
         doc.addPage();
         tocPageIndexes.push(doc.bufferedPageRange().count - 1);
@@ -2521,7 +2551,70 @@ export class MotivationPdfService {
       crimeDrawn = true;
 
       for (const t of input.precinctTables ?? []) {
+        const tw = contentWidth - K.SECTION_INDENT;
+        const cols = [
+          { head: 'Category', w: Math.round(tw * 0.44) },
+          { head: 'Latest quarter', w: Math.round(tw * 0.32) },
+          { head: 'Trend', w: 0 },
+        ];
+        cols[2].w = tw - cols[0].w - cols[1].w;
+
+        /**
+         * One row's height, measured exactly as the drawing loop measures it.
+         *
+         * ⚠️ EXTRACTED SO THE KEEP-TOGETHER TEST AND THE DRAW CANNOT DISAGREE.
+         * Two copies of this arithmetic is how the test starts passing while
+         * the table still splits.
+         */
+        const rowHeight = (r: {
+          category: string;
+          latest: string;
+          trend: string;
+        }): number => {
+          doc.font(F.sans).fontSize(BODY_TABLE.bodySize);
+          return (
+            BODY_TABLE.cellPadY +
+            Math.max(
+              ...[r.category, r.latest, r.trend].map((v, i) =>
+                doc.heightOfString(v || '—', {
+                  width: cols[i].w - BODY_TABLE.cellPadX * 2,
+                }),
+              ),
+            ) +
+            BODY_TABLE.cellPadY
+          );
+        };
+
+        /**
+         * ⚠️ THE TABLE MOVES WHOLE, OR NOT AT ALL.
+         *
+         * A per-row break is correct for a table taller than a page, and wrong
+         * for one that simply started too low: MO000102 put five rows at the
+         * foot of the exposure page and the remaining four on a sheet of their
+         * own, above eighty per cent white space, because the row-by-row guard
+         * was the only rule there was. A reviewer reads that as a table that
+         * ran out of paper.
+         *
+         * So: if the whole thing does not fit where we are but would fit on a
+         * fresh page, start it there. If it is taller than a page even then,
+         * the per-row break below still applies and the head repeats.
+         */
+        doc.font(F.sansBold).fontSize(K.px(11));
+        const stationH = doc.heightOfString(t.station, { width: tw }) + 1;
+        doc.font(B.bodyItalic).fontSize(8.5);
+        const sourceH = doc.heightOfString(t.source, { width: tw }) + 5;
+        const tableNeed =
+          stationH +
+          sourceH +
+          BODY_TABLE.headBandH +
+          t.rows.reduce((sum, r) => sum + rowHeight(r), 0);
+        const pageRoom = K.BODY_BOTTOM - bodyTop;
+
         if (doc.y > K.BODY_BOTTOM - 90) doc.addPage();
+        else if (doc.y + tableNeed > K.BODY_BOTTOM && tableNeed <= pageRoom) {
+          doc.addPage();
+        }
+
         doc
           .font(F.sansBold)
           .fontSize(K.px(11))
@@ -2539,14 +2632,6 @@ export class MotivationPdfService {
           });
         doc.y += 5;
 
-        const tw = contentWidth - K.SECTION_INDENT;
-        const cols = [
-          { head: 'Category', w: Math.round(tw * 0.44) },
-          { head: 'Latest quarter', w: Math.round(tw * 0.32) },
-          { head: 'Trend', w: 0 },
-        ];
-        cols[2].w = tw - cols[0].w - cols[1].w;
-
         const drawPrecinctHead = (continued: boolean) =>
           tableHead(
             chrome,
@@ -2562,17 +2647,7 @@ export class MotivationPdfService {
           // wrapped cell cross the page boundary and split mid-row, which reads
           // as a broken table. Measure the tallest cell and page-break before
           // the row if it will not fit, redrawing the head on the new sheet.
-          doc.font(F.sans).fontSize(BODY_TABLE.bodySize);
-          const rowNeed =
-            BODY_TABLE.cellPadY +
-            Math.max(
-              ...[r.category, r.latest, r.trend].map((v, i) =>
-                doc.heightOfString(v || '—', {
-                  width: cols[i].w - BODY_TABLE.cellPadX * 2,
-                }),
-              ),
-            ) +
-            BODY_TABLE.cellPadY;
+          const rowNeed = rowHeight(r);
           if (doc.y + rowNeed > K.BODY_BOTTOM) {
             doc.addPage();
             drawPrecinctHead(true);
@@ -2962,7 +3037,16 @@ export class MotivationPdfService {
         // 'Make and model' is the flexible column — it takes the slack the
         // others leave, so the model name has room rather than Expires.
         { head: 'Make and model', w: 0, key: 'make' },
-        { head: 'Type', w: 44, key: 'type' },
+        /**
+         * ⚠️ 54, NOT 44, AND ONE WORD IS WHY. "Handgun" measures about 34.5 pt
+         * in this cell's face at 8.5 pt, and the cell carries 10 pt of padding
+         * — so a 44 pt column left 34 pt for a 34.5 pt word and pdfkit broke
+         * the word itself: "Handgu" on one line and "n" on the next, on the
+         * battery of every pack whose applicant holds a handgun. The extra 10 pt
+         * comes off 'Make and model', which takes the remainder and has a 96 pt
+         * floor.
+         */
+        { head: 'Type', w: 54, key: 'type' },
         { head: 'Calibre', w: 68, key: 'calibre' },
         { head: 'Serial', w: 74, key: 'serial' },
         /**

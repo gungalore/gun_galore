@@ -559,6 +559,65 @@ describe('the annexure index', () => {
     expect(pages[n - 1]).toMatch(/Annexure A/);
   });
 
+  it('⚠️ NEVER LEAVES A BLANK SHEET BEHIND THE CONTENTS', async () => {
+    /**
+     * MO000102, 2026-10-27: page 2 carried the whole contents — twenty-six
+     * entries and the gap note — page 3 was completely blank, and the
+     * Introduction opened on page 4 with every later page number one higher
+     * than it needed to be.
+     *
+     * The reservation divided the entry estimate by 24, but a contents page
+     * holds about thirty at this file's own metrics. Any pack of 25 to 30
+     * entries therefore claimed a continuation sheet the drawing loop never
+     * used, and the claimed sheet printed empty.
+     *
+     * Twenty-six headings plus the battery fallback line is twenty-seven
+     * entries — inside that window, and past the old divisor.
+     */
+    const body = Array.from(
+      { length: 26 },
+      (_, i) => `${i + 1}. Section ${i + 1}:\n\nA paragraph of the case.`,
+    ).join('\n\n');
+    const { pdf } = await svc.render(makeInput(body));
+
+    const raw = (await readPdfAsync(pdf)).text;
+    const total = Number(/-- \d+ of (\d+) --/.exec(raw)?.[1]);
+    const pages = await pageTexts(pdf);
+    expect(total).toBeGreaterThan(0);
+    // pageTexts drops empty sheets, so a blank page shows up as a shortfall.
+    expect(pages).toHaveLength(total);
+
+    // And the first body page is sheet 3, not 4. Both the heading and the
+    // footer are letter-spaced, so compare without the spaces.
+    expect(squash(pages[2])).toContain('SECTION1');
+    expect(squash(pages[2])).toContain('PAGE3OF');
+  });
+
+  it('⚠️ prints "Handgun" whole in the battery, never "Handgu n"', async () => {
+    // The Type column was 44 pt: 34 pt of usable width for a 34.5 pt word, so
+    // pdfkit broke the word itself on every applicant who holds a handgun.
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      ownedFirearms: [
+        {
+          make: 'GLOCK 19',
+          calibre: '9mm Parabellum (9x19mm)',
+          serial: 'ZABA01892',
+          expiry: '19/08/2035',
+          type: 'Handgun',
+          section: 'Section 16',
+          status: '',
+        },
+      ],
+    });
+    const pages = await pageTexts(pdf);
+    // The table, not the contents line that names its heading.
+    const battery = pages.find((p) => /ZABA01892/.test(p));
+    expect(battery).toBeDefined();
+    expect(flat(battery!)).toContain('Handgun');
+    expect(flat(battery!)).not.toMatch(/Handgu\s+n\b/);
+  });
+
   it('opens each annexure with a heading on the content page, no divider', async () => {
     // ⚠️ OPERATOR, 2026-10-15: the one-page divider is gone. The "Annexure A"
     // heading is drawn on the same sheet as the copies — asserted by finding

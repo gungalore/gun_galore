@@ -431,6 +431,7 @@ describe('how it speaks', () => {
 
 import { overlapFromAnswers } from './motivation-overlap';
 
+const S14 = MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE;
 const S15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
 const S16 = MotivationLicenceType.S16_DEDICATED_HUNTER;
 
@@ -560,6 +561,62 @@ describe('overlapFromAnswers', () => {
       existing_firearm_1_section_held: 'section_16',
     });
     expect(r.needsJustification).toBe(true);
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // THE SAME FIREARM, UNDER A NEW SECTION.
+  //
+  // The section filter correctly drops a section 16 rifle from a section 14
+  // application — but when that row has the SAME SERIAL as the firearm on the
+  // form, it is not a duplicate being dismissed, it is the applicant's own
+  // firearm being re-licensed. Nothing used to say so, so the motivation read
+  // as a first acquisition while the DFO held the licence copy (MO000102).
+  // ────────────────────────────────────────────────────────────────
+
+  it('⚠️ SAYS THE FIREARM APPLIED FOR IS ONE THEY ALREADY HOLD', () => {
+    const r = overlapFromAnswers(S14, {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.223 Remington',
+      firearm_serial: 'ZA2226548',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '.223 Remington',
+      existing_firearm_1_serial: 'ZA 2226548',
+      existing_firearm_1_section_held: 'section_16',
+    });
+    // Not an overlap to argue — but not silence either.
+    expect(r.needsJustification).toBe(false);
+    expect(r.verdict.kind).toBe('clear');
+    expect(r.writerNote).toMatch(/ALREADY LICENSED/);
+    expect(r.writerNote).toMatch(/section 16/);
+    expect(r.writerNote).toMatch(/NOT a second firearm/);
+  });
+
+  it('does not cry "already licensed" over a different serial', () => {
+    const r = overlapFromAnswers(S14, {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.223 Remington',
+      firearm_serial: 'ZA2226548',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '.223 Remington',
+      existing_firearm_1_serial: 'ZA9999999',
+      existing_firearm_1_section_held: 'section_16',
+    });
+    expect(r.writerNote).toBeNull();
+  });
+
+  it('⚠️ is silent on a renewal, where the same firearm is the application', () => {
+    // The renewed firearm is spliced out before this check; if its index cannot
+    // be found the note must still not fire, or a renewal argues with itself.
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.223 Remington',
+      firearm_serial: 'ZA2226548',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '.223 Remington',
+      existing_firearm_1_serial: 'ZA2226548',
+      existing_firearm_1_section_held: 'section_16',
+    });
+    expect(r.writerNote).toBeNull();
   });
 
   it('counts only the competing rows, not every firearm held', () => {

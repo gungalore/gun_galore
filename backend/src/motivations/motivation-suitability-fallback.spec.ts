@@ -101,6 +101,26 @@ describe('purposeFallback', () => {
     // The "carried on the person" line is the strongest sentence for a handgun
     // and false for a shotgun, which section 13 also admits.
     expect(text).not.toMatch(/carry on my person/);
-    expect(text).toMatch(/kept at hand at the place the risk occurs/);
+    expect(text).toMatch(/kept at hand where that risk occurs/);
+    // ⚠️ A GAUGE IS NOT A DISTANCE ARGUMENT. The rifle half once applied to
+    // every long gun and told a section 14 applicant their rifle was "too long
+    // to work in a doorway".
+    expect(text).not.toMatch(/at distances a handgun cannot be used/);
+  });
+
+  it('⚠️ argues the RIFLE by the ground outside the house, not against itself', () => {
+    const text = all({
+      purposeKind: 'self_defence',
+      purposeNotes: NOTES,
+      suitabilityLabel: 'Why .223 Remington suits this purpose',
+      firearmLine: 'Nordiske Precision .223 Remington, serial ZA2226548',
+    });
+    // The reason for a rifle in a section 14 application is the distance and
+    // the open ground, and the page has to say so.
+    expect(text).toMatch(/open ground/);
+    expect(text).toMatch(/at distances a handgun cannot be used at/);
+    // ⚠️ THIS SENTENCE ARGUED AGAINST THE APPLICANT'S OWN FIREARM.
+    expect(text).not.toMatch(/too long to work in a doorway/);
+    expect(text).not.toMatch(/at the short distance at which those encounters/);
   });
 });

@@ -1279,6 +1279,21 @@ function primaryUseFromCards(raw: string): { keys: string[]; sentences: string[]
   return { keys, sentences };
 }
 
+/**
+ * A serial, compared the way a DFO compares one: case and spacing are noise.
+ *
+ * ⚠️ AND A CARD THAT SAYS "NONE" HAS NO SERIAL. Two blanks are not a match, and
+ * neither is "NONE" against "NONE" — a placeholder is the card saying there is
+ * nothing there, not a number two firearms share.
+ */
+function serialKey(raw: string | undefined): string {
+  const key = (raw ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!key) return '';
+  return ['NONE', 'NA', 'NIL', 'UNKNOWN', 'NOTAPPLICABLE'].includes(key)
+    ? ''
+    : key;
+}
+
 function ownedRows(answers: Record<string, string>): OwnedRow[] {
   const rows: OwnedRow[] = [];
   for (let n = 1; n <= OWNED_ROWS; n++) {
@@ -1471,6 +1486,51 @@ export function overlapFromAnswers(
    * its note. A renewal has already removed the firearm being renewed from
    * `rows`; what is left is a genuine second holding.
    */
+  /**
+   * ⚠️ THE SAME FIREARM IS NOT A DUPLICATE — BUT IT MUST STILL BE SAID OUT LOUD.
+   *
+   * The section filter below drops every held firearm whose own licence was
+   * granted under a different section, and that is right: a section 16 rifle is
+   * not licensed for the purpose a section 14 application is for, so it is not
+   * a competing firearm. What the filter also drops is the one case where the
+   * row IS the firearm on the form — the same serial, being licensed under a new
+   * section. Nothing then tells the writer it exists, so the motivation reads as
+   * a first acquisition of a rifle the applicant has held for years, while the
+   * DFO is looking at both on the register and at the licence copy in the
+   * annexures (MO000102, 2026-10-27).
+   *
+   * ⚠️ MATCHED ON THE SERIAL AND NOTHING ELSE. A serial identifies a firearm;
+   * a calibre and a type identify a class. Two .223 rifles are two firearms and
+   * belong in the overlap argument; one .223 rifle is this.
+   *
+   * ⚠️ AND NOT ON A RENEWAL, where the same serial is the point of the
+   * application and there is nothing to explain.
+   */
+  if (licenceType !== MotivationLicenceType.S24_RENEWAL) {
+    const appliedSerial = serialKey(answers.firearm_serial);
+    const sameFirearm = appliedSerial
+      ? rows.find((r) => serialKey(r.serial) === appliedSerial)
+      : undefined;
+    if (sameFirearm) {
+      const held = classifyHeldSection(sameFirearm.held.section);
+      const under = held ? ` under ${HELD_SECTION_LABELS[held]}` : '';
+      return {
+        verdict: { kind: 'clear' },
+        needsJustification: false,
+        prompt: null,
+        writerNote: [
+          `The firearm applied for — serial ${sameFirearm.serial} — is ALREADY LICENSED to the applicant${under},`,
+          'and it is in <applicant-facts> as one of the firearms they hold.',
+          'This is NOT a second firearm and NOT a duplication: it is the same firearm, being licensed for the purpose this application is for.',
+          'Say that plainly, in one sentence, where the firearm is introduced — name the section it is licensed under now and the section applied for —',
+          'and cite the copy of that licence in the annexures.',
+          'Do not argue it as a competing firearm, and do not write about it as a purchase.',
+        ].join(' '),
+        suggestedAngle: null,
+      };
+    }
+  }
+
   const applied = sectionAppliedFor(licenceType);
   const competing = applied
     ? rows.filter((r) => classifyHeldSection(r.held.section) === applied)

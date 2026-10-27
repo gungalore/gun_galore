@@ -74,25 +74,56 @@ export function purposeFallback(input: SuitabilityFallbackInput): string[] {
      * handgun or a non-semi-automatic shotgun; "a handgun can be carried on the
      * person" is the strongest sentence for one and false for the other.
      */
-    const carries = /handgun|pistol|revolver/i.test(input.firearmLine ?? '');
+    /**
+     * ⚠️ THREE CLASSES, NOT TWO, AND THE THIRD ONE IS WHY THIS IS NOT A BOOLEAN.
+     *
+     * `carries` was the only test, so a shotgun and a rifle took the same
+     * branch — and the branch argued "it is used at the short distance at which
+     * those encounters happen" followed by "a firearm that is too long to work
+     * in a doorway is not available". On a section 14 rifle application that is
+     * the document arguing against the firearm it is recommending (MO000102,
+     * 2026-10-27). A shotgun genuinely is the close-quarters long gun; a rifle
+     * in a self-defence application is there for the ground OUTSIDE the house,
+     * and the two need different sentences.
+     *
+     * ⚠️ MATCHED OFF THE NAME THE SHEET ALREADY CARRIES. `firearmLine` is
+     * "Make Calibre, serial X" — no type field on this input — and a gauge is
+     * unmistakable in a cartridge name. Anything that is neither a handgun nor
+     * a gauge is treated as a rifle, which is the only remaining class a
+     * private applicant may license.
+     */
+    const line = input.firearmLine ?? '';
+    const carries = /handgun|pistol|revolver/i.test(line);
+    const smoothbore =
+      /\d+\s*(?:gauge|ga|bore)\b|\.410\b/i.test(line) ||
+      /\d+\s*(?:gauge|ga|bore)\b|\.410\b/i.test(calibre);
     return [
       exhibits,
-      '- Each of those is a sudden encounter at close quarters in which I am alone and cannot withdraw — at a vehicle door, a gate, a passage or inside my home.',
+      carries || smoothbore
+        ? '- Each of those is a sudden encounter at close quarters in which I am alone and cannot withdraw — at a vehicle door, a gate, a passage or inside my home.'
+        : '- Each of those is an encounter in which I am alone and cannot withdraw — at the perimeter of the property, on the road, at the gate, or at the house after dark.',
       carries
         ? `- The firearm applied for is a handgun in ${calibre}. A handgun is the class of firearm I can carry on my person through the working day and bring into use in the confined space where those encounters happen.`
-        : `- The firearm applied for is chambered in ${calibre}. It is the class of firearm kept at hand at the place the risk occurs, and it is used at the short distance at which those encounters happen.`,
+        : smoothbore
+          ? `- The firearm applied for is a shotgun in ${calibre}. A shotgun is the firearm for the doorway, the passage and the yard at the range where those encounters happen, and it is kept at hand where they occur.`
+          : `- The firearm applied for is chambered in ${calibre}. The places these encounters happen are open ground — the perimeter, the road and the gate — where the threat is seen from further out and has to be answered before it reaches the house, at distances a handgun cannot be used at with any confidence.`,
       ...(carries
         ? [
             '- A rifle or a shotgun cannot be carried on my person during my work and cannot be brought to bear in a vehicle, a doorway or a passage. It does not meet this purpose, however capable it is at distance.',
           ]
-        : [
-            '- A firearm that has to be fetched from another room, or that is too long to work in a doorway, is not available at the moment the risk is on me.',
+        : smoothbore
+          ? [
+            '- It is kept at hand where that risk occurs, on the same property, so it is available in the minutes those encounters are measured in rather than locked away somewhere else.',
+          ]
+          : [
+            '- That distance is the reason for the class of firearm: the firearm has to match the ground the risk occurs on, and a handgun is for the room and the doorway, not for the perimeter and the road.',
+            '- It is kept at hand where that risk occurs, on the same property, so it is available in the minutes those encounters are measured in rather than locked away somewhere else.',
           ]),
       `- The calibre is the round the firearm is chambered for. I have chosen the firearm and calibre together for the use described: a combination I can keep secure and bring into use at the moment the need arises.`,
       '- The firearm has to be kept ready without being a hazard to the people I live with. That is a question of how it is stored and handled, and the storage section answers it.',
       '- Practice is what makes the firearm usable under pressure, so the choice is also the one I will actually shoot: a firearm I can afford to practise with regularly is worth more in the moment than one I cannot.',
       '- I do not ask for it to be carried anywhere the Act does not allow, and I do not ask to use it except where it is safe to use and for a lawful purpose.',
-      '- The choice is therefore the fit between the risk described above, the space it happens in, and the firearm I can keep and use lawfully — not a preference for a particular model.',
+      '- The choice is therefore the fit between the risk described above, the ground and space it happens in, and the firearm I can keep and use lawfully — not a preference for a particular model.',
     ].filter(Boolean);
   }
 
