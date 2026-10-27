@@ -7,7 +7,11 @@ overwritten.
 
 Last updated: **2026-10-27**.
 
-## 2026-10-27 - MOTIVATION EXHIBIT PROMPTS REWRITTEN TO THE IMAGINE GUIDE
+## 2026-10-27 - MOTIVATION EXHIBIT PROMPTS REWRITTEN TO THE IMAGINE GUIDE (BACKEND DEPLOY)
+
+Deployed `15485b2f` (rollback `alloutdoor-20261027-215114.dump`, 35,630,056
+bytes; no pending migrations; health ×2 OK; public 200 ×2; `alloutdoor-backend`,
+`alloutdoor-frontend` and `warden` online).
 
 **What changed.** The purpose exhibits now use a shared prompt builder
 (`motivation-image-brief.ts`) that follows xAI's Imagine order: subject first,
@@ -32,11 +36,15 @@ lens/framing, the snapshot treatment, and the exclusions last.
   ~$0.48 on six 2K/medium plates, `--limit 4` for a full pack, `--case both`).
   It routes through `LlmService` with a no-op ledger and writes raw + 2:1 JPEGs
   to `backend/tmp/plate-preview/`.
-- **Gates.** `tsc --noEmit` clean; full backend suite 5,918 passed / 8 skipped
-  (1 suite skipped). The draw step was not run in this session because the
-  safety net blocked reading `backend/.env` to confirm `GROK_API_KEY`.
-  **Next:** run the preview draw, inspect the six images, then commit/deploy if
-  they are right.
+- **Gates.** Backend and frontend `tsc` clean; backend 5,918 passed / 8 skipped
+  (1 suite skipped); frontend 1,815 passed / 1 skipped; foreground frontend
+  production build clean. **The paid draw was not run**: the safety net blocked
+  reading `backend/.env` to confirm `GROK_API_KEY`, so the six preview images
+  have not been inspected yet.
+- **Next:** run `npm run motivation:plates:preview -- --draw` from `backend/`,
+  inspect the raw and cropped images, and adjust the wording only if the
+  subjects are wrong. Regenerating a motivation is what puts the new brief in
+  front of a member; existing packs keep their stored plates.
 
 ## 2026-10-27 - SELLER FAILURE CHARGES: COST RECOVERY FROM THE NEXT PAYOUT
 
