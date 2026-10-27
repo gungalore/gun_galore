@@ -54,6 +54,16 @@ branches on it (the stamp is always required) and the field is kept only so an
 open client build does not break. A deployment without `JEV_API_KEY` or a Didit
 key routes every dealer check to a human, by design.
 
+**⚠️ DIDIT CIPC IS GATED ON THE ACCOUNT TYPE.** The live key answers
+`403` with Didit's own words: *"To protect against abuse, database validation
+is disabled until your organization's first top-up. You can still test it for
+free on a sandbox application."* So the registry check currently returns
+`not_configured` → `unavailable` → **every dealer verification routes to admin
+review** until the operator tops up (or a sandbox application is used to
+exercise it). The check itself was probed with the real stamp:
+`2019/139703/07` / "Boomsticks Cape Town". The warn line now carries Didit's
+`detail`, because a 403 here is a top-up/sandbox gate as often as a bad key.
+
 **Firefox/Didit console:** the Playwright MCP now launches with a persistent
 profile (`--user-data-dir C:\Users\gerha\AppData\Local\opencode-playwright-firefox`,
 `~/.config/opencode/opencode.json`, backup `.bak-playwright-profile-20261027`).

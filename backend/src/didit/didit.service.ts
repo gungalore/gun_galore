@@ -298,16 +298,20 @@ export class DiditService implements OnModuleInit {
     }
 
     if (!res.ok) {
+      const detail =
+        (json as { detail?: string }).detail ?? `HTTP ${res.status}`;
+      // ⚠️ A 403 HERE IS NOT ALWAYS A BAD KEY. Didit gates database validation
+      // behind "your organization's first top-up" and answers 403 with that
+      // sentence; a sandbox key against a live org answers 403 too. Log
+      // Didit's own words — the operator cannot tell the two apart otherwise.
       if (res.status === 403 || res.status === 401) {
         this.logger.warn(
-          `Didit registry lookup rejected the API key (HTTP ${res.status}).`,
+          `Didit registry lookup refused (HTTP ${res.status}): ${detail}`,
         );
         return registryMiss('not_configured');
       }
       this.logger.warn(
-        `Didit registry lookup failed (HTTP ${res.status}): ${
-          (json as { detail?: string }).detail ?? `HTTP ${res.status}`
-        }`,
+        `Didit registry lookup failed (HTTP ${res.status}): ${detail}`,
       );
       return registryMiss('unavailable');
     }
