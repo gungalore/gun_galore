@@ -129,6 +129,20 @@ describe('the 5.2 suitability question', () => {
     expect(q).toContain('townhouse');
   });
 
+  it('omits placeholder model strings like NONE from the question', () => {
+    const q = buildSuitabilityQuestion({
+      ...base,
+      answers: {
+        ...base.answers,
+        firearm_make: 'Nordiske Precision',
+        firearm_model: 'NONE',
+        firearm_calibre: '.223 Remington',
+      },
+    });
+    expect(q).toContain('Why is the Nordiske Precision, chambered in .223 Remington');
+    expect(q).not.toContain('NONE');
+  });
+
   it('builds a hunting situation from the quarry and the ground', () => {
     const hunting: SuitabilityInput = {
       ...base,

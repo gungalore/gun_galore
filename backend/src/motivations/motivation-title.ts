@@ -27,16 +27,25 @@ function sectionOf(licenceType: MotivationLicenceType): string {
   return label.match(/^Section \d+/)?.[0] ?? label;
 }
 
+function isPlaceholderModel(val: string | undefined | null): boolean {
+  if (!val) return true;
+  return /^(none|nil|n\/?a|-+|unknown)$/i.test(val.trim());
+}
+
 /**
  * The firearm being applied for, as a person names it.
  *
  * ⚠️ MODEL IS INCLUDED EVEN THOUGH THE REQUEST SAID "MAKE AND CALIBRE". A
  * Glock and a Glock 19 are different rows, and the operator's own approved
  * example was "Glock 19 9mm — Section 13". Make + model + calibre is the
- * shortest string that identifies one firearm among several.
+ * shortest string that identifies one firearm among several. Placeholder
+ * models like "NONE" or "N/A" are omitted so the string reads naturally.
  */
 function firearmOf(answers: Record<string, string>): string {
-  return [answers.firearm_make, answers.firearm_model, answers.firearm_calibre]
+  const model = isPlaceholderModel(answers.firearm_model)
+    ? ''
+    : (answers.firearm_model ?? '').trim();
+  return [answers.firearm_make, model, answers.firearm_calibre]
     .map((v) => (v ?? '').trim())
     .filter(Boolean)
     .join(' ');

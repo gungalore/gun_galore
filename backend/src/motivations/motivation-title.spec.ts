@@ -29,6 +29,16 @@ describe('motivationTitle', () => {
     ).toBe('CZ .308 — Section 16');
   });
 
+  it('omits placeholder model strings like NONE or N/A', () => {
+    expect(
+      motivationTitle(S16, {
+        firearm_make: 'Nordiske Precision',
+        firearm_model: 'NONE',
+        firearm_calibre: '.223 Remington',
+      }),
+    ).toBe('Nordiske Precision .223 Remington — Section 16');
+  });
+
   it('falls back to the section label before a firearm is described', () => {
     expect(motivationTitle(S16, {})).toBe(
       'Section 16 — Dedicated hunting or sport-shooting',

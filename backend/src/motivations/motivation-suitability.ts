@@ -93,17 +93,24 @@ function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
+function isPlaceholderModel(val: string | undefined | null): boolean {
+  if (!val) return true;
+  return /^(none|nil|n\/?a|-+|unknown)$/i.test(val.trim());
+}
+
 /**
  * The exact question this page answers.
  *
  * ⚠️ IT NAMES THE FIREARM, THE CALIBRE, THE PURPOSE AND THE APPLICANT'S OWN
  * SITUATION. "Why is 9mm suitable?" is a cartridge article. "Why is the Glock
  * 43X, chambered in 9mm, suited for self-defence inside a townhouse?" is a
- * motivation.
+ * motivation. Placeholder models ("NONE", "N/A") are filtered out so the title
+ * reads naturally ("Why is the Nordiske Precision, chambered in .223...").
  */
 export function buildSuitabilityQuestion(input: SuitabilityInput): string {
   const make = value(input.answers, 'firearm_make');
-  const model = value(input.answers, 'firearm_model');
+  const rawModel = value(input.answers, 'firearm_model');
+  const model = isPlaceholderModel(rawModel) ? '' : rawModel;
   const calibre = value(input.answers, 'firearm_calibre');
   const firearm =
     [make, model].filter(Boolean).join(' ') || input.firearmLine || 'the firearm applied for';
