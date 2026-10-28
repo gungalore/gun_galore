@@ -298,6 +298,12 @@ export interface SheetResponse {
   /** What the pack still wants, by tier. Separate from `documents`. */
   needs: {
     needs: { kind: string; label: string; tier: string; why: string; have: boolean }[];
+    /**
+     * Required kinds with nothing attached. The generation gate refuses on
+     * these, so the sheet must count them too — `sections[].missing` only
+     * carries answer keys.
+     */
+    missingRequired?: string[];
   };
   credentials: SheetCredentials;
   coverage: unknown;

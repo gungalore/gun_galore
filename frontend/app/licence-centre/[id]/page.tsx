@@ -59,8 +59,9 @@ import type {
 // grey row reading "You may know it" with no input visible.
 //
 // ⚠️ ONE NUMBER DRIVES THE THREE PROGRESS VIEWS. `sheet.missing` comes from the
-// server; the strip's pill, the chip dots and the footer all read it and
-// nothing recomputes it. The old screen had four such systems and they
+// server for answer keys, and `sheet.needs.missingRequired` for required
+// documents; the strip's pill, the chip dots and the footer all read their sum
+// and nothing recomputes it. The old screen had four such systems and they
 // contradicted each other on a live application.
 // ────────────────────────────────────────────────────────────────────
 
@@ -881,14 +882,28 @@ export default function LicenceCentreSheetPage() {
         await motivationsApi.generate(getToken, id);
         router.push(`/licence-centre/${id}/pack`);
       } catch (err) {
-        setToast(
-          (err as Error).message ||
-            'We could not start writing it just now. Please try again.',
-        );
+        const missing =
+          err instanceof MotivationApiError ? (err.missingDocuments ?? []) : [];
+        if (missing.length) {
+          const labels = missing.map(
+            (kind) =>
+              sheet?.needs.needs.find((n) => n.kind === kind)?.label ?? kind,
+          );
+          setToast(
+            `Still needed: ${labels.join(', ')}. Add ${
+              labels.length === 1 ? 'it' : 'them'
+            } to your pack and try again.`,
+          );
+        } else {
+          setToast(
+            (err as Error).message ||
+              'We could not start writing it just now. Please try again.',
+          );
+        }
         setBusy(false);
       }
     },
-    [getToken, id, router, pending, flush],
+    [getToken, id, router, pending, flush, sheet],
   );
 
   /** The items as the member sees them — server values under pending edits. */
@@ -950,10 +965,22 @@ export default function LicenceCentreSheetPage() {
       sheet.coverage as { sections?: { id?: string; status?: string }[] }
     )?.sections?.some((c) => c.id === 'F' && c.status === 'complete') ?? false;
 
+  /**
+   * ⚠️ REQUIRED DOCUMENTS ARE NOT `sections[].missing`. The server's
+   * `sections[].missing` list carries answer keys only, so "Your pack" read
+   * "Done" while `generate()` refused with "2 required documents are still
+   * missing." The generation gate uses `needs.missingRequired`; the strip,
+   * the pack fold and the footer must read the same list.
+   */
+  const missingDocumentKinds = sheet.needs.missingRequired ?? [];
+  const missingCount = sheet.missing.length + missingDocumentKinds.length;
+  const sectionMissing = (section: (typeof sheet.sections)[number]) =>
+    section.missing.length +
+    (section.id === 'pack' ? missingDocumentKinds.length : 0);
   const sectionsForStrip = sheet.sections.map((s) => ({
     id: s.id,
     label: s.title,
-    missing: s.missing.length,
+    missing: sectionMissing(s),
   }));
 
   const renderRows = (sectionId: string) => {
@@ -1483,7 +1510,7 @@ export default function LicenceCentreSheetPage() {
           reference={sheet.application.referenceNumber}
           licenceType={sheet.application.licenceTypeLabel}
           title={sheet.application.title}
-          missingCount={sheet.missing.length}
+          missingCount={missingCount}
           sections={sectionsForStrip}
           active={active}
           onJump={(sectionId) => {
@@ -1689,13 +1716,15 @@ export default function LicenceCentreSheetPage() {
             open={openSections?.[s.id] ?? false}
             onOpenChange={(v) => setSectionOpen(s.id, v)}
             /*
-              ⚠️ THE SAME `missing` LIST AS THE PILL, THE CHIP DOTS AND THE
-              FOOTER — a fourth view of one number, not a fourth number. A fold
-              that could hide a "Still needed" without saying so would be a
-              form lying about how much is left. SheetSection draws the pill;
-              this passes the number and nothing else.
+              ⚠️ THE SAME NUMBER AS THE PILL, THE CHIP DOTS AND THE FOOTER — a
+              fourth view of one number, not a fourth number. `sectionMissing`
+              adds `needs.missingRequired` to the pack fold, because the server's
+              `sections[].missing` carries answer keys only. A fold that could
+              hide a "Still needed" without saying so would be a form lying
+              about how much is left. SheetSection draws the pill; this passes
+              the number and nothing else.
             */
-            missingCount={s.missing.length}
+            missingCount={sectionMissing(s)}
           >
             {/*
               ⚠️ THE CONSENT AND OVERLAP CARDS ARE EMITTED FROM renderRows NOW,
@@ -1722,7 +1751,7 @@ export default function LicenceCentreSheetPage() {
         />
 
         <SheetFooter
-          missingCount={sheet.missing.length}
+          missingCount={missingCount}
           declared={!!sheet.application.declarationAcceptedAt}
           onWrite={onWrite}
           busy={busy}
