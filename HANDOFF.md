@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - MESSAGES INBOX, PUSH AND AUTO-CLEAR (FULL DEPLOY)
+
+Deployed `fd81009d` (rollback `alloutdoor-20261028-205115.dump`, 35,805,420
+bytes; no pending migrations; health x2 OK; public 200 x2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**The reports.** Push worked for action-required events but never for a new
+listing message, and the only way to a listing conversation was Account ->
+Dashboard -> "Buyer inquiries". The notification/email landed on the dashboard
+list rather than the thread, and the alert stayed unresolved after the thread
+was read.
+
+**The changes.**
+
+- Listing inquiries and paid-order messages now set `forcePush`; the push is
+  tagged by thread so a second message replaces the first instead of stacking.
+- New `/messages` inbox for buyers and sellers, with a **Messages** account
+  entry and a `/messages` module badge.
+- Notification and email CTAs deep-link to
+  `/messages?inquiry=<id>#inquiries`; the card auto-opens that thread, and the
+  sign-in redirect preserves the target.
+- Opening a thread resolves its `listing_inquiry_message` / `new_message`
+  alert; replying resolves the sender's stale row.
+- `/notifications` without `?tab` opens the category with the most unread
+  items instead of always opening Buyer.
+
+**Gates.** Backend `tsc` clean; 391 suites / 5,977 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,827 passed / 1 skipped; production build
+clean.
+
+**Live check.** `/messages` answers 307 to sign-in for an anonymous request
+(route present, no 404). After the deploy, the buyer's 18:08 UTC message alert
+resolved at 18:52 UTC (20:52 SAST) with `resolvedBy=user_action` when the
+thread was opened, proving the new auto-clear path live. The seller's alert
+remains pending until they open the thread. A new message has not been sent
+yet, so the message-push delivery itself is still to be exercised.
+
 ## 2026-10-28 - CARD MEDIA AND PRICE WRAP (FULL DEPLOY)
 
 Deployed `f99a6837` (rollback `alloutdoor-20261028-202055.dump`, 35,804,856
