@@ -7,6 +7,37 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - A PAIRED PROFICIENCY IS NOT A DUPLICATE (FULL DEPLOY)
+
+Deployed `b2f95848` (rollback `alloutdoor-20261028-162151.dump`, 32,439,767
+bytes; no pending migrations; health A-2 OK; public 200 A-2; three services
+online).
+
+**The report.** After deleting and reuploading, the vault showed “three extra
+copies”.
+
+**The cause.** The three proficiency front pages were still carrying a stale
+`duplicateOfId` pointing at their own back page. The front is usually uploaded
+first and was flagged a copy before the other side arrived; pairing then set
+`otherSideId` without clearing it. The list folded the pair correctly, but the
+Duplicates count and the duplicate fold reported three copies that were really
+three pairs.
+
+**The fix.**
+- Pairing now clears `duplicateOfId`, the `duplicate` attention code and the
+  “Looks like a copy of …” note on both sides.
+- A list load clears the same stale flag on rows that were already paired.
+- The three existing rows were cleared in the database; duplicate flags are now
+  **0**.
+
+**One genuine oddity remains.** A lone **“Proficiency - Handgun” back page** has
+no front. That is a missing side (`SIDE_MISSING`), not a copy; attach the
+handgun certificate front to pair it.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,961 passed / 8 skipped.
+Frontend unchanged; `tsc` clean and the last full run was 159 files / 1,819
+passed.
+
 ## 2026-10-28 - LICENCE CARD DATE RANGE, SECTION FACT, BACKFILL (FULL DEPLOY)
 
 Deployed `8f026427` (date range) and `b23c73c6` (section fact + backfill
