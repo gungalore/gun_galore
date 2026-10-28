@@ -7,6 +7,37 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - THE PACK COUNTED ANSWERS, NOT DOCUMENTS (FRONTEND-ONLY)
+
+Deployed `a333f792` (rollback `alloutdoor-20261028-163915.dump`, 32,457,618
+bytes; no migrations; health A-2 OK; public 200 A-2; three services online).
+
+**The report.** MO000104 showed “Your pack — Done”, but Write refused with “2
+required documents are still missing.”
+
+**The cause.** `sheet.sections[].missing` carries required **answer keys** only.
+The header pill, pack fold and footer all read that list, so a complete
+questionnaire read as a complete pack. `generate()` uses the separate
+`needs.missingRequired` document list, which held proof of address and safe
+photographs.
+
+**The fix.**
+- The sheet now counts `needs.missingRequired` with the answer keys for the
+  header, the “Your pack” fold and the footer. The pack folds as “2 still
+  needed”, not “Done”.
+- The generation toast now names the missing documents from
+  `MotivationApiError.missingDocuments` instead of repeating the generic count.
+
+**The two documents are genuinely absent.** MO000104 has 12 uploads (licences,
+competency, proficiency, association, ID, source proof) but no
+`ADDRESS_CONFIRMATION` or `SAFE_PHOTOGRAPHS`. The vault for this member also has
+no rows of either kind — this is not a failed autolink. Upload both to clear the
+gate.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,961 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,819 passed / 1 skipped; production build
+clean.
+
 ## 2026-10-28 - A PAIRED PROFICIENCY IS NOT A DUPLICATE (FULL DEPLOY)
 
 Deployed `b2f95848` (rollback `alloutdoor-20261028-162151.dump`, 32,439,767
