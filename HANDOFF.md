@@ -7,6 +7,42 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - CAPTURE PROJECTION INTO CONTAINER FIELDS (FULL DEPLOY)
+
+Deployed `c7dcd3df` (rollback `alloutdoor-20261028-144743.dump`, 34,073,902
+bytes; no pending migrations; health A-2 OK; public 200 A-2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**What changed.** The one-pass capture is now the **first** reader, not only a
+stored transcript. `DocumentProjectionService` maps its labelled facts into the
+document kind's fields:
+
+- exact and alias labels first (including Afrikaans labels, the letterhead as
+  an association/issuer candidate, `NONE` component serials, and `document_side`
+  reduced to `front`/`back`);
+- one typed Jev `choice` per still-empty key, with the page text and facts in
+  the state; confidence floor 0.6; a fact is used once;
+- dates normalised to `yyyy-mm-dd` from the capture's `normalized` value or the
+  printed form;
+- a **core-field veto**: a licence without a serial, a dedicated document
+  without an association, an ID without an id number, etc. falls back to the
+  tuned extractor rather than writing a thin reading.
+
+`LicenceCentreService.create` and `MotivationDocumentsService.addOneUpload` use
+the projection first and skip the second vision read when the core field is
+present. The motivation path remaps owned-firearm slots and returns the values
+as `suggestions` with provenance, so the form auto-fills (including
+`dedicated_since`) and `reapplyOffer` sees the same values. The old extractor
+remains the fallback.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,959 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,819 passed / 1 skipped; foreground
+production build clean.
+
+**Next:** watch real captures against the old extractor and add aliases where
+Jev is doing too much work. Once coverage is consistently complete, the second
+vision read can be retired for the kinds that prove out.
+
 ## 2026-10-28 - BODY-ONLY EVIDENCE, 5.2 SUITABILITY WRITER, DOCUMENT CAPTURE (FULL DEPLOY)
 
 Deployed `75044cc4` (rollback `alloutdoor-20261028-115634.dump`, 34,071,573
