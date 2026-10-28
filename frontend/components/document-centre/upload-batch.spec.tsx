@@ -140,6 +140,26 @@ describe('whether a file gets the scanner treatment', () => {
       shouldPolish(verdictOf({ role: 'evidence', kind: null, ocrChars: 0 })),
     ).toBe(false);
   });
+
+  it('⚠️ NEVER POLISHES AN EVIDENCE KIND, EVEN WHEN FILED AS A DOCUMENT', () => {
+    expect(
+      shouldPolish(verdictOf({ kind: 'EVIDENCE', ocrChars: 240 })),
+    ).toBe(false);
+  });
+
+  it('⚠️ THE MEMBER’S TYPE BEATS THE CLASSIFIER’S GUESS', () => {
+    // A safe photograph the model read as OTHER still carries 240 characters
+    // off a serial; the declared type is the thing that must stop the wash.
+    expect(
+      shouldPolish(
+        verdictOf({ kind: 'OTHER', ocrChars: 240 }),
+        'SAFE_PHOTOGRAPHS',
+      ),
+    ).toBe(false);
+    expect(
+      shouldPolish(verdictOf({ kind: 'OTHER', ocrChars: 240 }), 'EVIDENCE'),
+    ).toBe(false);
+  });
 });
 
 describe('the cards', () => {

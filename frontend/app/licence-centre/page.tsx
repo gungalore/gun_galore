@@ -1400,7 +1400,7 @@ function AddPanel({
       patchCard(card.id, { prepared: file, previewUrl: url, state: 'ready' });
     };
 
-    if (shouldPolish(card.verdict)) {
+    if (shouldPolish(card.verdict, declared)) {
       // ⚠️ AUTOMATIC NOW, WITH NO CROPPER IN THE PATH — see lib/scan-upload/
       // auto.ts. The kind the classifier read picks the aim shape; a crop that
       // comes out wrong is fixed from the review screen with "Fix crop".

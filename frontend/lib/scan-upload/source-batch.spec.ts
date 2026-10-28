@@ -133,6 +133,53 @@ describe('the applied-for-firearm batch', () => {
     expect(out).toHaveLength(2);
   });
 
+  it('⚠️ leaves safe photographs exactly as they were picked', async () => {
+    const closed = img('safe-closed.jpg');
+    const open = img('safe-open.jpg');
+    const out = await prepareSourceBatch(
+      [closed, open],
+      [
+        { id: 'a', role: 'document', kind: 'SAFE_PHOTOGRAPHS' },
+        { id: 'b', role: 'document', kind: 'SAFE_PHOTOGRAPHS' },
+      ],
+    );
+    expect(autoPolish).not.toHaveBeenCalled();
+    expect(composeSides).not.toHaveBeenCalled();
+    expect(out.map((p) => p.file)).toEqual([closed, open]);
+  });
+
+  it('⚠️ leaves hunting evidence exactly as it was picked', async () => {
+    const hunt = img('hunt.jpg');
+    const range = img('range.jpg');
+    const out = await prepareSourceBatch(
+      [hunt, range],
+      [
+        { id: 'a', role: 'evidence', kind: null, container: 'HUNTING_PHOTO' },
+        { id: 'b', role: 'evidence', kind: null, container: 'RANGE_PHOTO' },
+      ],
+    );
+    expect(autoPolish).not.toHaveBeenCalled();
+    expect(composeSides).not.toHaveBeenCalled();
+    expect(out.map((p) => p.file)).toEqual([hunt, range]);
+  });
+
+  it('⚠️ does not pair a safe photo with a licence card', async () => {
+    const safe = img('safe.jpg');
+    const licence = img('licence.jpg');
+    const out = await prepareSourceBatch(
+      [safe, licence],
+      [
+        { id: 'a', role: 'document', kind: 'SAFE_PHOTOGRAPHS' },
+        { id: 'b', role: 'document', kind: 'FIREARM_LICENCE' },
+      ],
+    );
+    expect(autoPolish).toHaveBeenCalledTimes(1);
+    expect(autoPolish).toHaveBeenCalledWith(licence, 'card', undefined);
+    expect(composeSides).not.toHaveBeenCalled();
+    expect(out).toHaveLength(2);
+    expect(out[0].file).toBe(safe);
+  });
+
   it('carries the verdict rotation into the polish', async () => {
     await prepareSourceBatch(
       [img('x.jpg')],

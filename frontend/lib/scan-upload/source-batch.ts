@@ -1,5 +1,6 @@
 import type { DocShape } from '@/lib/scan/shapes';
 import { shapeForKind } from '@/lib/scan/shapes';
+import { isUntouchedPhotograph } from '@/lib/photo-kinds';
 import { autoPolish } from './auto';
 import { composeSides } from './compose';
 
@@ -26,7 +27,10 @@ import { composeSides } from './compose';
 /** The fields this pipeline uses from the server's identify verdict. */
 export interface SourceVerdict {
   id: string;
+  role?: 'document' | 'evidence' | null;
   kind?: string | null;
+  /** The evidence container, when the verdict has one. */
+  container?: string | null;
   rotate?: 0 | 90 | 180 | 270;
   side?: 'front' | 'back' | null;
   /** The page is a SAPS 271 form: read, never annexed. */
@@ -65,6 +69,7 @@ export async function prepareSourceBatch(
   const items: (PreparedUpload & {
     side: 'front' | 'back' | null;
     isImage: boolean;
+    untouched: boolean;
   })[] = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -72,13 +77,23 @@ export async function prepareSourceBatch(
     const side = v?.side ?? null;
     const pdf = isPdf(file);
     const shape: DocShape = side ? 'card' : shapeForKind(v?.kind ?? '');
-    const prepared = pdf ? file : await autoPolish(file, shape, v?.rotate);
+    // ⚠️ A PHOTOGRAPH IS NOT A PAGE. A safe, a hunt, a range or any other
+    // evidence picture must be uploaded exactly as picked: the scanner's
+    // colour and light normalise flattens it into a white wash, and two safe
+    // photographs are not the two sides of a licence card.
+    const untouched = isUntouchedPhotograph({
+      role: v?.role,
+      kind: v?.kind,
+    });
+    const prepared =
+      pdf || untouched ? file : await autoPolish(file, shape, v?.rotate);
     items.push({
       file: prepared,
       identifyId: v?.id ?? '',
       saps271: v?.saps271 === true,
       side,
       isImage: !pdf,
+      untouched,
     });
   }
 
@@ -87,8 +102,8 @@ export async function prepareSourceBatch(
   // ⚠️ ORDER-INDEPENDENT (2026-10-14). The pairing used to require the front to
   // arrive BEFORE the back, so a member who picked the back first got two
   // separate pages. Find the front and the back wherever they are.
-  const frontIdx = items.findIndex((x) => x.side === 'front');
-  const backIdx = items.findIndex((x) => x.side === 'back');
+  const frontIdx = items.findIndex((x) => !x.untouched && x.side === 'front');
+  const backIdx = items.findIndex((x) => !x.untouched && x.side === 'back');
   if (frontIdx !== -1 && backIdx !== -1) {
     try {
       const composed = await composeSides(
@@ -124,7 +139,12 @@ export async function prepareSourceBatch(
   // decides WHETHER the two photographs become one page. When two images are
   // picked and the sides were not both named, compose them anyway — a card
   // whose front was read fine and whose back was not still becomes one page.
-  if (items.length === 2 && items.every((x) => x.isImage)) {
+  // ⚠️ BUT NOT TWO PHOTOGRAPHS. A pair of safe, hunt or range pictures is two
+  // pictures, not two sides of one card; composing them destroys both.
+  if (
+    items.length === 2 &&
+    items.every((x) => x.isImage && !x.untouched)
+  ) {
     const [a, b] = items;
     const top = a.side === 'front' ? a : b.side === 'front' ? b : a;
     const bottom = top === a ? b : a;

@@ -2,7 +2,10 @@
 
 import { useEffect } from 'react';
 import { KIND_LABELS, type IdentifyVerdict } from '@/lib/licence-centre-api';
-import { SAFE_PHOTO_KINDS } from './kinds';
+import {
+  UNTOUCHED_PHOTO_KINDS,
+  isUntouchedPhotograph,
+} from '@/lib/photo-kinds';
 
 // ────────────────────────────────────────────────────────────────────
 // ONE UPLOADER, ONE AI SORT — THE PER-FILE STRIP.
@@ -129,13 +132,20 @@ export function verdictLine(v: IdentifyVerdict): string {
  * — so the text test skipped the first and FILTERED THE OTHER TWO. A kind the
  * classifier read as a photograph is therefore skipped WHOLESALE, and the
  * text test stays only as the net for a text-less page filed as something
- * else. See SAFE_PHOTO_KINDS.
+ * else. See lib/photo-kinds.ts.
+ *
+ * ⚠️ AND THE MEMBER'S OWN TYPE BEATS THE CLASSIFIER. A safe or an evidence
+ * photograph the model guessed as `OTHER` still gets flattened if only the
+ * verdict decides; `declared` is the type they chose in the review, so it
+ * closes that gap even when the model did not.
  */
-const PHOTOGRAPH_KINDS: ReadonlySet<string> = new Set(SAFE_PHOTO_KINDS);
-
-export function shouldPolish(v: IdentifyVerdict): boolean {
+export function shouldPolish(
+  v: IdentifyVerdict,
+  declared?: string | null,
+): boolean {
+  if (declared && UNTOUCHED_PHOTO_KINDS.has(declared)) return false;
   if (v.role !== 'document' || !v.kind) return false;
-  if (PHOTOGRAPH_KINDS.has(v.kind)) return false;
+  if (isUntouchedPhotograph(v)) return false;
   return (v.ocrChars ?? 0) > 0;
 }
 

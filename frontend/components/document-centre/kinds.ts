@@ -275,13 +275,7 @@ export const SECTIONS: readonly DocSection[] = [
 /**
  * The kinds that draw as photographs rather than as rows in the safe section.
  *
- * The installation certificate is a document; the rest are pictures of a box,
- * and a list of four rows called "Photographs of my safe" tells the member
- * nothing a 4-across grid does not tell them at a glance.
+ * Kept re-exported from `lib/photo-kinds.ts` so the scanner's own untouched
+ * rule and this list cannot drift apart.
  */
-export const SAFE_PHOTO_KINDS: CredentialKind[] = [
-  'SAFE_PHOTOGRAPHS',
-  'SAFE_PHOTO_CLOSED',
-  'SAFE_PHOTO_AJAR',
-  'SAFE_PHOTO_BOLTS',
-];
+export { SAFE_PHOTO_KINDS } from '@/lib/photo-kinds';
