@@ -7,6 +7,41 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - CARD MEDIA AND PRICE WRAP (FULL DEPLOY)
+
+Deployed `f99a6837` (rollback `alloutdoor-20261028-202055.dump`, 35,804,856
+bytes; no pending migrations; health A-2 OK; public 200 A-2; three services
+online).
+
+**The reports.** A just-published listing showed a "No photo" card until the
+detail page was opened, and card prices split "R" onto its own line at mobile
+width (the Scope covers card showed "R" / "10").
+
+**The causes.**
+
+- Create publishes ACTIVE and indexes the listing before its photos upload.
+  A browse fetch in that window returned a card with no images. Adding the
+  first image did not change `Listing.updatedAt`, so the live-refresh token
+  never moved and the stale "No photo" card stayed.
+- On a two-column phone card the ID/Phone/Email verification chips squeezed
+  the price span until the browser wrapped at the space in "R 10".
+
+**The fixes.**
+
+- Public card queries (`browse`, search re-fetch, recently-viewed,
+  live-version) require a primary image or an approved hero video. Create no
+  longer indexes a photo-less listing; the first `addImage()` reindexes it and
+  moves the live-version count. Owner `/my/listings` stays unfiltered.
+- The price is a non-shrinking `nowrap` token; the row wraps the verification
+  chips below it.
+
+**Gates.** Backend `tsc` clean; 391 suites / 5,971 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,824 passed / 1 skipped; production build
+clean.
+
+**Live check.** The Scope covers card renders its photo, `R 10` on one line,
+with the chips wrapped underneath (Playwright, 390 px viewport).
+
 ## 2026-10-28 - LIVE PAYOUT VERIFIED (OPS ONLY, NO DEPLOY)
 
 Sent a real **R10** payout to Investec `****0758` (account `10012650758`) using
