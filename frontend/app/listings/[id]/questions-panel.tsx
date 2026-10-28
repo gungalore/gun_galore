@@ -61,7 +61,7 @@ function relativeTime(iso: string): string {
  * answer with photos or a video. Text is auto-stripped of contact details;
  * seller media is screened before it is stored.
  *
- * The listing's owner does not chat here -- they reply from the dashboard, so
+ * The listing's owner does not chat here -- they reply from Messages, so
  * this panel shows them how many buyers are waiting instead.
  */
 export function QuestionsPanel({
@@ -204,7 +204,7 @@ export function QuestionsPanel({
         )}
       </div>
 
-      {/* Owner -- no self-chat. Show the inbox summary + dashboard link. */}
+      {/* Owner -- no self-chat. Show the inbox summary + Messages link. */}
       {isOwner ? (
         <div className="text-xs" style={{ lineHeight: 1.6 }}>
           {sellerInbox && sellerInbox.open > 0 ? (
@@ -217,7 +217,7 @@ export function QuestionsPanel({
                   : ''}
               </p>
               <Link
-                href="/dashboard#inquiries"
+                href="/messages#inquiries"
                 className="inline-block mt-2 px-3 py-1.5 rounded-[4px]"
                 style={{
                   background: 'var(--red)',
@@ -226,7 +226,7 @@ export function QuestionsPanel({
                   textDecoration: 'none',
                 }}
               >
-                Reply from your dashboard -&gt;
+                Reply from Messages -&gt;
               </Link>
               <p className="mt-2" style={{ color: 'var(--text-tertiary)' }}>
                 You can attach photos or a video when you reply. Buyers can
@@ -236,8 +236,8 @@ export function QuestionsPanel({
           ) : (
             <p style={{ color: 'var(--text-tertiary)' }}>
               No buyer messages yet. Conversations arrive here and in your{' '}
-              <Link href="/dashboard#inquiries" style={{ color: 'var(--red)' }}>
-                dashboard
+              <Link href="/messages" style={{ color: 'var(--red)' }}>
+                Messages
               </Link>
               .
             </p>

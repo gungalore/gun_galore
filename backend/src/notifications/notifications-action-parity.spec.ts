@@ -180,3 +180,44 @@ describe('action parity — signed links and labels', () => {
     expect(sent.emails[0]).toContain('Pay now');
   });
 });
+
+describe('message notifications', () => {
+  it('listing inquiry pushes and deep-links to the exact thread', async () => {
+    const { svc, sent } = makeService();
+    await svc.listingInquiryMessage({
+      recipientEmail: 's@x.co',
+      recipientName: 'Seller',
+      listingTitle: LISTING.listingTitle,
+      inquiryId: 'cinquiry1234567890',
+      senderIsBuyer: true,
+      preview: 'What material are they made of?',
+    });
+
+    expect(sent.inbox[0]).toMatchObject({
+      type: 'listing_inquiry_message',
+      url: '/messages?inquiry=cinquiry1234567890#inquiries',
+      dismissible: true,
+      forcePush: true,
+    });
+    expect(sent.emails[0]).toContain(
+      '/messages?inquiry=cinquiry1234567890#inquiries',
+    );
+  });
+
+  it('transaction message pushes even though the row is dismissible', async () => {
+    const { svc, sent } = makeService();
+    await svc.newMessage({
+      recipientEmail: 'b@x.co',
+      recipientName: 'Buyer',
+      listingTitle: LISTING.listingTitle,
+      transactionId: 'ctx1234567890',
+      senderIsBuyer: false,
+    });
+
+    expect(sent.inbox[0]).toMatchObject({
+      type: 'new_message',
+      dismissible: true,
+      forcePush: true,
+    });
+  });
+});

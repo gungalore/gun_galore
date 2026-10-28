@@ -4134,6 +4134,9 @@ export class NotificationsService {
       linkedType: 'transaction',
       linkedId: d.transactionId,
       dismissible: true,
+      // Messages are the one informational event a member expects to feel
+      // immediately. The row stays dismissible, but it still pushes.
+      forcePush: true,
     });
   }
 
@@ -4580,16 +4583,21 @@ export class NotificationsService {
     preview: string;
   }) {
     const sender = d.senderIsBuyer ? 'Buyer' : 'Seller';
+    const threadUrl = `/messages?inquiry=${encodeURIComponent(d.inquiryId)}#inquiries`;
     await this.persistByEmail(d.recipientEmail, {
       category: d.senderIsBuyer ? 'SELLER' : 'BUYER',
       type: 'listing_inquiry_message',
       title: 'New message about a listing',
       body: `${sender} sent you a message about ${d.listingTitle}.`,
-      url: `/dashboard#inquiries`,
+      url: threadUrl,
       iconKey: 'sold',
       linkedType: 'listing_inquiry',
       linkedId: d.inquiryId,
       dismissible: true,
+      // Message traffic is high-frequency, but a silent inbox is worse than
+      // a replace-in-place OS notification. The thread id tags the push so a
+      // second message replaces the first instead of stacking.
+      forcePush: true,
     });
 
     const html = this.email({
@@ -4599,8 +4607,11 @@ export class NotificationsService {
         : 'The seller replied',
       body: `Hi ${b(d.recipientName)}, ${b(sender)} messaged you about ${b(
         d.listingTitle,
-      )}:<br><br><i>${b(d.preview)}</i><br><br>Reply from your dashboard — keep the conversation on ALL Outdoor.`,
-      cta: { label: 'Open the conversation', url: `${this.appUrl}/dashboard#inquiries` },
+      )}:<br><br><i>${b(d.preview)}</i><br><br>Open the conversation in your messages — keep it on ALL Outdoor.`,
+      cta: {
+        label: 'Open the conversation',
+        url: `${this.appUrl}${threadUrl}`,
+      },
       preheader: `New ${sender.toLowerCase()} message about ${d.listingTitle}`,
     });
     await this.send(

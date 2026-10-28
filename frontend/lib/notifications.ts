@@ -46,6 +46,29 @@ export interface ActiveCount {
   total: number;
 }
 
+/**
+ * The tab to open when /notifications is entered without an explicit ?tab.
+ *
+ * Opening on Buyer by default hid the only alert from a seller (and vice
+ * versa). Pick the category with the most unresolved rows; ties prefer the
+ * seller perspective because that is where an unanswered buyer message
+ * usually lands. With nothing unread, keep the familiar Buyer default.
+ */
+export function preferredNotificationTab(
+  counts: ActiveCount,
+): NotificationCategory {
+  if (
+    counts.seller > 0 &&
+    counts.seller >= counts.buyer &&
+    counts.seller >= counts.account
+  ) {
+    return 'SELLER';
+  }
+  if (counts.buyer > 0 && counts.buyer >= counts.account) return 'BUYER';
+  if (counts.account > 0) return 'ACCOUNT';
+  return 'BUYER';
+}
+
 // Resilient fetch — silently returns empty results when the backend
 // endpoints aren't deployed yet (Drop 1 ships the UI before the
 // backend lands). Once the backend exists, these populate normally.

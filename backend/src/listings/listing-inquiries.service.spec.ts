@@ -47,6 +47,7 @@ function makeService(
           listing: { title: 'Scope' },
           buyer: { email: 'b@x.co', firstName: 'B' },
           seller: { email: 's@x.co', firstName: 'S' },
+          messages: [],
         }
       : over.inquiry;
 
@@ -79,7 +80,10 @@ function makeService(
       .fn()
       .mockReturnValue(over.redact ?? { text: 'clean', categories: [] }),
   };
-  const notifications = { listingInquiryMessage: jest.fn().mockResolvedValue(undefined) };
+  const notifications = {
+    listingInquiryMessage: jest.fn().mockResolvedValue(undefined),
+    resolveByEntity: jest.fn().mockResolvedValue(0),
+  };
   const cloudinary = {
     uploadImage: jest
       .fn()
@@ -223,5 +227,27 @@ describe('ListingInquiriesService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(cloudinary.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('clears the message alert when the thread is opened', async () => {
+    const { service, notifications } = makeService();
+    await service.getThread('INQ1', 'B');
+
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith(
+      'listing_inquiry',
+      'INQ1',
+      { userId: 'B', types: ['listing_inquiry_message'] },
+    );
+  });
+
+  it('clears the sender alert when replying', async () => {
+    const { service, notifications } = makeService();
+    await service.sendMessage('INQ1', 'B', 'still interested');
+
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith(
+      'listing_inquiry',
+      'INQ1',
+      { userId: 'B', types: ['listing_inquiry_message'] },
+    );
   });
 });

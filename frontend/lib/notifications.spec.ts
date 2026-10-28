@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   notificationHref,
+  preferredNotificationTab,
   type NotificationItem as N,
 } from './notifications';
 
@@ -48,5 +49,48 @@ describe('notificationHref', () => {
       '/documents',
     );
     expect(notificationHref(item({ url: null }))).toBe('#');
+  });
+});
+
+describe('preferredNotificationTab', () => {
+  it('opens the seller tab when that is the only unread', () => {
+    expect(
+      preferredNotificationTab({
+        buyer: 0,
+        seller: 1,
+        account: 0,
+        total: 1,
+      }),
+    ).toBe('SELLER');
+  });
+
+  it('opens the tab with the most unread rows', () => {
+    expect(
+      preferredNotificationTab({
+        buyer: 1,
+        seller: 3,
+        account: 1,
+        total: 5,
+      }),
+    ).toBe('SELLER');
+    expect(
+      preferredNotificationTab({
+        buyer: 4,
+        seller: 3,
+        account: 1,
+        total: 8,
+      }),
+    ).toBe('BUYER');
+  });
+
+  it('falls back to Buyer when everything is clear', () => {
+    expect(
+      preferredNotificationTab({
+        buyer: 0,
+        seller: 0,
+        account: 0,
+        total: 0,
+      }),
+    ).toBe('BUYER');
   });
 });

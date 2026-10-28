@@ -42,7 +42,10 @@ function makeService(over: {
       .fn()
       .mockReturnValue(over.redact ?? { text: 'hello there', categories: [] }),
   };
-  const notifications = { newMessage: jest.fn().mockResolvedValue(undefined) };
+  const notifications = {
+    newMessage: jest.fn().mockResolvedValue(undefined),
+    resolveByEntity: jest.fn().mockResolvedValue(0),
+  };
   const service = new MessagesService(
     prisma as never,
     contactFilter as never,
@@ -126,6 +129,28 @@ describe('MessagesService', () => {
     const { service } = makeService();
     await expect(service.send('TX1', 'B', '   ')).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+  });
+
+  it('clears the new-message alert when the thread is opened', async () => {
+    const { service, notifications } = makeService();
+    await service.list('TX1', 'B');
+
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith(
+      'transaction',
+      'TX1',
+      { userId: 'B', types: ['new_message'] },
+    );
+  });
+
+  it('clears the sender alert when replying', async () => {
+    const { service, notifications } = makeService();
+    await service.send('TX1', 'B', 'hello');
+
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith(
+      'transaction',
+      'TX1',
+      { userId: 'B', types: ['new_message'] },
     );
   });
 });

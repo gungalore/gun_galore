@@ -287,6 +287,9 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     title: 'Account',
     items: [
       { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
+      // Listing conversations. One inbox for both directions; deliberately
+      // NOT under Selling, because buyers with an open thread need it too.
+      { href: '/messages', label: 'Messages', Icon: InboxIcon },
       { href: '/profile', label: 'Profile', Icon: UserIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
       { href: '/notifications', label: 'Notifications', Icon: BellIcon },

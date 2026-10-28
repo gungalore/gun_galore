@@ -488,6 +488,13 @@ export class ListingInquiriesService {
       },
       data: { readAt: new Date() },
     });
+    // Opening the thread is the action the alert was waiting for. Scope the
+    // resolve to message rows so another listing-inquiry notification type
+    // sharing the entity can never be cleared by a read.
+    await this.notifications.resolveByEntity('listing_inquiry', inquiryId, {
+      userId,
+      types: ['listing_inquiry_message'],
+    });
   }
 
   /**
@@ -564,6 +571,13 @@ export class ListingInquiriesService {
     senderId: string,
     preview: string,
   ) {
+    // Replying is also an action on the thread: clear the sender's stale
+    // "new message" alert even if they replied from a surface that did not
+    // re-fetch the thread immediately beforehand.
+    await this.notifications.resolveByEntity('listing_inquiry', inquiry.id, {
+      userId: senderId,
+      types: ['listing_inquiry_message'],
+    });
     const senderIsBuyer = senderId === inquiry.buyerId;
     const recipient = senderIsBuyer ? inquiry.seller : inquiry.buyer;
     void this.notifications

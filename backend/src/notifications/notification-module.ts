@@ -129,6 +129,10 @@ export function moduleForNotification(
     return category === 'SELLER' ? '/my/earnings' : '/my/orders';
   }
 
+  // Listing conversations have their own inbox. Both sides use it, so the
+  // badge must not be split by buyer/seller perspective.
+  if (type === 'listing_inquiry_message') return '/messages';
+
   // Buyer↔seller message thread — the row's own url is the transaction, but
   // the account-menu badge belongs on the order/sale module for the side the
   // member is on.

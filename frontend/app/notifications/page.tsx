@@ -14,10 +14,11 @@
 // bar polls /notifications/me/active-count every 60s.
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../lib/auth';
 import {
   fetchActiveCount,
+  preferredNotificationTab,
   type ActiveCount,
   type NotificationCategory,
 } from '@/lib/notifications';
@@ -33,15 +34,18 @@ function tabFromParam(raw: string | null): NotificationCategory {
 }
 
 export default function NotificationsPage() {
+  const router = useRouter();
   const search = useSearchParams();
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const current = tabFromParam(search.get('tab'));
+  const explicitTab = search.get('tab');
+  const current = tabFromParam(explicitTab);
   const [activeCount, setActiveCount] = useState<ActiveCount>({
     buyer: 0,
     seller: 0,
     account: 0,
     total: 0,
   });
+  const [countsReady, setCountsReady] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
 
   // Pull per-tab counts on mount + whenever the tab changes (so newly
@@ -51,9 +55,15 @@ export default function NotificationsPage() {
     let cancelled = false;
     const refresh = async () => {
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        if (!cancelled) setCountsReady(true);
+        return;
+      }
       const c = await fetchActiveCount(token);
-      if (!cancelled) setActiveCount(c);
+      if (!cancelled) {
+        setActiveCount(c);
+        setCountsReady(true);
+      }
     };
     void refresh();
     // Dismissing a row inside NotificationsList must decrement the tab badge
@@ -66,6 +76,18 @@ export default function NotificationsPage() {
       window.removeEventListener('gg:alerts-changed', onAlertsChanged);
     };
   }, [isLoaded, isSignedIn, getToken, current, showResolved]);
+
+  // A bare /notifications used to open Buyer even when the only unfinished
+  // business was a Seller alert. Once the counts are known, move to the tab
+  // that actually has something in it. An explicit ?tab always wins.
+  useEffect(() => {
+    if (explicitTab || !countsReady) return;
+    const target = preferredNotificationTab(activeCount);
+    if (target === current) return;
+    router.replace(`/notifications?tab=${target.toLowerCase()}`, {
+      scroll: false,
+    });
+  }, [activeCount, countsReady, current, explicitTab, router]);
 
   return (
     <main

@@ -72,6 +72,8 @@ describe('moduleForNotification', () => {
   it('routes message threads by perspective and delivery failures to Shipping', () => {
     expect(moduleForNotification('new_message', 'BUYER')).toBe('/my/orders');
     expect(moduleForNotification('new_message', 'SELLER')).toBe('/my/sales');
+    expect(moduleForNotification('listing_inquiry_message', 'BUYER')).toBe('/messages');
+    expect(moduleForNotification('listing_inquiry_message', 'SELLER')).toBe('/messages');
     expect(moduleForNotification('shipment_failed', 'BUYER')).toBe('/shipping');
   });
 

@@ -834,8 +834,10 @@ Four channels, one source of truth in `NotificationsService`:
 3. **In-app inbox** (`Notification` model) — drives the bell badge and
    `/notifications`.
 4. **Web push** — shipped. `backend/src/push/` wraps `web-push`; browser opts in →
-   `POST /push/subscribe` → `persist()` writes the inbox row and, **for
-   action-required events only**, calls `push.sendToUser()`. A 410 from the
+   `POST /push/subscribe` → `persist()` writes the inbox row and calls
+   `push.sendToUser()` for **action-required events and message events**
+   (`forcePush`). Message pushes are tagged by thread, so a second message
+   replaces the first instead of stacking. A 410 from the
    gateway deletes the subscription row. iOS Safari 16.4+ only delivers to an
    installed PWA.
 
@@ -866,7 +868,14 @@ preheader) with theme tokens inlined. **There are no per-event template files.**
 does **not** clear it. A notification stays, and counts toward the badge, until the
 user **acts** on the underlying entity or explicitly dismisses an informational
 item. `dismissible: false` rows can only be cleared by the server-side resolve
-hook. Badge query is `WHERE userId=? AND resolvedAt IS NULL`.
+hook. Message rows are the deliberate exception on the action side: opening a
+listing/transaction thread resolves that thread's `listing_inquiry_message` /
+`new_message` alert, and replying resolves the sender's stale one. Badge query is
+`WHERE userId=? AND resolvedAt IS NULL`.
+
+Listing conversations live at `/messages` (buyer and seller in one inbox); the
+dashboard keeps an inline copy. Message notifications and email CTAs deep-link
+to `/messages?inquiry=<id>#inquiries`, which opens that thread directly.
 
 API: `persist(...)`, `persistByEmail(email, ...)`, and
 `resolveByEntity(linkedType, linkedId, {userId?, resolvedBy?})`, called from action

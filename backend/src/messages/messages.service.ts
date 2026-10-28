@@ -66,6 +66,11 @@ export class MessagesService {
   /** Messages on a transaction, oldest → newest. Buyer/seller only. */
   async list(transactionId: string, userId: string) {
     await this.assertParticipant(transactionId, userId);
+    // Opening the thread is the action the alert was waiting for.
+    await this.notifications.resolveByEntity('transaction', transactionId, {
+      userId,
+      types: ['new_message'],
+    });
     return this.prisma.message.findMany({
       where: { transactionId },
       orderBy: { createdAt: 'asc' },
@@ -126,6 +131,13 @@ export class MessagesService {
         originalContent: moderated ? text : null,
         wasModerated: moderated,
       },
+    });
+
+    // Replying is also an action on the thread: clear the sender's stale
+    // "new message" alert without touching any other transaction alert.
+    await this.notifications.resolveByEntity('transaction', transactionId, {
+      userId,
+      types: ['new_message'],
     });
 
     if (needsReview || categories.length > 0) {

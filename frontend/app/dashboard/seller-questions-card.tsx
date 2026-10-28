@@ -65,11 +65,17 @@ function whenLabel(iso: string): string {
  * moderated exactly like transaction messages — contact details auto-strip,
  * abuse is blocked.
  */
-export function SellerQuestionsCard() {
+export function SellerQuestionsCard({
+  initialInquiryId = null,
+}: {
+  /** Deep link target from /messages?inquiry=<id>. */
+  initialInquiryId?: string | null;
+}) {
   const { getToken, isSignedIn } = useAuth();
   const [items, setItems] = useState<InquiryListRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [autoOpenedId, setAutoOpenedId] = useState<string | null>(null);
   const [thread, setThread] = useState<InquiryThread | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [draft, setDraft] = useState('');
@@ -137,15 +143,29 @@ export function SellerQuestionsCard() {
     return () => clearInterval(t);
   }, [isSignedIn, loadList, loadThread, selectedId]);
 
-  const open = (id: string) => {
-    setSelectedId(id);
-    setThread(null);
-    setDraft('');
-    setAttachImages([]);
-    setAttachVideo(null);
-    setErr(null);
-    void loadThread(id);
-  };
+  const open = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setThread(null);
+      setDraft('');
+      setAttachImages([]);
+      setAttachVideo(null);
+      setErr(null);
+      void loadThread(id);
+    },
+    [loadThread],
+  );
+
+  // A notification, email CTA or account-menu deep link carries the thread id.
+  // Open it as soon as auth is ready, without making the member hunt through
+  // the list. The id guard stops the effect re-opening a thread the member has
+  // deliberately closed while the URL still carries the old id.
+  useEffect(() => {
+    if (!isSignedIn || !initialInquiryId) return;
+    if (autoOpenedId === initialInquiryId) return;
+    setAutoOpenedId(initialInquiryId);
+    open(initialInquiryId);
+  }, [autoOpenedId, initialInquiryId, isSignedIn, open]);
 
   const sendText = async () => {
     const content = draft.trim();
@@ -231,7 +251,7 @@ export function SellerQuestionsCard() {
           letterSpacing: '0.05em',
         }}
       >
-        Buyer inquiries
+        Messages
       </p>
 
       {items === null ? (
@@ -245,8 +265,8 @@ export function SellerQuestionsCard() {
         </p>
       ) : items.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          No buyer inquiries yet. When someone contacts you about a listing,
-          it lands here.
+          No messages yet. When someone contacts you about a listing, it
+          lands here.
         </p>
       ) : selectedId && thread ? (
         <div>
