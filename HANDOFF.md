@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - LIVE PAYOUT VERIFIED (OPS ONLY, NO DEPLOY)
+
+Sent a real **R10** payout to Investec `****0758` (account `10012650758`) using
+Ozow's universal branch `580105` (the operator supplied `580108`, which is
+branch-specific). Payout `20261028-cb9b-4554-8786-02d42589b8f6`, merchant ref
+`AOTESTMVSER3D6`, RTC. Status **Payout Completed**; `VerificationSuccessful` and
+`PayoutCompleted` webhooks delivered; the operator confirmed the R10 in the
+account.
+
+Recorded in the isolated `OzowPayoutTestAttempt` table
+(`cmvser3ep00002wvnkyhtezr7`) - a real float debit with **no** fabricated
+Transaction/Zoho row. Evidence:
+`backend/.ozow-test-evidence/2026-10-28T17-48-14-573Z/live-r10-investec.json`.
+`PAYMENTS-GO-LIVE.md` now records money-out as verified.
+
 ## 2026-10-28 - PAYABLE OFFERS AND AUCTION LAUNCH HARDENING (FULL DEPLOY)
 
 Deployed `dd8fb37f` (rollback `alloutdoor-20261028-194022.dump`, 35,799,851

@@ -1,10 +1,22 @@
 # Payments go-live runbook (Ozow pay-in + pay-out)
 
-**Status:** LIVE for money-in as of 2026-10-10 (checkout open). Money-out pending the
-float top-up + Ozow's payout-verification confirmation.
-**Last updated:** 2026-10-10.
+**Status:** LIVE for money-in as of 2026-10-10 (checkout open). Money-out
+**verified end-to-end on 2026-10-28**: a real R10 Investec payout completed and
+the funds landed.
+**Last updated:** 2026-10-28.
 
 ## Progress log
+
+- **2026-10-28 - live payout verified.** R10 to Investec `****0758` (account
+  `10012650758`) using Ozow's universal branch `580105` (the operator supplied
+  `580108`, which is branch-specific; Ozow resolves Investec to `580105`).
+  Payout `20261028-cb9b-4554-8786-02d42589b8f6`, merchant ref
+  `AOTESTMVSER3D6`, RTC. Status **Payout Completed**; `VerificationSuccessful`
+  and `PayoutCompleted` webhooks delivered; the member confirmed the R10 in the
+  account. Recorded in the isolated `OzowPayoutTestAttempt` table
+  (`cmvser3ep00002wvnkyhtezr7`) so no Transaction/Zoho row was fabricated. It is
+  a real float debit. Evidence:
+  `backend/.ozow-test-evidence/2026-10-28T17-48-14-573Z/live-r10-investec.json`.
 
 - **2026-10-10 — deployed `7209ec02`.** Gates green (backend 314 suites / 5290 tests,
   frontend 135 files / 1691 tests, prod build OK). `deploy.sh` run: rollback dump
@@ -62,7 +74,12 @@ prettier drift, untouched files included) and is **not** a deploy gate.
 
 ---
 
-## 2. Blocked on Ozow (their support items 3 & 4)
+## 2. Payout verification - RESOLVED 2026-10-28
+
+**Resolved:** the live R10 payout on 2026-10-28 completed and Ozow's
+`VerificationSuccessful` webhook was delivered, so the payout-verification
+blocker is closed. The historical 2026-10-10 questions are kept below for
+context.
 
 - **Payout verification URL** and whether the **24-char AccessToken** is issued by Ozow or
   self-configured. Site **Payout Settings** (verified 2026-10-10) reads: Payout Merchant Name +
@@ -70,8 +87,8 @@ prettier drift, untouched files included) and is **not** a deploy gate.
   edit control on the page). The merchant-level **Payouts API Key** *is* present and working
   (`Merchant → Edit Details`; `getavailablebanks` → HTTP 200).
   Payout *notifications* are fine — our code sends `notifyUrl` per `requestpayout` request.
-- Until answered: put the payout creds on the box **armed** (no disbursement runs without a manual
-  admin batch anyway) and keep `PAYMENTS_LIVE` able to hold; checkout can go live before payouts.
+- **Resolved 2026-10-28:** the payout creds were armed and a live R10 payout
+  completed; no further Ozow action is needed for payouts.
 
 ---
 
@@ -95,14 +112,14 @@ prettier drift, untouched files included) and is **not** a deploy gate.
 
 ## 4. Float + live tests (Ozow-approved R1–R20)
 
-Production float is **R 0.00** — no payout succeeds until funded.
+Production float is **funded** (R100 loaded by the operator; the R10 live test
+on 2026-10-28 debited it).
 
 1. Float Management → Top Up Float → **No** (static reference) → instant EFT with the exact
    reference. Start this early (clears on landing, not on send).
 2. Money-in: R1 pay-in → `transaction.complete` webhook confirms the order → refund lands back on
    the card.
-3. Money-out: R1 payout to an operator-controlled ABSA account → float debit + `PayoutCompleted`
-   notification. Irreversible — keep it trivial.
+3. **DONE 2026-10-28:** live R10 payout to an operator-controlled Investec account → float debit + `VerificationSuccessful` and `PayoutCompleted` notifications; funds landed. Irreversible - keep future tests trivial.
 
 ---
 
