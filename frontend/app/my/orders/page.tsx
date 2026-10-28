@@ -95,8 +95,19 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
 
   // PRIVATE_ARRANGE releases on capture, so a HELD one is still settling —
   // the contact details aren't revealed yet and there's nothing to arrange.
+  // The gateway checkout was created but the money never landed (buyer
+  // backed out of Ozow). This is not a paid order yet.
+  if (!tx.paidAt) {
+    return {
+      text: 'Payment not completed - finish checkout',
+      tone: 'error',
+      action: true,
+      hint: 'No money was taken. Your item is held while you finish or restart payment.',
+    };
+  }
+
   if (method === 'PRIVATE_ARRANGE') {
-    return { text: 'Confirming payment — contact details unlock after that', tone: 'pending' };
+    return { text: 'Confirming payment - contact details unlock after that', tone: 'pending' };
   }
 
   // Seller accept gates everything downstream (TOK-7).
@@ -460,7 +471,14 @@ export default async function MyOrdersPage() {
             <div className="order-list space-y-3">
               {transactions.map((tx) => {
                 const status = resolveStatus(PAYMENT_STATUS, tx.paymentStatus);
-                const color = toneColor(status.tone);
+                const needsPayment =
+                  tx.paymentStatus === 'HELD' && !tx.paidAt;
+                const color = needsPayment
+                  ? 'var(--red)'
+                  : toneColor(status.tone);
+                const statusLabel = needsPayment
+                  ? 'Payment not completed'
+                  : status.label;
                 const cue = nextActionCue(tx, now);
                 const cueColor = cue ? toneColor(cue.tone) : undefined;
                 const steps = orderStepNodes(tx);
@@ -554,7 +572,7 @@ export default async function MyOrdersPage() {
                             background: `color-mix(in srgb, ${color} 9%, transparent)`,
                           }}
                         >
-                          {status.label}
+                          {statusLabel}
                         </span>
                       </div>
                     </div>
@@ -621,7 +639,11 @@ export default async function MyOrdersPage() {
                       style={{ borderTop: '0.5px solid var(--border)' }}
                     >
                       <Link
-                        href={`/transactions/${tx.id}`}
+                        href={
+                          needsPayment
+                            ? `/checkout/${tx.listing.id}`
+                            : `/transactions/${tx.id}`
+                        }
                         className="text-xs px-3 py-1.5 rounded-[6px]"
                         style={
                           cue?.action
@@ -635,7 +657,11 @@ export default async function MyOrdersPage() {
                               }
                         }
                       >
-                        {cue?.action ? 'View order — action needed' : 'View order'}
+                        {needsPayment
+                          ? 'Complete payment'
+                          : cue?.action
+                            ? 'View order - action needed'
+                            : 'View order'}
                       </Link>
                     </div>
                   </div>

@@ -50,6 +50,7 @@ function makeService(listing: Record<string, unknown>) {
           created.data = args.data;
           return Promise.resolve({ id: 'TX1', ...args.data });
         }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     checkoutHold: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     listing: {
@@ -69,7 +70,11 @@ function makeService(listing: Record<string, unknown>) {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       update: jest.fn().mockResolvedValue({}),
     },
-    transaction: { create: txClient.transaction.create },
+    transaction: {
+      create: txClient.transaction.create,
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     checkoutHold: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((args: { data: Record<string, unknown> }) =>
@@ -99,11 +104,12 @@ function makeService(listing: Record<string, unknown>) {
       serviceCode: 'bobgo_door',
     }),
   };
+  const ozow = { getPaymentStatus: jest.fn() };
   const service = new TransactionsService(
     prisma as never,
     new FeeCalculator() as never,
     {} as never, // notifications
-    {} as never, // ozow
+    ozow as never,
     { triggerSellerVerification: jest.fn().mockResolvedValue(undefined) } as never,
     shipping as never,
     {} as never, // tracking
@@ -122,7 +128,7 @@ function makeService(listing: Record<string, unknown>) {
       }
     ).reserveAndCreateLine('B1', dto);
 
-  return { service, prisma, txClient, reserve, created, shipping };
+  return { service, prisma, txClient, reserve, created, shipping, ozow };
 }
 
 function holdRow(over: Record<string, unknown> = {}) {
@@ -263,5 +269,76 @@ describe('checkout holds (15-minute BUY_NOW reservation)', () => {
       reserve(checkoutDto({ holdId: 'H1' })),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(created.data).toEqual({});
+  });
+
+  it('reclaims the buyer’s abandoned Ozow checkout and starts a fresh hold', async () => {
+    const { service, prisma, txClient, ozow } = makeService(
+      makeHeldListing(),
+    );
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TXOLD',
+      gatewayCheckoutId: 'PAY1',
+      quantity: 1,
+      listing: { trackInventory: false },
+    });
+    ozow.getPaymentStatus.mockResolvedValue({
+      isSuccess: false,
+      status: 'Incomplete',
+    });
+
+    const hold = await service.createCheckoutHold('B1', 'L1');
+
+    expect(ozow.getPaymentStatus).toHaveBeenCalledWith('PAY1');
+    expect(txClient.transaction.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'TXOLD', paidAt: null, paymentStatus: 'HELD' },
+    });
+    expect(txClient.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', status: 'PAYMENT_PENDING' },
+      data: { status: 'ACTIVE' },
+    });
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', status: 'ACTIVE' },
+      data: { status: 'PAYMENT_PENDING' },
+    });
+    expect(hold.holdId).toBe('H1');
+  });
+
+  it('never releases an unpaid-looking checkout Ozow says is paid', async () => {
+    const { service, prisma, txClient, ozow } = makeService(
+      makeHeldListing(),
+    );
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TXOLD',
+      gatewayCheckoutId: 'PAY1',
+      quantity: 1,
+      listing: { trackInventory: false },
+    });
+    ozow.getPaymentStatus.mockResolvedValue({
+      isSuccess: true,
+      status: 'Successful',
+    });
+
+    await expect(service.createCheckoutHold('B1', 'L1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(txClient.transaction.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not release when the Ozow status lookup fails', async () => {
+    const { service, prisma, txClient, ozow } = makeService(
+      makeHeldListing(),
+    );
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TXOLD',
+      gatewayCheckoutId: 'PAY1',
+      quantity: 1,
+      listing: { trackInventory: false },
+    });
+    ozow.getPaymentStatus.mockRejectedValue(new Error('ozow 503'));
+
+    await expect(service.createCheckoutHold('B1', 'L1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(txClient.transaction.deleteMany).not.toHaveBeenCalled();
   });
 });

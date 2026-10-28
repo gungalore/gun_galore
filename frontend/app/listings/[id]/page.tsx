@@ -195,6 +195,26 @@ export default async function ListingDetailPage({
   const sellerUserId = listing.seller.userId ?? listing.seller.id;
   const isOwnListing = !!userId && userId === sellerUserId;
 
+  // A buyer who backed out of Ozow lands back here with the listing on
+  // PAYMENT_PENDING and no visible buy control. Ask whether THIS viewer owns
+  // the unpaid attempt; only then offer the resume link (another buyer's
+  // attempt stays private and is rejected by the checkout hold).
+  const unpaidCheckout =
+    !isOwnListing &&
+    listing.status === 'PAYMENT_PENDING' &&
+    listing.listingType === 'BUY_NOW' &&
+    userId &&
+    token
+      ? await apiFetch<{ transactionId: string | null }>(
+          `/transactions/unpaid?listingId=${encodeURIComponent(listing.id)}`,
+          {
+            cache: 'no-store',
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        ).catch(() => null)
+      : null;
+  const hasUnpaidCheckout = !!unpaidCheckout?.transactionId;
+
   // Dealer-distance is viewer-specific. Read the signed-in buyer's own saved
   // coordinates server-side (never send them to the browser) and calculate a
   // coarse straight-line figure for the seller-nominated gunshop. No shared
@@ -1079,6 +1099,33 @@ export default async function ListingDetailPage({
               listingId={listing.id}
               sellerId={sellerUserId}
             />
+          ) : listing.status === 'PAYMENT_PENDING' && hasUnpaidCheckout ? (
+            <div
+              className="rounded-[6px] px-4 py-3 mb-5 text-sm"
+              style={{
+                background: 'rgba(227,6,19,0.06)',
+                border: '0.5px solid var(--red)',
+              }}
+            >
+              <p className="font-medium mb-1" style={{ color: 'var(--red)' }}>
+                Payment not completed
+              </p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                No money was taken. Finish checkout to pay or choose another
+                payment option.
+              </p>
+              <Link
+                href={`/checkout/${listing.id}`}
+                className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                }}
+              >
+                Complete payment
+              </Link>
+            </div>
           ) : listing.status !== 'ACTIVE' ? (
             <div
               className="rounded-[6px] px-4 py-3 mb-5 text-sm text-center"

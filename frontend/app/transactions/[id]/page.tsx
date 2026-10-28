@@ -91,6 +91,13 @@ export default async function TransactionPage({
 
   const isBuyer = tx.buyerId === userId;
   const isSeller = tx.sellerId === userId;
+  const paymentPending = tx.paymentStatus === 'HELD' && !tx.paidAt;
+  const paymentStatusLabel = paymentPending
+    ? 'Payment not completed'
+    : PAYMENT_STATUS_LABEL[tx.paymentStatus];
+  const paymentStatusColor = paymentPending
+    ? 'var(--red)'
+    : PAYMENT_STATUS_COLOR[tx.paymentStatus];
 
   const listing = tx.listing;
   const primaryImage = listing.images.find((i) => i.isPrimary) ?? listing.images[0];
@@ -230,8 +237,44 @@ export default async function TransactionPage({
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <Link href={backHref} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
-        ← {backLabel}
+         {backLabel}
       </Link>
+
+      {isBuyer && paymentPending && (
+        <div
+          className="rounded-[8px] p-4 mb-5"
+          style={{
+            background: 'rgba(227,6,19,0.06)',
+            border: '0.5px solid var(--red)',
+          }}
+        >
+          <p
+            className="text-xs uppercase mb-1"
+            style={{
+              color: 'var(--red)',
+              letterSpacing: '0.05em',
+              fontWeight: 600,
+            }}
+          >
+            Payment not completed
+          </p>
+          <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+            No money was taken. Your item is held while you finish checkout.
+            Start again to pay or choose another payment option.
+          </p>
+          <Link
+            href={`/checkout/${listing.id}`}
+            className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              textDecoration: 'none',
+            }}
+          >
+            Complete payment
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start">
         {/* Left: main detail */}
@@ -1312,19 +1355,23 @@ export default async function TransactionPage({
               DEALER_TRANSFER buyer has no confirm-delivery button to look
               for — release hangs off the dealer stock-in check instead. */}
           <div
-            title={paymentStatusHint(tx.paymentStatus, tx.shippingMethod)}
+            title={
+              paymentPending
+                ? 'No money was taken. Finish checkout to pay or choose another method.'
+                : paymentStatusHint(tx.paymentStatus, tx.shippingMethod)
+            }
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mb-4"
             style={{
-              background: `${PAYMENT_STATUS_COLOR[tx.paymentStatus]}18`,
-              color: PAYMENT_STATUS_COLOR[tx.paymentStatus],
-              border: `0.5px solid ${PAYMENT_STATUS_COLOR[tx.paymentStatus]}40`,
+              background: `color-mix(in srgb, ${paymentStatusColor} 9%, transparent)`,
+              color: paymentStatusColor,
+              border: `0.5px solid ${paymentStatusColor}40`,
             }}
           >
             <span
               className="w-1.5 h-1.5 rounded-full"
-              style={{ background: PAYMENT_STATUS_COLOR[tx.paymentStatus] }}
+              style={{ background: paymentStatusColor }}
             />
-            {PAYMENT_STATUS_LABEL[tx.paymentStatus]}
+            {paymentStatusLabel}
           </div>
 
           {/* Breakdown */}

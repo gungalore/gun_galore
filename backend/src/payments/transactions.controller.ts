@@ -206,6 +206,20 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // The signed-in buyer's own unpaid hosted checkout for a listing
+  // ---------------------------------------------------------------
+  // Used by the listing/order surfaces to offer "Complete payment" after a
+  // buyer backs out of Ozow. Another buyer's attempt is never returned.
+  @Get('unpaid')
+  @UseGuards(AuthGuard)
+  findUnpaid(
+    @CurrentUser() userId: string,
+    @Query('listingId') listingId: string,
+  ) {
+    return this.txService.findUnpaidForListing(userId, listingId);
+  }
+
+  // ---------------------------------------------------------------
   // Single transaction detail
   // ---------------------------------------------------------------
   @Get(':id')

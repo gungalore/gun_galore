@@ -69,9 +69,18 @@ export default async function CheckoutPage({
 
   if (!isAuctionWin) {
     if (listing.listingType !== 'BUY_NOW') return notFound();
-    // ACTIVE = no hold yet. PAYMENT_PENDING is only renderable when it is
-    // THIS buyer's unexpired hold; everyone else gets the 404.
-    if (listing.status !== 'ACTIVE' && !initialHold) return notFound();
+    // ACTIVE = no hold yet. PAYMENT_PENDING is renderable when it is THIS
+    // buyer's unexpired hold, and also when Pay already claimed the hold and
+    // the buyer returned from Ozow: the form's POST /transactions/hold
+    // reclaims their own unpaid attempt and starts a fresh hold. Another
+    // buyer's reservation is rejected by that same POST, never released here.
+    if (
+      listing.status !== 'ACTIVE' &&
+      listing.status !== 'PAYMENT_PENDING' &&
+      !initialHold
+    ) {
+      return notFound();
+    }
   }
 
   // Self-buy guard. Backend rejects with 400 anyway, but landing

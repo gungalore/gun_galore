@@ -914,6 +914,111 @@ export class TransactionsService {
     return this.holdPayload(hold);
   }
 
+  /**
+   * A buyer backed out of the Ozow hosted page. Pay already claimed and
+   * deleted the checkout hold, and the listing is PAYMENT_PENDING with an
+   * unpaid HELD transaction. Without this, reloading checkout 404s and the
+   * listing stays stuck until the 17-minute stale sweep.
+   *
+   * Only the buyer's OWN unpaid gateway transaction is reclaimed, and only
+   * after Ozow says it is not successful. A paid transaction (or a failed
+   * status lookup) is never released.
+   */
+  private async reclaimBuyerAbandonedCheckout(
+    buyerId: string,
+    listingId: string,
+  ): Promise<boolean> {
+    const tx = await this.prisma.transaction.findFirst({
+      where: {
+        buyerId,
+        listingId,
+        paidAt: null,
+        paymentStatus: 'HELD',
+        gatewayCheckoutId: { not: null },
+        orderId: null,
+        swapId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        gatewayCheckoutId: true,
+        quantity: true,
+        listing: { select: { trackInventory: true } },
+      },
+    });
+    if (!tx?.gatewayCheckoutId) return false;
+
+    let status: OzowPaymentResult | null;
+    try {
+      status = await this.ozow.getPaymentStatus(tx.gatewayCheckoutId);
+    } catch (err) {
+      this.logger.warn(
+        `reclaimBuyerAbandonedCheckout: status fetch failed for ${tx.id}: ${(err as Error).message}`,
+      );
+      throw new ConflictException(
+        'We could not confirm your previous payment yet. Please try again in a minute.',
+      );
+    }
+    if (status?.isSuccess) {
+      // The money is in. Never release it here; the webhook/result path owns
+      // the paid transition.
+      throw new ConflictException(
+        'Your payment was received. Open your order to continue.',
+      );
+    }
+
+    try {
+      await this.prisma.$transaction(async (txc) => {
+        // Delete first, conditional on the money still being unpaid. If a
+        // webhook marked it paid in the meantime, this affects 0 rows and the
+        // whole transaction rolls back before the listing is touched.
+        const deleted = await txc.transaction.deleteMany({
+          where: { id: tx.id, paidAt: null, paymentStatus: 'HELD' },
+        });
+        if (deleted.count === 0) {
+          throw new ConflictException(
+            'This payment is already being processed.',
+          );
+        }
+        const updated = tx.listing.trackInventory
+          ? await txc.listing.updateMany({
+              where: {
+                id: listingId,
+                status: ListingStatus.PAYMENT_PENDING,
+              },
+              data: {
+                status: ListingStatus.ACTIVE,
+                quantityAvailable: { increment: tx.quantity },
+                quantityReserved: { decrement: tx.quantity },
+              },
+            })
+          : await txc.listing.updateMany({
+              where: {
+                id: listingId,
+                status: ListingStatus.PAYMENT_PENDING,
+              },
+              data: { status: ListingStatus.ACTIVE },
+            });
+        if (updated.count === 0) {
+          throw new ConflictException('This item is no longer available.');
+        }
+      });
+    } catch (err) {
+      if (err instanceof ConflictException) throw err;
+      this.logger.warn(
+        `reclaimBuyerAbandonedCheckout failed for ${tx.id}: ${(err as Error).message}`,
+      );
+      throw new ConflictException(
+        'We could not restart checkout. Please try again.',
+      );
+    }
+
+    this.logger.warn(
+      `reclaimBuyerAbandonedCheckout: released ${tx.id} — listing ${listingId} re-sellable`,
+    );
+    return true;
+  }
+
   async createCheckoutHold(buyerId: string, listingId: string) {
     const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
@@ -939,6 +1044,7 @@ export class TransactionsService {
       throw new BadRequestException('Only Buy Now checkouts can hold an item.');
     }
 
+    let holdReleased = false;
     const existing = await this.prisma.checkoutHold.findUnique({
       where: { buyerId_listingId: { buyerId, listingId } },
     });
@@ -952,9 +1058,19 @@ export class TransactionsService {
         );
       }
       await this.releaseCheckoutHoldRow(existing, { requireExpired: true });
+      holdReleased = true;
     }
 
-    if (listing.status !== ListingStatus.ACTIVE) {
+    // No live hold and the listing is still PAYMENT_PENDING: the buyer may
+    // have returned from Ozow after Pay claimed/deleted the hold. Reclaim
+    // their own unpaid gateway attempt (only after Ozow says it failed), then
+    // start a fresh hold. Another buyer's reservation is rejected below.
+    const reclaimed =
+      !holdReleased && listing.status === ListingStatus.PAYMENT_PENDING
+        ? await this.reclaimBuyerAbandonedCheckout(buyerId, listing.id)
+        : false;
+
+    if (listing.status !== ListingStatus.ACTIVE && !holdReleased && !reclaimed) {
       throw new ConflictException(
         'This item is no longer available — another buyer is completing checkout, or it has already sold.',
       );
@@ -3926,7 +4042,10 @@ export class TransactionsService {
     const where =
       role === 'buyer'
         ? { buyerId: user.id, refundOfId: null }
-        : { sellerId: user.id, refundOfId: null };
+        : // An unpaid hosted checkout is not a sale yet. Never show it to the
+          // seller as a pending order; the buyer still sees it on /my/orders
+          // so they can resume.
+          { sellerId: user.id, refundOfId: null, paidAt: { not: null } };
 
     const rows = await this.prisma.transaction.findMany({
       where,
@@ -3965,6 +4084,28 @@ export class TransactionsService {
       }
     }
     return rows;
+  }
+
+  /**
+   * The signed-in buyer's own unpaid hosted-checkout row for a listing, if
+   * any. Powers the "Complete payment" link on the listing/order surfaces;
+   * it never exposes another buyer's attempt.
+   */
+  async findUnpaidForListing(userId: string, listingId: string) {
+    const tx = await this.prisma.transaction.findFirst({
+      where: {
+        buyerId: userId,
+        listingId,
+        paidAt: null,
+        paymentStatus: 'HELD',
+        gatewayCheckoutId: { not: null },
+        orderId: null,
+        swapId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    return { transactionId: tx?.id ?? null };
   }
 
   async findById(transactionId: string, userId: string) {
