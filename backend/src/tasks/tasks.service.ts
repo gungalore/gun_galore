@@ -902,6 +902,28 @@ export class TasksService {
     }
   }
 
+  // Every 10 min — WhatsApp primary-channel safety net. A sales message Meta
+  // has not delivered after one hour falls back to SMS + email; one that was
+  // delivered but is still unread after 12 hours gets a reminder. The method
+  // stamps each log row so a nudge fires once.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async whatsappFallbackNudges() {
+    try {
+      const r = await this.notifications.processWhatsappFallbacks();
+      if (r.undelivered > 0 || r.unread > 0) {
+        this.logger.log(
+          `WhatsApp fallback: ${r.undelivered} undelivered, ${r.unread} unread`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `whatsappFallbackNudges failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('whatsapp-fallback-nudges');
+    }
+  }
+
   // Hourly — self-heal FAILED/stranded commission invoices + missing
   // subscription sales receipts (previously manual-retry only; a Zoho
   // outage during a release window would silently leave holes in Books).

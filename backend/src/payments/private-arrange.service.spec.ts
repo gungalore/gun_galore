@@ -59,6 +59,7 @@ const baseTx = {
   buyerTotal: 100_000,
   shippingMethod: 'PRIVATE_ARRANGE',
   paymentStatus: 'HELD',
+  acceptedAt: new Date(),
   privateArrangeAcceptedAt: new Date(),
   privateArrangeDeliveredAt: null,
   privateArrangeReceivedAt: null,
@@ -69,14 +70,39 @@ const baseTx = {
 };
 
 describe('TransactionsService — Private Arrangement handover', () => {
-  it('buyer "received" releases the payout', async () => {
-    const { service, prisma, notifications, zoho } = makeService({ tx: { ...baseTx } });
+  it('buyer "received" releases the payout only after delivery', async () => {
+    const { service, prisma, notifications, zoho } = makeService({
+      tx: { ...baseTx, privateArrangeDeliveredAt: new Date() },
+    });
     const r = await service.confirmPrivateArrangeReceived('TX1', 'B');
     expect(r).toEqual({ released: true });
     const claim = prisma.transaction.updateMany.mock.calls[0][0];
     expect(claim.data.paymentStatus).toBe('RELEASED');
     expect(notifications.paymentReleasedSeller).toHaveBeenCalled();
     expect(zoho.createCommissionInvoice).toHaveBeenCalledWith('TX1');
+  });
+
+  it('refuses buyer receipt before the seller accepts', async () => {
+    const { service } = makeService({
+      tx: { ...baseTx, acceptedAt: null, privateArrangeDeliveredAt: new Date() },
+    });
+    await expect(
+      service.confirmPrivateArrangeReceived('TX1', 'B'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses buyer receipt before the seller marks it delivered', async () => {
+    const { service } = makeService({ tx: { ...baseTx } });
+    await expect(
+      service.confirmPrivateArrangeReceived('TX1', 'B'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses seller delivery before accepting the sale', async () => {
+    const { service } = makeService({ tx: { ...baseTx, acceptedAt: null } });
+    await expect(
+      service.markPrivateArrangeDelivered('TX1', 'S'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('seller "delivered" stamps the time and notifies the buyer', async () => {
@@ -123,6 +149,9 @@ describe('TransactionsService — Private Arrangement handover', () => {
     const r = await service.sweepPrivateArrange();
 
     expect(r.released).toBe(1);
+    expect(prisma.transaction.findMany.mock.calls[1][0].where.acceptedAt).toEqual({
+      not: null,
+    });
     expect(notifications.paymentReleasedSeller).toHaveBeenCalled();
   });
 

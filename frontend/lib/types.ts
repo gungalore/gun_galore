@@ -268,9 +268,8 @@ export interface Me {
   bankAccountNumber: string | null;
   bankBranchCode: string | null;
   bankAccountType: string | null;
-  // Stamped once the post-sign-up channel-preferences sheet has been shown
-  // (by a submit OR a dismiss). Null = never shown; the sheet reads this,
-  // never localStorage, since it is half of the Meta-audit consent record.
+  // Legacy stamp from the removed post-sign-up channel-preferences sheet.
+  // Kept on the API shape for older rows; no current surface reads it.
   channelPrefsPromptedAt?: string | null;
   // Whether the WhatsApp switch should render live or "coming soon" — the
   // server's `whatsapp_enabled` operator flag, so the frontend never offers
@@ -578,6 +577,12 @@ export interface Transaction {
   // payment if nothing disputes.
   privateArrangeDeliveredAt: string | null;
   privateArrangeReceivedAt: string | null;
+  /** Latest sales WhatsApp for this order (Meta status: SENT/DELIVERED/READ/FAILED). */
+  whatsappStatus?: {
+    status: string;
+    at: string;
+    templateKey: string;
+  } | null;
   // Dealer stock-in verification (firearm DEALER_TRANSFER only).
   // See backend/src/payments/dealer-verification.service.ts for the
   // lifecycle. Null on every other shipping method.

@@ -15,6 +15,7 @@
 
 import Link from 'next/link';
 import {
+  notificationActionLabel,
   notificationHref,
   timeAgo,
   type NotificationItem as N,
@@ -193,7 +194,7 @@ export function NotificationItem({
           {item.body}
           {!resolved && !item.dismissible && (
             <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-              · Tap to act →
+              · Action needed →
             </span>
           )}
         </span>
@@ -284,7 +285,7 @@ export function NotificationItem({
               whiteSpace: 'nowrap',
             }}
           >
-            Act
+            {notificationActionLabel(item.type)}
           </span>
         )}
       </Link>

@@ -60,7 +60,7 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
   // The pill already says "Payout released" / "Refunded". Only name a next
   // step where one genuinely exists after the money moved.
   if (tx.paymentStatus === 'RELEASED') {
-    if (method === 'PRIVATE_ARRANGE' && tx.privateArrangeAcceptedAt) {
+    if (method === 'PRIVATE_ARRANGE' && tx.acceptedAt) {
       // Release is exactly the moment the order page unlocks the seller's
       // contact details for the in-person hand-over.
       return {
@@ -107,7 +107,39 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
   }
 
   if (method === 'PRIVATE_ARRANGE') {
-    return { text: 'Confirming payment - contact details unlock after that', tone: 'pending' };
+    if (!tx.acceptedAt) {
+      const missed =
+        !!tx.acceptDeadlineAt &&
+        new Date(tx.acceptDeadlineAt).getTime() <= now;
+      return missed
+        ? {
+            text: 'Seller missed the accept window - our team is following it up',
+            tone: 'error',
+            hint: "You don't need to do anything. Your payment is still held.",
+          }
+        : {
+            text: 'Waiting on the seller to accept the sale',
+            tone: 'pending',
+            hint: "The seller's contact details are sent only after they accept.",
+          };
+    }
+    if (!tx.privateArrangeDeliveredAt) {
+      return {
+        text: 'Seller accepted - arrange the handover',
+        tone: 'info',
+        action: true,
+        hint: 'The seller contact details are on the order page.',
+      };
+    }
+    if (!tx.privateArrangeReceivedAt) {
+      return {
+        text: 'Action needed: confirm receipt',
+        tone: 'pending',
+        action: true,
+        hint: 'Confirm once the item is in your hands; that releases the seller payment.',
+      };
+    }
+    return { text: 'Receipt confirmed - payout releasing to seller', tone: 'info' };
   }
 
   // Seller accept gates everything downstream (TOK-7).

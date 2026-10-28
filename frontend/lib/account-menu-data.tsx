@@ -214,6 +214,15 @@ const CommunityIcon: IconC = () => (
 
 export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
   {
+    // The two surfaces that carry something waiting for the member. They sit
+    // above every browsing destination so the inbox is never below the fold.
+    title: 'Inbox',
+    items: [
+      { href: '/notifications', label: 'Notifications', Icon: BellIcon },
+      { href: '/messages', label: 'Messages', Icon: InboxIcon },
+    ],
+  },
+  {
     title: 'Buying',
     items: [
       { href: '/my/orders', label: 'Orders', Icon: OrdersIcon },
@@ -287,12 +296,8 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     title: 'Account',
     items: [
       { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
-      // Listing conversations. One inbox for both directions; deliberately
-      // NOT under Selling, because buyers with an open thread need it too.
-      { href: '/messages', label: 'Messages', Icon: InboxIcon },
       { href: '/profile', label: 'Profile', Icon: UserIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
-      { href: '/notifications', label: 'Notifications', Icon: BellIcon },
     ],
   },
   {

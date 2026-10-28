@@ -39,7 +39,7 @@ export function LikedBySheet({
   // getToken is a fresh identity each render in the test mock (and callers pass
   // plain objects); read it through a ref so the mount fetch runs exactly once
   // and a re-render cannot stomp a loaded page. Same convention as
-  // channel-prefs-sheet.tsx.
+  // date-picker-sheet.tsx.
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
 

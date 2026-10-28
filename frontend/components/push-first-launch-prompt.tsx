@@ -9,8 +9,9 @@
 // won't.
 //
 // Conditions to render (all must be true):
-//   - Installed PWA (standalone mode) — browser-tab users get the
-//     less-aggressive /notifications banner instead
+//   - Installed PWA (standalone mode) OR the app was just installed in this
+//     tab — browser-tab users otherwise get the less-aggressive
+//     /notifications banner instead
 //   - Signed in
 //   - Push is supported in this browser
 //   - Backend has VAPID configured
@@ -66,7 +67,23 @@ export function PushFirstLaunchPrompt() {
   const push = usePush();
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [justInstalled, setJustInstalled] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+
+  // `appinstalled` fires in the tab that installed the app, where
+  // display-mode is still browser, so without this the member installs and
+  // sees no notification prompt until they reopen the home-screen app.
+  // Chrome/Edge fire both events; iOS fires neither, so its path remains the
+  // standalone launch below.
+  useEffect(() => {
+    const onInstalled = () => setJustInstalled(true);
+    window.addEventListener('gg:installed', onInstalled);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('gg:installed', onInstalled);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
 
   // Decide whether to show, with a 600 ms entrance delay so the
   // homepage hero/cards land first. Re-runs when sign-in / push
@@ -77,7 +94,7 @@ export function PushFirstLaunchPrompt() {
     if (!push.ready) return;
     if (!push.supported) return;
     if (!push.vapidReady) return;
-    if (!push.standalone) return; // browser-tab users → /notifications banner only
+    if (!push.standalone && !justInstalled) return; // browser-tab users → /notifications banner only
     if (push.enabled) return;
     if (push.permission === 'denied') return;
     if (isDismissed()) {
@@ -93,6 +110,7 @@ export function PushFirstLaunchPrompt() {
     push.supported,
     push.vapidReady,
     push.standalone,
+    justInstalled,
     push.enabled,
     push.permission,
   ]);
@@ -110,9 +128,11 @@ export function PushFirstLaunchPrompt() {
       setVisible(false);
       return;
     }
-    // Permission denied or backend failed.
-    if (push.permission === 'denied') {
-      // Sticky in the browser — never ask again.
+    // Read the live permission, not the hook's pre-prompt state. A denial is
+    // sticky in the browser, so asking again is pointless.
+    const denied =
+      typeof Notification !== 'undefined' && Notification.permission === 'denied';
+    if (denied) {
       markDismissed(true);
       setVisible(false);
     } else {

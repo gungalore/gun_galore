@@ -66,6 +66,9 @@ export default function PrivateArrangePanel({
       <p className="text-xs text-[var(--text-tertiary)] mb-3">
         You arranged this handover directly. The seller&rsquo;s payment is held
         until you confirm you received the item — or 5 days after payment.
+        {!delivered && !received
+          ? ' The seller has accepted; waiting for the handover to be marked delivered.'
+          : ''}
         {delivered && !received ? ' The seller has marked it delivered.' : ''}
         {received ? ' Receipt confirmed — payment released to the seller.' : ''}
       </p>

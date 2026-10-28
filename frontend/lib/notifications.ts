@@ -161,6 +161,43 @@ export function notificationHref(item: NotificationItem): string {
   return `${path}?${params.toString()}`;
 }
 
+/**
+ * The verb on an actionable inbox row. "Act" told the member that something
+ * was needed but not what, so the Account hub and the inbox now say what the
+ * tap will do.
+ */
+export function notificationActionLabel(type: string): string {
+  switch (type) {
+    case 'offer_received':
+      return 'Respond to offer';
+    case 'offer_accepted':
+    case 'offer_pay_reminder':
+      return 'Pay now';
+    case 'offer_countered':
+      return 'Respond to counter';
+    case 'bid_outbid':
+      return 'Bid again';
+    case 'auction_won':
+    case 'auction_pay_reminder':
+      return 'Pay now';
+    case 'new_sale':
+    case 'sale_accept_escalated':
+      return 'Accept sale';
+    case 'private_arrange_payment_held':
+      return 'Open sale';
+    case 'private_arrange_handover':
+      return 'Arrange handover';
+    case 'private_arrange_delivered':
+    case 'private_arrange_reminder':
+      return 'Confirm receipt';
+    case 'dispatch_nudge':
+    case 'order_dispatched':
+      return 'View dispatch';
+    default:
+      return 'Open';
+  }
+}
+
 // Lightweight "x ago" formatter for the inbox row timestamps.
 export function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

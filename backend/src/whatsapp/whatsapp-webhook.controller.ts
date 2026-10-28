@@ -599,6 +599,7 @@ export class WhatsappWebhookController {
             : null;
     if (!action) return;
 
+    let txIdForReply: string | null = null;
     try {
       const sent = await this.prisma.whatsappMessageLog.findFirst({
         where: { messageId: repliedToMessageId },
@@ -611,6 +612,7 @@ export class WhatsappWebhookController {
       const vars = sent.vars as Record<string, unknown> | null;
       const txId = typeof vars?.txId === 'string' ? vars.txId : null;
       if (!txId) return;
+      txIdForReply = txId;
 
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
@@ -645,9 +647,17 @@ export class WhatsappWebhookController {
         );
       }
     } catch (err) {
+      const message = (err as Error).message;
       this.logger.warn(
-        `private-arrange WhatsApp button action failed (${buttonText}): ${(err as Error).message}`,
+        `private-arrange WhatsApp button action failed (${buttonText}): ${message}`,
       );
+      if (txIdForReply) {
+        await this.sessionReply(
+          senderPhone,
+          `We couldn't complete that: ${message}`,
+          `pa-action-${txIdForReply}`,
+        );
+      }
     }
   }
 

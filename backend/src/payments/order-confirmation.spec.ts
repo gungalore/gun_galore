@@ -199,7 +199,7 @@ describe('confirming a whole basket', () => {
 //
 // Every test above invokes maybeConfirmWholeOrder directly through a cast, so
 // they all passed while the call site sat BELOW an early return:
-// sendSaleNotifications bails out for PRIVATE_ARRANGE, which is a legal cart
+// sendSaleNotifications used to bail out for PRIVATE_ARRANGE, which is a legal cart
 // line (a firearm line routes to PA), so whenever one was the LAST line paid
 // the confirmer was never reached — Order stuck at AWAITING_PAYMENT (the
 // rollup sweep only scans PAID) and no consolidated confirmation.
@@ -227,6 +227,7 @@ function makeNotifyService(tx: Record<string, unknown>) {
     orderConfirmedBuyerMulti: jest.fn().mockResolvedValue(undefined),
     orderConfirmedBuyer: jest.fn().mockResolvedValue(undefined),
     newSaleSeller: jest.fn().mockResolvedValue(undefined),
+    privateArrangePaymentHeldBuyer: jest.fn().mockResolvedValue(undefined),
     privateArrangeContactReveal: jest.fn().mockResolvedValue(undefined),
   };
   const service = new TransactionsService(
@@ -283,6 +284,10 @@ describe('the confirmation is reachable on every cart line kind', () => {
     await h.run();
     expect(h.prisma.order.updateMany).toHaveBeenCalledTimes(1);
     expect(h.notifications.orderConfirmedBuyerMulti).toHaveBeenCalledTimes(1);
+    expect(
+      h.notifications.privateArrangePaymentHeldBuyer,
+    ).toHaveBeenCalledTimes(1);
+    expect(h.notifications.orderConfirmedBuyer).not.toHaveBeenCalled();
   });
 
   it('still claims it on an ordinary courier line', async () => {

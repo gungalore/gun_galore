@@ -64,7 +64,7 @@ revisiting.
    only — never `firstName`/`lastName`, never initials, never an `@` prefix.
    Fallback: "Anonymous bidder" / "Anonymous seller". Real names exist only inside
    KYC, paid-transaction internals (dealer paperwork, dispatch addresses),
-   PRIVATE_ARRANGE post-consent contact reveal, admin surfaces, and a user seeing
+   PRIVATE_ARRANGE post-acceptance contact reveal, admin surfaces, and a user seeing
    their own data.
 8. **Never name a competitor** in user-facing copy. Say "scheduled auction sites",
    "retail stores". WhatsApp and Facebook groups may be named.
@@ -850,6 +850,28 @@ directly**; there are no shipment/delivery templates in the registry, and a
 missing or failed WhatsApp send falls back to SMS. Template bodies never carry
 a listing title (Meta commerce policy / regulated goods).
 
+**Channels default on; Settings is the only chooser.** Sign-up does **not**
+interrupt the member with a communication-preferences sheet. Email, SMS and
+WhatsApp start enabled (WhatsApp still behind the global `whatsapp_enabled`
+switch), and the member changes any of them in `/settings`. WhatsApp is the
+primary channel for sales-driving messages; when it is eligible, every sale,
+offer, bid and private-arrange notice is sent there alongside the inbox row and
+push. A WhatsApp that Meta has not delivered after **1 hour** gets an SMS and
+email fallback; one delivered but still unread after **12 hours** gets the same
+reminder. Both respect the member's channel mutes and fire once per message via
+`WhatsappMessageLog.undeliveredNudgeAt` / `unreadNudgeAt`.
+
+In an installed PWA the first-launch push card asks for notification permission
+(including in the tab that just fired `appinstalled`). Browsers still require a
+tap; nothing grants push automatically.
+
+The `/account` hub now opens with an **Action required** card directly under the
+identity header. It is fed by active notifications, keeps sale actions visible
+even when the inbox row is dismissible, and links each row to its action. The
+account menu puts **Notifications** and **Messages** in a first `Inbox` group.
+Opening a sale shows the latest Meta WhatsApp status (`Sent`, `Delivered`,
+`Read`, or failure) on the order page.
+
 **Shipping comms are Bob Go's end to end.** Bob Go emails the seller the PDF
 waybill at booking, then sends both parties the tracking updates (email, plus
 WhatsApp with SMS fallback for buyers — the seller's only Bob Go WhatsApp event
@@ -1001,6 +1023,18 @@ time. SW is disabled in dev.
   for both audiences with no flash. The same script locks pinch-zoom in standalone
   only; browser users keep zoom for accessibility.
 - iOS splash images are wired via `apple-touch-startup-image`.
+- **Push onboarding:** `PushFirstLaunchPrompt` asks on the first installed-PWA
+  visit, and now also when `appinstalled` fires in the tab that installed it.
+  The prompt still requires a user tap; browsers do not grant notification
+  permission automatically. See `lib/use-push.ts` and `/settings`.
+- **Passive geolocation must never prompt.** `ListingDistance` mounts on every
+  listing page, so it uses `lib/geolocation.ts` `getGrantedPosition()`: read
+  `navigator.permissions.query({ name: 'geolocation' })` and call
+  `getCurrentPosition` only when the state is already `granted`. A still-
+  `prompt` or `denied` permission falls through to the saved address (or no
+  distance line). Explicit "Use my current location" buttons may prompt,
+  because they are user gestures. The browser owns the remember-this-choice
+  behavior; the site cannot make permission permanent itself.
 - `middleware.ts` keeps `/offline` and `/sw.js` public so the auth gate does not
   rewrite them; `tsconfig.json` includes the `webworker` lib.
 

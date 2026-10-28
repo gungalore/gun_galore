@@ -203,8 +203,9 @@ The buyer can only pick a method the seller offered. (`validateShipping`, `shipp
 | Rule | Where |
 |---|---|
 | Buyer accepts the in-person handover terms with the Terms of Service at registration (no checkout consent screen); the client sends `privateArrangeConsent === true` and the API requires it. Stamped `privateArrangeAcceptedAt`. | `create-transaction.dto.ts`, Terms §7 |
-| Funds are released to the seller **immediately on payment** (buyer waives payment protection); contact details are revealed. No release without the consent stamp. | `maybeImmediatePayout` |
-| Private-arrange orders cannot be seller-rejected, buyer-cancelled or disputed after payment (payment is no longer HELD). | `transactions.service.ts` |
+| At payment the funds stay **HELD**. The seller must accept within 48h. On accept, both parties get each other's name, phone and email (email/SMS/WhatsApp/in-app) and the handover proceeds. | `acceptTransaction`, `privateArrangeContactReveal` |
+| The buyer can confirm receipt only after the seller has accepted **and** marked the item delivered. Confirmation releases the payout; otherwise it auto-releases 5 days after payment **only if the seller accepted** and there is no dispute. | `confirmPrivateArrangeReceived`, `sweepPrivateArrange` |
+| Before acceptance the seller can reject and the buyer is refunded. After acceptance, contact details are already exchanged, so disputes go to admin. | `rejectTransaction`, `disputePrivateArrange` |
 
 ### 5.4 Dealer transfer (firearms)
 | Rule | Where |

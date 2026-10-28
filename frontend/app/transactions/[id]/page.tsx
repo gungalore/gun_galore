@@ -37,6 +37,14 @@ const PAYMENT_STATUS_COLOR: Record<PaymentStatus, string> = {
   REFUNDED: 'var(--text-tertiary)',
 };
 
+const WHATSAPP_STATUS_LABEL: Record<string, string> = {
+  SENT: 'Sent',
+  DELIVERED: 'Delivered',
+  READ: 'Read',
+  FAILED: 'Not delivered',
+  STUB: 'Test only',
+};
+
 // Carrier deep-link patterns. Returns null for methods that don't
 // have a public tracking URL (DEALER_TRANSFER doesn't, PRIVATE_ARRANGE
 // doesn't ship at all, and Bob Go has no public lookup page).
@@ -134,12 +142,15 @@ export default async function TransactionPage({
   // paidAt until accepted/rejected; the dispatch panel only shows once
   // accepted (and not yet dispatched).
   const isPaidAwaitingAccept =
-    !!tx.paidAt && !tx.acceptedAt && !tx.rejectedAt && !tx.dispatchedAt;
+    !!tx.paidAt &&
+    tx.paymentStatus === 'HELD' &&
+    !tx.acceptedAt &&
+    !tx.rejectedAt &&
+    !tx.dispatchedAt;
   const isRejected = !!tx.rejectedAt;
   const canAccept =
     isSeller &&
     isPaidAwaitingAccept &&
-    !isPrivateArrange &&
     !isOnSiteBooking &&
     !tx.cancellationRequestedAt;
   const canDispatch =
@@ -377,7 +388,10 @@ export default async function TransactionPage({
               PRIVATE_ARRANGE transactions — non-PA orders have the
               other party's phone/email blanked in the API response so
               we can't accidentally leak details by misreading state. */}
-          {tx.shippingMethod === 'PRIVATE_ARRANGE' && !!tx.privateArrangeAcceptedAt && tx.paymentStatus === 'RELEASED' && (
+          {tx.shippingMethod === 'PRIVATE_ARRANGE' &&
+            !!tx.privateArrangeAcceptedAt &&
+            (tx.paymentStatus === 'RELEASED' ||
+              (!!tx.acceptedAt && tx.paymentStatus === 'HELD')) && (
             <div
               className="rounded-[8px] p-4 text-sm space-y-2"
               style={{
@@ -397,8 +411,12 @@ export default async function TransactionPage({
               </p>
               <p style={{ color: 'var(--text-secondary)' }}>
                 {isBuyer
-                  ? "You waived payment protection at checkout — payment has been released. Contact the seller to arrange a SAPS-licensed dealer meet."
-                  : "The buyer accepted private arrangement — your payout has been released. Coordinate the dealer meet with them."}
+                  ? tx.paymentStatus === 'RELEASED'
+                    ? `Payment has been released. Contact the seller to arrange the ${tx.listing.isFirearm ? 'SAPS-licensed dealer meet' : 'handover'}.`
+                    : `The seller accepted. Contact them to arrange the ${tx.listing.isFirearm ? 'SAPS-licensed dealer meet' : 'in-person handover'}. Payment is held until you confirm receipt.`
+                  : tx.paymentStatus === 'RELEASED'
+                    ? 'The buyer confirmed receipt - your payout has been released.'
+                    : 'The buyer accepted private arrangement. Arrange the handover; your payout releases when the buyer confirms receipt.'}
               </p>
               {(() => {
                 const them = isBuyer ? tx.seller : tx.buyer;
@@ -445,9 +463,9 @@ export default async function TransactionPage({
                 className="text-xs"
                 style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
               >
-                Complete the transfer at a SAPS-licensed dealer. Don&apos;t hand the
-                item over outside a licensed dealer&apos;s premises — the
-                paperwork is what transfers ownership legally.
+                {tx.listing.isFirearm
+                  ? "Complete the transfer at a SAPS-licensed dealer. Don't hand the item over outside a licensed dealer's premises - the paperwork is what transfers ownership legally."
+                  : 'Meet in person, inspect the item, and confirm receipt only once it is in your hands.'}
               </p>
             </div>
           )}
@@ -719,7 +737,7 @@ export default async function TransactionPage({
                   Have you received the item?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Confirming delivery releases payment to the seller and is final. If there's an issue, raise a dispute instead — payment stays held while we review.
+                  Confirming delivery releases payment to the seller and is final. If there is an issue, raise a dispute instead — payment stays held while we review.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} />
               </div>
@@ -793,7 +811,7 @@ export default async function TransactionPage({
           {canRequestCancel && <BuyerCancelPanel txId={tx.id} />}
 
           {/* Private Arrangement (Phase 4 W2) — held-funds handover. */}
-          {isPrivateArrange && tx.paymentStatus === 'HELD' && (
+          {isPrivateArrange && tx.paymentStatus === 'HELD' && !!tx.acceptedAt && (
             <PrivateArrangePanel
               txId={tx.id}
               isBuyer={isBuyer}
@@ -934,6 +952,7 @@ export default async function TransactionPage({
               acceptDeadlineAt={tx.acceptDeadlineAt}
               isDealerTransfer={tx.shippingMethod === 'DEALER_TRANSFER'}
               isCollection={isCollection}
+              isPrivateArrange={isPrivateArrange}
             />
           )}
 
@@ -941,12 +960,12 @@ export default async function TransactionPage({
               to the seller's AcceptRejectPanel. Live countdown to
               acceptDeadlineAt. Reassures the buyer that their card
               has been charged but the order isn't locked in yet. */}
-          {/* FLOW-F4 (M14) — never show the "awaiting seller accept" countdown
-              (which decays into a false auto-refund promise) for PRIVATE_ARRANGE:
-              PA has no accept step and funds are already released. Mirrors canAccept. */}
+          {/* FLOW-F4 (M14) — the buyer sees "awaiting seller accept"
+              for every rail, including PRIVATE_ARRANGE:
+              contact details follow acceptance. */}
           {/* The countdown itself lives in a client component so it ticks —
               rendered here it froze at the server-render timestamp. */}
-          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isOnSiteBooking && tx.acceptDeadlineAt && (
+          {isBuyer && isPaidAwaitingAccept && !isOnSiteBooking && tx.acceptDeadlineAt && (
             <AwaitingAcceptChip acceptDeadlineAt={tx.acceptDeadlineAt} />
           )}
 
@@ -1374,6 +1393,23 @@ export default async function TransactionPage({
             {paymentStatusLabel}
           </div>
 
+          {tx.whatsappStatus && (
+            <p
+              className="text-xs mb-4"
+              style={{ color: 'var(--text-tertiary)' }}
+              title="Latest WhatsApp message for this order, as reported by Meta."
+            >
+              WhatsApp: {WHATSAPP_STATUS_LABEL[tx.whatsappStatus.status] ?? 'Sent'}
+              {' · '}
+              {new Date(tx.whatsappStatus.at).toLocaleString('en-ZA', {
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </p>
+          )}
+
           {/* Breakdown */}
           {/* ⚠️ LINES COME FROM THE SERVER, and they foot.
               This block used to do its own arithmetic off the raw columns and
@@ -1410,7 +1446,7 @@ export default async function TransactionPage({
               tx.feeBreakdown.seller.deductions.map((l) => (
                 <div key={l.label} className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>{l.label}</span>
-                  <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(l.cents)}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>-{formatPrice(l.cents)}</span>
                 </div>
               ))}
 

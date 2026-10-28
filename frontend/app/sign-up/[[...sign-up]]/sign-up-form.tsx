@@ -16,7 +16,7 @@ import {
   passwordProblem,
 } from '@/lib/password-rule';
 import { authErrorMessage } from '@/lib/auth-error';
-import { ChannelPrefsSheet } from '@/components/channel-prefs-sheet';
+
 
 // ⚠️ NEXT_PUBLIC_ ONLY. This file is 'use client'; Next inlines nothing else,
 // so an INTERNAL_API_URL here is always undefined in the browser.
@@ -64,7 +64,7 @@ function safeRelativePath(raw: string | null | undefined): string | null {
 // OAuth-only: stash the consent (tagged with a timestamp) in per-tab
 // sessionStorage so <ConsentSync/> can record it after the redirect completes.
 
-type Step = 'form' | 'verify' | 'phone' | 'channel-prefs';
+type Step = 'form' | 'verify' | 'phone';
 
 // The sign-up wizard is hand-rolled — the identity-provider SDK supplies no
 // UI — so it gets the house step rail like every other multi-step setup.
@@ -370,10 +370,9 @@ export default function SignUpForm() {
     }
   }
 
-  // Called by the channel-prefs sheet once — after a submit, a dismiss, or
-  // the sheet finding it has nothing to show (already prompted). This is
-  // the ONLY path to the post-sign-up redirect now, so the sheet can never
-  // leave a freshly verified member stranded on this screen.
+  // Sign-up finishes as soon as the cell number is verified. Notification
+  // channels default on and can be changed later in Settings; there is no
+  // post-sign-up preferences sheet in the way.
   function finishSignUp() {
     router.push(redirectTarget);
     router.refresh();
@@ -434,16 +433,9 @@ export default function SignUpForm() {
     );
   }
 
-  if (step === 'channel-prefs') {
-    return <ChannelPrefsSheet onDone={finishSignUp} />;
-  }
-
   if (step === 'phone') {
     return (
-      <PhoneVerifyStep
-        initialPhone={form.phone}
-        onDone={() => setStep('channel-prefs')}
-      />
+      <PhoneVerifyStep initialPhone={form.phone} onDone={finishSignUp} />
     );
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  notificationActionLabel,
   notificationHref,
   preferredNotificationTab,
   type NotificationItem as N,
@@ -49,6 +50,22 @@ describe('notificationHref', () => {
       '/documents',
     );
     expect(notificationHref(item({ url: null }))).toBe('#');
+  });
+});
+
+describe('notificationActionLabel', () => {
+  it('names the action instead of saying "Act"', () => {
+    expect(notificationActionLabel('offer_received')).toBe('Respond to offer');
+    expect(notificationActionLabel('offer_accepted')).toBe('Pay now');
+    expect(notificationActionLabel('bid_outbid')).toBe('Bid again');
+    expect(notificationActionLabel('new_sale')).toBe('Accept sale');
+    expect(notificationActionLabel('private_arrange_delivered')).toBe(
+      'Confirm receipt',
+    );
+  });
+
+  it('falls back to Open for informational types', () => {
+    expect(notificationActionLabel('payout_released')).toBe('Open');
   });
 });
 

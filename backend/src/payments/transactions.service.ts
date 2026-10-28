@@ -3006,15 +3006,21 @@ export class TransactionsService {
     void this.notifications.resolveByEntity('transaction', transactionId);
 
     // Buyer notification — "Seller accepted, dispatch within 5d".
-    void this.notifications.saleAcceptedBuyer({
-      buyerEmail: tx.buyer.email,
-      buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-      buyerPhone: tx.buyer.phone,
-      listingTitle: tx.listing.title,
-      transactionId: tx.id,
-      dispatchDeadlineAt,
-      isCollection: tx.shippingMethod === 'COLLECTION',
-    });
+    if (tx.shippingMethod === 'PRIVATE_ARRANGE') {
+      // Accept is the chain point: only now do both parties get each other's
+      // contact details, and only now can the handover progress.
+      void this.sendPrivateArrangeAccepted(transactionId);
+    } else {
+      void this.notifications.saleAcceptedBuyer({
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        transactionId: tx.id,
+        dispatchDeadlineAt,
+        isCollection: tx.shippingMethod === 'COLLECTION',
+      });
+    }
 
     return { acceptedAt, dispatchDeadlineAt };
   }
@@ -3105,12 +3111,10 @@ export class TransactionsService {
     if (tx.dispatchedAt) {
       throw new BadRequestException('Already dispatched — cannot reject.');
     }
-    // FLOW-F1 — reject is only legal while the money is still HELD. Without
-    // this, a PRIVATE_ARRANGE seller (funds released IMMEDIATELY at payment,
-    // by explicit buyer consent) could tap the 48h accept/reject SMS token
-    // AFTER being paid and flip a RELEASED transaction to REFUNDED — moving
-    // the money twice and stranding the buyer's "refund" in the payout batch.
-    // Mirrors the identical guard on cancelByBuyer.
+    // Reject is only legal while the money is still HELD. Without this a
+    // seller could tap an old accept/reject link after release and flip a
+    // RELEASED transaction to REFUNDED, moving the money twice. Mirrors the
+    // identical guard on cancelByBuyer.
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(
         'This sale can no longer be rejected — payment has already been settled. Contact support if something is wrong.',
@@ -4178,17 +4182,39 @@ export class TransactionsService {
       throw new ForbiddenException('Not authorised');
     }
 
+    // The latest sales WhatsApp for this order. Status is Meta's own:
+    // SENT → DELIVERED → READ (or FAILED). Shown on the order page so the
+    // member can see whether the other party has actually seen the handover
+    // instruction, instead of guessing.
+    const whatsappLog = await this.prisma.whatsappMessageLog.findFirst({
+      where: {
+        reference: {
+          in: [
+            `new-sale-${tx.id}`,
+            `accept-reminder-${tx.id}`,
+            `accept-reminder-${tx.id}-overdue`,
+            `pa-handover-${tx.id}`,
+            `pa-delivered-${tx.id}`,
+            `pa-reminder-${tx.id}`,
+          ],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true, createdAt: true, templateKey: true },
+    });
+
     // Contact-detail strip — phone + the seller-side email are only
-    // revealed when this is a PAID PRIVATE_ARRANGE transaction. Both parties
-    // need each other's details during the handover, so the reveal starts at
-    // payment (HELD) and survives the later RELEASED flip — not only after
-    // release. For any other shipping method we blank them so a curious buyer
-    // can't pluck the seller's phone out of the JSON.
+    // revealed after the SELLER ACCEPTS a paid PRIVATE_ARRANGE sale. Both
+    // parties need each other's details during the handover, so the reveal
+    // survives the later RELEASED flip. Before acceptance they see only the
+    // username. For any other shipping method we blank them so a curious
+    // buyer can't pluck the seller's phone out of the JSON.
     const isPaidPrivateArrange =
       tx.shippingMethod === 'PRIVATE_ARRANGE' &&
       !!tx.privateArrangeAcceptedAt &&
       !!tx.paidAt &&
-      (tx.paymentStatus === 'HELD' || tx.paymentStatus === 'RELEASED');
+      (tx.paymentStatus === 'RELEASED' ||
+        (!!tx.acceptedAt && tx.paymentStatus === 'HELD'));
     // P3 — collection orders reveal contact once paid (HELD or RELEASED) so
     // the buyer + seller can coordinate the in-person pickup. Payment is
     // still HELD until the buyer confirms collection, so this is a
@@ -4246,6 +4272,13 @@ export class TransactionsService {
     return {
       ...tx,
       bankDetails: null,
+      whatsappStatus: whatsappLog
+        ? {
+            status: whatsappLog.status,
+            at: whatsappLog.createdAt,
+            templateKey: whatsappLog.templateKey,
+          }
+        : null,
       feeBreakdown: {
         buyer: buyerBreakdown(tx),
         seller: sellerBreakdown(tx),
@@ -4768,13 +4801,12 @@ export class TransactionsService {
     // separate lookup on the tx's offerId if present.
     void this.resolveBuyerPaymentNotifications(txId, listing.id);
 
-    // PRIVATE_ARRANGE — buyer waived payment protection at checkout. Funds now
-    // stay HELD: we reveal contact details so the parties can meet, and the
-    // payout releases when the buyer confirms receipt (or auto-releases 5 days
-    // after payment). See onPrivateArrangePaid / releasePrivateArrange.
-    void this.onPrivateArrangePaid(txId);
-
-    // Fire-and-forget notifications
+    // PRIVATE_ARRANGE — buyer waived payment protection at checkout. Funds
+    // stay HELD and the seller MUST accept before any contact details are
+    // exchanged. sendSaleNotifications sends that accept request and the
+    // buyer's "waiting for the seller" receipt; the accept path reveals the
+    // contacts. The payout releases on buyer receipt (or 5 days after
+    // payment), never before the seller has accepted.
     void this.sendSaleNotifications(txId);
 
     // P5.2 — alert everyone who wishlisted this item that it sold (with a link
@@ -4834,20 +4866,14 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // PRIVATE_ARRANGE branch — runs after markPaid lands. Releases
-  // funds immediately, increments totalSales, and triggers the
-  // contact-reveal notification. Skips if the row isn't a
-  // PRIVATE_ARRANGE or if the consent stamp is missing (defence in
-  // depth — a missing stamp means the buyer never accepted the in-person
-  // handover terms, so we MUST not auto-release).
+  // PRIVATE_ARRANGE accepted: contact reveal is driven from the seller
+  // accept path, not payment. The reconcile below only re-drives a reveal
+  // that was lost after acceptance; it never sends before acceptedAt.
   // ------------------------------------------------------------------
-  // Reconcile sweep — re-run the PRIVATE_ARRANGE immediate payout for any row
-  // that is paid + HELD + consent-stamped but never got released (a crash /
-  // transient DB failure between markPaid and maybeImmediatePayout completing).
-  // maybeImmediatePayout is fully idempotent (guards on shippingMethod, consent
-  // stamp, and paymentStatus HELD; the RELEASED flip is a single atomic write),
-  // so re-running it is exactly-once-safe. A short age floor avoids racing the
-  // happy-path call that fires microseconds after markPaid.
+  // Reconcile sweep — re-drive the contact reveal for an accepted PA row whose
+  // reveal was lost by a crash/DB failure. Deduped on the buyer
+  // private_arrange_handover notification so it can never re-email every five
+  // minutes. It never runs before the seller has accepted.
   async reconcileStrandedPrivateArrange(): Promise<{ recovered: number }> {
     const floor = new Date(Date.now() - 5 * 60_000); // 5 min past capture
     const stranded = await this.prisma.transaction.findMany({
@@ -4855,7 +4881,7 @@ export class TransactionsService {
         shippingMethod: 'PRIVATE_ARRANGE',
         paymentStatus: 'HELD',
         paidAt: { not: null, lt: floor },
-        privateArrangeAcceptedAt: { not: null },
+        acceptedAt: { not: null },
       },
       select: { id: true },
       take: 50,
@@ -4863,7 +4889,20 @@ export class TransactionsService {
     let recovered = 0;
     for (const t of stranded) {
       try {
-        await this.onPrivateArrangePaid(t.id);
+        // The buyer handover row is the marker that the reveal already ran.
+        // Without this check every accepted, undelivered PA row would be
+        // re-emailed and re-SMSed every five minutes.
+        const alreadyRevealed = await this.prisma.notification.findFirst({
+          where: {
+            type: 'private_arrange_handover',
+            linkedType: 'transaction',
+            linkedId: t.id,
+            category: 'BUYER',
+          },
+          select: { id: true },
+        });
+        if (alreadyRevealed) continue;
+        await this.sendPrivateArrangeAccepted(t.id);
         recovered += 1;
       } catch (err) {
         this.logger.warn(
@@ -5048,12 +5087,12 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // PRIVATE_ARRANGE — funds stay HELD (Phase 4 W2). After payment we reveal
-  // contact details so the parties can meet, but the payout releases only
-  // when the buyer confirms receipt, or automatically 5 days after payment
-  // if nothing disputes. Idempotent.
+  // PRIVATE_ARRANGE — funds stay HELD (Phase 4 W2). The seller must accept;
+  // only then do we reveal contact details so the parties can meet. The
+  // payout releases when the buyer confirms receipt, or automatically 5 days
+  // after payment if nothing disputes. Idempotent.
   // ------------------------------------------------------------------
-  private async onPrivateArrangePaid(txId: string) {
+  private async sendPrivateArrangeAccepted(txId: string) {
     try {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
@@ -5061,14 +5100,14 @@ export class TransactionsService {
           id: true,
           shippingMethod: true,
           paymentStatus: true,
-          privateArrangeAcceptedAt: true,
+          acceptedAt: true,
         },
       });
       if (!tx) return;
       if (tx.shippingMethod !== 'PRIVATE_ARRANGE') return;
-      if (!tx.privateArrangeAcceptedAt) {
+      if (!tx.acceptedAt) {
         this.logger.warn(
-          `Transaction ${txId} is PRIVATE_ARRANGE but missing consent stamp — not revealing contacts`,
+          `Transaction ${txId} is PRIVATE_ARRANGE but the seller has not accepted — not revealing contacts`,
         );
         return;
       }
@@ -5081,11 +5120,11 @@ export class TransactionsService {
       void this.sendPrivateArrangeSellerHandover(txId);
       void this.tracking.recordInternal(txId, 'PRIVATE_ARRANGE_HANDOVER', {
         message:
-          'Buyer paid — arrange the handover. Funds are held until the buyer confirms receipt (or 5 days after payment).',
+          'Seller accepted — contact details exchanged. Funds are held until the buyer confirms receipt (or 5 days after payment).',
       });
     } catch (err) {
       this.logger.error(
-        `onPrivateArrangePaid failed for ${txId}: ${(err as Error).message}`,
+        `sendPrivateArrangeAccepted failed for ${txId}: ${(err as Error).message}`,
       );
     }
   }
@@ -5158,6 +5197,11 @@ export class TransactionsService {
     if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
       throw new BadRequestException('Not a Private Arrangement order.');
     }
+    if (!tx.acceptedAt) {
+      throw new BadRequestException(
+        'Accept the sale before marking the handover delivered.',
+      );
+    }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException('This order is no longer awaiting handover.');
     }
@@ -5196,6 +5240,16 @@ export class TransactionsService {
     }
     if (tx.paymentStatus === 'RELEASED') {
       return { released: true, alreadyReleased: true };
+    }
+    if (!tx.acceptedAt) {
+      throw new BadRequestException(
+        'The seller has not accepted this sale yet. Wait for the seller to accept before confirming receipt.',
+      );
+    }
+    if (!tx.privateArrangeDeliveredAt) {
+      throw new BadRequestException(
+        'The seller has not marked this item delivered yet.',
+      );
     }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(
@@ -5252,7 +5306,8 @@ export class TransactionsService {
   }
 
   // Cron sweep: (a) 24h follow-up to a silent buyer after the seller's
-  // "delivered" tap; (b) 5-day auto-release to the seller from payment. Both
+  // "delivered" tap; (b) 5-day auto-release to the seller from payment, only
+  // after the seller accepted. Both
   // atomic-guarded so a concurrent buyer-received/dispute wins.
   async sweepPrivateArrange(): Promise<{ reminded: number; released: number }> {
     const now = new Date();
@@ -5281,12 +5336,14 @@ export class TransactionsService {
       void this.sendPrivateArrangeBuyerReminder(r.id);
     }
 
-    // (b) 5-day auto-release from payment.
+    // (b) 5-day auto-release from payment, only after seller acceptance.
     const dueRelease = await this.prisma.transaction.findMany({
       where: {
         shippingMethod: 'PRIVATE_ARRANGE',
         paymentStatus: 'HELD',
         paidAt: { not: null, lt: new Date(now.getTime() - 5 * 86400_000) },
+        // Never auto-release a sale the seller never accepted.
+        acceptedAt: { not: null },
       },
       select: { id: true },
       take: 50,
@@ -5388,18 +5445,10 @@ export class TransactionsService {
         include: { listing: true, buyer: true, seller: true },
       });
       if (!tx) return;
-      // Buyer's own one-tap "Item received / Collected" link, sent with the
-      // contact reveal so they don't have to wait for the seller to tap first.
-      const buyerAction = await this.mintPrivateArrangeAction(
-        txId,
-        tx.buyerId,
-        'buyer',
-      );
       await this.notifications.privateArrangeContactReveal({
         listingTitle: tx.listing.title,
         transactionId: txId,
         isFirearm: tx.listing.isFirearm,
-        actionUrl: buyerAction.actionUrl,
         buyer: {
           email: tx.buyer.email,
           firstName: tx.buyer.firstName,
@@ -5444,11 +5493,10 @@ export class TransactionsService {
       if (!tx) return;
 
       // ─── The basket, once every line in it is paid for ────────────────
-      // ⚠️ MUST RUN BEFORE THE BAIL-OUT BELOW. PRIVATE_ARRANGE returns at the
-      // next guard and is a legal cart line (a firearm line routes to PA).
-      // Placed after that return (as it first was), the confirmer is simply
-      // never reached when a PA line happens to be the LAST line paid, and the
-      // consequences compound:
+      // ⚠️ MUST RUN BEFORE THE PER-RAIL BRANCH BELOW. A PRIVATE_ARRANGE line is
+      // a legal cart line (a firearm line routes to PA). If this runs later,
+      // the confirmer is never reached when a PA line happens to be the LAST
+      // line paid, and the consequences compound:
       //   · orderConfirmedBuyerMulti never fires — the exact silence this
       //     whole change exists to close, left open for those baskets;
       //   · Order.paidAt stays null and status stays AWAITING_PAYMENT
@@ -5456,16 +5504,9 @@ export class TransactionsService {
       // Safe this early: the method no-ops unless every sibling is paid.
       if (tx.orderId) await this.maybeConfirmWholeOrder(tx.orderId);
 
-      // FLOW-F4 (H22/M15/M24/M25) — PRIVATE_ARRANGE has NO accept/dispatch
-      // step: maybeImmediatePayout releases the funds at payment and
-      // sendPrivateArrangeContactReveal already notifies BOTH parties with
-      // the correct immediate-release + contact-reveal copy. So for PA we
-      // must NOT mint the TRANSACTION_ACCEPT token and must NOT fire the
-      // generic courier orderConfirmedBuyer / newSaleSeller pair (those
-      // promise 'held funds / accept within 48h / dispatch within 5 days',
-      // all false for PA). Bail out here; the contact-reveal path owns PA
-      // notifications end to end (incl. a dismissible seller inbox row).
-      if (tx.shippingMethod === 'PRIVATE_ARRANGE') return;
+      // PRIVATE_ARRANGE goes through the same accept request as every other
+      // rail. Its buyer-facing receipt is handled below without the courier
+      // "dispatch" copy; contact details are revealed on accept.
 
       // Mint the TRANSACTION_ACCEPT token so the seller can tap the
       // SMS link and accept the sale in one tap (no sign-in). 48h TTL
@@ -5523,23 +5564,14 @@ export class TransactionsService {
         acceptActionToken,
       };
       await Promise.all([
-        // Buyer "order confirmed" — SKIPPED for multi-item order children
-        // (tx.orderId set), which instead get ONE consolidated confirmation
-        // from maybeConfirmWholeOrder (called above, before the PA bail-out),
-        // so the buyer isn't emailed and SMSed N times for one basket.
-        // Single-item sales (orderId null) keep the per-transaction
-        // confirmation.
-        //
-        // ⚠️ THIS SUPPRESSION USED TO LEAD NOWHERE. It deferred to
-        // confirmManualOrder, which was DELETED with the manual-EFT rail —
-        // and its replacement, NotificationsService.orderConfirmedBuyerMulti,
-        // had no caller anywhere in production (its only reference was a jest
-        // mock for a service file that no longer exists). So a multi-item cart
-        // buyer would have received no confirmation at all, by either route,
-        // the moment PAYMENTS_LIVE was switched on.
-        tx.orderId
-          ? Promise.resolve()
-          : this.notifications.orderConfirmedBuyer(details),
+        // PRIVATE_ARRANGE: the buyer's receipt says the seller must accept
+        // before contact details are exchanged. The normal order-confirmed
+        // copy ("seller will dispatch") is false on this rail.
+        tx.shippingMethod === 'PRIVATE_ARRANGE'
+          ? this.notifications.privateArrangePaymentHeldBuyer(details)
+          : tx.orderId
+            ? Promise.resolve()
+            : this.notifications.orderConfirmedBuyer(details),
         this.notifications.newSaleSeller(details),
       ]);
 

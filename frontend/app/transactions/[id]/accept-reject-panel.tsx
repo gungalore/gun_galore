@@ -51,11 +51,13 @@ export function AcceptRejectPanel({
   acceptDeadlineAt,
   isDealerTransfer,
   isCollection = false,
+  isPrivateArrange = false,
 }: {
   transactionId: string;
   acceptDeadlineAt: string | null;
   isDealerTransfer: boolean;
   isCollection?: boolean;
+  isPrivateArrange?: boolean;
 }) {
   const router = useRouter();
   const { getToken } = useAuth();
@@ -324,11 +326,17 @@ export function AcceptRejectPanel({
         The buyer has paid and the funds are being held by ALL Outdoor. Tap{' '}
         <strong style={{ color: 'var(--text-primary)' }}>Accept</strong> to
         commit —{' '}
-        {isCollection ? (
+        {isPrivateArrange ? (
           <>
-            then arrange a pickup time with the buyer. There’s no courier and
+            then arrange the in-person handover with the buyer. We send you
+            their contact details immediately, and your payment releases when
+            the buyer confirms they received the item.
+          </>
+        ) : isCollection ? (
+          <>
+            then arrange a pickup time with the buyer. There's no courier and
             no dispatch step; your payment is released once the buyer confirms
-            they’ve collected the item in person.
+            they've collected the item in person.
           </>
         ) : (
           <>

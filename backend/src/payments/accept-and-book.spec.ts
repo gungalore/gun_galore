@@ -121,6 +121,23 @@ describe('_stampAcceptAndBook — the ordinary accept books immediately', () => 
     expect(shipping.bookForTransaction).toHaveBeenCalledWith('CARRIER9');
   });
 
+  it('PRIVATE_ARRANGE accept reveals contacts instead of the dispatch notice', async () => {
+    const { service, notifications, stamp } = makeService();
+    const reveal = jest
+      .spyOn(
+        service as unknown as {
+          sendPrivateArrangeAccepted: (id: string) => Promise<void>;
+        },
+        'sendPrivateArrangeAccepted',
+      )
+      .mockResolvedValue(undefined);
+
+    await stamp('TX1', makeTx({ shippingMethod: 'PRIVATE_ARRANGE' }));
+
+    expect(reveal).toHaveBeenCalledWith('TX1');
+    expect(notifications.saleAcceptedBuyer).not.toHaveBeenCalled();
+  });
+
   it('a lost accept-claim (count 0) stamps nothing and books nothing', async () => {
     const { shipping, notifications, stamp } = makeService({ stampedCount: 0 });
     const res = await stamp('TX1', makeTx({ listing: { title: 'Seller item' } }));

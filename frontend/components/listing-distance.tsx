@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
+import { getGrantedPosition } from '@/lib/geolocation';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -32,17 +33,19 @@ export default function ListingDistance({ listingId }: { listingId: string }) {
       }
     }
 
-    function fromDevice(): Promise<{ lat: number; lng: number } | null> {
-      return new Promise((resolve) => {
-        if (typeof navigator === 'undefined' || !navigator.geolocation) {
-          return resolve(null);
-        }
-        navigator.geolocation.getCurrentPosition(
-          (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-          () => resolve(null),
-          { maximumAge: 600_000, timeout: 8_000 },
-        );
+    // ⚠️ Passive read. Do not call getCurrentPosition while the permission is
+    // still `prompt`: this component mounts on every listing page, and that
+    // was what made "Share my location?" reappear visit after visit. Only a
+    // permission the member has already granted is used here; otherwise the
+    // saved address (or no distance line) is the fallback.
+    async function fromDevice(): Promise<{ lat: number; lng: number } | null> {
+      const p = await getGrantedPosition({
+        maximumAge: 600_000,
+        timeout: 8_000,
       });
+      return p
+        ? { lat: p.coords.latitude, lng: p.coords.longitude }
+        : null;
     }
 
     async function fromSaved(): Promise<{ lat: number; lng: number } | null> {

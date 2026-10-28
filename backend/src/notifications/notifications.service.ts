@@ -78,6 +78,23 @@ interface PersistOpts {
 // which changes at the domain migration.
 const FROM = EMAIL_FROM;
 
+// Sales-driving WhatsApp templates whose delivery/read state is worth a
+// fallback. Informational templates (payout released, refund issued) are
+// deliberately excluded: there is no action to chase.
+const WHATSAPP_SALES_TEMPLATES = [
+  'new_sale_seller',
+  'new_sale_seller_courier',
+  'sale_accept_reminder_seller',
+  'offer_received_seller',
+  'offer_accepted_buyer',
+  'offer_countered_buyer',
+  'bid_outbid_buyer',
+  'auction_won_buyer',
+  'private_arrange_seller_handover',
+  'private_arrange_buyer_confirm',
+  'private_arrange_buyer_reminder',
+] as const;
+
 // Card-refund settlement window, quoted to buyers. ONE constant because the
 // same promise was being made in three different ways — emails said "5–10
 // business days", SMS said "5-10", parts of the site said "3–7 working days",
@@ -812,6 +829,47 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Buyer: PRIVATE_ARRANGE payment received, waiting for seller accept.
+  // Deliberately contains NO seller contact details. Those are revealed by
+  // privateArrangeContactReveal only after the seller accepts.
+  // ---------------------------------------------------------------
+  async privateArrangePaymentHeldBuyer(d: SaleDetails) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Payment received' },
+      headline: 'Payment received',
+      body: `Hi ${b(d.buyerName)}, your payment of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} is safely held by ALL Outdoor. The seller has 48 hours to accept the sale. Once they accept, we'll send you their name, phone number and email address so you can arrange the in-person handover. You'll then confirm receipt after the handover to release their payment.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Payment received - waiting for the seller to accept`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Payment received - ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `ALL Outdoor: Payment received for ${truncate(d.listingTitle, 40)}. Waiting for the seller to accept. We'll send their contact details once they do.`,
+      `pa-awaiting-accept-${d.transactionId}`,
+    );
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'private_arrange_payment_held',
+      title: 'Payment received',
+      body: `${d.listingTitle} - waiting for the seller to accept. Their contact details follow once accepted.`,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+  }
+
+  // ---------------------------------------------------------------
   // Buyer: ONE consolidated confirmation for a multi-item cart Order
   // (Phase 8b). The per-line "order confirmed" email/SMS is suppressed for
   // order children, so this fires exactly once for the whole basket.
@@ -1178,18 +1236,23 @@ export class NotificationsService {
     // front so they can prepare and the dealer can fill the form in
     // block letters at the counter (most-common cause of delay).
     const isDealerTransfer = d.shippingMethod === 'DEALER_TRANSFER';
-    // COLLECTION seller hands the item over in person — no dispatch, no
+    // COLLECTION seller hands the item over in person - no dispatch, no
     // courier. Payment releases when the buyer confirms collection.
     const isCollection = d.shippingMethod === 'COLLECTION';
+    // PRIVATE_ARRANGE: seller accepts first, then both parties receive each
+    // other's contact details for the in-person handover.
+    const isPrivateArrange = d.shippingMethod === 'PRIVATE_ARRANGE';
     // The accept-first framing is added to the lede when we have a
     // token. The dealer-transfer SAPS-534 paragraph still appears
     // below so the seller can prepare while the firearm is still in
     // their safe (the accept step doesn't gate it — they can ready
     // the paperwork in parallel).
     const acceptLede = hasAcceptToken
-      ? isCollection
-        ? `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. This item is collected in person — the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
-        : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. After accepting you have 5 days to dispatch.</p>`
+      ? isPrivateArrange
+        ? `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. Accepting releases the buyer's contact details so you can arrange the in-person handover.</p>`
+        : isCollection
+          ? `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. This item is collected in person - the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
+          : `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. After accepting you have 5 days to dispatch.</p>`
       : '';
     const bodyText = isDealerTransfer
       ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
@@ -1199,7 +1262,9 @@ export class NotificationsService {
   <li>The <b>firearm with its serial number visible</b>, next to a slip of paper showing the order reference</li>
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
-      : isCollection
+      : isPrivateArrange
+        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. This is an <b>in-person handover</b> - accept to receive the buyer's contact details, arrange the meet, then tap <b>Item delivered</b>. Your payment releases when the buyer confirms receipt.`
+        : isCollection
         ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
         : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
 
@@ -1248,20 +1313,24 @@ export class NotificationsService {
     const smsBody = hasAcceptToken
       ? isDealerTransfer
         ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (then 5d to dispatch): ${acceptUrl}`
-        : isCollection
-          ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (collection - arrange pickup): ${acceptUrl}`
-          : `ALL Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h: ${acceptUrl}`
+        : isPrivateArrange
+          ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (in-person handover): ${acceptUrl}`
+          : isCollection
+            ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h (collection - arrange pickup): ${acceptUrl}`
+            : `ALL Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept/decline within 48h: ${acceptUrl}`
       : isDealerTransfer
         ? `ALL Outdoor: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
-        : isCollection
-          ? `ALL Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
-          : `ALL Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
+        : isPrivateArrange
+          ? `ALL Outdoor: New sale! ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. In-person handover - accept to get the buyer's contact details. See email.`
+          : isCollection
+            ? `ALL Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
+            : `ALL Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
     await this.sendSms(
       d.sellerPhone,
       smsBody,
       `new-sale-${d.transactionId}`,
       {
-        whatsapp: isDealerTransfer || isCollection
+        whatsapp: isDealerTransfer || isCollection || isPrivateArrange
           ? {
               templateKey: 'new_sale_seller',
               vars: {
@@ -4415,8 +4484,6 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
     isFirearm: boolean;
-    /** Buyer's one-tap "Item received / Collected" link. */
-    actionUrl?: string;
     buyer: {
       email: string;
       firstName: string | null;
@@ -4432,7 +4499,7 @@ export class NotificationsService {
     sellerPayout: number;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const url = d.actionUrl ?? txUrl;
+    const url = txUrl;
     const where = d.isFirearm ? 'at a SAPS-licensed dealer' : 'in person';
     const buyerName =
       [d.buyer.firstName, d.buyer.lastName].filter(Boolean).join(' ') ||
@@ -4440,10 +4507,21 @@ export class NotificationsService {
     const sellerName =
       [d.seller.firstName, d.seller.lastName].filter(Boolean).join(' ') ||
       'Seller';
+    // WhatsApp's approved quick-reply template has one body variable. Put the
+    // seller's contact details in that variable so the buyer actually receives
+    // them on WhatsApp too, not just "Order ...". The webhook still uses txId
+    // (an extra var) to resolve the button action.
+    const sellerContactRef = [
+      orderRef({ id: d.transactionId }),
+      sellerName,
+      d.seller.phone,
+      d.seller.email,
+    ]
+      .filter(Boolean)
+      .join(' - ');
 
-    // Email to the BUYER — reveals SELLER details, and carries the buyer's own
-    // one-tap confirmation link so the handover can be completed from either
-    // side without waiting for the other party.
+    // Email to the BUYER - reveals SELLER details. The buyer does NOT get a
+    // confirm action here: the seller must first mark the handover delivered.
     const buyerRows: { label: string; value: string }[] = [
       { label: 'Seller name', value: sellerName },
     ];
@@ -4454,32 +4532,38 @@ export class NotificationsService {
     const buyerHtml = this.email({
       status: { tone: 'pending', label: 'Awaiting handover' },
       headline: 'Arrange the handover',
-      body: `Hi ${b(buyerName)}, your purchase of ${b(d.listingTitle)} is confirmed. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. Tap the button when the item is in your hands — that releases the seller's payment. The Platform Fee is non-refundable, even if a dispute is refunded.`,
+      body: `Hi ${b(buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. After the handover, the seller marks it delivered and you confirm receipt to release payment. The Platform Fee is non-refundable, even if a dispute is refunded.`,
       rows: buyerRows,
-      cta: { label: 'Confirm received or dispute', url },
+      cta: { label: 'View order', url },
       preheader: `Seller contact details for ${d.listingTitle}`,
     });
     await this.send(
       d.buyer.email,
-      'Arrange the handover — ' + d.listingTitle,
+      'Seller contact details — ' + d.listingTitle,
       buyerHtml,
     );
     await this.sendSms(
       d.buyer.phone,
-      `ALL Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the handover for ${truncate(d.listingTitle, 30)}. Confirm when collected.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
+      `ALL Outdoor: Seller ${sellerName}${d.seller.phone ? ' - ' + d.seller.phone : ''}${d.seller.email ? ' - ' + d.seller.email : ''}. Arrange the handover for ${truncate(d.listingTitle, 28)}. Confirm after delivery: ${txUrl}`,
       `pa-buyer-${d.transactionId}`,
       {
         whatsapp: {
           templateKey: 'private_arrange_buyer_confirm',
-          vars: { ref: orderRef({ id: d.transactionId }), txId: d.transactionId },
+          // The approved template is "Order {{1}}. Once you've received..." -
+          // the variable carries the seller's contact details so WhatsApp is
+          // not the one channel without them.
+          vars: {
+            ref: sellerContactRef,
+            txId: d.transactionId,
+          },
         },
       },
     );
     await this.persistByEmail(d.buyer.email, {
       category: 'BUYER',
       type: 'private_arrange_handover',
-      title: 'Arrange the handover',
-      body: `${d.listingTitle} — contact the seller and confirm once you have received it.`,
+      title: 'Seller accepted - arrange the handover',
+      body: `${d.listingTitle}: seller ${sellerName}${d.seller.phone ? ', ' + d.seller.phone : ''}, ${d.seller.email}. Arrange the meet; confirm receipt after delivery.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4515,22 +4599,7 @@ export class NotificationsService {
       `pa-seller-${d.transactionId}`,
     );
 
-    // FLOW-F4 (M24) — a PRIVATE_ARRANGE sale has no accept/dispatch step, so
-    // it must NOT create the courier 'new_sale — accept within 48h'
-    // (dismissible:false) inbox row. Instead drop a truthful, DISMISSIBLE
-    // seller row so the inbox isn't silent and nothing becomes a permanent
-    // nag.
-    await this.persistByEmail(d.seller.email, {
-      category: 'SELLER',
-      type: 'new_sale',
-      title: 'Your listing sold',
-      body: `${d.listingTitle} sold — payment is held until the buyer confirms the handover. Arrange the meet with the buyer.`,
-      url: `/transactions/${d.transactionId}`,
-      iconKey: 'sold',
-      linkedType: 'transaction',
-      linkedId: d.transactionId,
-      dismissible: true,
-    });
+
   }
 
   // ---------------------------------------------------------------
@@ -5034,7 +5103,7 @@ export class NotificationsService {
    * identifies the document to the applicant and to support, and tells a
    * stranger standing nearby nothing at all about what is in somebody's house.
    *
-   * ⚖️ "READY" MEANS WRITTEN, NEVER APPROVED. No channel may imply an outcome
+   * âš–️ "READY" MEANS WRITTEN, NEVER APPROVED. No channel may imply an outcome
    * at SAPS. The applicant checks the facts and submits it as their own — see
    * DISCLAIMER_TEXT in motivations.service.ts, which is what they signed.
    */
@@ -5094,7 +5163,7 @@ export class NotificationsService {
           : 'motivation_needs_more_info',
       title: headline,
       body: failed
-        ? // ⚖️ OURS, NOT THEIRS. A failure here is our machinery, and telling
+        ? // âš–️ OURS, NOT THEIRS. A failure here is our machinery, and telling
           // somebody their own answers were at fault would be both untrue and
           // the thing that stops them trying again. Nothing was charged and
           // nothing was lost — say so, because that is the first thing anyone
@@ -5192,7 +5261,7 @@ export class NotificationsService {
   /**
    * A document in the member's Licence Centre is coming up for renewal.
    *
-   * ⚖️ WE REMIND; WE NEVER ENSURE. No "we'll make sure you never miss a
+   * âš–️ WE REMIND; WE NEVER ENSURE. No "we'll make sure you never miss a
    * renewal" — that is an outcome promise, and the responsibility to renew is
    * the member's in law. Every channel says the document as printed governs.
    *
@@ -5576,6 +5645,293 @@ export class NotificationsService {
       );
       return false;
     }
+  }
+
+  // ─────────────────── WhatsApp fallback nudges ──────────────────────
+  //
+  // A sales WhatsApp that Meta has not delivered after one hour gets the
+  // SMS/email fallback. One that WAS delivered but is still unread after 12
+  // hours gets the reminder. Both respect the member's channel mutes; each
+  // fires once per message log row.
+  //
+  // A FAILED send is deliberately excluded: `sendSms` already sent the SMS
+  // immediately on that path, so chasing it again would duplicate. STUB rows
+  // are local/dev only and are ignored.
+  async processWhatsappFallbacks(): Promise<{
+    undelivered: number;
+    unread: number;
+  }> {
+    const now = Date.now();
+    const oneHourAgo = new Date(now - 60 * 60 * 1000);
+    const twelveHoursAgo = new Date(now - 12 * 60 * 60 * 1000);
+
+    const logs = await this.prisma.whatsappMessageLog.findMany({
+      where: {
+        templateKey: { in: [...WHATSAPP_SALES_TEMPLATES] },
+        OR: [
+          {
+            status: 'SENT',
+            createdAt: { lte: oneHourAgo },
+            undeliveredNudgeAt: null,
+          },
+          {
+            status: 'DELIVERED',
+            createdAt: { lte: twelveHoursAgo },
+            unreadNudgeAt: null,
+          },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+
+    let undelivered = 0;
+    let unread = 0;
+
+    for (const log of logs) {
+      const isUndelivered = log.status === 'SENT';
+      const target = await this.whatsappFallbackTarget(log);
+      if (target) {
+        await this.sendWhatsappFallbackNudge(log, target, isUndelivered);
+        if (isUndelivered) undelivered += 1;
+        else unread += 1;
+      }
+
+      // Stamp even when the action has already completed: a stale log must
+      // not be re-checked on every cron tick.
+      await this.prisma.whatsappMessageLog.update({
+        where: { id: log.id },
+        data: isUndelivered
+          ? { undeliveredNudgeAt: new Date(), unreadNudgeAt: new Date() }
+          : { unreadNudgeAt: new Date() },
+      });
+    }
+
+    return { undelivered, unread };
+  }
+
+  private fallbackActionUrl(
+    vars: Record<string, unknown>,
+    fallbackPath: string,
+  ): string {
+    const code = typeof vars.code === 'string' ? vars.code : null;
+    if (code?.startsWith('a')) return `${this.appUrl}/a/${code.slice(1)}`;
+    if (code?.startsWith('t')) {
+      return `${this.appUrl}/transactions/${code.slice(1)}`;
+    }
+    const acceptToken =
+      typeof vars.acceptToken === 'string' ? vars.acceptToken : null;
+    if (acceptToken) return `${this.appUrl}/a/${acceptToken}`;
+    return `${this.appUrl}${fallbackPath}`;
+  }
+
+  private async whatsappFallbackTarget(log: {
+    templateKey: string;
+    vars: unknown;
+  }): Promise<{ action: string; cta: string; url: string } | null> {
+    if (!log.vars || typeof log.vars !== 'object' || Array.isArray(log.vars)) {
+      return null;
+    }
+    const vars = log.vars as Record<string, unknown>;
+    const str = (key: string): string | null =>
+      typeof vars[key] === 'string' && vars[key] ? (vars[key] as string) : null;
+    const now = new Date();
+
+    switch (log.templateKey) {
+      case 'new_sale_seller':
+      case 'new_sale_seller_courier':
+      case 'sale_accept_reminder_seller': {
+        const txId = str('txId');
+        if (!txId) return null;
+        const tx = await this.prisma.transaction.findUnique({
+          where: { id: txId },
+          select: { acceptedAt: true, paymentStatus: true },
+        });
+        if (!tx || tx.paymentStatus !== 'HELD' || tx.acceptedAt) return null;
+        return {
+          action: 'A paid sale is still waiting for you to accept it',
+          cta: 'Accept or decline',
+          url: this.fallbackActionUrl(vars, '/my/sales'),
+        };
+      }
+      case 'offer_received_seller': {
+        const offerId = str('offerId');
+        if (!offerId) return null;
+        const offer = await this.prisma.offer.findUnique({
+          where: { id: offerId },
+          select: { status: true, expiresAt: true },
+        });
+        if (!offer || offer.status !== 'PENDING' || offer.expiresAt <= now) {
+          return null;
+        }
+        return {
+          action: 'An offer on your listing is still waiting for your answer',
+          cta: 'Respond to offer',
+          url: this.fallbackActionUrl(vars, '/offers/received'),
+        };
+      }
+      case 'offer_accepted_buyer': {
+        const offerId = str('offerId');
+        if (!offerId) return null;
+        const offer = await this.prisma.offer.findUnique({
+          where: { id: offerId },
+          select: { status: true, expiresAt: true },
+        });
+        if (!offer || offer.status !== 'ACCEPTED' || offer.expiresAt <= now) {
+          return null;
+        }
+        return {
+          action: 'An accepted offer is still waiting for payment',
+          cta: 'Pay now',
+          url: this.fallbackActionUrl(vars, '/my/offers'),
+        };
+      }
+      case 'offer_countered_buyer': {
+        const offerId = str('offerId');
+        if (!offerId) return null;
+        const offer = await this.prisma.offer.findUnique({
+          where: { id: offerId },
+          select: { status: true, expiresAt: true },
+        });
+        if (!offer || offer.status !== 'COUNTERED' || offer.expiresAt <= now) {
+          return null;
+        }
+        return {
+          action: 'A counter-offer is still waiting for your answer',
+          cta: 'Respond to counter',
+          url: this.fallbackActionUrl(vars, '/my/offers'),
+        };
+      }
+      case 'bid_outbid_buyer': {
+        const listingId = str('listingId');
+        if (!listingId) return null;
+        const listing = await this.prisma.listing.findUnique({
+          where: { id: listingId },
+          select: { status: true, listingType: true },
+        });
+        if (!listing || listing.listingType !== 'AUCTION' || listing.status !== 'ACTIVE') {
+          return null;
+        }
+        return {
+          action: 'You were outbid — the auction is still live',
+          cta: 'Bid again',
+          url: this.fallbackActionUrl(vars, `/listings/${listingId}`),
+        };
+      }
+      case 'auction_won_buyer': {
+        const listingId = str('listingId');
+        if (!listingId) return null;
+        const listing = await this.prisma.listing.findUnique({
+          where: { id: listingId },
+          select: { status: true, listingType: true },
+        });
+        if (
+          !listing ||
+          listing.listingType !== 'AUCTION' ||
+          listing.status !== 'PAYMENT_PENDING'
+        ) {
+          return null;
+        }
+        return {
+          action: 'You won an auction — payment is still due',
+          cta: 'Pay now',
+          url: this.fallbackActionUrl(vars, `/checkout/${listingId}`),
+        };
+      }
+      case 'private_arrange_seller_handover': {
+        const txId = str('txId');
+        if (!txId) return null;
+        const tx = await this.prisma.transaction.findUnique({
+          where: { id: txId },
+          select: {
+            acceptedAt: true,
+            privateArrangeDeliveredAt: true,
+            paymentStatus: true,
+          },
+        });
+        if (
+          !tx ||
+          !tx.acceptedAt ||
+          tx.privateArrangeDeliveredAt ||
+          tx.paymentStatus !== 'HELD'
+        ) {
+          return null;
+        }
+        return {
+          action:
+            'A private-arrangement sale is waiting for you to hand over and mark delivered',
+          cta: 'Mark delivered',
+          url: this.fallbackActionUrl(vars, `/transactions/${txId}`),
+        };
+      }
+      case 'private_arrange_buyer_confirm':
+      case 'private_arrange_buyer_reminder': {
+        const txId = str('txId');
+        if (!txId) return null;
+        const tx = await this.prisma.transaction.findUnique({
+          where: { id: txId },
+          select: {
+            privateArrangeDeliveredAt: true,
+            privateArrangeReceivedAt: true,
+            paymentStatus: true,
+          },
+        });
+        if (
+          !tx ||
+          !tx.privateArrangeDeliveredAt ||
+          tx.privateArrangeReceivedAt ||
+          tx.paymentStatus !== 'HELD'
+        ) {
+          return null;
+        }
+        return {
+          action:
+            'The seller marked your item delivered — confirm receipt or dispute',
+          cta: 'Confirm receipt',
+          url: this.fallbackActionUrl(vars, `/transactions/${txId}`),
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  private async sendWhatsappFallbackNudge(
+    log: { id: string; to: string },
+    target: { action: string; cta: string; url: string },
+    undelivered: boolean,
+  ): Promise<void> {
+    const candidates = [log.to.trim(), this.sms.toE164(log.to)].filter(
+      (v): v is string => Boolean(v),
+    );
+    const user = await this.prisma.user.findFirst({
+      where: { phone: { in: Array.from(new Set(candidates)) } },
+      select: { email: true, firstName: true },
+    });
+    const reference = `wa-${undelivered ? 'undelivered' : 'unread'}-${log.id}`;
+
+    await this.sendSms(
+      log.to,
+      `ALL Outdoor: ${target.action}. ${target.url}`,
+      reference,
+    );
+
+    if (!user?.email) return;
+    const html = this.email({
+      status: {
+        tone: 'pending',
+        label: undelivered ? 'Action needed' : 'Reminder',
+      },
+      headline: undelivered ? 'Still waiting for you' : 'A quick reminder',
+      body: `Hi ${b(user.firstName ?? 'there')}, ${target.action}.`,
+      cta: { label: target.cta, url: target.url },
+      preheader: target.action,
+    });
+    await this.send(
+      user.email,
+      `${undelivered ? 'Action needed' : 'Reminder'}: ${target.cta}`,
+      html,
+    );
   }
 
   // ---------------------------------------------------------------

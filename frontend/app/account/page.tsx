@@ -7,6 +7,10 @@ import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
+import {
+  notificationActionLabel,
+  type NotificationItem,
+} from '@/lib/notifications';
 
 /** Shape of GET /users/me/account-summary. Mirrors the service's return type. */
 type AccountSummary = {
@@ -91,6 +95,26 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   'http://localhost:3001/api';
 
+// Sale rows stay on the Account action card even when the inbox marks them
+// dismissible, because "dismissible" is about the row, not about the unpaid
+// offer or the handover still waiting on the member.
+const SALE_ACTION_TYPES = new Set([
+  'new_sale',
+  'sale_accept_escalated',
+  'offer_received',
+  'offer_accepted',
+  'offer_countered',
+  'offer_pay_reminder',
+  'bid_outbid',
+  'auction_won',
+  'auction_pay_reminder',
+  'private_arrange_payment_held',
+  'private_arrange_handover',
+  'private_arrange_delivered',
+  'private_arrange_reminder',
+  'dispatch_nudge',
+]);
+
 const TIER_LABEL: Record<SellerTier, string> = {
   NEW: 'New seller',
   ESTABLISHED: 'Established',
@@ -159,11 +183,148 @@ function RowChevron() {
   );
 }
 
-function fmtDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+function ActionRequiredCard({
+  items,
+  total,
+}: {
+  items: NotificationItem[];
+  total: number;
+}) {
+  if (items.length === 0) {
+    return (
+      <div
+        className="rounded-[10px] px-4 py-3 mb-6 flex items-center gap-3"
+        style={{
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(34, 160, 90, 0.12)',
+            color: 'var(--success)',
+            flexShrink: 0,
+          }}
+        >
+          ✓
+        </span>
+        <p className="text-sm" style={{ margin: 0, color: 'var(--text-secondary)' }}>
+          All clear — nothing needs your attention.
+        </p>
+        <Link
+          href="/notifications"
+          className="text-xs ml-auto"
+          style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
+        >
+          View notifications →
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <section
+      aria-labelledby="action-required-title"
+      className="rounded-[10px] overflow-hidden mb-6"
+      style={{
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--red)',
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4 py-3"
+        style={{
+          background: 'color-mix(in srgb, var(--red) 6%, var(--bg-card))',
+          borderBottom: '0.5px solid var(--border)',
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: 'var(--red)',
+            flexShrink: 0,
+          }}
+        />
+        <h2
+          id="action-required-title"
+          className="text-sm"
+          style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)' }}
+        >
+          Action required
+        </h2>
+        <span
+          className="text-xs"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          {items.length === 1 ? '1 item' : `${items.length} items`}
+        </span>
+        <Link
+          href="/notifications"
+          className="text-xs ml-auto"
+          style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+        >
+          View all{total > items.length ? ` (${total})` : ''} →
+        </Link>
+      </div>
+
+      <div>
+        {items.map((item) => (
+          <Link
+            key={item.id}
+            href={item.url ?? '/notifications'}
+            className="flex items-center gap-3"
+            style={{
+              padding: '11px 16px',
+              textDecoration: 'none',
+              borderTop: '0.5px solid var(--border)',
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span
+                className="block text-sm"
+                style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+              >
+                {item.title}
+              </span>
+              <span
+                className="block text-xs"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  marginTop: 2,
+                }}
+              >
+                {item.body}
+              </span>
+            </span>
+            <span
+              className="text-xs"
+              style={{
+                color: 'var(--red)',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {notificationActionLabel(item.type)} →
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 // Parse a fetch Response safely. Critically guards the `.json()` call: an
@@ -187,17 +348,26 @@ export default async function AccountPage() {
   const token = await getToken();
   const headers = { Authorization: `Bearer ${token}` };
 
-  const [meRes, alertsRes, moduleCountsRes, summaryRes] = await Promise.all([
-    fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(() => null),
-    fetch(`${API_URL}/notifications/me/active-count`, { headers, cache: 'no-store' }).catch(() => null),
-    // Same per-module notification counts the dropdown / drawer / PWA More
-    // sheet badge with, so the hub cards and the menus always agree.
-    fetch(`${API_URL}/notifications/me/module-counts`, { headers, cache: 'no-store' }).catch(() => null),
-    // State totals for the hub's stat lines. In the same Promise.all as the
-    // rest — this page already makes three calls and a fourth in series would
-    // add its whole latency to a page opened on every visit.
-    fetch(`${API_URL}/users/me/account-summary`, { headers, cache: 'no-store' }).catch(() => null),
-  ]);
+  const [meRes, alertsRes, moduleCountsRes, summaryRes, notificationsRes] =
+    await Promise.all([
+      fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(() => null),
+      fetch(`${API_URL}/notifications/me/active-count`, { headers, cache: 'no-store' }).catch(() => null),
+      // Same per-module notification counts the dropdown / drawer / PWA More
+      // sheet badge with, so the hub cards and the menus always agree.
+      fetch(`${API_URL}/notifications/me/module-counts`, { headers, cache: 'no-store' }).catch(() => null),
+      // State totals for the hub's stat lines. In the same Promise.all as the
+      // rest — this page already makes three calls and a fourth in series would
+      // add its whole latency to a page opened on every visit.
+      fetch(`${API_URL}/users/me/account-summary`, { headers, cache: 'no-store' }).catch(() => null),
+      // The top of the hub is the action queue, not a menu. Active,
+      // non-dismissible rows are exactly the sales/offers/bids/KYC steps that
+      // need the member; pulling them here keeps the first screen honest and
+      // avoids a client round-trip.
+      fetch(`${API_URL}/notifications/me?status=active&limit=20`, {
+        headers,
+        cache: 'no-store',
+      }).catch(() => null),
+    ]);
 
   // Distinguish "the backend answered and this is your real state" from
   // "we couldn't reach the backend". safeJson degrades both to null, and
@@ -212,6 +382,16 @@ export default async function AccountPage() {
   // Null, not zeros, when the call fails — see the note at the top of the stat
   // helpers. Every line keys off this being present.
   const summary = await safeJson<AccountSummary | null>(summaryRes, null);
+  const activeNotifications = await safeJson<NotificationItem[]>(
+    notificationsRes,
+    [],
+  );
+  const actionItems = (Array.isArray(activeNotifications)
+    ? activeNotifications
+    : []
+  )
+    .filter((n) => !n.dismissible || SALE_ACTION_TYPES.has(n.type))
+    .slice(0, 6);
 
   // A 200 with an empty/unparseable body is just as unusable as a non-OK
   // one — /users/me always returns a record for a synced user.
@@ -319,6 +499,9 @@ export default async function AccountPage() {
               here, at the top right of the identity card. */}
           <AccountSignOut />
         </div>
+
+        {/* The action queue, immediately under the identity card. */}
+        <ActionRequiredCard items={actionItems} total={unread} />
 
         {/* Appearance — the phone/PWA's ONLY theme control. The nav's icon
             toggle is desktop-only because the mobile header is full (see

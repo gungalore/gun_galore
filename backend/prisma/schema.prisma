@@ -6803,10 +6803,15 @@ model WhatsappMessageLog {
   templateKey String // registry key, e.g. "new_sale_seller"
   vars        Json // exactly what was substituted into the template
   reference   String?
-  status      String // 'SENT' | 'FAILED' | 'STUB'
+  status      String // 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'STUB'
   messageId   String? // Meta's wamid — delivery-status webhooks match on this
   error       String?
   createdAt   DateTime  @default(now())
+  // Fallback nudge bookkeeping. A sale template that Meta has not delivered
+  // after one hour gets the SMS/email fallback; one that was delivered but is
+  // still unread after 12 hours gets the reminder. Each fires once.
+  undeliveredNudgeAt DateTime?
+  unreadNudgeAt      DateTime?
 
   // Retry bookkeeping, same shape as SmsLog's. A 131047 (outside the 24h
   // window) or 132001 (no such template) is non-retryable; a 5xx is.
@@ -6818,6 +6823,8 @@ model WhatsappMessageLog {
   @@index([messageId])
   // Retry cron hot path: FAILED + retryable + due.
   @@index([status, nextRetryAt])
+  // Fallback nudge sweep: status + age.
+  @@index([status, createdAt])
 }
 
 /// Meta's 24-hour customer-service window, tracked per phone number. An

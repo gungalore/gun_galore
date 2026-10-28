@@ -588,11 +588,13 @@ rail-agnostic.
 ### Branches that skip the normal release
 
 - **`PRIVATE_ARRANGE`** (in-person handover, firearm or goods): funds stay
-  **HELD** after payment. Both parties receive WhatsApp/SMS/email/in-app links;
-  the seller marks the item delivered and the buyer confirms receipt, which
-  releases the payout. If neither acts, it auto-releases 5 days after payment
-  when there is no dispute. The Platform Fee is retained by ALL Outdoor on any
-  refund. See `onPrivateArrangePaid()` / `releasePrivateArrange()`.
+  **HELD** after payment. The seller must accept within 48h; acceptance reveals
+  both parties' name, phone and email through email/SMS/WhatsApp/in-app. The
+  seller marks the item delivered and the buyer confirms receipt, which
+  releases the payout. If the buyer never confirms, it auto-releases 5 days
+  after payment **only if the seller accepted** and there is no dispute. Before
+  acceptance, the seller can reject and the buyer is refunded. See
+  `sendPrivateArrangeAccepted()` / `releasePrivateArrange()`.
 - **`DEALER_TRANSFER`** (the normal firearm path): confirm-delivery is *not*
   enough. `dealerVerificationStatus` must be `APPROVED` — the SAPS 534 form,
   stock register page and firearm photos must have passed, either via Claude

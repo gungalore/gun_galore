@@ -45,7 +45,7 @@ describe('NotificationItem — clear control', () => {
     expect(onDismiss).toHaveBeenCalledWith('n1');
   });
 
-  it('shows no Clear button on an action-required row (Act instead)', () => {
+  it('shows no Clear button on an action-required row (explicit CTA instead)', () => {
     const { queryByRole, getByText } = render(
       <NotificationItem
         item={item({ type: 'new_sale', dismissible: false })}
@@ -53,7 +53,7 @@ describe('NotificationItem — clear control', () => {
       />,
     );
     expect(queryByRole('button', { name: /clear this notification/i })).toBeNull();
-    expect(getByText('Act')).toBeTruthy();
+    expect(getByText('Accept sale')).toBeTruthy();
   });
 
   it('shows no Clear button once the row is resolved', () => {
@@ -68,14 +68,14 @@ describe('NotificationItem — clear control', () => {
 });
 
 describe('NotificationItem — acting on the row', () => {
-  it('makes the Act pill part of the link, not a dead span beside it', () => {
+  it('makes the CTA pill part of the link, not a dead span beside it', () => {
     const { getByText } = render(
       <NotificationItem
         item={item({ type: 'new_sale', dismissible: false })}
         onDismiss={() => {}}
       />,
     );
-    expect(getByText('Act').closest('a')?.getAttribute('href')).toBe(
+    expect(getByText('Accept sale').closest('a')?.getAttribute('href')).toBe(
       '/community/p/1',
     );
   });
