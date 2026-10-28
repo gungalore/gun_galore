@@ -7,6 +7,46 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - LICENCE CARD DATE RANGE, SECTION FACT, BACKFILL (FULL DEPLOY)
+
+Deployed `8f026427` (date range) and `b23c73c6` (section fact + backfill
+script). Final deploy `b23c73c6` (rollback
+`alloutdoor-20261028-154059.dump`, 32,434,608 bytes; no pending migrations;
+health A-2 OK; public 200 A-2; three services online).
+
+**The report.** A licence card prints its issue and expiry as an unlabelled
+range under the section, e.g. `2025-08-27 – 2035-08-26` under `SECTION 16`; the
+reader looked for the words "issue" and "expiry" and returned neither. Six
+licences reached the vault with no date, three competencies had the issue date
+only in their details, and the banner asked the member to confirm a date the
+reader had never read.
+
+**What changed.**
+
+- The capture, vault-read and motivation-read prompts now split the licence
+  range into **Issue date** and **Expiry date**, with normalized ISO values.
+- The capture also lists an unlabelled `SECTION 16` line as a **Section** fact;
+  without it `mayArmReadExpiry` correctly refused to arm the dates.
+- A competency's `competency_issued` detail is copied into the `issuedOn`
+  column before the derived expiry runs.
+- The Document Centre banner now says “we could not read a date” when
+  `expiresOn` is null, instead of claiming a date was read.
+
+**Backfill (`backend/scripts/backfill-missing-credential-dates.ts`).** Dry-run
+by default; `--apply` writes. Applied to the operator's vault:
+- six licences read and **armed**: CZ 6.35 Browning, Glock 9mm, Howa 6.5
+  Creedmoor, Marlin .45-70, Mauser .30-06, Nordiske .223;
+- three competencies had their stored issue date copied into the column and
+  their derived expiry recomputed.
+- The missing-date query now returns **zero** rows.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,961 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,819 passed / 1 skipped; production build
+clean.
+
+**Next:** upload one fresh licence and confirm the log fills both dates and
+arms them without the banner. The backfill script is dry-run by default.
+
 ## 2026-10-28 - DOCUMENT CAPTURE MOVED TO FLASH-LITE WITH NO REASONING (FULL DEPLOY)
 
 Deployed `8314ee16` (rollback `alloutdoor-20261028-150515.dump`, 32,370,523
