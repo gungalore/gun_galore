@@ -59,6 +59,10 @@ export class MotivationApiError extends Error {
      * box that does not exist.
      */
     readonly missingDocuments?: string[],
+    /**
+     * Why an upload could not be placed. Used by the unplaced-file dialog.
+     */
+    readonly reason?: string,
   ) {
     super(message);
   }
@@ -94,6 +98,7 @@ async function request<T>(
     const body = await safeJson<{
       message?: string | string[];
       code?: string;
+      reason?: string;
       missing?: string[];
       missingDocuments?: string[];
     }>(res, {});
@@ -107,6 +112,7 @@ async function request<T>(
       body.code,
       body.missing,
       body.missingDocuments,
+      body.reason,
     );
   }
 
@@ -1346,6 +1352,12 @@ export const motivationsApi = {
        */
       identifyId?: string;
       /**
+       * A few words from the member about what the file shows. Sent when the
+       * classifier could not place it, so the server can re-run the evidence
+       * classifier with the member's own words before refusing.
+       */
+      description?: string;
+      /**
        * The identified page IS a SAPS 271 form. We read it and place its facts;
        * it is never printed as an annexure. Carried from the verdict so a PDF
        * (which Vision cannot OCR) is still suppressed.
@@ -1356,6 +1368,7 @@ export const motivationsApi = {
     const form = new FormData();
     form.append('kind', kind);
     if (opts.identifyId) form.append('identifyId', opts.identifyId);
+    if (opts.description?.trim()) form.append('description', opts.description.trim());
     if (opts.saps271) form.append('saps271', 'true');
     form.append('file', file);
     // The response carries SUGGESTIONS read off the document. They are not

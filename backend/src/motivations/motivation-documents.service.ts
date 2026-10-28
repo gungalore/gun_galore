@@ -18,6 +18,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   CredentialKind,
@@ -61,8 +62,11 @@ import {
   containerById,
   evidenceRow,
   isAnnexureEvidence,
+  isContainerId,
 } from './evidence-taxonomy';
 import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
+import type { DocumentCapture } from '../common/document-capture/document-capture';
+import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
 import {
   endorsementVerdict,
   ENDORSEMENT_FIREARM_MISMATCH,
@@ -219,6 +223,11 @@ export class MotivationDocumentsService {
      */
     private readonly identifyStore: DocumentIdentifyService,
     private readonly prefill?: MotivationPrefillService,
+    /**
+     * The one-pass capture. Optional so specs that build this service by hand
+     * keep compiling; Nest injects it from DocumentFilingModule.
+     */
+    @Optional() private readonly captureService?: DocumentCaptureService,
   ) {}
 
   /**
@@ -2367,6 +2376,7 @@ export class MotivationDocumentsService {
       container,
       confident,
       ocrText,
+      capture: guess?.capture ?? null,
     });
 
     return {
@@ -2519,6 +2529,8 @@ export class MotivationDocumentsService {
     let evidenceContainer: string | null = null;
     /** The member's own words about an evidence item. From the identify card. */
     let evidenceWords: string | null = null;
+    /** The one-pass read, stored on the row when the classifier made one. */
+    let capture: DocumentCapture | null = null;
 
     const verdict = opts.identifyId
       ? await this.identifyStore
@@ -2540,6 +2552,7 @@ export class MotivationDocumentsService {
         }
         confident = verdict.confident;
         evidenceWords = (opts.description ?? '').trim() || null;
+        capture = verdict.capture ?? null;
       } else {
         // No id, an expired one, or one belonging to somebody else: fall back
         // to reading the bytes we were actually handed. Nothing is blocked,
@@ -2555,9 +2568,55 @@ export class MotivationDocumentsService {
           // description.
           resolved = guess.role === 'evidence' ? 'EVIDENCE' : guess.kind;
           confident = guess.confident;
+          capture = guess.capture ?? null;
         }
         if (resolved === 'EVIDENCE') evidenceWords = (opts.description ?? '').trim() || null;
       }
+    }
+
+    /**
+     * ⚠️ A DECLARED KIND SKIPS THE CLASSIFIER, NOT THE READ. See the vault's
+     * identical fallback: the member's own menu choice must still be captured.
+     */
+    if (!capture && this.captureService) {
+      capture = await this.captureService
+        .capture({ bytes: file.buffer, mimeType: file.mimetype })
+        .catch(() => null);
+    }
+
+    // ⚠️ NOTHING DORMANT ENTERS THE APPLICATION (operator, 2026-10-28).
+    // A file we cannot place in a document kind or an evidence container is a
+    // row nobody can ever put in a pack. If the member supplied words, use them
+    // to re-run the evidence classifier once; otherwise refuse and ask.
+    if (resolved === MotivationUploadKind.EVIDENCE && !evidenceContainer) {
+      const words = evidenceWords ?? ((opts.description ?? '').trim() || null);
+      if (words) {
+        const sorted = await this.extract
+          .classifyEvidence({
+            bytes: file.buffer,
+            mimeType: file.mimetype,
+            description: words,
+            ocrText,
+          })
+          .catch(() => null);
+        if (sorted?.confident && isContainerId(sorted.container)) {
+          evidenceContainer = sorted.container;
+        }
+      }
+    }
+    if (
+      resolved === MotivationUploadKind.OTHER ||
+      (resolved === MotivationUploadKind.EVIDENCE && !evidenceContainer)
+    ) {
+      throw new BadRequestException({
+        message:
+          'We could not identify this file. Tell us in a few words what it shows, or upload a clearer copy — nothing was saved.',
+        code: 'needs-identification',
+        reason:
+          resolved === MotivationUploadKind.OTHER
+            ? 'we could not match it to a document type'
+            : 'we could not place it in an evidence container',
+      });
     }
 
     // ⚠️ AN ENDORSEMENT MUST NAME THE FIREARM THAT IS APPLIED FOR. Operator,
@@ -2593,6 +2652,23 @@ export class MotivationDocumentsService {
           `Motivation ${row.id}: endorsement match could not be read — ${(err as Error).message}`,
         );
       }
+    }
+
+    /**
+     * ⚠️ A MISMATCHED ENDORSEMENT IS NOT A DOCUMENT WE CAN USE HERE. It is
+     * demoted from the endorsement row, and nothing else on this application
+     * can take it — so it must not be written as a dormant OTHER row.
+     */
+    if (
+      endorsementMismatch &&
+      resolved === MotivationUploadKind.OTHER
+    ) {
+      throw new BadRequestException({
+        message:
+          'This endorsement names a different firearm, so it cannot be used on this application. Nothing was saved.',
+        code: 'needs-identification',
+        reason: 'the endorsement names a different firearm',
+      });
     }
 
     // Written before the row so a duplicate is detected by the DATABASE rather
@@ -2663,6 +2739,10 @@ export class MotivationDocumentsService {
           // separates "read, and the page was blank" from "not read".
           ocrTextEncrypted: ocrText ? encryptJson({ text: ocrText }) : null,
           ocrChars: ocrText === null ? null : ocrText.length,
+          // ⚠️ THE ONE-PASS CAPTURE: full page text plus every printed fact.
+          captureEncrypted: capture ? encryptJson(capture) : null,
+          captureVersion: capture?.version ?? null,
+          captureAt: capture ? new Date() : null,
           // ⚠️ EVIDENCE'S THREE COLUMNS, LEFT ALONE FOR EVERY OTHER KIND. The
           // container is what the renderer reads to decide annexure-vs-body,
           // and the description captions the photograph. Both come from the

@@ -226,7 +226,7 @@ describe('describing an item again', () => {
     });
     expect(out.evidence).toMatchObject({
       container: 'FARM_PERMISSION_LETTER',
-      placement: 'annexure',
+      placement: 'body',
       confident: true,
     });
     // The words are encrypted again, not stored raw.

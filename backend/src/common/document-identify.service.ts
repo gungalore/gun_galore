@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptJson, encryptJson } from './blob-crypto';
+import type { DocumentCapture } from './document-capture/document-capture';
 
 // ────────────────────────────────────────────────────────────────────
 // THE IDENTIFY PASS'S MEMORY, BETWEEN THE PICKER AND THE POLISH.
@@ -68,6 +69,8 @@ export interface IdentifyRecord {
   confident: boolean;
   /** The full text read off the page, decrypted. POPIA data. */
   ocrText: string | null;
+  /** The one-pass capture, when the reader made one. */
+  capture?: DocumentCapture | null;
 }
 
 @Injectable()
@@ -100,6 +103,9 @@ export class DocumentIdentifyService {
             ? encryptJson({ text: record.ocrText })
             : null,
           ocrChars: record.ocrText === null ? null : record.ocrText.length,
+          captureEncrypted: record.capture
+            ? encryptJson(record.capture)
+            : null,
           expiresAt: new Date(Date.now() + TTL_MS),
         },
       });
@@ -141,6 +147,7 @@ export class DocumentIdentifyService {
           container: true,
           confident: true,
           ocrTextEncrypted: true,
+          captureEncrypted: true,
         },
       });
       if (!row) return null;
@@ -155,6 +162,9 @@ export class DocumentIdentifyService {
         confident: row.confident,
         ocrText: row.ocrTextEncrypted
           ? (decryptJson<{ text?: string }>(row.ocrTextEncrypted)?.text ?? null)
+          : null,
+        capture: row.captureEncrypted
+          ? decryptJson<DocumentCapture>(row.captureEncrypted)
           : null,
       };
     } catch (err) {
@@ -202,6 +212,7 @@ export class DocumentIdentifyService {
           container: true,
           confident: true,
           ocrTextEncrypted: true,
+          captureEncrypted: true,
         },
       });
       if (!row) return null;
@@ -216,6 +227,9 @@ export class DocumentIdentifyService {
         confident: row.confident,
         ocrText: row.ocrTextEncrypted
           ? (decryptJson<{ text?: string }>(row.ocrTextEncrypted)?.text ?? null)
+          : null,
+        capture: row.captureEncrypted
+          ? decryptJson<DocumentCapture>(row.captureEncrypted)
           : null,
       };
     } catch (err) {
@@ -264,6 +278,10 @@ export class DocumentIdentifyService {
       await this.prisma.documentIdentify.updateMany({
         where: { expiresAt: { lte: now }, ocrTextEncrypted: { not: null } },
         data: { ocrTextEncrypted: null },
+      });
+      await this.prisma.documentIdentify.updateMany({
+        where: { expiresAt: { lte: now }, captureEncrypted: { not: null } },
+        data: { captureEncrypted: null },
       });
       const { count } = await this.prisma.documentIdentify.deleteMany({
         where: { expiresAt: { lte: now } },

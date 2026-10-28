@@ -17,13 +17,14 @@ import { CredentialKind, MotivationUploadKind } from '@prisma/client';
 // revised as members bring things we did not think of, and the operator asked
 // for a grown list rather than a swarm of new document types in the picker.
 //
-// ⚠️ PLACEMENT DECIDES THE PACK, AND IT IS THE ONLY DECISION THAT MATTERS.
-// Operator, 2026-09-26: a printed document — a permission letter, an
-// affidavit, a score sheet — "gets its own full page in the annexures"; an
-// activity photograph is argument in the body, on one "My Activities /
-// Evidence" page. A wrong container is therefore worse than no container: it
-// moves a page and it ticks a DFO row. Which is why a low-confidence answer
-// stores NO container at all (see licence-centre.service.ts).
+// ⚠️ EVIDENCE IS BODY CONTENT, ALWAYS. Operator, 2026-10-28: "No evidence
+// that the user upload should ever enter as an annexure. Annexures are solely
+// for documents required by the DFO and CFR." A printed permission letter, an
+// affidavit or a score sheet is still evidence, and it prints in the body with
+// the activity photographs. Only the DFO/CFR-required document kinds take an
+// annexure letter. A wrong container still matters — it changes the caption and
+// the group, and an unplaced item prints nothing — which is why a
+// low-confidence answer stores NO container at all (see licence-centre.service.ts).
 //
 // ⚠️ THE ID IS THE STORED VALUE AND MUST NEVER CHANGE. Rename a label freely
 // — labels are shown, ids are kept. A renamed id orphans every row already
@@ -40,6 +41,7 @@ export type EvidenceGroup =
   | 'reloading'
   | 'care'
   | 'storage'
+  | 'incident'
   | 'personal'
   | 'legal'
   | 'organisational'
@@ -58,6 +60,7 @@ export const EVIDENCE_GROUP_ORDER: EvidenceGroup[] = [
   'reloading',
   'care',
   'storage',
+  'incident',
   'personal',
   'legal',
   'organisational',
@@ -70,6 +73,7 @@ export const EVIDENCE_GROUP_LABELS: Record<EvidenceGroup, string> = {
   reloading: 'Reloading',
   care: 'Cleaning and maintenance',
   storage: 'Safe, security and storage',
+  incident: 'Incident and crime scene',
   personal: 'About you and your circumstances',
   legal: 'Legal and official papers',
   organisational: 'Your association',
@@ -85,9 +89,9 @@ export interface EvidenceContainer {
   /** The model's discriminator, and the member's help text. */
   hint: string;
   /**
-   * How this prints. 'annexure' = a printed document taking its own letter and
-   * its own full page; 'body' = an activity photograph on the one
-   * "My Activities / Evidence" page.
+   * How this prints. ⚠️ EVIDENCE IS BODY-ONLY (operator, 2026-10-28):
+   * "Annexures are solely for documents required by the DFO and CFR." The
+   * field is kept for the stored-row reader; every current container is body.
    */
   placement: 'annexure' | 'body';
   /**
@@ -104,10 +108,15 @@ export interface EvidenceContainer {
  * the classifier cache key, so a stale `{container}` is never served against a
  * container id that has since moved, been retired, or changed placement.
  */
-export const CONTAINER_VERSION = '2026-09-26';
+export const CONTAINER_VERSION = '2026-10-28';
 
-/** How many annexure-placed evidence files one motivation may carry. */
-export const EVIDENCE_ANNEXURE_MAX = 2;
+/**
+ * How many annexure-placed evidence files one motivation may carry.
+ *
+ * ⚠️ ZERO, BY OPERATOR RULING (2026-10-28). Evidence is argument and prints in
+ * the body. Only DFO/CFR-required documents take an annexure letter.
+ */
+export const EVIDENCE_ANNEXURE_MAX = 0;
 /** How many body-placed evidence files one motivation may carry. */
 export const EVIDENCE_BODY_MAX = 4;
 /** How many evidence items the vault holds, beside the document cap. */
@@ -120,36 +129,35 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'hunting',
     label: 'An invitation to hunt',
     hint: 'A written invitation from a farmer, landowner or hunting party asking the applicant to hunt, usually naming the farm and a date. Printed paper, not a photograph of an animal.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'FARM_PERMISSION_LETTER',
     group: 'hunting',
     label: "A farmer's permission to hunt on their land",
     hint: 'A landowner or farm manager writing to say the applicant may hunt on their property. Names the farm and the person granting permission. Printed paper with a signature. This is the letter the operator named as its own annexure page.',
-    placement: 'annexure',
-    satisfies: 'FIREARM_SOURCE_PROOF',
+    placement: 'body',
   },
   {
     id: 'HUNTING_PERMIT',
     group: 'hunting',
     label: 'A hunting permit or licence',
     hint: 'An official provincial hunting permit, a nature-conservation permit, a culling permit, or a provincial hunting licence. Issued by an authority, printed, and usually numbered.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'HUNTING_REGISTER_ENTRY',
     group: 'hunting',
     label: 'A page from a hunting register',
     hint: 'A farm or reserve hunting register showing the applicant signed in and out and what was taken. Handwritten columns and dates on paper.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'GAME_DONATION_RECEIPT',
     group: 'hunting',
     label: 'A receipt or record for donated game',
     hint: 'A document recording that the applicant donated, received or processed game — a butchery receipt, a donation certificate, a carcass register. Printed paper.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'HUNTING_PHOTO',
@@ -214,36 +222,35 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'sport',
     label: 'A score sheet',
     hint: 'A printed or handwritten target or match score sheet, usually with the applicant\u2019s name, the discipline and the scores. Range officials sign these.',
-    placement: 'annexure',
-    satisfies: 'SHOOTING_ACTIVITY_LOG',
+    placement: 'body',
   },
   {
     id: 'COMPETITION_RESULT',
     group: 'sport',
     label: 'A competition result sheet or log',
     hint: 'Official results from a match or league — placings, scores, divisions, a results printout or a log book page signed off by a range officer.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RANGE_REGISTER',
     group: 'sport',
     label: 'A page from a range register',
     hint: 'The club\u2019s range attendance book showing the applicant signed in on dates. Columns of names, dates and disciplines.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'MATCH_PROGRAMME',
     group: 'sport',
     label: 'A match programme or entry form',
     hint: 'A printed programme or entry form for a competition, naming the applicant as an entrant or shooter. Shows a diary of shooting, not one session.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RANGE_MEMBERSHIP_PROOF',
     group: 'sport',
     label: 'Proof of range or club membership',
     hint: 'A membership certificate, invoice or letter confirming the applicant belongs to a shooting range or club. Printed paper.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RANGE_PHOTO',
@@ -301,21 +308,21 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'reloading',
     label: 'A reloading log or load data sheet',
     hint: 'Handwritten or printed load records — bullet, powder, charge, primer, cartridge-overall length, dates. Proves ongoing reloading.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'BALLISTIC_TABLE',
     group: 'reloading',
     label: 'A ballistic table or trajectory chart',
     hint: 'A printed drop or wind-drift table, chronograph output, or trajectory chart the applicant works from.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'CHRONOGRAPH_RESULT',
     group: 'reloading',
     label: 'A chronograph or pressure result',
     hint: 'A printed or photographed chronograph reading or pressure-test result for a developed load.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RELOADING_BENCH_PHOTO',
@@ -366,7 +373,7 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'care',
     label: 'A gunsmith invoice or job card',
     hint: 'A printed invoice or job card from a gunsmith for work done on the applicant\u2019s firearm — a rebarrel, a trigger job, a repair, a service.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'CLEANING_SESSION_PHOTO',
@@ -417,21 +424,21 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'storage',
     label: 'A receipt or invoice for a safe',
     hint: 'A printed invoice or receipt for a gun safe or strongbox, usually naming the model and the SABS standard.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'SAFE_SPEC_SHEET',
     group: 'storage',
     label: 'A safe specification sheet or manual',
     hint: 'A manufacturer\u2019s specification sheet, datasheet or manual for the safe, showing the construction and often a standards mark.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'ALARM_CERTIFICATE',
     group: 'storage',
     label: 'An alarm or security certificate',
     hint: 'An installation certificate or service certificate from an armed-response or alarm company for the applicant\u2019s premises.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'SAFE_PHOTO_EXTRA',
@@ -439,7 +446,6 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     label: 'Another photograph of your safe',
     hint: 'A photograph of a gun safe the applicant owns, beyond the shots the safe line already asks for. Prefer SAFE_PHOTOGRAPHS for the closed, half-open and bolts shots.',
     placement: 'body',
-    satisfies: 'SAFE_PHOTOGRAPHS',
   },
   {
     id: 'SAFE_ANCHORING_PHOTO',
@@ -447,7 +453,6 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     label: 'A photograph of how your safe is anchored',
     hint: 'Rawl bolts, a base plate, a bracket, or the safe fixed into a wall or a floor. Shows the safe cannot simply be carried off.',
     placement: 'body',
-    satisfies: 'SAFE_PHOTOGRAPHS',
   },
   {
     id: 'KEY_HOLDER_PHOTO',
@@ -478,49 +483,111 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     placement: 'body',
   },
 
+  // ── incident ───────────────────────────────────────────────────────
+  //
+  // ⚠️ EVIDENCE IS BODY CONTENT, ALWAYS. Operator, 2026-10-28: "No evidence
+  // that the user upload should ever enter as an annexure. Annexures are
+  // solely for documents required by the DFO and CFR." These are the applicant's
+  // own record of a break-in, attack or theft — argument, not DFO paperwork.
+  {
+    id: 'BREAK_IN_PHOTO',
+    group: 'incident',
+    label: 'A photograph of the break-in',
+    hint: 'The point of entry — a forced door, a broken window, a damaged lock or bent burglar bars — photographed as the applicant found it.',
+    placement: 'body',
+  },
+  {
+    id: 'DAMAGE_PHOTO',
+    group: 'incident',
+    label: 'A photograph of the damage',
+    hint: 'Damage left by the incident — a ransacked room, a broken gate, a damaged vehicle or property. The scene after the attack or theft.',
+    placement: 'body',
+  },
+  {
+    id: 'CCTV_STILL',
+    group: 'incident',
+    label: 'A still from a security camera',
+    hint: 'A frame from CCTV, a video doorbell or another security camera showing the incident, the intruder or the vehicle.',
+    placement: 'body',
+  },
+  {
+    id: 'ARMED_RESPONSE_REPORT',
+    group: 'incident',
+    label: 'An armed-response or security incident report',
+    hint: 'The security company\'s own occurrence or incident report for the call-out — a printed report from the armed-response provider, not the alarm certificate.',
+    placement: 'body',
+  },
+  {
+    id: 'REPAIR_QUOTE',
+    group: 'incident',
+    label: 'A repair quote or invoice for the damage',
+    hint: 'A quote or paid invoice for repairing a door, lock, gate, window or vehicle after the incident. Shows the damage was real and what it cost.',
+    placement: 'body',
+  },
+  {
+    id: 'STOLEN_ITEMS_LIST',
+    group: 'incident',
+    label: 'A list of what was stolen',
+    hint: 'An inventory of stolen property, an insurance claim schedule or a loss report listing the items taken in the incident.',
+    placement: 'body',
+  },
+  {
+    id: 'NEWS_REPORT',
+    group: 'incident',
+    label: 'A news report about the incident',
+    hint: 'A published newspaper or online article reporting the incident, naming the place and date. A cutting or screenshot of the published page.',
+    placement: 'body',
+  },
+  {
+    id: 'NEIGHBOUR_STATEMENT',
+    group: 'incident',
+    label: 'A statement from a neighbour or witness',
+    hint: 'A signed statement from a neighbour, family member or witness about what they saw or heard during the incident.',
+    placement: 'body',
+  },
+
   // ── personal ───────────────────────────────────────────────────────
   {
     id: 'EMPLOYMENT_LETTER_EXTRA',
     group: 'personal',
     label: 'Another letter about your work',
     hint: 'A letter from an employer or a business confirming the applicant\u2019s occupation, employment or income. Printed paper with a letterhead and a signature.',
-    placement: 'annexure',
-    satisfies: 'EMPLOYMENT_CONFIRMATION',
+    placement: 'body',
   },
   {
     id: 'BUSINESS_OWNERSHIP_DOC',
     group: 'personal',
     label: 'A document showing you own a business',
     hint: 'A CIPC registration, a business licence, a VAT registration, a letter from an accountant, or a company resolution naming the applicant.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'FARM_OWNERSHIP_DOC',
     group: 'personal',
     label: 'A document showing you own or work a farm',
     hint: 'A title deed, a lease, a permission to occupy, or a letter from a farm owner naming the applicant as resident or manager.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'MEDICAL_LETTER',
     group: 'personal',
     label: 'A medical or professional letter',
     hint: 'A letter from a doctor, optometrist, psychologist or other professional about the applicant\u2019s fitness, eyesight or circumstances.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RETIREMENT_PROOF',
     group: 'personal',
     label: 'Proof of retirement or pension',
     hint: 'A pension statement, a retirement letter, or proof from a fund showing the applicant has retired.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'OCCUPATION_PROOF',
     group: 'personal',
     label: 'Other proof of what you do',
     hint: 'A certificate, a qualification, a registration, a professional membership, or a letter proving the applicant\u2019s occupation. Not a plain employment confirmation.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'RESIDENCE_PHOTO',
@@ -550,74 +617,70 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'legal',
     label: 'A trust deed',
     hint: 'A registered trust deed or a letter of authority naming the applicant as a trustee. Printed legal paper.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'INHERITANCE_DOCS',
     group: 'legal',
     label: 'Inheritance papers',
     hint: 'A will, a letter of executorship, or a section 18(3) appointment showing a firearm is inherited and who may deal with it.',
-    placement: 'annexure',
-    satisfies: 'EXECUTOR_APPOINTMENT',
+    placement: 'body',
   },
   {
     id: 'COURT_ORDER',
     group: 'legal',
     label: 'A court order',
     hint: 'Any court order concerning the applicant \u2014 a divorce order, a protection order, or an order about property or a firearm. Printed and stamped.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'PROTECTION_ORDER',
     group: 'legal',
     label: 'A protection order',
     hint: 'A domestic-violence protection order, whether the applicant applied for it or is named in one. Sensitive \u2014 handle as confidential.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'CRIME_STATEMENT',
     group: 'legal',
     label: 'A statement about a crime',
     hint: 'The applicant\u2019s own written statement about a theft, a burglary, an attack or another incident. Handwritten or typed, usually signed.',
-    placement: 'annexure',
-    satisfies: 'INCIDENT_REPORT',
+    placement: 'body',
   },
   {
     id: 'SAPS_CASE_DOC',
     group: 'legal',
     label: 'A SAPS case document',
     hint: 'A SAPS case number slip, an affidavit filed with SAPS, an occurrence-book extract, or a police letter about an incident.',
-    placement: 'annexure',
-    satisfies: 'INCIDENT_REPORT',
+    placement: 'body',
   },
   {
     id: 'INSURANCE_SCHEDULE',
     group: 'legal',
     label: 'An insurance schedule',
     hint: 'An insurance policy schedule or a letter from an insurer listing the applicant\u2019s firearms or a claim. Printed paper.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'AFFIDAVIT',
     group: 'legal',
     label: 'An affidavit',
     hint: 'A sworn statement, attested before a commissioner of oaths. Any subject \u2014 a character reference, a loss, an explanation. Printed, signed and stamped.',
-    placement: 'annexure',
-    satisfies: 'CHARACTER_REFERENCE',
+    placement: 'body',
   },
   {
     id: 'CERTIFIED_COPY',
     group: 'legal',
     label: 'A certified copy of something',
     hint: 'A photocopy with a certification stamp and a commissioner\u2019s signature. The thing copied is secondary to the certification.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'POWER_OF_ATTORNEY',
     group: 'legal',
     label: 'A power of attorney',
     hint: 'A signed power of attorney naming the applicant as agent for someone else, usually over a firearm or an estate.',
-    placement: 'annexure',
+    placement: 'body',
   },
 
   // ── organisational ─────────────────────────────────────────────────
@@ -626,55 +689,49 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'organisational',
     label: 'A letter from your association',
     hint: 'Any letter from a shooting or hunting association on its letterhead about the applicant. Printed paper with a signature.',
-    placement: 'annexure',
-    satisfies: 'GOOD_STANDING_LETTER',
+    placement: 'body',
   },
   {
     id: 'CHAIRPERSON_DECLARATION',
     group: 'organisational',
     label: 'A chairperson\u2019s declaration',
     hint: 'A sworn statement or solemn declaration by an association chairperson about the applicant\u2019s membership. Signed and often stamped.',
-    placement: 'annexure',
-    satisfies: 'GOOD_STANDING_LETTER',
+    placement: 'body',
   },
   {
     id: 'CLUB_MEMBERSHIP_CARD',
     group: 'organisational',
     label: 'A club or association membership card',
     hint: 'A membership card or certificate for a club, association or sports-shooting body, usually with a name and a year.',
-    placement: 'annexure',
-    satisfies: 'ASSOCIATION_CARD',
+    placement: 'body',
   },
   {
     id: 'DEDICATED_STATUS_CERT',
     group: 'organisational',
     label: 'A dedicated status certificate',
     hint: 'A dedicated-hunter or dedicated-sports-shooter certificate from an accredited association, carrying a dedicated number.',
-    placement: 'annexure',
-    satisfies: 'ASSOCIATION_CARD',
+    placement: 'body',
   },
   {
     id: 'ENDORSEMENT_LETTER',
     group: 'organisational',
     label: 'An association endorsement',
     hint: 'An association\u2019s endorsement of one specific firearm for one discipline, naming the type, calibre, make or serial.',
-    placement: 'annexure',
-    satisfies: 'ASSOCIATION_ENDORSEMENT',
+    placement: 'body',
   },
   {
     id: 'ACTIVITY_REPORT',
     group: 'organisational',
     label: 'An activity report',
     hint: 'A summary of the applicant\u2019s shooting or hunting over a period, produced by a club or association rather than the applicant.',
-    placement: 'annexure',
-    satisfies: 'SHOOTING_ACTIVITY_LOG',
+    placement: 'body',
   },
   {
     id: 'FEDERATION_LETTER',
     group: 'organisational',
     label: 'A letter from a federation or governing body',
     hint: 'Correspondence from a provincial or national federation, or a national governing body for a shooting sport.',
-    placement: 'annexure',
+    placement: 'body',
   },
 
   // ── other ──────────────────────────────────────────────────────────
@@ -683,14 +740,14 @@ export const EVIDENCE_CONTAINERS: EvidenceContainer[] = [
     group: 'other',
     label: 'A receipt or invoice',
     hint: 'A printed proof of purchase for equipment, ammunition, a course or a service. The thing bought is not clear from the paper alone.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'CERTIFICATE_GENERIC',
     group: 'other',
     label: 'A certificate',
     hint: 'A certificate of attendance, completion, competence or training that does not fit a more specific container.',
-    placement: 'annexure',
+    placement: 'body',
   },
   {
     id: 'OTHER_EVIDENCE',

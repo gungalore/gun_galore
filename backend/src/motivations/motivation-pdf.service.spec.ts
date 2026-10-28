@@ -2147,6 +2147,50 @@ describe('the cartridge drawing', () => {
     expect(flat(pages[dim - 1] ?? '').length).toBeGreaterThan(100);
   }, 30000);
 
+  it('⚠️ USES THE STORED 5.2 ARGUMENT WHEN PRESENT (2026-10-28)', async () => {
+    const image = {
+      png: hero.png,
+      widthMm: hero.widthMm,
+      heightMm: hero.heightMm,
+      texts: hero.texts,
+    };
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeArticle: undefined,
+      cartridgeDrawing: hero,
+      dimensionSheet: {
+        label: 'The cartridge — 9mm Parabellum — dimensions',
+        image,
+      },
+      suitabilitySheet: {
+        label:
+          'Why is the Glock 43X, chambered in 9mm, suited for self-defence inside a townhouse?',
+        lines: [
+          'I choose the Glock 43X because it is the firearm I can keep and use in the townhouse.',
+          '**The firearm**',
+          '- The compact handgun can be brought into use in the passage where the encounter happens.',
+          '**The calibre**',
+          '- The 9mm service cartridge has the stopping power needed at close range.',
+          '- Its over-penetration risk is lower than a rifle round, which matters with shared walls.',
+        ],
+      },
+    } as never);
+    const pages = await pageTexts(pdf);
+    const flat = (s: string) => s.replace(/\s+/g, '');
+    const sheet =
+      pages.find(
+        (p) =>
+          flat(p).includes('Glock43X') &&
+          flat(p).toLowerCase().includes('stoppingpower') &&
+          !p.includes('CONTENTS'),
+      ) ?? '';
+    expect(sheet).toContain('I choose the Glock 43X');
+    expect(sheet).toContain('stopping power');
+    expect(sheet).toContain('over-penetration');
+    // The research fallback must not be pasted underneath the supplied page.
+    expect(sheet).not.toContain('The purpose is the one the exhibits set out');
+  }, 30000);
+
   it('⚠️ FALLS BACK TO THE EXHIBITS WITHOUT REPRINTING THEM (2026-10-24)', async () => {
     // MO000098's 5.2 printed ten standardisation bullets while its own exhibits
     // named kudu, gemsbok and blue wildebeest. The 2026-10-17 fix pasted the

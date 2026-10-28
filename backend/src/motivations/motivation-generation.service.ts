@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
@@ -39,6 +40,18 @@ import { MotivationPrefillService } from './motivation-prefill.service';
 import { credentialOffer } from './motivation-credentials';
 
 import { MotivationModelService } from './motivation-model.service';
+import { buildPlateSpecs } from './motivation-plates';
+import {
+  SUITABILITY_VERSION,
+  suitabilityHash,
+  type SuitabilityArgument,
+} from './motivation-suitability';
+import { MotivationSuitabilityService } from './motivation-suitability.service';
+import {
+  curateEvidence,
+  evidenceSelectionHash,
+} from './motivation-evidence-curator';
+import { BODY_DOCUMENT_KINDS } from './motivation-checklist';
 import { scoreMotivation } from './motivation-quality';
 import { parseProvenance } from '../common/answer-provenance';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -413,6 +426,10 @@ export class MotivationGenerationService {
     // to write themselves. Generated automatically when absent; see the call in
     // runGeneration.
     private readonly reason: MotivationReasonService,
+    // The 5.2 suitability argument. Optional so existing positional specs keep
+    // compiling; production provides it.
+    @Optional()
+    private readonly suitability?: MotivationSuitabilityService,
   ) {}
 
   /**
@@ -520,6 +537,12 @@ export class MotivationGenerationService {
         // change between attempts, so the searches are paid for once.
         researchEncrypted: true,
         researchAskVersion: true,
+        suitabilityEncrypted: true,
+        suitabilityVersion: true,
+        suitabilityHash: true,
+        evidenceSelectionEncrypted: true,
+        evidenceSelectionVersion: true,
+        evidenceSelectionHash: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -686,6 +709,13 @@ export class MotivationGenerationService {
       select: {
         kind: true,
         coversKinds: true,
+        // The curator sees what each evidence item is and what the member said
+        // about it; the document-status check above only needs the kinds.
+        id: true,
+        evidenceType: true,
+        evidenceDescriptionEncrypted: true,
+        mimeType: true,
+        purgedAt: true,
         // For the proficiency pack check below: what the reader got off each
         // page (unit standards and which side it is), and the raw page text as
         // the fallback.
@@ -1317,6 +1347,79 @@ export class MotivationGenerationService {
       const cartridge = await this.cartridgeFor(answers);
 
       /**
+       * ── THE 5.2 SUITABILITY ARGUMENT ───────────────────────────────
+       *
+       * Operator, 2026-10-28: "It literally should ask why is the glock 43 x
+       * that is chamered in 9mm suited for self defence insode my townhouse.
+       * explain in 400 words in bullet fact format."
+       *
+       * Written here, before the main writer, so the page is stored with the
+       * application and re-rendered deterministically. Reused when the facts
+       * are unchanged; a changed answer invalidates the hash and pays once.
+       */
+      let suitability: SuitabilityArgument | null = null;
+      if (this.suitability) {
+        const exhibits = buildPlateSpecs({
+          licenceType: row.licenceType,
+          answers,
+        })
+          .map((p) => p.title)
+          .filter(Boolean);
+        const rawResearch = row.researchEncrypted
+          ? (tryDecryptText(row.researchEncrypted) ?? research)
+          : research;
+        const suitabilityInput = {
+          licenceType: row.licenceType,
+          answers,
+          research: rawResearch ?? '',
+          exhibits,
+          firearmLine: [
+            answers.firearm_make,
+            answers.firearm_model,
+            answers.firearm_calibre,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          arsenal,
+        };
+        const hash = suitabilityHash(suitabilityInput);
+        if (
+          row.suitabilityEncrypted &&
+          row.suitabilityVersion === SUITABILITY_VERSION &&
+          row.suitabilityHash === hash
+        ) {
+          try {
+            suitability = JSON.parse(
+              tryDecryptText(row.suitabilityEncrypted) ?? 'null',
+            ) as SuitabilityArgument;
+          } catch {
+            suitability = null;
+          }
+        }
+        if (!suitability) {
+          const built = await this.suitability
+            .build(suitabilityInput)
+            .catch(() => null);
+          if (built) {
+            suitability = built.argument;
+            await this.prisma.motivation
+              .update({
+                where: { id: row.id },
+                data: {
+                  suitabilityEncrypted: encryptText(
+                    JSON.stringify(built.argument),
+                  ),
+                  suitabilityVersion: SUITABILITY_VERSION,
+                  suitabilityHash: built.hash,
+                  suitabilityAt: new Date(),
+                },
+              })
+              .catch(() => undefined);
+          }
+        }
+      }
+
+      /**
        * ⚠️ THE APPLICANT IS NEVER ASKED TO WRITE A REASON.
        *
        * Operator, 2026-09-20: "the applicant never has to sit and think up
@@ -1373,6 +1476,63 @@ export class MotivationGenerationService {
             Object.entries(answers).filter(([k]) => k !== 'firearm_fit_reason'),
           )
         : answers;
+      /**
+       * ── THE FOUR BODY-EVIDENCE ITEMS ────────────────────────────────
+       *
+       * Operator, 2026-10-28: "it should be dynamic. but max of 4 photos. the
+       * picker must identify and choose the most appropriate for the
+       * application." The curator chooses from what is attached; the pack
+       * prints those four and nothing else.
+       */
+      const curatorRows = await this.prisma.motivationUpload.findMany({
+        where: { motivationId: row.id },
+        select: {
+          id: true,
+          kind: true,
+          evidenceType: true,
+          evidenceDescriptionEncrypted: true,
+          mimeType: true,
+          purgedAt: true,
+        },
+      });
+      const curatorUploads = curatorRows
+        .filter(
+          (u) =>
+            !u.purgedAt &&
+            (u.kind === 'EVIDENCE' || BODY_DOCUMENT_KINDS.has(u.kind)),
+        )
+        .map((u) => ({
+          id: u.id,
+          kind: u.kind,
+          evidenceType: u.evidenceType,
+          description: tryDecryptText(u.evidenceDescriptionEncrypted ?? null),
+          mimeType: u.mimeType,
+        }));
+      const selection = curateEvidence({
+        licenceType: row.licenceType,
+        answers,
+        uploads: curatorUploads,
+      });
+      const selectionHash = evidenceSelectionHash(selection);
+      if (
+        row.evidenceSelectionHash !== selectionHash ||
+        row.evidenceSelectionVersion !== selection.version
+      ) {
+        await this.prisma.motivation
+          .update({
+            where: { id: row.id },
+            data: {
+              evidenceSelectionEncrypted: encryptText(
+                JSON.stringify(selection),
+              ),
+              evidenceSelectionVersion: selection.version,
+              evidenceSelectionHash: selectionHash,
+              evidenceSelectionAt: new Date(),
+            },
+          })
+          .catch(() => undefined);
+      }
+
       const pack: FactPack = {
         licenceType: row.licenceType,
         /**
@@ -1425,7 +1585,15 @@ export class MotivationGenerationService {
         // the verified, supplied facts before the softer, web-searched
         // material, if any.
         research:
-          [precinctBlock, pressClippingsBlock, cartridge, research]
+          [
+            precinctBlock,
+            pressClippingsBlock,
+            cartridge,
+            // ⚠️ THE MAIN WRITER DOES NOT GET THE CAPABILITY TERMS. The 5.2
+            // suitability writer reads the raw research; the letter stays under
+            // documentScope, where "stopping power" is still refused.
+            withoutRefusedCopy(research ?? ''),
+          ]
             .filter(Boolean)
             .join('\n\n') || undefined,
         annexures,

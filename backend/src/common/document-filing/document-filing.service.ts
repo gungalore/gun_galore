@@ -93,6 +93,8 @@ export class DocumentFilingService {
    */
   async fileVault(args: {
     text: string;
+    /** The one-pass capture's labelled facts, when the reader made one. */
+    facts?: readonly { label: string; value: string; valueType?: string; confidence?: string }[];
     kindOptions: readonly FilingOption[];
     /** Kinds to test for `also_covers`. Omit to skip the multi-role question. */
     coverOptions?: readonly FilingOption[];
@@ -134,7 +136,7 @@ export class DocumentFilingService {
 
     try {
       const res = await this.llm.decide({
-        state: { text: args.text },
+        state: { text: args.text, facts: args.facts ?? [] },
         questions,
         purpose: args.purpose ?? 'vault.file',
         timeoutMs: 15_000,
@@ -190,6 +192,8 @@ export class DocumentFilingService {
    */
   async fileEvidence(args: {
     text: string;
+    /** The one-pass capture's labelled facts, when the reader made one. */
+    facts?: readonly { label: string; value: string; valueType?: string; confidence?: string }[];
     description?: string | null;
     options: readonly FilingOption[];
   }): Promise<FilingResult | null> {
@@ -210,7 +214,7 @@ export class DocumentFilingService {
 
     try {
       const res = await this.llm.decide({
-        state: { text: args.text, description },
+        state: { text: args.text, facts: args.facts ?? [], description },
         questions,
         purpose: 'motivation.evidence.file',
         timeoutMs: 15_000,

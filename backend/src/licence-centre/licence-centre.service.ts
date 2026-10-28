@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
@@ -89,6 +90,7 @@ import { MotivationsService } from '../motivations/motivations.service';
 // motivation model calls. The Nest edge runs LicenceCentreModule ->
 // MotivationsModule and must stay one-way; the export is the only way across.
 import { MotivationExtractService } from '../motivations/motivation-extract.service';
+import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
 import { DocumentPageRasterService } from '../motivations/document-page-raster.service';
 import { DocumentReadCacheService } from '../motivations/document-read-cache.service';
 import { DocumentScreeningService } from '../motivations/document-screening.service';
@@ -335,6 +337,13 @@ export class LicenceCentreService {
     // same reason as pageRaster; fire-and-forget so it never delays an upload
     // and never fails one.
     private readonly documentScreening?: DocumentScreeningService,
+    /**
+     * The one-pass capture. Optional so positional specs keep compiling; Nest
+     * injects it from DocumentFilingModule. Used for uploads whose kind the
+     * member declared (the classifier never ran) and as a backstop where the
+     * classifier could not capture.
+     */
+    @Optional() private readonly capture?: DocumentCaptureService,
     // Cached OCR text for the same bytes. Optional for the same reason as
     // pageRaster; forgetting is best effort and never fails a deletion.
     private readonly readCache?: DocumentReadCacheService,
@@ -1372,6 +1381,9 @@ export class LicenceCentreService {
      * redescribeEvidence, which takes the better words.
      */
     let evidenceContainer: string | null = null;
+    /** The one-pass read, stored on the row when the classifier made one. */
+    let captureForRow: import('../common/document-capture/document-capture').DocumentCapture | null =
+      null;
     if (!kind) {
       /**
        * ⚠️ THE IDENTIFY PASS ANSWERED FIRST, IF THERE WAS ONE. The batch path
@@ -1407,6 +1419,7 @@ export class LicenceCentreService {
           classified = { via: 'model', markers: [], strength: null };
         }
         confident = verdict.confident;
+        captureForRow = verdict.capture ?? null;
       } else {
         const guess = await this.extract
           .classify({ bytes, mimeType })
@@ -1420,6 +1433,7 @@ export class LicenceCentreService {
             classified = { via: guess.via ?? 'model', markers: guess.markers ?? [], strength: guess.strength ?? null };
           }
           confident = guess.confident;
+          captureForRow = guess.capture ?? null;
         }
       }
       // ⚠️ THE GUESS IS FILED ONLY WHERE WE WERE SURE OF IT. A specific kind
@@ -1432,6 +1446,18 @@ export class LicenceCentreService {
         resolved = guarded;
         alsoCovers = [];
       }
+    }
+
+    /**
+     * ⚠️ A DECLARED KIND SKIPS THE CLASSIFIER, NOT THE READ. The member's own
+     * menu choice means no classify() call, so the capture would never run —
+     * and the "every document" rule would silently exclude exactly the files
+     * the member was most sure about. Read those here, once.
+     */
+    if (!captureForRow && this.capture) {
+      captureForRow = await this.capture
+        .capture({ bytes, mimeType })
+        .catch(() => null);
     }
 
     // ⚠️ THE EVIDENCE SUB-CAP WAS ONLY CHECKED ON THE EVIDENCE DOOR. A batch
@@ -1447,6 +1473,39 @@ export class LicenceCentreService {
           `You can keep ${EVIDENCE_VAULT_MAX} evidence items here. Remove one before adding another.`,
         );
       }
+    }
+
+    // ⚠️ NOTHING DORMANT ENTERS THE DOCUMENT CENTRE (operator, 2026-10-28).
+    // An OTHER document or an EVIDENCE row with no container can never be used
+    // in a motivation. If the member supplied words, re-run the evidence
+    // classifier once; otherwise refuse BEFORE the bytes are written, so a
+    // refusal leaves nothing behind.
+    if (resolved === CredentialKind.EVIDENCE && !evidenceContainer) {
+      const words = (opts.description ?? '').trim();
+      if (words) {
+        const sorted = await this.motivationExtract
+          .classifyEvidence({ bytes, mimeType, description: words })
+          .catch(() => null);
+        evidenceContainer =
+          sorted && sorted.confident
+            ? containerById(sorted.container)?.id ?? null
+            : null;
+      }
+    }
+    if (
+      resolved === CredentialKind.OTHER ||
+      resolved === CredentialKind.PROFESSIONAL_HUNTER ||
+      (resolved === CredentialKind.EVIDENCE && !evidenceContainer)
+    ) {
+      throw new BadRequestException({
+        message:
+          'We could not identify this file. Tell us in a few words what it shows, or upload a clearer copy — nothing was saved.',
+        code: 'needs-identification',
+        reason:
+          resolved === CredentialKind.EVIDENCE
+            ? 'we could not place it in an evidence container'
+            : 'it is not a document type we can use in a motivation',
+      });
     }
 
     // BYTES FIRST, ROW SECOND. The database's unique constraint is what spots
@@ -1492,6 +1551,13 @@ export class LicenceCentreService {
           // survived exactly as long as the page did. See the model.
           autoFiled,
           namedConfident: confident,
+          ...(captureForRow
+            ? {
+                captureEncrypted: encryptJson(captureForRow),
+                captureVersion: captureForRow.version,
+                captureAt: new Date(),
+              }
+            : {}),
           /**
            * ⚠️ THE EVIDENCE COLUMNS, WRITTEN FROM THE VERDICT WE CONSUMED.
            * `resolved === EVIDENCE` here only ever comes from the classifier's
@@ -2552,6 +2618,7 @@ export class LicenceCentreService {
       container,
       confident,
       ocrText,
+      capture: guess?.capture ?? null,
     });
 
     return { id, role, kind, container, confident, ocrChars: ocrText?.length ?? null, rotate };

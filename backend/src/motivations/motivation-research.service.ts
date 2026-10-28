@@ -117,7 +117,7 @@ export const RESEARCH_TTL_DAYS = 180;
  * out of its own firearm research; rewording the ask without this would have
  * shipped, looked right, and still handed the writer the same marketing.
  */
-export const RESEARCH_ASK_VERSION = '2026-10-24a';
+export const RESEARCH_ASK_VERSION = '2026-10-28a';
 
 export function cacheKeyFor(
   target: ResearchTarget,
@@ -235,6 +235,10 @@ export function targetsFor(
         'the firearm let the applicant do in the situations described, why they',
         'are matched to that use, and where a different calibre or class of',
         'firearm would fall short.',
+        '⚠️ THE REASONS THAT MATTER ARE OPERATIONAL: stopping power at the',
+        'ranges involved, over-penetration and what lies beyond the target,',
+        'whether the firearm can be brought into use in the space, recoil and',
+        'follow-up, practice, and a humane kill for hunting. Argue those.',
         '⚠️ NOT A SPECIFICATION SHEET AND NOT A BALLISTICS TABLE. Do not lead',
         'with muzzle velocity, muzzle energy, bullet weight, pressure,',
         'dimensions or chamber measurements, and give no figure unless it is',

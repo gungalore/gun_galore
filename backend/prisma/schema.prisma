@@ -4728,6 +4728,10 @@ model DocumentIdentify {
   /// the row and never logged.
   ocrTextEncrypted String? @db.Text
 
+  /// The one-pass capture for this identify verdict, encrypted until the row
+  /// is stored. Same class of data as ocrTextEncrypted.
+  captureEncrypted String? @db.Text
+
   /// How many characters were read — safe in the clear, and the difference
   /// between "unreadable" and "not read yet" without decrypting anything.
   ocrChars Int?
@@ -4866,6 +4870,26 @@ model Motivation {
   /// printed "1,000 to 1,300 yards" on its cartridge page for exactly that
   /// reason, a day after the ask gained METRIC ONLY.
   researchAskVersion    String? @db.VarChar(40)
+
+  /// THE 5.2 SUITABILITY ARGUMENT, PER APPLICATION.
+  ///
+  /// Encrypted JSON: { question, thesis, groups:[{heading,bullets[]}],
+  /// wordCount, version }. Written during generation by
+  /// MotivationSuitabilityService and printed on the cartridge page.
+  suitabilityEncrypted String? @db.Text
+  suitabilityVersion   String? @db.VarChar(40)
+  /// sha256 of the facts the argument was written from, so a regeneration with
+  /// unchanged facts reuses it and a changed answer invalidates it.
+  suitabilityHash      String? @db.VarChar(64)
+  suitabilityAt        DateTime?
+
+  /// The four body-evidence upload ids the curator chose for THIS pack, plus
+  /// why each was chosen and which were left out. Encrypted: it names the
+  /// member's own files. See motivation-evidence-curator.ts.
+  evidenceSelectionEncrypted String? @db.Text
+  evidenceSelectionVersion   String? @db.VarChar(40)
+  evidenceSelectionHash      String? @db.VarChar(64)
+  evidenceSelectionAt        DateTime?
 
   /// The quarry photograph for this application's cartridge page, if it has
   /// one. Drawn during generation, read on every download. See QuarryPlate.
@@ -5373,6 +5397,10 @@ model MotivationUpload {
   // What Claude vision read off the document, encrypted: it holds licence
   // numbers, the holder's name and expiry dates.
   extractionEncrypted String?
+  /// The one-pass capture: full page text + every printed fact, encrypted.
+  captureEncrypted    String?  @db.Text
+  captureVersion      String?  @db.VarChar(40)
+  captureAt           DateTime?
   extractionOk        Boolean  @default(false)
   // Field KEYS the extraction proposed — safe in the clear, drives the
   // "we found 6 fields, confirm them" card without decrypting anything.
@@ -6009,6 +6037,10 @@ model Credential {
   /// the mirror decrypted null on every row for months, which is how the
   /// vault silently failed to fill anything on a motivation.
   extractionEncrypted String?
+  /// The one-pass capture: full page text + every printed fact, encrypted.
+  captureEncrypted    String?  @db.Text
+  captureVersion      String?  @db.VarChar(40)
+  captureAt           DateTime?
   extractionOk        Boolean  @default(false)
   /// Field KEYS in the clear; the values are in `detailsEncrypted`.
   extractedFields     String[]

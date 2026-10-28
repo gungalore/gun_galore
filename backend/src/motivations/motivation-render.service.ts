@@ -41,10 +41,15 @@ import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { documentLabel, documentStatus } from './motivation-documents';
+import {
+  suitabilityPageLines,
+  type SuitabilityArgument,
+} from './motivation-suitability';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { type SectionId } from './motivation-structure';
 import {
   buildAnnexures,
+  BODY_DOCUMENT_KINDS,
   UPLOAD_KIND_LABELS,
   annexureByKind,
   annexureByContainer,
@@ -53,7 +58,6 @@ import {
   type EvidenceAnnexure,
 } from './motivation-checklist';
 import {
-  EVIDENCE_ANNEXURE_MAX,
   EVIDENCE_BODY_MAX,
   containerById,
 } from './evidence-taxonomy';
@@ -72,6 +76,8 @@ export interface EvidenceUploadForRender {
   storageKey: string | null;
   mimeType: string | null;
   purgedAt: Date | null;
+  /** Plaintext hash, for the PDF page raster cache. */
+  sha256?: string | null;
   evidenceType?: string | null;
   evidenceDescriptionEncrypted?: string | null;
 }
@@ -960,22 +966,44 @@ export class MotivationRenderService {
    * brought in by an older route or a direct write must not push a third
    * letter into the pack or a fifth picture onto a page sized for four.
    */
-  private evidenceForRender(uploads: EvidenceUploadForRender[]): {
+  private evidenceForRender(
+    uploads: EvidenceUploadForRender[],
+    selectedIds?: readonly string[] | null,
+  ): {
     annexures: EvidenceAnnexure[];
     bodyUploads: EvidenceUploadForRender[];
   } {
     const annexures: EvidenceAnnexure[] = [];
     const bodyUploads: EvidenceUploadForRender[] = [];
 
-    for (const u of uploads) {
-      if (u.kind !== MotivationUploadKind.EVIDENCE) continue;
-      const known = u.evidenceType ? containerById(u.evidenceType) : null;
-      if (!known) continue;
-      if (known.placement === 'annexure') {
-        if (annexures.length < EVIDENCE_ANNEXURE_MAX) {
-          annexures.push({ container: known.id, label: known.label });
-        }
-      } else if (bodyUploads.length < EVIDENCE_BODY_MAX) {
+    /**
+     * ⚠️ THE CURATOR'S FOUR, IN ITS ORDER. A persisted selection is a decision
+     * for THIS pack; an id that has since been removed simply drops out. No
+     * selection at all (an older row) keeps the previous first-four fallback.
+     */
+    const ordered = selectedIds
+      ? selectedIds
+          .map((id) => uploads.find((u) => u.id === id))
+          .filter((u): u is EvidenceUploadForRender => !!u)
+      : uploads;
+
+    for (const u of ordered) {
+      if (u.kind === MotivationUploadKind.EVIDENCE) {
+        const known = u.evidenceType ? containerById(u.evidenceType) : null;
+        if (!known) continue;
+        if (bodyUploads.length < EVIDENCE_BODY_MAX) bodyUploads.push(u);
+        continue;
+      }
+      /**
+       * ⚠️ OPTIONAL DOCUMENTS ARE BODY EVIDENCE TOO (2026-10-28). An activity
+       * log, incident report, character reference, employment letter or
+       * previous motivation is not DFO/CFR paperwork, so it prints with the
+       * applicant's evidence and takes no annexure letter.
+       */
+      if (
+        BODY_DOCUMENT_KINDS.has(u.kind) &&
+        bodyUploads.length < EVIDENCE_BODY_MAX
+      ) {
         bodyUploads.push(u);
       }
     }
@@ -1004,24 +1032,35 @@ export class MotivationRenderService {
     for (let i = 0; i < uploads.length; i++) {
       const u = uploads[i];
       if (!u.storageKey || u.purgedAt) continue;
-      // Only images. Evidence is not a reprint of a document, so a PDF here is
-      // out of scope by the taxonomy's own placement — an activity photograph
-      // is a JPEG or PNG, and anything else is skipped rather than rasterised
-      // into a body page.
-      if (!isEmbeddable(u.mimeType ?? '')) continue;
       let bytes: Buffer;
       try {
         bytes = await this.files.read(u.storageKey);
       } catch {
         continue;
       }
-      const size = imageSize(bytes);
-      if (!size) continue;
+      /**
+       * ⚠️ A PRINTED BODY DOCUMENT IS RASTERISED TO ITS FIRST PAGE. The
+       * Activities / Evidence page is a 2x2 picture block; a PDF has no image
+       * bytes of its own, so its first page is rendered into one cell. A
+       * document that cannot be rasterised is skipped, never a placeholder.
+       */
+      let size = imageSize(bytes);
+      if (!size) {
+        if ((u.mimeType ?? '') !== 'application/pdf' || !u.sha256) continue;
+        const rastered = await this.pageRaster.pagesFor({
+          bytes,
+          sha256: u.sha256,
+        });
+        const first = rastered[0];
+        if (!first) continue;
+        bytes = first.bytes;
+        size = { width: first.width, height: first.height };
+      }
       const container = u.evidenceType ? containerById(u.evidenceType) : null;
       pages.push({
         index: pages.length + 1,
         total: uploads.length,
-        label: container?.label ?? 'Evidence',
+        label: container?.label ?? documentLabel(u.kind),
         description: tryDecryptText(u.evidenceDescriptionEncrypted ?? null),
         image: { bytes, ...size },
       });
@@ -1212,6 +1251,8 @@ export class MotivationRenderService {
         templateColourway: true,
         templateLayout: true,
         researchEncrypted: true,
+        suitabilityEncrypted: true,
+        evidenceSelectionEncrypted: true,
         structurePlan: true,
         coverPhotoChoice: true,
         coverPhotoKey: true,
@@ -1399,7 +1440,25 @@ export class MotivationRenderService {
      * here with everything else; the body-placed photographs take no letter
      * and are built into the Activities page below. See evidenceForRender.
      */
-    const evidence = this.evidenceForRender(packUploads);
+    /**
+     * ⚠️ THE CURATOR'S SELECTION, WHEN THE PACK HAS ONE. An older row has no
+     * selection and keeps the first-four fallback. An empty selection means the
+     * curator deliberately chose nothing.
+     */
+    let selectedEvidenceIds: string[] | null = null;
+    if (row.evidenceSelectionEncrypted) {
+      try {
+        const parsed = JSON.parse(
+          tryDecryptText(row.evidenceSelectionEncrypted) ?? 'null',
+        ) as { selected?: { id?: unknown }[] } | null;
+        selectedEvidenceIds = (parsed?.selected ?? [])
+          .map((s) => (typeof s.id === 'string' ? s.id : ''))
+          .filter(Boolean);
+      } catch {
+        selectedEvidenceIds = null;
+      }
+    }
+    const evidence = this.evidenceForRender(packUploads, selectedEvidenceIds);
     const annexures = buildAnnexures(
       kinds,
       sellerConsent ? ['SELLER_CONSENT'] : [],
@@ -1461,6 +1520,25 @@ export class MotivationRenderService {
       ? null
       : await this.cipInset((answers.firearm_calibre ?? '').trim());
     const dimensionImage = cartridge?.dimension ?? standaloneCip;
+
+    /**
+     * ⚠️ THE 5.2 ARGUMENT WRITTEN FOR THIS APPLICATION. It is stored on the
+     * row by generation; a missing or unreadable blob falls back to the
+     * research article below, exactly as before.
+     */
+    let suitabilityArgument: SuitabilityArgument | null = null;
+    if (row.suitabilityEncrypted) {
+      try {
+        const parsed = JSON.parse(
+          tryDecryptText(row.suitabilityEncrypted) ?? 'null',
+        ) as SuitabilityArgument | null;
+        if (parsed?.question && Array.isArray(parsed.groups)) {
+          suitabilityArgument = parsed;
+        }
+      } catch {
+        suitabilityArgument = null;
+      }
+    }
 
     // The purpose exhibits — a read, on every download, never a model call.
     const storedPlates = await this.plates.storedFor(row.id).catch(() => []);
@@ -1634,8 +1712,12 @@ export class MotivationRenderService {
                 : undefined,
           }
         : undefined,
-      suitabilitySheet:
-        dimensionImage || cartridge
+      suitabilitySheet: suitabilityArgument
+        ? {
+            label: suitabilityArgument.question,
+            lines: suitabilityPageLines(suitabilityArgument),
+          }
+        : dimensionImage || cartridge
           ? {
               label: `Why ${
                 displayCalibre(answers.firearm_calibre) ||

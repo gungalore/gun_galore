@@ -382,6 +382,25 @@ const LETTER_GROUPS: Partial<
  * the competency in the same place every time, which is the whole point of
  * lettering them at all. This order is MOTIVATION-GUIDE-BOOK Part 9.1.
  */
+/**
+ * Optional document kinds that are EVIDENCE, not DFO/CFR annexures.
+ *
+ * ⚠️ OPERATOR, 2026-10-28: "Annexures are solely for documents required by the
+ * DFO and CFR." These kinds still exist on the checklist as optional supporting
+ * papers, but they print in the body with the applicant's evidence and never
+ * take an annexure letter. The DFO-required kinds (identity, competency,
+ * proficiency, address, safe, licences, association, endorsement, firearm
+ * source, seller consent, executor) are the only lettered ones.
+ */
+export const BODY_DOCUMENT_KINDS: ReadonlySet<MotivationUploadKind> = new Set([
+  'SHOOTING_ACTIVITY_LOG',
+  'INCIDENT_REPORT',
+  'CHARACTER_REFERENCE',
+  'EMPLOYMENT_CONFIRMATION',
+  'PREVIOUS_MOTIVATION',
+  'OTHER',
+]);
+
 const ANNEXURE_ORDER: AnnexureKind[] = [
   // A-D — who the applicant is, what they are qualified to hold, where they
   // live. Address matters twice over: the application is lodged at the DFO for
@@ -792,23 +811,15 @@ export function buildAnnexures(
    */
   generated: GeneratedAnnexureId[] = [],
   /**
-   * Annexure-placed evidence, already capped and ordered by the caller.
+   * Annexure-placed evidence. ⚠️ ALWAYS IGNORED NOW (2026-10-28).
    *
-   * ⚠️ EACH TAKES A LETTER OF ITS OWN. Evidence is filed under one kind, so
-   * there is no group to collapse them onto and the "(n of m)" caption that
-   * handles two copies of an ID does not apply — a permission letter and an
-   * affidavit are two different documents that happen to share an enum. Two
-   * evidence letters is the cap (see evidence-taxonomy.ts), so this is at most
-   * two extra letters between J and K.
-   *
-   * ⚠️ INSERTED BY ANCHOR, NOT INDEX. They sit after the shooting-activities
-   * record and before the incident report, which is where a DFO's reference
-   * pack puts the member's own argument. Doing that by index would reorder
-   * itself the day an annexure kind is added ahead of it — the same fault
-   * s24Bring avoids.
+   * Operator: "Annexures are solely for documents required by the DFO and CFR."
+   * Evidence prints in the body; the parameter is kept so existing callers do
+   * not change shape, but it never produces a letter.
    */
   evidence: EvidenceAnnexure[] = [],
 ): AnnexureEntry[] {
+  void evidence;
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
   const made = new Set(generated);
@@ -817,33 +828,8 @@ export function buildAnnexures(
   let i = 0;
   /** Letters already spent, so a grouped kind reuses its group's letter. */
   const groupLetter = new Map<string, string>();
-  /**
-   * ⚠️ THE ANCHOR IS A KIND, NOT A POSITION. Evidence letters go in when the
-   * loop reaches INCIDENT_REPORT — the letter AFTER the shooting-activities
-   * record — so the insert holds whether or not that record was uploaded. An
-   * index would move the day somebody inserts a document kind ahead of it.
-   */
-  let evidencePlaced = false;
-  const placeEvidence = () => {
-    if (evidencePlaced) return;
-    evidencePlaced = true;
-    for (const item of evidence) {
-      out.push({
-        letter: String.fromCharCode(65 + i),
-        kind: 'EVIDENCE',
-        label: item.label,
-        count: 1,
-        // A property of the container, which this map cannot see — see
-        // CERTIFICATION.EVIDENCE. Nothing prints a stamp off this entry.
-        certification: 'none',
-        container: item.container,
-      });
-      i++;
-    }
-  };
 
   for (const kind of ANNEXURE_ORDER) {
-    if (kind === 'INCIDENT_REPORT') placeEvidence();
     const isGenerated = kind in GENERATED_ANNEXURE_LABELS;
     if (isGenerated) {
       if (!made.has(kind as GeneratedAnnexureId)) continue;
@@ -859,6 +845,11 @@ export function buildAnnexures(
       continue;
     }
     const uploadKind = kind as MotivationUploadKind;
+    /**
+     * ⚠️ BODY DOCUMENTS TAKE NO LETTER. They are printed by the Activities /
+     * Evidence page, not the annexure planner.
+     */
+    if (BODY_DOCUMENT_KINDS.has(uploadKind)) continue;
     const count = counts.get(uploadKind);
     if (!count) continue;
 

@@ -1287,6 +1287,12 @@ export interface MotivationPdfInput {
    */
   suitabilitySheet?: {
     label: string;
+    /**
+     * The pre-written 5.2 argument: a thesis paragraph, `**Group**`
+     * subheadings and `- ` bullets. Absent falls back to the stored research
+     * article and then the contextual purpose fallback.
+     */
+    lines?: string[];
   };
   /**
    * What the applicant physically carries to the DFO.
@@ -3720,10 +3726,13 @@ export class MotivationPdfService {
       const top = doc.y + K.mm(1);
       const floor = K.BODY_BOTTOM;
 
+      const supplied = input.suitabilitySheet?.lines ?? [];
       const researched =
-        article?.paragraphs.length && articleIsUsable(article.paragraphs)
-          ? article.paragraphs
-          : null;
+        supplied.length
+          ? supplied
+          : article?.paragraphs.length && articleIsUsable(article.paragraphs)
+            ? article.paragraphs
+            : null;
       /**
        * ⚠️ THE PAGE MUST NAME THIS APPLICATION'S EXHIBITS EVEN WHEN THE
        * STORED RESEARCH PREDATES THE PURPOSE-SPECIFIC ASK. MO000098's 5.2
@@ -3895,6 +3904,8 @@ export class MotivationPdfService {
        */
       if (input.dimensionSheet) {
         drawDimensionPage();
+        drawSuitabilityPage();
+      } else if (input.suitabilitySheet?.lines?.length) {
         drawSuitabilityPage();
       } else {
         drawCartridgeFeature(article, bodyPicture);

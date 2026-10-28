@@ -80,11 +80,11 @@ describe('EVIDENCE_CONTAINERS', () => {
     }
   });
 
-  it('has both placements represented', () => {
-    // The whole design splits on this. Losing one side would silently route
-    // either every document or every photograph into the wrong page.
-    expect(annexureContainers().length).toBeGreaterThan(0);
-    expect(bodyContainers().length).toBeGreaterThan(0);
+  it('every evidence container is body-placed', () => {
+    // Operator, 2026-10-28: evidence never enters as an annexure. Annexures are
+    // solely for the DFO/CFR-required document kinds.
+    expect(annexureContainers()).toHaveLength(0);
+    expect(bodyContainers().length).toBe(EVIDENCE_CONTAINERS.length);
   });
 
   it('annexure + body partition the registry', () => {
@@ -103,7 +103,25 @@ describe('EVIDENCE_CONTAINERS', () => {
     expect(ids).toContain('CLEANING_SESSION_PHOTO');
     expect(ids).toContain('SCORE_SHEET');
     expect(ids).toContain('FARM_PERMISSION_LETTER');
-    expect(containerById('FARM_PERMISSION_LETTER')?.placement).toBe('annexure');
+    expect(containerById('FARM_PERMISSION_LETTER')?.placement).toBe('body');
+  });
+
+  it('covers the incident and crime-scene evidence', () => {
+    const ids = EVIDENCE_CONTAINERS.map((c) => c.id);
+    for (const id of [
+      'BREAK_IN_PHOTO',
+      'DAMAGE_PHOTO',
+      'CCTV_STILL',
+      'ARMED_RESPONSE_REPORT',
+      'REPAIR_QUOTE',
+      'STOLEN_ITEMS_LIST',
+      'NEWS_REPORT',
+      'NEIGHBOUR_STATEMENT',
+    ]) {
+      expect(ids).toContain(id);
+      expect(containerById(id)?.group).toBe('incident');
+      expect(containerById(id)?.placement).toBe('body');
+    }
   });
 });
 
@@ -156,7 +174,7 @@ describe('lookups', () => {
     // Free-text column: a row written against a deleted container must read as
     // generic evidence, never claim a letter that cannot be titled.
     expect(isAnnexureEvidence('HUNTING_PHOTO')).toBe(false);
-    expect(isAnnexureEvidence('SCORE_SHEET')).toBe(true);
+    expect(isAnnexureEvidence('SCORE_SHEET')).toBe(false);
     expect(isAnnexureEvidence('DELETED_CONTAINER')).toBe(false);
     expect(isAnnexureEvidence(null)).toBe(false);
   });
@@ -173,6 +191,7 @@ describe('caps', () => {
   it('are the numbers the operator asked for', () => {
     expect(EVIDENCE_VAULT_MAX).toBe(30);
     expect(EVIDENCE_BODY_MAX).toBe(4);
-    expect(EVIDENCE_ANNEXURE_MAX).toBe(2);
+    // Operator, 2026-10-28: evidence never takes an annexure letter.
+    expect(EVIDENCE_ANNEXURE_MAX).toBe(0);
   });
 });

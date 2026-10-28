@@ -21,6 +21,7 @@ import { MotivationWitnessesService } from './motivation-witnesses-flow.service'
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationResearchService } from './motivation-research.service';
+import { MotivationSuitabilityService } from './motivation-suitability.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
@@ -109,6 +110,7 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     MotivationPdfService,
     MotivationModelService,
     MotivationResearchService,
+    MotivationSuitabilityService,
     MotivationRetentionService,
     MotivationExtractService,
     DocumentReadCacheService,

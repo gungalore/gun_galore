@@ -3,7 +3,7 @@
 import { useAuth } from '../../../lib/auth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { motivationsApi } from '@/lib/motivations-api';
+import { motivationsApi, MotivationApiError } from '@/lib/motivations-api';
 import { prepareSourceBatch } from '@/lib/scan-upload/source-batch';
 import { useReportMotivationBusy } from '@/lib/motivation-busy';
 import type {
@@ -16,6 +16,9 @@ import SheetHeader from '@/components/licence-centre/sheet-header';
 import SheetSection from '@/components/licence-centre/sheet-section';
 import SheetDisclosure from '@/components/licence-centre/sheet-disclosure';
 import SheetRow from '@/components/licence-centre/sheet-row';
+import UnplacedUploadDialog, {
+  type UnplacedUpload,
+} from '@/components/licence-centre/unplaced-upload-dialog';
 import DeclarationRow from '@/components/licence-centre/declaration-row';
 import DocumentShelf from '@/components/licence-centre/document-shelf';
 import DesignPicker from '@/components/licence-centre/design-picker';
@@ -197,6 +200,12 @@ export default function LicenceCentreSheetPage() {
    * lighting it up for unrelated actions.
    */
   const [sourceBusy, setSourceBusy] = useState(false);
+  /**
+   * Files the reader could not place. Nothing has been saved; each one waits
+   * for a description and a re-read, one at a time.
+   */
+  const [unplaced, setUnplaced] = useState<UnplacedUpload[]>([]);
+  const [unplacedBusy, setUnplacedBusy] = useState(false);
   const [active, setActive] = useState<string>('firearm');
   /** The Add-a-document sheet, and the kinds it may file into. */
   const [adding, setAdding] = useState(false);
@@ -681,20 +690,97 @@ export default function LicenceCentreSheetPage() {
   );
 
   const onAddFile = useCallback(
-    async (kind: string, file: File) => {
-      const added = await motivationsApi.addUpload(getToken, id, kind, file);
-      if (added?.suggestions?.length) await applyReads(added.suggestions);
-      await load();
-      setToast(
-        added?.caution?.text
-          ? added.caution.text
-          : added?.kind
-            ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
-            : 'Added.',
-      );
-      return added;
+    async (kind: string, file: File, description?: string) => {
+      try {
+        const added = await motivationsApi.addUpload(getToken, id, kind, file, {
+          description,
+        });
+        if (added?.suggestions?.length) await applyReads(added.suggestions);
+        await load();
+        setToast(
+          added?.caution?.text
+            ? added.caution.text
+            : added?.kind
+              ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
+              : 'Added.',
+        );
+        return added;
+      } catch (err) {
+        /**
+         * ⚠️ NOTHING DORMANT. The server refused the file before writing a row;
+         * show it to the member and ask what it is. One at a time, two
+         * description chances, then it is discarded.
+         */
+        if (
+          err instanceof MotivationApiError &&
+          err.code === 'needs-identification'
+        ) {
+          setUnplaced((queue) =>
+            queue.some((u) => u.file === file)
+              ? queue
+              : [...queue, {
+                  file,
+                  kind,
+                  reason: err.reason ?? err.message,
+                  attempts: 1,
+                }],
+          );
+          return undefined;
+        }
+        throw err;
+      }
     },
     [getToken, id, load, applyReads],
+  );
+
+  /**
+   * Retry one unplaced file with the member's words.
+   *
+   * The server re-runs the evidence classifier with the description before it
+   * writes anything. A second failure keeps the dialog open with the reason and
+   * a second chance; the third discards it.
+   */
+  const retryUnplaced = useCallback(
+    async (description: string) => {
+      const item = unplaced[0];
+      if (!item) return;
+      setUnplacedBusy(true);
+      try {
+        const added = await motivationsApi.addUpload(
+          getToken,
+          id,
+          item.kind,
+          item.file,
+          { description },
+        );
+        if (added?.suggestions?.length) await applyReads(added.suggestions);
+        await load();
+        setUnplaced((queue) => queue.slice(1));
+        setToast(
+          added?.kind
+            ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
+            : 'Added.',
+        );
+      } catch (err) {
+        if (
+          err instanceof MotivationApiError &&
+          err.code === 'needs-identification'
+        ) {
+          setUnplaced((queue) =>
+            queue.map((u, i) =>
+              i === 0
+                ? { ...u, reason: err.reason ?? err.message, attempts: u.attempts + 1 }
+                : u,
+            ),
+          );
+        } else {
+          setError((err as Error).message);
+        }
+      } finally {
+        setUnplacedBusy(false);
+      }
+    },
+    [unplaced, getToken, id, load, applyReads],
   );
 
   const onRefile = useCallback(
@@ -1689,6 +1775,15 @@ export default function LicenceCentreSheetPage() {
         <PreviewPanel preview={sheet.preview as PreviewSection[]} />
       </aside>
       </div>
+
+      {unplaced[0] ? (
+        <UnplacedUploadDialog
+          item={unplaced[0]}
+          busy={unplacedBusy}
+          onRetry={retryUnplaced}
+          onDiscard={() => setUnplaced((queue) => queue.slice(1))}
+        />
+      ) : null}
 
       <SheetToast message={toast} onDismiss={() => setToast(null)} />
     </>

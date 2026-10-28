@@ -248,11 +248,10 @@ describe('picking an evidence item into an application', () => {
     );
   });
 
-  it('⚠️ TICKS THE DFO ROW ITS CONTAINER ANSWERS, WITHOUT A SECOND LETTER', async () => {
-    // A written permission to hunt IS the applicant's proof of where the
-    // firearm will be used, and the container says so. `satisfies` becomes
-    // coversKinds, which ticks the row in documentStatus — it does NOT mint a
-    // second annexure letter for one page.
+  it('⚠️ DOES NOT TICK A DFO ROW — EVIDENCE IS NOT DFO PAPERWORK', async () => {
+    // Operator, 2026-10-28: "Annexures are solely for documents required by the
+    // DFO and CFR." A farm permission letter is evidence; it prints in the
+    // body and must not satisfy a document-kind row.
     const { svc, created } = build({
       creds: [
         credential({
@@ -263,7 +262,7 @@ describe('picking an evidence item into an application', () => {
       ],
     });
     await svc.addFromLibrary('user-1', 'mo-1', 'credential', 'c-annex', true);
-    expect(created[0].coversKinds).toContain(K.FIREARM_SOURCE_PROOF);
+    expect(created[0].coversKinds).toEqual([]);
   });
 
   it('ticks nothing for an activity photograph, which answers no row', async () => {
@@ -306,7 +305,9 @@ describe('the evidence caps are separate from the document cap', () => {
       filed({ id: `b${i}`, kind: K.EVIDENCE, evidenceType: 'HUNTING_PHOTO' }),
     );
 
-  it(`⚠️ REFUSES A THIRD ANNEXURE EVIDENCE ITEM (${EVIDENCE_ANNEXURE_MAX} maximum)`, async () => {
+  it(`⚠️ EVERY EVIDENCE ITEM IS BODY-PLACED (${EVIDENCE_ANNEXURE_MAX} annexures)`, async () => {
+    // Evidence no longer has an annexure side. The old cap test asked for a
+    // third annexure; the answer now is that there is no annexure at all.
     const { svc, created } = build({
       uploads: [
         filed({ id: 'a1', kind: K.EVIDENCE, evidenceType: 'FARM_PERMISSION_LETTER' }),
@@ -320,10 +321,11 @@ describe('the evidence caps are separate from the document cap', () => {
         }),
       ],
     });
-    await expect(
-      svc.addFromLibrary('user-1', 'mo-1', 'credential', 'c-annex', true),
-    ).rejects.toThrow(new RegExp(`${EVIDENCE_ANNEXURE_MAX} evidence documents`));
-    expect(created).toHaveLength(0);
+    await svc.addFromLibrary('user-1', 'mo-1', 'credential', 'c-annex', true);
+    expect(EVIDENCE_ANNEXURE_MAX).toBe(0);
+    expect(created).toHaveLength(1);
+    expect(created[0].evidenceType).toBe('AFFIDAVIT');
+    expect(created[0].coversKinds).toEqual([]);
   });
 
   it(`⚠️ REFUSES A FIFTH ACTIVITY PHOTOGRAPH (${EVIDENCE_BODY_MAX} maximum)`, async () => {
@@ -421,7 +423,7 @@ describe('an evidence row on the member\u2019s own page', () => {
     const file = out.files.find((f) => f.id === 'u1')!;
     expect(file.evidence).toMatchObject({
       container: 'FARM_PERMISSION_LETTER',
-      placement: 'annexure',
+      placement: 'body',
       confident: true,
       description: 'my farmer says I may hunt',
     });

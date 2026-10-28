@@ -8,6 +8,8 @@ import {
 } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
 import { DocumentFilingService } from '../common/document-filing/document-filing.service';
+import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
+import type { DocumentCapture } from '../common/document-capture/document-capture';
 import {
   VAULT_COVER_OPTIONS,
   VAULT_KIND_OPTIONS,
@@ -312,10 +314,14 @@ export type VaultClassifyAnswer =
       via?: 'markers' | 'model';
       markers?: string[];
       strength?: string;
+      /** The one-pass read, for the row's capture store. */
+      capture?: DocumentCapture;
     }
   | {
       role: 'evidence';
       confident: boolean;
+      /** The one-pass read, for the row's capture store. */
+      capture?: DocumentCapture;
     };
 
 /** What each kind of document plausibly carries. Nothing else is accepted. */
@@ -401,6 +407,12 @@ export class LicenceCentreExtractService {
     // classifier exactly as before. In production DocumentFilingModule
     // provides it, so a document goes through Gemini-reads / Jev-files.
     @Optional() private readonly filing?: DocumentFilingService,
+    /**
+     * ⚠️ THE ONE-PASS READ. When provided it transcribes the page AND lists
+     * every printed fact; the text is what Jev files from, and the capture is
+     * stored on the row. Falls back to the old transcription when absent.
+     */
+    @Optional() private readonly capture?: DocumentCaptureService,
   ) {}
 
   /**
@@ -426,7 +438,19 @@ export class LicenceCentreExtractService {
     if (!this.llm.isConfigured()) return null;
 
     if (this.filing?.isConfigured()) {
-      const text = await this.transcribe(args.bytes, args.mimeType);
+      /**
+       * ⚠️ ONE PASS. The capture transcribes the page and lists every printed
+       * fact; the transcription is what Jev files from. The old transcribe()
+       * remains the fallback when the capture service is absent or fails.
+       */
+      const captured = this.capture
+        ? await this.capture
+            .capture({ bytes: args.bytes, mimeType: args.mimeType })
+            .catch(() => null)
+        : null;
+      const text = captured
+        ? captured.pageText
+        : await this.transcribe(args.bytes, args.mimeType);
       // ⚠️ A PHOTOGRAPH HAS NO TEXT. Below the floor it is the vision
       // classifier's job; Jev would be guessing from an empty page.
       if (text && text.trim().length >= MIN_TRANSCRIPTION_CHARS) {
@@ -466,25 +490,35 @@ export class LicenceCentreExtractService {
               alsoCovers: [],
               markers: verdict.matched.map((m) => m.name),
               strength: verdict.strength,
+              capture: captured ?? undefined,
             };
           }
         }
 
         const filed = await this.filing.fileVault({
           text,
+          facts: captured?.facts,
           kindOptions: VAULT_KIND_OPTIONS,
           coverOptions: VAULT_COVER_OPTIONS,
         });
         if (filed) {
           if (filed.role === 'evidence') {
-            return { role: 'evidence', confident: filed.confident };
+            return {
+              role: 'evidence',
+              confident: filed.confident,
+              capture: captured ?? undefined,
+            };
           }
           const known = Object.values(CredentialKind) as string[];
           if (!known.includes(filed.folder)) return this.classifyVision(args);
           const kind = currentKind(filed.folder as CredentialKind);
           // ⚠️ A KIND OF EVIDENCE IS EVIDENCE, whatever `role` said.
           if (kind === CredentialKind.EVIDENCE) {
-            return { role: 'evidence', confident: filed.confident };
+            return {
+              role: 'evidence',
+              confident: filed.confident,
+              capture: captured ?? undefined,
+            };
           }
           return {
             role: 'document',
@@ -497,6 +531,7 @@ export class LicenceCentreExtractService {
                 currentKind(String(k ?? '').trim() as CredentialKind),
               ),
             ),
+            capture: captured ?? undefined,
           };
         }
       }

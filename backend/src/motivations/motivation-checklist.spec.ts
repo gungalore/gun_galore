@@ -137,76 +137,48 @@ describe('annexure lettering', () => {
   // not at a hard-coded index that drifts the day an annexure kind is added.
   // ──────────────────────────────────────────────────────────────────
 
-  it('⚠️ TAKES TWO LETTERS FOR TWO EVIDENCE CONTAINERS, SIDE BY SIDE', () => {
-    // `annexureByKind` is kind-keyed, and every evidence annexure shares the
-    // kind EVIDENCE — so a kind-keyed lookup would let the second overwrite
-    // the first, and one of the two pages would lose its letter.
+  it('⚠️ NEVER LETTERS EVIDENCE, EVEN WHEN A CONTAINER IS PASSED', () => {
+    // Operator, 2026-10-28: evidence is body content. Annexures are solely the
+    // DFO/CFR-required documents.
     const a = buildAnnexures(
-      [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
+      [
+        MotivationUploadKind.IDENTITY_DOCUMENT,
+        MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+      ],
       [],
       [
         { container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' },
         { container: 'AFFIDAVIT', label: 'Affidavit' },
       ],
     );
-    const evidence = a.filter((x) => x.kind === 'EVIDENCE');
-    expect(evidence).toHaveLength(2);
-    expect(evidence.every((x) => x.count === 1)).toBe(true);
-    // Distinct letters, and each carries its own container so the renderer can
-    // title the page from the registry rather than from a shared kind label.
-    expect(evidence[0].letter).not.toBe(evidence[1].letter);
-    expect(evidence.map((x) => x.container)).toEqual([
-      'FARM_PERMISSION_LETTER',
-      'AFFIDAVIT',
+    expect(a.map((x) => x.kind)).toEqual([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
     ]);
+    expect(a.some((x) => x.kind === 'EVIDENCE')).toBe(false);
   });
 
-  it('⚠️ SITS AFTER THE SHOOTING RECORD AND BEFORE THE INCIDENT REPORT', () => {
-    // The operator's decision: evidence letters land near J — after "Record of
-    // shooting activities", before the incident report. This is by ANCHOR
-    // (the INCIDENT_REPORT case), not by index, so it survives a future
-    // insertion in ANNEXURE_ORDER without silently moving.
+  it('⚠️ NEVER LETTERS OPTIONAL BODY DOCUMENTS', () => {
     const a = buildAnnexures(
       [
         MotivationUploadKind.IDENTITY_DOCUMENT,
         MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
         MotivationUploadKind.INCIDENT_REPORT,
+        MotivationUploadKind.CHARACTER_REFERENCE,
+        MotivationUploadKind.EMPLOYMENT_CONFIRMATION,
+        MotivationUploadKind.PREVIOUS_MOTIVATION,
+        MotivationUploadKind.OTHER,
       ],
       [],
-      [{ container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' }],
+      [],
     );
     expect(a.map((x) => x.kind)).toEqual([
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
-      'EVIDENCE',
-      MotivationUploadKind.INCIDENT_REPORT,
     ]);
   });
 
-  it('⚠️ PUTS THE EVIDENCE AFTER THE LAST ANCHOR-KIND, NOT MID-GROUP', () => {
-    // Two evidence items still land as a block, not one either side of the
-    // incident report — the insert is guarded so `placeEvidence` runs once.
-    const a = buildAnnexures(
-      [MotivationUploadKind.SHOOTING_ACTIVITY_LOG, MotivationUploadKind.INCIDENT_REPORT],
-      [],
-      [
-        { container: 'FARM_PERMISSION_LETTER', label: 'Farmer’s permission' },
-        { container: 'SCORE_SHEET', label: 'Score sheet' },
-      ],
-    );
-    expect(a.map((x) => x.kind)).toEqual([
-      MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
-      'EVIDENCE',
-      'EVIDENCE',
-      MotivationUploadKind.INCIDENT_REPORT,
-    ]);
-  });
-
-  it('⚠️ LEAVES THE EXISTING LETTERS UNCHANGED WHEN THERE IS NO EVIDENCE', () => {
+  it('⚠️ LEAVES THE REQUIRED LETTERS UNCHANGED', () => {
     // The letters a pack already has must not move for the packs that carry
-    // no evidence — the overwhelmingly common case. Every kind here is one
-    // that letters on its own or in a group; the comparison is between the
-    // two-arg and three-arg call.
+    // no evidence — the overwhelmingly common case.
     const kinds = [
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
@@ -234,7 +206,9 @@ describe('evidence annexure titles and lookup', () => {
     expect(annexureTitleFor('EVIDENCE', null)).toBe(UPLOAD_KIND_LABELS.EVIDENCE);
   });
 
-  it('resolves evidence letters by container, not by kind', () => {
+  it('does not letter an evidence container at all', () => {
+    // Evidence is body content. The legacy container resolver still exists for
+    // stored rows, but a new pack never gives evidence a letter.
     const entries = buildAnnexures(
       [],
       [],
@@ -243,12 +217,8 @@ describe('evidence annexure titles and lookup', () => {
         { container: 'AFFIDAVIT', label: 'Affidavit' },
       ],
     );
-    const byContainer = annexureByContainer(entries);
-    expect(byContainer.get('FARM_PERMISSION_LETTER')!.letter).toBe('A');
-    expect(byContainer.get('AFFIDAVIT')!.letter).toBe('B');
-    // And the kind-keyed map holds NO evidence entry — evidence is container-
-    // addressed, so a kind-keyed lookup could only ever hold one of the two.
-    expect(annexureByKind(entries).has('EVIDENCE')).toBe(false);
+    expect(entries).toEqual([]);
+    expect(annexureByContainer(entries).size).toBe(0);
   });
 });
 
@@ -836,12 +806,11 @@ describe('what may be an annexure at all', () => {
   // cuttings and a cartridge's dimensions are published material we assembled:
   // there is no original for the applicant to produce and no counter clerk
   // will ask for one. They are argument, and argument belongs in the body
-  // where it is being made. A CAS printout is different — the applicant holds
-  // it — so it keeps its letter.
-  it('letters the applicant’s own incident report', () => {
+  // where it is being made. A CAS printout is the applicant's own evidence too,
+  // so it now prints in the body, not under a letter.
+  it('does not letter the applicant’s own incident report', () => {
     const entries = buildAnnexures([MotivationUploadKind.INCIDENT_REPORT]);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].letter).toBe('A');
+    expect(entries).toHaveLength(0);
   });
 
   it('⚠️ FOLLOWS THE GUIDE BOOK’S FIXED ORDER, so a DFO finds each in the same place', () => {
@@ -861,7 +830,6 @@ describe('what may be an annexure at all', () => {
       ['C', MotivationUploadKind.PROFICIENCY_CERTIFICATE],
       ['D', MotivationUploadKind.ADDRESS_CONFIRMATION],
       ['E', MotivationUploadKind.CURRENT_LICENCE],
-      ['F', MotivationUploadKind.OTHER],
     ]);
   });
 });

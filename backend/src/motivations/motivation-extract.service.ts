@@ -13,6 +13,8 @@ import {
   type FilingOption,
 } from '../common/document-filing/document-filing.service';
 import { MOTIVATION_KIND_OPTIONS } from '../common/document-filing/motivation-kind-options';
+import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
+import type { DocumentCapture } from '../common/document-capture/document-capture';
 import { fieldByKey, fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
@@ -521,6 +523,8 @@ export class MotivationExtractService {
     // does not provide it) means the tuned vision classifiers run exactly as
     // before. DocumentFilingModule provides it in production.
     @Optional() private readonly filing?: DocumentFilingService,
+    /** One pass: page text + every printed fact. See DocumentCaptureService. */
+    @Optional() private readonly capture?: DocumentCaptureService,
   ) {}
 
   /** What a failure looked like, for a log line. Codes, never a provider class. */
@@ -1053,24 +1057,40 @@ export class MotivationExtractService {
     // Gemini transcribes it and Jev names the folder. A photograph of a scene
     // has none, and falls through to the vision classifier below.
     if (this.filing?.isConfigured()) {
-      const text =
-        ocr && ocr.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS
+      const captured = this.capture
+        ? await this.capture
+            .capture({ bytes: args.bytes, mimeType: args.mimeType })
+            .catch(() => null)
+        : null;
+      const text = captured
+        ? captured.pageText
+        : ocr && ocr.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS
           ? ocr
           : await this.transcribe(args.bytes, args.mimeType);
       if (text && text.trim().length >= MOTIVATION_MIN_TRANSCRIPTION_CHARS) {
         const filed = await this.filing.fileVault({
           text,
+          facts: captured?.facts,
           kindOptions: MOTIVATION_KIND_OPTIONS,
           purpose: 'motivation.classify.file',
         });
         if (filed) {
           if (filed.role === 'evidence') {
-            return { role: 'evidence', confident: filed.confident };
+            return {
+              role: 'evidence',
+              confident: filed.confident,
+              capture: captured ?? undefined,
+            };
           }
           const kind = filed.folder as MotivationUploadKind;
           // ⚠️ AN ID OFF THE MENU IS REFUSED, not invented into the enum.
           if (!CLASSIFIABLE.includes(kind)) return null;
-          return { role: 'document', kind, confident: filed.confident };
+          return {
+            role: 'document',
+            kind,
+            confident: filed.confident,
+            capture: captured ?? undefined,
+          };
         }
       }
     }
@@ -1725,8 +1745,13 @@ than a confident wrong one.`.trim();
  * call, made only for evidence, so an ordinary document still costs one call.
  */
 export type MotivationClassifyAnswer =
-  | { role: 'document'; kind: MotivationUploadKind; confident: boolean }
-  | { role: 'evidence'; confident: boolean };
+  | {
+      role: 'document';
+      kind: MotivationUploadKind;
+      confident: boolean;
+      capture?: DocumentCapture;
+    }
+  | { role: 'evidence'; confident: boolean; capture?: DocumentCapture };
 
 /**
  * yyyy-mm-dd, and a day that actually exists.
