@@ -7,6 +7,46 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - ABANDONED OZOW CHECKOUT RECOVERY (FULL DEPLOY)
+
+Deployed `d62a26ba` (rollback `alloutdoor-20261028-211506.dump`, 35,806,211
+bytes; no pending migrations; health x2 OK; public 200 x2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**The incident.** The buyer clicked Buy Now on **Scope covers**
+(`cmvsf8yif000zsdvnbnqxhzj2`), reached Ozow and pressed back. Pay had already
+claimed and deleted the checkout hold, so the listing stayed
+`PAYMENT_PENDING` while `/checkout/<id>` 404'd (no hold). The buyer could not
+pay or restart, and the stale sweep would not free it for about 17 minutes.
+
+**Unblocked first.** The gateway said the payment was **Incomplete**, not paid.
+Before deploying, the abandoned HELD transaction
+`cmvsh559a000irqvn3x1cew1x` was deleted and the listing set back to `ACTIVE`.
+It is now `ACTIVE` with zero unpaid transactions.
+
+**The fix.**
+
+- `createCheckoutHold` now self-heals the buyer's OWN unpaid gateway attempt.
+  It re-checks Ozow; only a non-success is released (delete the tx + restore
+  the listing), then a fresh 15-minute hold starts. A paid result or a failed
+  status lookup never releases.
+- New `GET /transactions/unpaid?listingId=` returns only the signed-in
+  buyer's own unpaid attempt, powering a **Complete payment** CTA on the
+  listing, Orders and transaction pages.
+- Unpaid rows now read **Payment not completed** (not "Paid - awaiting
+  delivery"), and the seller's Sales list hides unpaid attempts entirely.
+- `/checkout/<listingId>` now renders for `PAYMENT_PENDING` so the form can
+  run that recovery; another buyer's reservation is still refused.
+
+**Gates.** Backend `tsc` clean; 391 suites / 5,980 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,827 passed / 1 skipped; production build
+clean.
+
+**Live check.** The new unpaid route answers 401 without auth (mounted, not
+404). Scope covers is `ACTIVE`, site 200 and `/api/health` 200. The retry
+itself was not exercised end-to-end live; its three branches (reclaim, paid,
+status failure) are covered by `checkout-hold.spec.ts`.
+
 ## 2026-10-28 - MESSAGES INBOX, PUSH AND AUTO-CLEAR (FULL DEPLOY)
 
 Deployed `fd81009d` (rollback `alloutdoor-20261028-205115.dump`, 35,805,420
