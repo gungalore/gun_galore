@@ -7,6 +7,44 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - FIRST LIVE PAY-IN SETTLED / OZOW STATUS FIX (BACKEND DEPLOY)
+
+Deployed `d1b5f989` backend-only (rollback `alloutdoor-20261028-213000.dump`,
+35,807,349 bytes; no pending migrations; health x2 OK; public 200 x2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**The report.** The buyer paid **R20** on Scope covers. Ozow showed **Payment
+Successful**, but ALLOutdoor stayed on "Payment not confirmed".
+
+**Two independent causes.**
+
+- `OzowService.getPaymentStatus` called
+  `/payments/{id}/transactions` without `fromDate`/`toDate`. Ozow answers
+  **200 with an empty results list** when the date window is omitted, so a real
+  success was read as `Incomplete` by both verify-result and the webhook.
+- The box's `OZOW_WEBHOOK_SECRET` was stale. The `transaction.complete`
+  delivery at 21:24 was rejected for an invalid Svix signature. The controller
+  deliberately 200s a bad signature, so Ozow did not retry it.
+
+**The fixes.**
+
+- `d1b5f989` sends a 30-day-back / tomorrow-forward window on the transaction
+  lookup. A spec pins the `fromDate`/`toDate` query (the empty-list regression).
+- Replaced `OZOW_WEBHOOK_SECRET` from the live subscription
+  `a7edf05f-cdce-4967-9676-6107b5ff8033` via `GET /webhooks/{id}/secret`
+  (backup `.env.bak-2026-10-28T19-28-31-098Z` on the box). Verified with a
+  signed no-op `test.event` delivery: accepted, then ignored. Resolved the
+  stale `WEBHOOK_SIGNATURE_INVALID / ozow-payment` alert.
+
+**The payment.** Called `POST /api/transactions/<id>/verify-result` after the
+deploy. Result `success: true`; transaction `cmvsi21js000wshvntpcpq4fo` now has
+`paidAt` 19:31 UTC, `gatewayPaymentId`
+`df7df1b0-45a5-447a-a4cd-964166295d4b`, `gatewayResultCode=Successful`. Scope
+covers is **SOLD**; PRIVATE_ARRANGE contacts were revealed. R20 via ABSA API.
+
+**Gates.** Backend `tsc` clean; 391 suites / 5,981 passed / 8 skipped. No
+frontend change in this deploy.
+
 ## 2026-10-28 - ABANDONED OZOW CHECKOUT RECOVERY (FULL DEPLOY)
 
 Deployed `d62a26ba` (rollback `alloutdoor-20261028-211506.dump`, 35,806,211

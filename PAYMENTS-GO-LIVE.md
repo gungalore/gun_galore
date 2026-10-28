@@ -7,6 +7,22 @@ the funds landed.
 
 ## Progress log
 
+- **2026-10-28 - first live pay-in settled; two status defects fixed.** A buyer
+  paid **R20** on Scope covers through ABSA API (Ozow transaction
+  `df7df1b0-45a5-447a-a4cd-964166295d4b`), but the return page said
+  "Payment not confirmed". Root causes: `getPaymentStatus` called
+  `/payments/{id}/transactions` **without `fromDate`/`toDate`**, and Ozow
+  answers an empty result list when the window is omitted (so a real success
+  looked `Incomplete`); and the box's `OZOW_WEBHOOK_SECRET` was stale, so the
+  `transaction.complete` delivery was rejected for an invalid Svix signature.
+  **Fixed in `d1b5f989`** (backend-only deploy, rollback
+  `alloutdoor-20261028-213000.dump`): the lookup now sends a 30-day window and
+  a spec pins the query. The correct subscription secret (`a7edf05f-...`) was
+  fetched from `GET /webhooks/{id}/secret`, verified with a signed no-op
+  delivery, and the stale `WEBHOOK_SIGNATURE_INVALID` alert resolved. The
+  payment was then settled through verify-result: `paidAt` set,
+  `gatewayPaymentId` recorded, Scope covers **SOLD**, private-arrange contacts
+  revealed. Backend 391 suites / 5,981 tests.
 - **2026-10-28 - live payout verified.** R10 to Investec `****0758` (account
   `10012650758`) using Ozow's universal branch `580105` (the operator supplied
   `580108`, which is branch-specific; Ozow resolves Investec to `580105`).
