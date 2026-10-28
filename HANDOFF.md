@@ -7,6 +7,37 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - ZOHO ENABLED + SCOPE COVERS BACKFILL; DISABLED-SYNC ALERT (BACKEND DEPLOY)
+
+Deployed `6d5642b7` backend-only (rollback `alloutdoor-20261028-234533.dump`,
+35,813,796 bytes; no pending migrations; health x2 OK; public 200 x2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**Why Scope covers was missing from Books.** Production `.env` had no
+`ZOHO_BOOKS_*` variables at all, so the service booted `DISABLED` and every
+Zoho method returned before touching the transaction. The earlier smoke tests
+used a local Zoho `.env`, not production.
+
+**Enabled and backfilled.** The Zoho credentials were added to the box's
+`backend/.env`; boot now logs `Zoho Books integration ENABLED (org 923687932)`.
+Transaction `cmvsi21js000wshvntpcpq4fo` now has buyer invoice **INV-000067**
+(R20.00 = R10 item + R10 platform fee), paid with balance R0.00, and
+`zohoBuyerInvoiceId=136287000000394001`. The seller has no Zoho document for
+this zero-fee Buy Now sale by design; their paperwork is the payout remittance
+advice.
+
+**Still failing: the invoice email.** Zoho refuses to send because the Books
+organisation's sender email is `gerhard.fourie@gungalore.co.za` and is
+unconfirmed (`6039`). The invoice exists and is paid, but
+`zohoBuyerInvoiceEmailedAt` is null and `zohoSyncStatus=FAILED`. The hourly
+retry will keep hitting it. Fix the Zoho Books organisation email (prefer a
+confirmed `@alloutdoor.co.za` address), then re-run the buyer email.
+
+**Code fix shipped.** A disabled Books rail now records `zohoSyncStatus=SKIPPED`
+with the reason and raises one `ZOHO_BOOKS_DISABLED` Desk alert per transaction,
+instead of leaving every Zoho field null with no trace. `tsc` clean; backend
+392 suites / 5,989 passed / 8 skipped; backend build clean.
+
 ## 2026-10-28 - ACCOUNT ACTION QUEUE + WHATSAPP FALLBACKS + PRIVATE-ARRANGE GATE (FULL DEPLOY)
 
 Deployed `e0b55dce` full (rollback `alloutdoor-20261028-231641.dump`,
