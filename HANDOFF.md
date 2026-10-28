@@ -7,6 +7,52 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - ACCOUNT ACTION QUEUE + WHATSAPP FALLBACKS + PRIVATE-ARRANGE GATE (FULL DEPLOY)
+
+Deployed `e0b55dce` full (rollback `alloutdoor-20261028-231641.dump`,
+35,812,835 bytes; migration `20261028230000_whatsapp_fallback_nudges` applied;
+health x2 OK; public 200 x2; `alloutdoor-backend`, `alloutdoor-frontend` and
+`warden` online).
+
+**Account.** `/account` now opens with an **Action required** card under the
+identity header. It is fed by active notifications and keeps sale actions
+visible even where the inbox row is dismissible. The account menu puts
+**Notifications** and **Messages** in an `Inbox` group at the top. Inbox rows
+now name the action (`Pay now`, `Respond to offer`, `Bid again`,
+`Confirm receipt`) instead of `Act`.
+
+**Sign-up.** The post-sign-up communication-methods sheet was removed. Sign-up
+ends after cell OTP; email, SMS and WhatsApp default on, and `/settings` is the
+only place to change them. Existing opt-outs are untouched.
+
+**WhatsApp.** Sales messages keep WhatsApp as the first channel and now have a
+safety net: a message Meta has not delivered after **1 hour** gets SMS + email;
+one delivered but still unread after **12 hours** gets the same reminder. Both
+respect channel mutes, fire once per log, and are driven by
+`WhatsappMessageLog.undeliveredNudgeAt` / `unreadNudgeAt`; the cron runs every
+10 minutes. The latest Meta status (`SENT` / `DELIVERED` / `READ` / `FAILED`) is
+shown on the order page via `Transaction.whatsappStatus`.
+
+**Private arrangement.** The seller must accept before either party sees contact
+details or the buyer can confirm receipt; buyer confirmation requires the seller
+to have marked it delivered. Auto-release runs only after acceptance. The
+historical `TPCPQ4FO` order remains RELEASED with `acceptedAt` empty — that is
+the truthful record of the bug that prompted this work.
+
+**Also shipped in this pass.** Passive listing-distance geolocation no longer
+re-prompts: it only reads location when the Permissions API already says
+`granted`; explicit "Use my current location" still asks. Installed-PWA push is
+offered after `appinstalled` as well as on first standalone launch.
+
+**Gates.** Backend `tsc` clean; 392 suites / 5,988 passed / 8 skipped. Frontend
+`tsc` clean; 159 files / 1,828 passed / 1 skipped; production build clean.
+Live DB check: both fallback columns exist and `whatsapp_enabled=true`.
+
+**Not yet observed live.** The first actual 1-hour/12-hour fallback send has
+not been exercised against a production message; the cron and branches are
+unit-tested. The fallback is time-based, so it will first act on a new sale
+message older than one hour.
+
 ## 2026-10-28 - FIRST LIVE PAY-IN SETTLED / OZOW STATUS FIX (BACKEND DEPLOY)
 
 Deployed `d1b5f989` backend-only (rollback `alloutdoor-20261028-213000.dump`,
