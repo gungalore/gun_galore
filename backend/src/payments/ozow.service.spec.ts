@@ -815,6 +815,24 @@ describe('OzowService.getPaymentStatus — resolves the right attempt', () => {
     });
   });
 
+  it('sends a date window because Ozow returns empty without one', async () => {
+    await withLiveEnv(async () => {
+      const fetchMock = mockFetchQueue([
+        { access_token: 'tok', expires_in: '14400' },
+        { results: [] },
+      ]);
+      global.fetch = fetchMock.fetchImpl;
+
+      const svc = new OzowService();
+      await svc.getPaymentStatus('pay-1');
+
+      const url = requestUrl(fetchMock.calls[1].input);
+      expect(url).toMatch(
+        /\/transactions\?fromDate=\d{4}-\d{2}-\d{2}&toDate=\d{4}-\d{2}-\d{2}&limit=50&offset=0$/,
+      );
+    });
+  });
+
   it('falls back to the first row when none is successful yet', async () => {
     await withLiveEnv(async () => {
       const fetchMock = mockFetchQueue([

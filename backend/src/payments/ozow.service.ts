@@ -436,8 +436,20 @@ export class OzowService {
   // ─── Query payment status (pay-in) ──────────────────────────────────
   async getPaymentStatus(paymentId: string): Promise<OzowPaymentResult | null> {
     if (!this.payInConfigured) throw new Error('Ozow not configured');
+    // ⚠️ THE DATE WINDOW IS LOAD-BEARING. Ozow answers 200 with an EMPTY
+    // results list when fromDate/toDate are omitted, even for a successful
+    // payment. That is exactly how a buyer could pay on Ozow while every
+    // verify/webhook status read called the payment "Incomplete". A check is
+    // only ever needed for a recent checkout; 30 days is generous for a
+    // 15-minute/24-hour pay window and keeps the query bounded.
+    const fromDate = new Date(Date.now() - 30 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const toDate = new Date(Date.now() + 86_400_000)
+      .toISOString()
+      .slice(0, 10);
     const res = await fetch(
-      `${this.oneApiHost}/payments/${encodeURIComponent(paymentId)}/transactions`,
+      `${this.oneApiHost}/payments/${encodeURIComponent(paymentId)}/transactions?fromDate=${fromDate}&toDate=${toDate}&limit=50&offset=0`,
       { headers: { Authorization: `Bearer ${await this.getToken()}` } },
     );
     if (!res.ok) {
