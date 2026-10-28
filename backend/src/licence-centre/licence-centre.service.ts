@@ -1732,6 +1732,22 @@ export class LicenceCentreService {
       }
     }
 
+    /**
+     * ⚠️ A COMPETENCY'S ISSUE DATE SITS IN DETAILS, AND THE DERIVATION READS
+     * THE COLUMN. The existing parse copied `competency_issued` into
+     * `issuedOn`; the capture projection can fill the detail and leave the
+     * column null, which is how a competency ends up with no dated expiry to
+     * arm. Copy it here, exactly as the old reader did.
+     */
+    if (
+      reading &&
+      resolved === CredentialKind.COMPETENCY_CERTIFICATE &&
+      !reading.issuedOn &&
+      reading.details.competency_issued
+    ) {
+      reading.issuedOn = reading.details.competency_issued;
+    }
+
     // Named from what we just read, unless the member named it themselves.
     // `clean` is their words; only OUR placeholder gets replaced.
     const derived = clean

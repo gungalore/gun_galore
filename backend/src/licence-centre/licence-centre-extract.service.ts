@@ -1256,6 +1256,14 @@ export function userPrompt(
           'as the card\'s reference. Read it from that headline row. NEVER the',
           'holder\'s ID number (13 digits), never a date or a year, and never a',
           'number shared with another card.',
+          // ⚠️ THE TWO DATES HAVE NO LABELS ON THE CARD. They are the range on
+          // the line under "SECTION 16" — for example "2025-08-27 – 2035-08-26".
+          // A reader looking for the words "issue" or "expiry" returns neither,
+          // which is how a licence reached the vault with no date at all.
+          'issued_on and expires_on are the TWO DATES ON THE LINE BENEATH THE',
+          'SECTION. The first date is issued_on; the second is expires_on.',
+          'The card does not print the words "issue date" or "expiry date", so',
+          'do not wait for those labels. Read both dates as printed.',
           // The component rows, and which row each one comes off.
           'frame_serial, barrel_serial and receiver_serial each come off THEIR',
           'OWN row. A card prints NONE against a component that carries no',

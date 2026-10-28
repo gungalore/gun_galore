@@ -129,6 +129,12 @@ else:
    If the value is a number or date you cannot read cleanly, omit it rather
    than guessing.
 
+⚠️ A SOUTH AFRICAN FIREARM LICENCE PRINTS ITS ISSUE AND EXPIRY DATES WITHOUT
+LABELS. They are the two dates on the line beneath the section, for example
+"2025-08-27 – 2035-08-26". List them as two facts labelled "Issue date" and
+"Expiry date", with normalized ISO values: the first date is the issue, the
+second is the expiry. Do not treat the range as a single fact.
+
 Do NOT classify the document. Do NOT name a kind or a folder. Do NOT summarise.
 Do NOT add commentary. If the page has no printed text — a photograph of a
 scene or an object — leave pageText and facts empty and describe what is

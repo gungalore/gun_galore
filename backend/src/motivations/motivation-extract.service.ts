@@ -1543,10 +1543,22 @@ than a confident wrong one.`.trim();
           'Omit it if the page does not make clear which it is.',
         ]
       : [];
+    const licenceDateNote = asked.some((f) =>
+      /^existing_firearm_\d+_expiry$/.test(f.key),
+    )
+      ? [
+          '',
+          'A South African firearm licence prints its ISSUE AND EXPIRY DATES',
+          'as a range on the line beneath the section, for example',
+          '"2025-08-27 – 2035-08-26". The card does not print "expiry" beside',
+          'it. The SECOND date is existing_firearm_N_expiry; read it as printed.',
+        ]
+      : [];
     return [
       'Read the attached document and transcribe these fields:',
       ...lines,
       ...routeNote,
+      ...licenceDateNote,
       '',
       'Return only the fields you can actually see on it.',
     ].join('\n');

@@ -664,6 +664,14 @@ function DocumentCentre() {
    * where both halves live and are tested.
    */
   const needDate = (rows ?? []).filter(needsDateCheck);
+  /**
+   * ⚠️ "WE READ THE DATE" IS ONLY TRUE WHEN WE DID. The banner used to say it
+   * about every unconfirmed row, including nine whose `expiresOn` was null —
+   * a reader that had found no date at all. The member was being asked to
+   * confirm a date that was not on the screen.
+   */
+  const datesMissing = needDate.filter((r) => !r.expiresOn);
+  const datesRead = needDate.filter((r) => !!r.expiresOn);
   // ⚠️ EVIDENCE IS TAKEN OUT OF THE FILING COUNT, BECAUSE ITS ERRAND IS A
   // DIFFERENT ONE AND ALREADY ON THIS PAGE. `needsFilingCheck` is true of an
   // evidence item we could not place — autoFiled, namedConfident false, no date
@@ -716,12 +724,19 @@ function DocumentCentre() {
             <>
               <p className="font-medium">
                 {needDate.length === 1
-                  ? 'One document still needs its date checked'
-                  : `${needDate.length} documents still need their dates checked`}
+                  ? datesMissing.length === 1
+                    ? 'One document still needs a date'
+                    : 'One document still needs its date checked'
+                  : datesMissing.length === needDate.length
+                    ? `${needDate.length} documents still need a date`
+                    : `${needDate.length} documents still need their dates checked`}
               </p>
               <p className="mt-1 text-[var(--text-secondary)]">
-                We read the date off the photograph, but nothing is scheduled
-                until you have confirmed it is right.
+                {datesMissing.length && datesRead.length
+                  ? `We could not read a date from ${datesMissing.length} of these; the rest were read but not confirmed. Nothing is scheduled until the date is set.`
+                  : datesMissing.length
+                    ? 'We could not read a date from these. Add the date, or mark the document as never expiring — nothing is scheduled without one.'
+                    : 'We read the date off the photograph, but nothing is scheduled until you have confirmed it is right.'}
               </p>
               <BannerDocLinks rows={needDate} onOpen={openFromBanner} />
             </>

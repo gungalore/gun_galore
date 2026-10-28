@@ -3,6 +3,7 @@ import {
   CLASSIFY_SCHEMA,
   CLASSIFY_USER,
   LicenceCentreExtractService,
+  userPrompt,
 } from './licence-centre-extract.service';
 import { DocumentFilingService } from '../common/document-filing/document-filing.service';
 import type { JevAnswer, LlmResponse } from '../common/llm/llm.types';
@@ -61,6 +62,18 @@ describe('the classifier prompt', () => {
       }
       expect(CLASSIFY_USER).toContain(kind);
     }
+  });
+
+  it('⚠️ NAMES THE LICENCE CARD’S UNLABELLED DATE RANGE', () => {
+    // Operator, 2026-10-28, with the card in hand: "the licenses does have a
+    // issue and expiry date on. it is just not listed as such. look underneath
+    // the Section 16." The reader hunted for the words "issue" and "expiry"
+    // and returned neither, which is how six licences reached the vault with
+    // no date at all.
+    const prompt = userPrompt(CredentialKind.FIREARM_LICENCE);
+    expect(prompt).toContain('TWO DATES ON THE LINE BENEATH THE');
+    expect(prompt).toContain('The first date is issued_on');
+    expect(prompt).toContain('the second is expires_on');
   });
 
   it('⚠️ MAKES THE ASSOCIATION DOCUMENTS ONE CATEGORY, not four', () => {

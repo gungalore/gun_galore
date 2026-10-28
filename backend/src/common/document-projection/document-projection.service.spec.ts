@@ -109,6 +109,21 @@ describe('DocumentProjectionService', () => {
     expect(out.values.firearm_serial.value).toBe('ABC123');
   });
 
+  it('reads the two unlabelled dates beneath a licence section', async () => {
+    const svc = new DocumentProjectionService(noJev());
+    const out = await svc.project({
+      capture: capture([
+        fact('Section', '16'),
+        fact('Issue date', '2025-08-27', '2025-08-27'),
+        fact('Expiry date', '2035-08-26', '2035-08-26'),
+      ]),
+      keys: ['section', 'issued_on', 'expires_on'],
+    });
+    expect(out.values.section.value).toBe('16');
+    expect(out.values.issued_on.value).toBe('2025-08-27');
+    expect(out.values.expires_on.value).toBe('2035-08-26');
+  });
+
   it('does not let "valid until" fill the association', async () => {
     const svc = new DocumentProjectionService(noJev());
     const out = await svc.project({
