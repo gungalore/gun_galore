@@ -7,6 +7,36 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - PAYABLE OFFERS AND AUCTION LAUNCH HARDENING (FULL DEPLOY)
+
+Deployed `dd8fb37f` (rollback `alloutdoor-20261028-194022.dump`, 35,799,851
+bytes; no pending migrations; health A-2 OK; public 200 A-2; three services
+online).
+
+**What shipped.**
+
+- Offers on Buy Now and Auction listings now reach payment. Accepting reserves
+  the item in the same transaction; an auction offer is promoted to the winner
+  state (ended, winning bid, 24h window). A lapse releases the reservation, and
+  the unpaid-winner sweep expires accepted auction offers. Legacy TAKE_A_SHOT
+  accepted offers stay payable.
+- Accepted-offer emails/SMS link to `/checkout/offer/<id>` (sign-in required).
+  Paying an auction offer from the listing page marks it CONVERTED.
+- `GET /api/auctions/:id` now 404s hidden/unapproved auctions and requires a
+  session for members-only listings. Both client polls forward the token.
+- Admin approval restarts a moderated auction's clock.
+- Auction Buy Now retired end to end: the create API rejects it, the sell/edit
+  forms no longer send it, the dead `buyNow()` path is gone, docs updated.
+- Auction finalisation notifications fire after commit.
+- The disabled cart checkout shows its coming-soon state instead of a failure.
+
+**Gates.** Backend `tsc` clean; 391 suites / 5,970 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,824 passed / 1 skipped; production build
+clean.
+
+**Still open (ops, not code).** Money-out remains gated on Ozow payout
+verification and a funded float (`PAYMENTS-GO-LIVE.md` sections 2 and 4).
+
 ## 2026-10-28 - UNTOUCHED PHOTOGRAPHS AND PLACEHOLDER MODELS (FULL DEPLOY)
 
 Deployed `df7246f8` (photographs) and `0315569e` (placeholder models), final
