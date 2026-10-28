@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - UNTOUCHED PHOTOGRAPHS AND PLACEHOLDER MODELS (FULL DEPLOY)
+
+Deployed `df7246f8` (photographs) and `0315569e` (placeholder models), final
+`0315569e` (rollback `alloutdoor-20261028-173910.dump`, 35,799,084 bytes; no
+pending migrations; health A-2 OK; public 200 A-2; three services online).
+
+**The reports.** Uploading safe photographs still white-washed them, and
+MO000104's Section 5.2 read “Why is the NORDISKE PRECISION **NONE**, chambered
+in .223 REM, suited for sport?”
+
+**The causes.**
+- The vault batch skipped safe kinds, but the motivation scan path
+  (`prepareSourceBatch`) polished every image and the two-photo rule composed
+  any pair. Safe and evidence photographs were flattened and sometimes merged.
+- `motivation-suitability.ts` and `motivation-title.ts` joined
+  `firearm_model` verbatim. SAPS cards print `Model: NONE`, so the placeholder
+  became part of the firearm's name in the 5.2 question and title.
+
+**The fixes.**
+- `lib/photo-kinds.ts` is the one untouched-photo rule: safe kinds,
+  `EVIDENCE`, or `role: 'evidence'` bypass the scanner treatment. The declared
+  type wins over a wrong classifier guess. `source-batch.ts` also excludes
+  them from front/back pairing.
+- Placeholder models (`NONE`, `NIL`, `N/A`, `-`, `UNKNOWN`) are omitted from
+  `buildSuitabilityQuestion` and `motivationTitle`.
+
+**Existing MO000104.** The 5.2 question is stored with the generated
+application; the old blob still says `NORDISKE PRECISION NONE` until the
+motivation is regenerated. The list title is derived on read and is correct.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,963 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,824 passed / 1 skipped; production build
+clean.
+
 ## 2026-10-28 - THE PACK COUNTED ANSWERS, NOT DOCUMENTS (FRONTEND-ONLY)
 
 Deployed `a333f792` (rollback `alloutdoor-20261028-163915.dump`, 32,457,618
