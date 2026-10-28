@@ -481,6 +481,7 @@ export class LicenceCentreService {
           mimeType: true,
           detailsEncrypted: true,
           otherSideId: true,
+          duplicateOfId: true,
           attention: true,
           readNotes: true,
         },
@@ -494,6 +495,7 @@ export class LicenceCentreService {
         issuedOn: string | null;
         details: Record<string, string>;
         otherSideId: string | null;
+        duplicateOfId: string | null;
         attention: string[];
         readNotes: string[];
       };
@@ -558,8 +560,17 @@ export class LicenceCentreService {
       }
 
       const cleared = (x: Side) => ({
-        attention: x.attention.filter((t) => t !== SIDE_MISSING),
-        readNotes: x.readNotes.filter((n) => !isSideMissingNote(n)),
+        // ⚠️ THE OTHER SIDE IS NOT A COPY. A front page can be flagged as a
+        // duplicate of the back before the pair is recognised; once paired,
+        // both flags cannot stand. Leaving `duplicate` on it counted three
+        // proficiency pairs as three duplicate documents (2026-10-28).
+        attention: x.attention.filter(
+          (t) => t !== SIDE_MISSING && t !== 'duplicate',
+        ),
+        readNotes: x.readNotes.filter(
+          (n) => !isSideMissingNote(n) && !isDuplicateNote(n),
+        ),
+        duplicateOfId: null,
       });
       for (const a of items) {
         if (a.otherSideId) continue;
@@ -580,7 +591,12 @@ export class LicenceCentreService {
           x.readNotes = c.readNotes.includes(note) ? c.readNotes : [...c.readNotes.filter((n) => !isPairNote(n)), note];
           await this.prisma.credential.update({
             where: { id: x.id },
-            data: { otherSideId: x.otherSideId, attention: x.attention, readNotes: x.readNotes },
+            data: {
+              otherSideId: x.otherSideId,
+              duplicateOfId: null,
+              attention: x.attention,
+              readNotes: x.readNotes,
+            },
           });
         }
         this.vaultLog?.note({
@@ -590,6 +606,34 @@ export class LicenceCentreService {
           userId,
           credentialId: a.id,
           detail: { otherSideId: b.id, side: documentSide(a.details) },
+        });
+      }
+
+      // ⚠️ ALREADY-PAIRED ROWS CAN STILL CARRY THE OLD DUPLICATE FLAG. The
+      // front page was often uploaded first and marked a copy of the back, and
+      // pairing then set `otherSideId` without clearing it. The list counts
+      // that as a duplicate document until it is removed.
+      for (const a of items) {
+        if (!a.otherSideId || !a.duplicateOfId) continue;
+        const c = cleared(a);
+        a.attention = c.attention;
+        a.readNotes = c.readNotes;
+        a.duplicateOfId = null;
+        await this.prisma.credential.update({
+          where: { id: a.id },
+          data: {
+            duplicateOfId: null,
+            attention: c.attention,
+            readNotes: c.readNotes,
+          },
+        });
+        this.vaultLog?.note({
+          stage: 'pair',
+          outcome: 'ok',
+          code: 'cleared-false-duplicate',
+          userId,
+          credentialId: a.id,
+          detail: { otherSideId: a.otherSideId },
         });
       }
 
@@ -1986,7 +2030,11 @@ export class LicenceCentreService {
     const attentionUncertain: string[] = [];
     let duplicateOf: { id: string; title: string } | null = null;
     let otherSide: { id: string; title: string } | null = null;
-    let partnerCleared: { attention: string[]; readNotes: string[] } | null = null;
+    let partnerCleared: {
+      attention: string[];
+      readNotes: string[];
+      duplicateOfId: null;
+    } | null = null;
     if (reading) {
       try {
         if (resolved === 'ADDRESS_CONFIRMATION') {
@@ -2044,8 +2092,13 @@ export class LicenceCentreService {
           const partner = others.find((o) => o.id === pair.id);
           if (partner) {
             partnerCleared = {
-              attention: partner.attention.filter((t) => t !== SIDE_MISSING),
-              readNotes: partner.readNotes.filter((n) => !isSideMissingNote(n)),
+              attention: partner.attention.filter(
+                (t) => t !== SIDE_MISSING && t !== 'duplicate',
+              ),
+              readNotes: partner.readNotes.filter(
+                (n) => !isSideMissingNote(n) && !isDuplicateNote(n),
+              ),
+              duplicateOfId: null,
             };
           }
         } else if (resolved === 'PROFICIENCY') {
