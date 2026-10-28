@@ -52,6 +52,9 @@ function build(
      * `buildReady` below is the one place that says it.
      */
     uploads?: Array<{ kind: any; coversKinds: any[] }>;
+    /** One-pass capture and projector, for the projection tests. */
+    capture?: { capture: jest.Mock };
+    projection?: { project: jest.Mock };
   } = {},
 ) {
   const prisma = {
@@ -101,6 +104,7 @@ function build(
         kind: data.kind,
         byteSize: data.byteSize,
       })),
+      update: jest.fn(async (_a?: any): Promise<any> => ({})),
       // Additive, for the removal tests: a delete is the one write that has to
       // succeed before the auto-link refusal below it is recorded.
       delete: jest.fn(async (_a?: any): Promise<any> => ({})),
@@ -359,6 +363,9 @@ function build(
       get: async () => null,
       purgeExpired: async () => 0,
     } as never,
+    undefined,
+    opts.capture as never,
+    opts.projection as never,
   );
   const generation = new MotivationGenerationService(
     prisma as never,
@@ -1884,6 +1891,55 @@ describe('a dedicated certificate uploaded straight to an application', () => {
       buffer: Buffer.from([0xff, 0xd8, 0xff]),
       mimetype: 'image/jpeg',
     });
+
+  it('fills the association form from the one-pass capture', async () => {
+    const capture = {
+      capture: jest.fn(async () => ({
+        version: '2026-10-28a',
+        pageText: 'SA HUNTERS\nMembership No 108828\nMember since 2024-06-07\nDedicated status held since 2024-06-07',
+        document: { issuer: 'SA HUNTERS' },
+        facts: [
+          { label: 'Association', value: 'SA HUNTERS', valueType: 'text', confidence: 'high' },
+          { label: 'Membership No', value: '108828', valueType: 'reference', confidence: 'high' },
+          { label: 'Member since', value: '2024-06-07', valueType: 'date', confidence: 'high' },
+          {
+            label: 'Dedicated status held since',
+            value: '2024-06-07',
+            valueType: 'date',
+            confidence: 'high',
+          },
+        ],
+        quality: { readable: true, notes: [] },
+      })),
+    };
+    const projection = {
+      project: jest.fn(async () => ({
+        values: {
+          association_name: { value: 'SA HUNTERS', confidence: 'high', via: 'label' },
+          association_number: { value: '108828', confidence: 'high', via: 'label' },
+          association_joined: { value: '2024-06-07', confidence: 'high', via: 'label' },
+          dedicated_since: { value: '2024-06-07', confidence: 'high', via: 'label' },
+        },
+        unmatched: [],
+      })),
+    };
+    const { svc, prisma } = uploadCase(null, { capture, projection });
+
+    await upload(svc);
+
+    const created = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(created.captureEncrypted).toBeTruthy();
+    expect(created.captureVersion).toBe('2026-10-28a');
+    const stored = prisma.motivationUpload.update.mock.calls
+      .map((c: any) => c[0]?.data?.extractionEncrypted)
+      .find(Boolean);
+    expect(stored).toBeTruthy();
+    const fields = decryptJson<Record<string, string>>(stored);
+    expect(fields.association_name).toBe('SA HUNTERS');
+    expect(fields.association_number).toBe('108828');
+    expect(fields.association_joined).toBe('2024-06-07');
+    expect(fields.dedicated_since).toBe('2024-06-07');
+  });
 
   it('ALSO fills the letter of good standing, matched by content', async () => {
     const { svc, prisma } = uploadCase({

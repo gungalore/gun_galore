@@ -142,7 +142,7 @@ export interface CredentialReading {
    * column by name, and a literal string type documents what that column can
    * now actually hold without needing to touch that file.
    */
-  reader?: 'model';
+  reader?: 'model' | 'capture';
 }
 
 const EMPTY: CredentialReading = {

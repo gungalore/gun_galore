@@ -112,6 +112,7 @@ export class DocumentCaptureService {
             return {
               label: str(row.label),
               value: str(row.value),
+              normalized: str(row.normalized) || undefined,
               valueType: valueType(row.valueType),
               confidence: confidence(row.confidence),
             };

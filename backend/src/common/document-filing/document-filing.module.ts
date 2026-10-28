@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DocumentFilingService } from './document-filing.service';
 import { DocumentCaptureService } from '../document-capture/document-capture.service';
+import { DocumentProjectionService } from '../document-projection/document-projection.service';
 
 /**
  * Jev document filing, shared by the vault (LicenceCentreModule) and the
@@ -10,7 +11,7 @@ import { DocumentCaptureService } from '../document-capture/document-capture.ser
  * LlmService is @Global, so nothing else is imported here.
  */
 @Module({
-  providers: [DocumentFilingService, DocumentCaptureService],
-  exports: [DocumentFilingService, DocumentCaptureService],
+  providers: [DocumentFilingService, DocumentCaptureService, DocumentProjectionService],
+  exports: [DocumentFilingService, DocumentCaptureService, DocumentProjectionService],
 })
 export class DocumentFilingModule {}

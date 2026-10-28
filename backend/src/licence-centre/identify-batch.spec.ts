@@ -386,6 +386,7 @@ describe('the store handler files from the record, not the request', () => {
     o: {
       verdict?: Record<string, unknown> | null;
       classify?: unknown;
+      projection?: { project: jest.Mock };
     } = {},
   ) {
     const create = jest.fn(async (_a?: any): Promise<any> => ({ id: 'c1', title: 't' }));
@@ -411,13 +412,14 @@ describe('the store handler files from the record, not the request', () => {
     };
     const take = jest.fn(async () => o.verdict ?? null);
     const classify = jest.fn(async () => o.classify ?? null);
+    const read = jest.fn(async () => null);
     const svc = new LicenceCentreService(
       prisma as never,
       files as never,
       { get: jest.fn(async () => 60) } as never,
       { resolveByEntity: jest.fn(async () => undefined) } as never,
       { assertEnabled: jest.fn(async () => undefined) } as never,
-      { classify, read: jest.fn(async () => null), orient: jest.fn(async () => undefined) } as never,
+      { classify, read, orient: jest.fn(async () => undefined) } as never,
       { classifyEvidence: jest.fn(async () => null), ocr: jest.fn(async () => null) } as never,
       {
         rearmAutolinkFor: jest.fn(async () => 0),
@@ -425,9 +427,75 @@ describe('the store handler files from the record, not the request', () => {
       } as never,
       { note: () => undefined } as never,
       { findBySha: jest.fn(async () => null), put: jest.fn(), take } as never,
+      undefined,
+      undefined,
+      undefined,
+      o.projection as never,
     );
-    return { svc, create, update, take, classify, files };
+    return { svc, create, update, take, classify, read, files };
   }
+
+  it('⚠️ PROJECTS THE CAPTURE AND SKIPS THE SECOND VISION READ', async () => {
+    const project = jest.fn(async () => ({
+      values: {
+        make: {
+          value: 'Glock',
+          confidence: 'high',
+          fact: { label: 'Make', value: 'Glock' },
+          via: 'label',
+        },
+        model: {
+          value: '43X',
+          confidence: 'high',
+          fact: { label: 'Model', value: '43X' },
+          via: 'label',
+        },
+        serial: {
+          value: 'ABC123',
+          confidence: 'high',
+          fact: { label: 'Serial Number', value: 'ABC123' },
+          via: 'label',
+        },
+      },
+      unmatched: [],
+    }));
+    const { svc, update, read } = buildCreate({
+      verdict: {
+        id: 'id-capture',
+        ownerId: 'u1',
+        sha256: 'x',
+        role: 'document',
+        kind: 'FIREARM_LICENCE',
+        alsoCovers: [],
+        container: null,
+        confident: true,
+        ocrText: null,
+        capture: {
+          version: '2026-10-28a',
+          pageText: 'Make Glock\nModel 43X',
+          document: {},
+          facts: [
+            { label: 'Make', value: 'Glock', valueType: 'text', confidence: 'high' },
+            { label: 'Model', value: '43X', valueType: 'text', confidence: 'high' },
+            { label: 'Serial Number', value: 'ABC123', valueType: 'text', confidence: 'high' },
+          ],
+          quality: { readable: true, notes: [] },
+        },
+      },
+      projection: { project },
+    });
+    await svc.create('u1', null, '', img('licence'), {
+      identifyId: 'id-capture',
+    });
+    expect(project).toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    const extractionUpdate = update.mock.calls.find((c) =>
+      Array.isArray(c[0]?.data?.extractedFields),
+    );
+    expect(extractionUpdate?.[0]?.data?.extractedFields).toEqual(
+      expect.arrayContaining(['make', 'model']),
+    );
+  });
 
   it('takes the kind from the identify record for the id the server issued', async () => {
     const { svc, create, take, classify } = buildCreate({

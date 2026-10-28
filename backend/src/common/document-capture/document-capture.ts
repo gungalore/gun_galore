@@ -35,6 +35,11 @@ export interface CaptureFact {
   label: string;
   /** The printed value, verbatim. */
   value: string;
+  /**
+   * The value in a machine-readable form where the page allows: an ISO
+   * yyyy-mm-dd date, digits-only ID, digits-only reference. Never a guess.
+   */
+  normalized?: string;
   valueType: CaptureValueType;
   confidence: 'high' | 'medium' | 'low';
 }
@@ -77,6 +82,7 @@ export const CAPTURE_SCHEMA: Record<string, unknown> = {
         properties: {
           label: { type: 'string' },
           value: { type: 'string' },
+          normalized: { type: 'string' },
           valueType: {
             type: 'string',
             enum: [
@@ -117,6 +123,11 @@ else:
    model, calibre or serial — if the page prints a label and a value, list it.
    Use the printed label verbatim. Do not merge two labels, do not invent a
    label, and leave a value out if the page does not print it.
+   Where the value is a date, put the same date in normalized as
+   yyyy-mm-dd; where it is an identity or reference number, put the digits only
+   (no spaces or punctuation) in normalized. Otherwise omit normalized.
+   If the value is a number or date you cannot read cleanly, omit it rather
+   than guessing.
 
 Do NOT classify the document. Do NOT name a kind or a folder. Do NOT summarise.
 Do NOT add commentary. If the page has no printed text — a photograph of a

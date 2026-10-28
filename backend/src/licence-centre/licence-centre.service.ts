@@ -91,6 +91,8 @@ import { MotivationsService } from '../motivations/motivations.service';
 // MotivationsModule and must stay one-way; the export is the only way across.
 import { MotivationExtractService } from '../motivations/motivation-extract.service';
 import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
+import { DocumentProjectionService } from '../common/document-projection/document-projection.service';
+import type { CredentialReading } from './licence-centre-extract.service';
 import { DocumentPageRasterService } from '../motivations/document-page-raster.service';
 import { DocumentReadCacheService } from '../motivations/document-read-cache.service';
 import { DocumentScreeningService } from '../motivations/document-screening.service';
@@ -344,6 +346,12 @@ export class LicenceCentreService {
      * classifier could not capture.
      */
     @Optional() private readonly capture?: DocumentCaptureService,
+    /**
+     * Projects the one-pass capture into this document's container keys. When
+     * it fills the page, the second vision read is skipped; when it cannot,
+     * the tuned extractor below remains the fallback.
+     */
+    @Optional() private readonly projection?: DocumentProjectionService,
     // Cached OCR text for the same bytes. Optional for the same reason as
     // pageRaster; forgetting is best effort and never fails a deletion.
     private readonly readCache?: DocumentReadCacheService,
@@ -1644,9 +1652,76 @@ export class LicenceCentreService {
     // read. The call would come back empty, and an empty reading sets
     // extractionOk false — which surfaces as "we could not read anything off
     // that one" against a photograph that is perfectly fine.
-    const reading = isPhotograph(resolved)
-      ? null
-      : await this.extract
+    /**
+     * ⚠️ THE CAPTURE IS THE FIRST READER NOW. When it produced a page, the
+     * projector maps those facts into this kind's keys; only if that leaves
+     * the page thin do we pay for the tuned second vision read.
+     */
+    let reading: CredentialReading | null = null;
+    if (!isPhotograph(resolved)) {
+      if (captureForRow && this.projection) {
+        const keys = [
+          ...new Set(
+            [resolved, ...alsoCovers].flatMap(
+              (k) => WANTED_FIELDS[k as CredentialKind] ?? [],
+            ),
+          ),
+          'issued_on',
+          'expires_on',
+        ];
+        const projected = await this.projection
+          .project({ capture: captureForRow, keys })
+          .catch(() => null);
+        /**
+         * ⚠️ THE CORE FIELD IS THE SAFETY VETO. A capture that found the
+         * letterhead but not the serial is thinner than the tuned reader; fall
+         * back rather than write a half-read licence. Optional fields do not
+         * veto.
+         */
+        const core =
+          resolved === CredentialKind.FIREARM_LICENCE
+            ? 'serial'
+            : resolved === CredentialKind.COMPETENCY_CERTIFICATE
+              ? 'competency_number'
+              : resolved === CredentialKind.DEDICATED_DISCIPLINE
+                ? 'association'
+                : resolved === CredentialKind.PROFICIENCY
+                  ? 'unit_standard'
+                  : resolved === CredentialKind.IDENTITY_DOCUMENT
+                    ? 'id_number'
+                    : resolved === CredentialKind.ADDRESS_CONFIRMATION
+                      ? 'residential_address'
+                      : resolved === CredentialKind.EMPLOYMENT_CONFIRMATION
+                        ? 'employer_name'
+                        : resolved === CredentialKind.ASSOCIATION_ENDORSEMENT
+                          ? 'serial'
+                          : null;
+        if (
+          projected &&
+          Object.keys(projected.values).length &&
+          (!core || projected.values[core])
+        ) {
+          const details: Record<string, string> = {};
+          const lowConfidence: string[] = [];
+          for (const [key, row] of Object.entries(projected.values)) {
+            if (key === 'issued_on' || key === 'expires_on') continue;
+            const value = row.value.trim().slice(0, 200);
+            if (!value) continue;
+            details[key] = value;
+            if (row.confidence === 'low') lowConfidence.push(key);
+          }
+          reading = {
+            expiresOn: projected.values.expires_on?.value ?? null,
+            issuedOn: projected.values.issued_on?.value ?? null,
+            details,
+            lowConfidence,
+            reader: 'capture',
+            autoFillable: lowConfidence.length === 0,
+          };
+        }
+      }
+      if (!reading) {
+        reading = await this.extract
           .read({
             kind: resolved,
             bytes,
@@ -1654,6 +1729,8 @@ export class LicenceCentreService {
             alsoCovers,
           })
           .catch(() => null);
+      }
+    }
 
     // Named from what we just read, unless the member named it themselves.
     // `clean` is their words; only OUR placeholder gets replaced.

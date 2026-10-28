@@ -67,6 +67,9 @@ import {
 import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
 import type { DocumentCapture } from '../common/document-capture/document-capture';
 import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
+import { DocumentProjectionService } from '../common/document-projection/document-projection.service';
+import { fieldByKey } from './motivation-fields';
+import { nextOwnedSlot, remapOwnedSlot } from './motivation-extract.service';
 import {
   endorsementVerdict,
   ENDORSEMENT_FIREARM_MISMATCH,
@@ -228,6 +231,8 @@ export class MotivationDocumentsService {
      * keep compiling; Nest injects it from DocumentFilingModule.
      */
     @Optional() private readonly captureService?: DocumentCaptureService,
+    /** Projects the capture into this upload kind's keys before any re-read. */
+    @Optional() private readonly projection?: DocumentProjectionService,
   ) {}
 
   /**
@@ -2774,23 +2779,88 @@ export class MotivationDocumentsService {
         !opts.skipExtraction &&
         MotivationExtractService.canExtract(resolved)
       ) {
-        try {
-          suggestions = await this.extract.extract({
-            kind: resolved,
-            licenceType: row.licenceType,
-            bytes: file.buffer,
-            mimeType: file.mimetype,
-            // Decides which "firearms you already own" row a licence fills.
-            // Without it every licence lands on row 1 and the second upload
-            // overwrites the first.
-            answers: this.shared.readAnswers(row.answersEncrypted),
-            // Already read above — this is what saves the second call.
-            ocrText,
-          });
-        } catch (err) {
-          this.logger.warn(
-            `Motivation ${row.id}: extraction failed for upload ${created.id}: ${(err as Error).message}`,
-          );
+        const rowAnswers = this.shared.readAnswers(row.answersEncrypted);
+        const keys = MotivationExtractService.wantedFor(resolved);
+        const slot =
+          resolved === MotivationUploadKind.CURRENT_LICENCE
+            ? nextOwnedSlot(rowAnswers)
+            : null;
+        // A full battery has no free owned-firearm row. The tuned extractor
+        // returns [] for this; do not project into row 1.
+        const hasSlot =
+          resolved !== MotivationUploadKind.CURRENT_LICENCE || slot !== null;
+        const actualKeys =
+          resolved === MotivationUploadKind.CURRENT_LICENCE && slot !== null
+            ? remapOwnedSlot(keys, slot)
+            : keys;
+
+        if (capture && this.projection && hasSlot) {
+          const core =
+            resolved === MotivationUploadKind.CURRENT_LICENCE
+              ? `existing_firearm_${slot}_serial`
+              : resolved === MotivationUploadKind.ASSOCIATION_CARD
+                ? 'association_name'
+                : resolved === MotivationUploadKind.GOOD_STANDING_LETTER
+                  ? 'association_name'
+                  : resolved === MotivationUploadKind.COMPETENCY_CERTIFICATE
+                    ? 'competency_number'
+                    : resolved === MotivationUploadKind.PROFICIENCY_CERTIFICATE
+                      ? 'unit_standard'
+                      : resolved === MotivationUploadKind.IDENTITY_DOCUMENT
+                        ? 'full_name'
+                        : resolved ===
+                            MotivationUploadKind.ADDRESS_CONFIRMATION
+                          ? 'residential_address'
+                          : resolved ===
+                              MotivationUploadKind.EMPLOYMENT_CONFIRMATION
+                            ? 'employer_name'
+                            : resolved ===
+                                MotivationUploadKind.FIREARM_SOURCE_PROOF
+                              ? 'firearm_serial'
+                              : null;
+          const projected = await this.projection
+            .project({ capture, keys: actualKeys })
+            .catch(() => null);
+          if (
+            projected &&
+            Object.keys(projected.values).length &&
+            (!core || projected.values[core])
+          ) {
+            suggestions = actualKeys
+              .filter((key) => projected.values[key])
+              .map((key) => {
+                const projectedValue = projected.values[key];
+                return {
+                  key,
+                  value: projectedValue.value,
+                  label: fieldByKey(row.licenceType, key)?.label ?? key,
+                  from: 'the document you uploaded',
+                  trusted: projectedValue.confidence !== 'low',
+                  note: 'Read from the one-pass capture — check it against the paperwork.',
+                } as ExtractedField;
+              });
+          }
+        }
+
+        if (!suggestions.length) {
+          try {
+            suggestions = await this.extract.extract({
+              kind: resolved,
+              licenceType: row.licenceType,
+              bytes: file.buffer,
+              mimeType: file.mimetype,
+              // Decides which "firearms you already own" row a licence fills.
+              // Without it every licence lands on row 1 and the second upload
+              // overwrites the first.
+              answers: rowAnswers,
+              // Already read above — this is what saves the second call.
+              ocrText,
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Motivation ${row.id}: extraction failed for upload ${created.id}: ${(err as Error).message}`,
+            );
+          }
         }
       }
 
