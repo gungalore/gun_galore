@@ -134,6 +134,9 @@ LABELS. They are the two dates on the line beneath the section, for example
 "2025-08-27 – 2035-08-26". List them as two facts labelled "Issue date" and
 "Expiry date", with normalized ISO values: the first date is the issue, the
 second is the expiry. Do not treat the range as a single fact.
+⚠️ THE SECTION IS ALSO UNLABELLED AS A FIELD. A line reading "SECTION 16" (or
+13, 14, 15, 17 or 20) is a fact: label it "Section" and give the number as the
+value. It is what decides the licence term.
 
 Do NOT classify the document. Do NOT name a kind or a folder. Do NOT summarise.
 Do NOT add commentary. If the page has no printed text — a photograph of a
