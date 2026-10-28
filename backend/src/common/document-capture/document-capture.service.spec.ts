@@ -8,29 +8,28 @@ function llmWith(text: string) {
 
 describe('DocumentCaptureService', () => {
   it('returns the page text and every labelled fact', async () => {
-    const svc = new DocumentCaptureService(
-      llmWith(
-        JSON.stringify({
-          pageText: 'SA HUNTERS\nMembership No 108828\nDedicated since 2024-06-07',
-          document: { family: 'membership certificate', issuer: 'SA Hunters' },
-          facts: [
-            {
-              label: 'Membership No',
-              value: '108828',
-              valueType: 'reference',
-              confidence: 'high',
-            },
-            {
-              label: 'Dedicated since',
-              value: '2024-06-07',
-              valueType: 'date',
-              confidence: 'high',
-            },
-          ],
-          quality: { readable: true, notes: [] },
-        }),
-      ),
+    const llm = llmWith(
+      JSON.stringify({
+        pageText: 'SA HUNTERS\nMembership No 108828\nDedicated since 2024-06-07',
+        document: { family: 'membership certificate', issuer: 'SA Hunters' },
+        facts: [
+          {
+            label: 'Membership No',
+            value: '108828',
+            valueType: 'reference',
+            confidence: 'high',
+          },
+          {
+            label: 'Dedicated since',
+            value: '2024-06-07',
+            valueType: 'date',
+            confidence: 'high',
+          },
+        ],
+        quality: { readable: true, notes: [] },
+      }),
     );
+    const svc = new DocumentCaptureService(llm);
     const out = await svc.capture({
       bytes: Buffer.from('x'),
       mimeType: 'image/jpeg',
@@ -45,6 +44,10 @@ describe('DocumentCaptureService', () => {
       valueType: 'date',
     });
     expect(out!.document.family).toBe('membership certificate');
+    const call = (llm as never as { complete: jest.Mock }).complete.mock.calls[0][0];
+    expect(call.purpose).toBe('document.capture');
+    expect(call.thinking).toEqual({ budgetTokens: 0 });
+    expect(call.timeoutMs).toBe(30_000);
   });
 
   it('keeps a photograph with no text', async () => {

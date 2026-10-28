@@ -6,7 +6,6 @@ import {
   CAPTURE_USER,
   CAPTURE_VERSION,
   OCR_MAX_TOKENS,
-  OCR_THINKING,
   captureBlock,
   type CaptureFact,
   type CaptureValueType,
@@ -73,10 +72,14 @@ export class DocumentCaptureService {
           },
         ],
         maxTokens: OCR_MAX_TOKENS,
-        thinking: OCR_THINKING,
+        // ⚠️ ZERO REASONING. Capture is transcription and label/value listing;
+        // the 32k OCR budget made one page take 31-45 seconds and one time out
+        // at 60 (production logs, 2026-10-28). The low setting keeps the read
+        // on the flash-lite under ten seconds; Jev still does the judgement.
+        thinking: { budgetTokens: 0 },
         json: { schema: CAPTURE_SCHEMA },
         purpose: 'document.capture',
-        timeoutMs: 60_000,
+        timeoutMs: 30_000,
       });
       raw = res.text.trim();
     } catch (err) {

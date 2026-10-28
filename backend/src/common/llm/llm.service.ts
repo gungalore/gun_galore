@@ -114,6 +114,11 @@ export const OCR_MAX_TOKENS = 65_536;
 
 /** The purposes that read or interpret a page; all pinned to the flash-lite. */
 const DOCUMENT_PURPOSES: ReadonlySet<string> = new Set([
+  // ⚠️ CAPTURE IS A TRANSCRIPTION, NOT A JUDGEMENT. It ran on the platform
+  // default (3.8-flash) with a 32k thinking budget and took 31-45 seconds per
+  // page, with one 60-second timeout on 2026-10-28. The flash-lite does the
+  // same read in ~5 seconds, and the projector/Jev still make the decisions.
+  'document.capture',
   'vault.classify',
   'vault.read',
   'vault.orient',
