@@ -7,6 +7,38 @@ overwritten.
 
 Last updated: **2026-10-28**.
 
+## 2026-10-28 - DOCUMENT CAPTURE MOVED TO FLASH-LITE WITH NO REASONING (FULL DEPLOY)
+
+Deployed `8314ee16` (rollback `alloutdoor-20261028-150515.dump`, 32,370,523
+bytes; no pending migrations; health A-2 OK; public 200 A-2; three services
+online).
+
+**The report.** A document upload was taking 30-60 seconds to read.
+
+**The cause, from production logs.** `document.capture` was running on
+`gemini-3.8-flash` with the 32,768-token OCR thinking budget:
+`31513ms`, `45232ms`, and one `60002ms FAILED timeout`. It was on the request
+path, so every upload waited for it; the timeout then fell back to
+`vault.transcribe` and made the request longer still.
+
+**The fix.** Capture is transcription and label/value listing, not judgement:
+
+- `document.capture` is now in the document-purpose set, so it runs on
+  `gemini-3.1-flash-lite`;
+- its thinking budget is 0;
+- its timeout is 30 seconds.
+- Jev and the projector still make the filing/projection decisions; the tuned
+  extractor remains the fallback when the core field is missing.
+
+**Gates.** Backend `tsc` clean; 390 suites / 5,959 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,819 passed / 1 skipped; foreground
+production build clean.
+
+**Next:** confirm the next real upload logs
+`document.capture gemini/gemini-3.1-flash-lite ...` in single-digit seconds. If
+flash-lite facts are consistently too thin, escalate only the missing cases to
+3.8 rather than moving every page back.
+
 ## 2026-10-28 - CAPTURE PROJECTION INTO CONTAINER FIELDS (FULL DEPLOY)
 
 Deployed `c7dcd3df` (rollback `alloutdoor-20261028-144743.dump`, 34,073,902
