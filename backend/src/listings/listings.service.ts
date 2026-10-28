@@ -1645,13 +1645,12 @@ export class ListingsService {
           'Set a starting bid (or set a reserve and we will derive it at 30% below).',
         );
       }
-      // Buy Now must clear the starting bid — otherwise a buyer could
-      // "Buy Now" for less than the opening bid, which doesn't make sense.
-      // Run this AFTER price derivation so the comparison uses the
-      // server-side starting bid, not whatever the seller typed.
-      if (dto.buyNowPrice && dto.buyNowPrice <= (dto.price ?? 0)) {
+      // Auction Buy Now is retired (operator decision): the sell form no
+      // longer offers it and there is no buyer path for it. Reject it rather
+      // than store a price nobody can act on.
+      if (dto.buyNowPrice != null) {
         throw new BadRequestException(
-          'Buy Now price must exceed the starting bid',
+          'Buy Now is not available on auctions. Use a Buy Now listing, or set a starting bid and let the auction run.',
         );
       }
       startTime = new Date();
@@ -1841,7 +1840,6 @@ export class ListingsService {
         autoDeclineThreshold: dto.autoDeclineThreshold,
         declaredValueCents: dto.declaredValueCents ?? null,
         reservePrice: dto.reservePrice ?? null,
-        buyNowPrice: dto.buyNowPrice ?? null,
         durationDays: dto.durationDays ?? null,
         isFeatured: dto.isFeatured ?? false,
         startTime,

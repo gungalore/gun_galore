@@ -250,7 +250,9 @@ export default function EditListingPage() {
           plannedDealerEmail: l.plannedDealerEmail ?? '',
           dealerManual: !l.plannedDealerPlaceId,
           reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
-          buyNowPrice: l.buyNowPrice ? String(l.buyNowPrice / 100) : '',
+          // Retired field, kept in the form state shape. Never seeded from a
+          // legacy auction and never sent.
+          buyNowPrice: '',
           autoAcceptThreshold: l.autoAcceptThreshold
             ? String(l.autoAcceptThreshold / 100)
             : '',
@@ -504,9 +506,7 @@ export default function EditListingPage() {
       if (form.reservePrice.trim()) {
         body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
       }
-      if (form.buyNowPrice.trim()) {
-        body.buyNowPrice = Math.round(parseFloat(form.buyNowPrice) * 100);
-      }
+      // Auction Buy Now is retired; never send it.
       if (form.autoAcceptThreshold.trim()) {
         body.autoAcceptThreshold = Math.round(
           parseFloat(form.autoAcceptThreshold) * 100,
@@ -1204,47 +1204,10 @@ export default function EditListingPage() {
           </>
         )}
 
-        {/* Auction-specific edit surface. Reserve + buyNow are
-            editable while the auction has no bids; the backend
-            rejects updates that would invalidate existing bids. */}
-        {listing.listingType === 'AUCTION' && (
-          <div
-            className="rounded-[6px] p-3 space-y-3"
-            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-          >
-            <p className="text-xs uppercase" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-              Auction options
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Reserve price (R)">
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.reservePrice}
-                  onChange={(e) => set('reservePrice', e.target.value)}
-                  style={inputStyle}
-                  placeholder="Optional"
-                />
-              </Field>
-              <Field label="Buy Now price (R)">
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.buyNowPrice}
-                  onChange={(e) => set('buyNowPrice', e.target.value)}
-                  style={inputStyle}
-                  placeholder="Optional"
-                />
-              </Field>
-            </div>
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              Auction duration + listing type are locked once published. To
-              change those, cancel and relist.
-            </p>
-          </div>
-        )}
+        {/* Auction terms are fixed at publish: the update endpoint does not
+            accept reserve/duration changes, and auction Buy Now is retired.
+            Rendering those fields here only invited edits that silently did
+            nothing. Cancel and relist to change auction terms. */}
 
         {/* Take-a-Shot threshold — only honoured for TAKE_A_SHOT
             listings. Setting it auto-accepts any offer at-or-above. */}

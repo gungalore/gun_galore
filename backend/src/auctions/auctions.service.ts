@@ -27,6 +27,12 @@ import { Prisma } from '@prisma/client';
 const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
 const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
+// Mirror of ListingsService.PUBLICLY_VISIBLE_STATUSES. An auction's live
+// state is public data only while the listing itself would be visible at
+// /listings/:id; DRAFT / PENDING_REVIEW / CANCELLED must 404 here too rather
+// than confirm the row exists.
+const AUCTION_PUBLIC_STATUSES = ['ACTIVE', 'PAYMENT_PENDING', 'SOLD', 'EXPIRED'];
+
 // How long the seller has to decide whether to offer an expired-win auction
 // to the runner-up. Short on purpose: the runner-up's interest (and the
 // relevance of their bid) decays fast once the auction is over.
@@ -101,6 +107,15 @@ class BidConflictError extends Error {
 // retries with jitter comfortably absorbs human-scale contention.
 const BID_RETRY_ATTEMPTS = 3;
 
+// What a finalized auction turned into. The notifications that follow are
+// fired ONLY after the transaction commits, so a rolled-back finalize can
+// never email/SMS a winner who was not actually recorded.
+type AuctionFinalizeOutcome =
+  | { kind: 'WON'; sellerId: string; winnerId: string; amount: number }
+  | { kind: 'NO_RESERVE'; sellerId: string; amount: number }
+  | { kind: 'NO_BIDS'; sellerId: string; amount: number }
+  | null;
+
 @Injectable()
 export class AuctionsService {
   private readonly logger = new Logger(AuctionsService.name);
@@ -119,13 +134,14 @@ export class AuctionsService {
 
   // Public-safe view of an auction. Hides reservePrice; only exposes whether
   // it's been met. Includes recent bids with bidders' names but NOT max amounts.
-  async getAuctionState(listingId: string) {
+  async getAuctionState(listingId: string, userId?: string) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
       select: {
         id: true,
         listingType: true,
         status: true,
+        publicVisible: true,
         price: true, // starting bid
         currentBid: true,
         currentBidderId: true,
@@ -141,6 +157,16 @@ export class AuctionsService {
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.listingType !== 'AUCTION') {
       throw new BadRequestException('Not an auction');
+    }
+    // Same visibility contract as the listing detail endpoint: a hidden or
+    // unapproved auction is indistinguishable from a missing one, and a
+    // members-only auction needs a signed-in caller. Without this the public
+    // auction endpoint was a side door around the public/members split.
+    if (!AUCTION_PUBLIC_STATUSES.includes(listing.status)) {
+      throw new NotFoundException('Listing not found');
+    }
+    if (!userId && !listing.publicVisible) {
+      throw new NotFoundException('Listing not found');
     }
 
     const recentBids = await this.prisma.bid.findMany({
@@ -179,9 +205,9 @@ export class AuctionsService {
       id: listing.id,
       status: listing.status,
       startingBid: listing.price,
-      // FIX-11 — Buy-Now on auctions is disabled (no reserve, /checkout 404s).
-      // Stop advertising a price the UI can't act on. Kept out of the payload
-      // rather than always-null so no client re-adds a dead CTA off it.
+      // Auction Buy Now is retired: the sell form no longer offers it, the
+      // API rejects it, and checkout's auction path is for winners only.
+      // Keep it out of the payload so no client re-adds a dead CTA.
       currentBid: listing.currentBid,
       currentBidderName,
       bidCount: listing.bidCount,
@@ -453,7 +479,6 @@ export class AuctionsService {
           bidCount: true,
           reserveMet: true,
           endTime: true,
-          buyNowPrice: true,
         },
       });
       if (!listing) throw new NotFoundException('Listing not found');
@@ -699,158 +724,6 @@ export class AuctionsService {
     });
   }
 
-  // --- Buy Now (auction) --------------------------------------------------
-
-  // FIX-11 follow-up. buyNow() ends a bid-free auction immediately in the
-  // caller's favour, landing the listing in EXACTLY the state
-  // finalizeAuction's Case A leaves a normal win in: ACTIVE → PAYMENT_PENDING,
-  // endedAt stamped, currentBidderId/currentBid set, a fresh 24h pay window.
-  // transactions.service's checkout (reserveAndCreateLine, AUCTION branch)
-  // only reads those fields to recognise "this buyer won this auction" — it
-  // cannot tell a Buy Now close from a clock-run-out close apart, which is
-  // exactly the point: per operator 2026-08-15 (schema.prisma comment on
-  // Listing.buyNowPrice), Buy Now on an auction follows the AUCTION fee
-  // rules — commission out of the seller, buyer pays the gateway fee — not
-  // the marked-up BUY_NOW ones. So this method does NOT build a second
-  // "reserve the listing" path; it IS the win path, just reached without
-  // waiting for the clock or a bid.
-  //
-  // ⚠️ Only honoured while bidCount === 0 (same schema.prisma comment) —
-  // once a real bid lands the seller is in genuine price discovery, and
-  // letting a later arrival buy under a bidder who is actually winning it
-  // would undercut them. The CAS below re-checks bidCount AT WRITE TIME,
-  // not just at read time, so a bid landing in the gap between our read and
-  // this write fails the claim instead of being silently overwritten —
-  // same principle as every other CAS in this file.
-  async buyNow(userId: string, listingId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!buyer) throw new ForbiddenException('User not synced');
-    // Same standing checks as placeBid — a Buy Now purchase carries the
-    // identical pay-within-24h obligation a winning bid does.
-    assertAccountNotClosed(buyer);
-    if (buyer.isBanned) throw new ForbiddenException('Account suspended');
-    if (buyer.auctionStrikes >= 3) {
-      throw new ForbiddenException('Bidding suspended — three strikes for non-payment');
-    }
-
-    const outcome = await this.prisma.$transaction(async (tx) => {
-      const listing = await tx.listing.findUnique({
-        where: { id: listingId },
-        select: {
-          id: true,
-          sellerId: true,
-          listingType: true,
-          status: true,
-          endedAt: true,
-          endTime: true,
-          buyNowPrice: true,
-          bidCount: true,
-        },
-      });
-      if (!listing) throw new NotFoundException('Listing not found');
-      if (listing.listingType !== 'AUCTION') {
-        throw new BadRequestException('Not an auction');
-      }
-      if (listing.sellerId === buyer.id) {
-        throw new ForbiddenException('Cannot buy your own auction');
-      }
-      if (!listing.buyNowPrice || listing.buyNowPrice <= 0) {
-        throw new BadRequestException('Buy Now is not available on this auction');
-      }
-      if (listing.status !== 'ACTIVE' || listing.endedAt) {
-        throw new BadRequestException('Auction is not active');
-      }
-      const now = new Date();
-      if (!listing.endTime || now >= listing.endTime) {
-        throw new BadRequestException('Auction has ended');
-      }
-      // See the guard note above the method — Buy Now is a fresh-listing
-      // shortcut, not a way to jump a live bidding war.
-      if (listing.bidCount > 0) {
-        throw new BadRequestException(
-          'Buy Now is no longer available — this auction already has bids',
-        );
-      }
-
-      // Buyer has 24h to pay — same pay-window field finalizeAuction and
-      // offerToRunnerUp stamp on every other path into PAYMENT_PENDING.
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-      // Same base guard finalizeAuction's Case A CAS uses (status ACTIVE,
-      // endedAt null); bidCount: 0 is Buy Now's own extra clause of it —
-      // see the method-level note on why that field is load-bearing here.
-      const claim = await tx.listing.updateMany({
-        where: {
-          id: listingId,
-          status: 'ACTIVE',
-          endedAt: null,
-          bidCount: 0,
-        },
-        data: {
-          status: 'PAYMENT_PENDING',
-          endedAt: now,
-          currentBidderId: buyer.id,
-          currentBid: listing.buyNowPrice,
-          // Buy Now is the seller's own named sell-immediately price, which
-          // by definition satisfies any hidden reserve they also set.
-          reserveMet: true,
-          bidCount: { increment: 1 },
-          expiresAt,
-        },
-      });
-      if (claim.count === 0) {
-        // The CAS lost — a bid landed, another buyer claimed Buy Now first,
-        // or the end-sweep finalized it, all in the gap since our read.
-        // Unlike placeBid's conflict there is nothing to re-resolve and
-        // retry: once bidCount > 0 or the listing has moved on, Buy Now is
-        // permanently unavailable, so this is a terminal error, not a race
-        // worth spinning on.
-        throw new ConflictException(
-          'This auction just moved on — Buy Now is no longer available.',
-        );
-      }
-
-      // Record the purchase as the winning bid — same isWinner semantics
-      // finalizeAuction stamps on a normal win, so bid history, /me/bids
-      // and the admin views (admin.service.ts, users.service.ts) all read
-      // a Buy Now exactly like any other win. bidCount was just-verified 0,
-      // so there is no earlier bidder to resolve/notify as a loser here.
-      await tx.bid.create({
-        data: {
-          listingId,
-          bidderId: buyer.id,
-          amount: listing.buyNowPrice,
-          maxAmount: listing.buyNowPrice,
-          isWinner: true,
-        },
-      });
-
-      return {
-        sellerId: listing.sellerId,
-        amount: listing.buyNowPrice,
-        expiresAt,
-      };
-    });
-
-    // Notifications fire only after the transaction has committed — same
-    // ordering placeBid and finalizeAuction follow. Reuses the exact
-    // auction-win machinery (CHECKOUT token + email/SMS) so the buyer's
-    // experience from here is indistinguishable from winning on the clock.
-    void this.notifyAuctionWon(buyer.id, listingId, outcome.amount);
-    void this.notifyAuctionEndedSeller(
-      outcome.sellerId,
-      listingId,
-      'WON',
-      outcome.amount,
-    );
-
-    return {
-      status: 'PAYMENT_PENDING' as const,
-      currentBid: outcome.amount,
-      expiresAt: outcome.expiresAt,
-    };
-  }
-
   // --- Buyer's own bids -------------------------------------------------
 
   async getMyBids(userId: string) {
@@ -983,8 +856,11 @@ export class AuctionsService {
     return { processed };
   }
 
-  private async finalizeAuction(listingId: string) {
-    return this.prisma.$transaction(async (tx) => {
+  private async finalizeAuction(
+    listingId: string,
+  ): Promise<AuctionFinalizeOutcome> {
+    const outcome = await this.prisma.$transaction(
+      async (tx): Promise<AuctionFinalizeOutcome> => {
       const listing = await tx.listing.findUnique({
         where: { id: listingId },
         select: {
@@ -1000,8 +876,8 @@ export class AuctionsService {
           status: true,
         },
       });
-      if (!listing || listing.endedAt) return; // already processed
-      if (listing.status !== 'ACTIVE') return;
+      if (!listing || listing.endedAt) return null; // already processed
+      if (listing.status !== 'ACTIVE') return null;
 
       const now = new Date();
 
@@ -1037,7 +913,7 @@ export class AuctionsService {
             expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
           },
         });
-        if (claim.count === 0) return; // state moved — re-evaluate next sweep
+        if (claim.count === 0) return null; // state moved — re-evaluate next sweep
         // Mark the winning bid
         const winningBid = await tx.bid.findFirst({
           where: { listingId, bidderId: listing.currentBidderId },
@@ -1050,14 +926,14 @@ export class AuctionsService {
             data: { isWinner: true },
           });
         }
-        // Notifications fire after the tx commits
-        void this.notifyAuctionWon(listing.currentBidderId, listingId, listing.currentBid!);
-        void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'WON', listing.currentBid!);
-        // M30 — resolve losers' stuck bid_outbid rows + send each a one-shot
-        // 'you didn't win' notice. Type-filtered + excludeUserId so the
-        // winner's freshly-persisted auction_won row is never touched.
-        void this.resolveAndNotifyLosers(listingId, listing.currentBidderId, listing.currentBid ?? 0);
-        return;
+        // Outcome returned here; notifications fire after the transaction
+        // commits (see below), never inside it.
+        return {
+          kind: 'WON' as const,
+          sellerId: listing.sellerId,
+          winnerId: listing.currentBidderId,
+          amount: listing.currentBid!,
+        };
       }
 
       // Case B: bids exist but reserve NOT met → seller decides
@@ -1066,12 +942,13 @@ export class AuctionsService {
           where: casWhere,
           data: { status: 'EXPIRED', endedAt: now },
         });
-        if (claim.count === 0) return; // state moved — re-evaluate next sweep
-        void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_RESERVE', listing.currentBid ?? 0);
-        // M30 — no winner in a reserve-not-met close, so every bidder is a
-        // loser: resolve all bid_outbid rows on the listing + notify each.
-        void this.resolveAndNotifyLosers(listingId, null, listing.currentBid ?? 0);
-        return;
+        if (claim.count === 0) return null; // state moved — re-evaluate next sweep
+        // Notifications for this outcome fire after the transaction commits.
+        return {
+          kind: 'NO_RESERVE' as const,
+          sellerId: listing.sellerId,
+          amount: listing.currentBid ?? 0,
+        };
       }
 
       // Case C: no bids
@@ -1079,9 +956,51 @@ export class AuctionsService {
         where: casWhere,
         data: { status: 'EXPIRED', endedAt: now },
       });
-      if (claim.count === 0) return; // state moved — re-evaluate next sweep
-      void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_BIDS', 0);
-    });
+      if (claim.count === 0) return null; // state moved — re-evaluate next sweep
+      return { kind: 'NO_BIDS' as const, sellerId: listing.sellerId, amount: 0 };
+      },
+    );
+
+    if (!outcome) return null;
+
+    // Notifications fire only AFTER the transaction has committed. Firing them
+    // inside the callback could announce a winner whose write then rolled back.
+    if (outcome.kind === 'WON') {
+      void this.notifyAuctionWon(outcome.winnerId, listingId, outcome.amount);
+      void this.notifyAuctionEndedSeller(
+        outcome.sellerId,
+        listingId,
+        'WON',
+        outcome.amount,
+      );
+      // M30 — resolve losers' stuck bid_outbid rows + send each a one-shot
+      // 'you didn't win' notice. Type-filtered + excludeUserId so the winner's
+      // freshly-persisted auction_won row is never touched.
+      void this.resolveAndNotifyLosers(
+        listingId,
+        outcome.winnerId,
+        outcome.amount,
+      );
+    } else if (outcome.kind === 'NO_RESERVE') {
+      void this.notifyAuctionEndedSeller(
+        outcome.sellerId,
+        listingId,
+        'NO_RESERVE',
+        outcome.amount,
+      );
+      // M30 — no winner in a reserve-not-met close, so every bidder is a
+      // loser: resolve all bid_outbid rows on the listing + notify each.
+      void this.resolveAndNotifyLosers(listingId, null, outcome.amount);
+    } else {
+      void this.notifyAuctionEndedSeller(
+        outcome.sellerId,
+        listingId,
+        'NO_BIDS',
+        0,
+      );
+    }
+
+    return outcome;
   }
 
   // M30 — resolve losing bidders' stuck bid_outbid rows on an ended auction
@@ -1163,6 +1082,20 @@ export class AuctionsService {
       });
       if (claim.count === 0) continue; // winner claimed checkout in the gap
       expired += 1;
+      // An accepted AUCTION offer is promoted to the winner state and shares
+      // this 24h window. Expire the offer alongside the listing so /my/offers
+      // never shows a live "pay now" link for a sale that has lapsed (the
+      // offer expiry sweep deliberately leaves auction offers to this sweep).
+      await this.prisma.offer
+        .updateMany({
+          where: { listingId: l.id, status: 'ACCEPTED' },
+          data: { status: 'EXPIRED' },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to expire accepted offer for auction ${l.id}: ${(err as Error).message}`,
+          ),
+        );
       this.logger.log(`Auction ${l.id}: winner never paid within 24h → EXPIRED`);
       void this.notifyAuctionEndedSeller(
         l.sellerId,

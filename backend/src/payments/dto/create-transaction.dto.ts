@@ -67,7 +67,8 @@ export class CreateTransactionDto {
   @IsNotEmpty()
   listingId: string;
 
-  // When checking out from an accepted offer (TAKE_A_SHOT)
+  // When checking out from an accepted offer on a Buy Now or Auction
+  // listing. (TAKE_A_SHOT is accepted only for legacy rows.)
   @IsOptional()
   @IsString()
   offerId?: string;

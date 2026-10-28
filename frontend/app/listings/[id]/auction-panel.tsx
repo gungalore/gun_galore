@@ -142,7 +142,12 @@ export default function AuctionPanel({
     try {
       const token = user ? await getToken() : null;
       const [stateRes, mineRes] = await Promise.all([
-        fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' }),
+        fetch(`${API_URL}/auctions/${listingId}`, {
+          cache: 'no-store',
+          // Members-only auctions (firearms) 404 to anonymous callers, so the
+          // session token must ride along exactly like the listing fetch.
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        }),
         token
           ? fetch(`${API_URL}/auctions/${listingId}/me`, {
               headers: { Authorization: `Bearer ${token}` },

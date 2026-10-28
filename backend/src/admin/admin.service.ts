@@ -326,26 +326,43 @@ export class AdminService {
     }
 
     const newStatus = dto.action === ReviewAction.APPROVE ? 'ACTIVE' : 'CANCELLED';
+    const now = new Date();
+    // An auction's clock starts at CREATE, before moderation. If it sat in
+    // review (or was approved later), its original endTime may already be past
+    // or nearly so. Approval is the moment it becomes discoverable, so restart
+    // the full duration here - otherwise an approved 7-day auction can go live
+    // with hours left, or already expired and unsellable.
+    const restartAuctionClock =
+      newStatus === 'ACTIVE' && listing.listingType === 'AUCTION';
     const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data: {
         status: newStatus,
         adminReviewedById: adminId,
-        adminReviewedAt: new Date(),
+        adminReviewedAt: now,
         adminOverrideReason: dto.reason ?? null,
-        // P5.1 — approval is this listing's first entry into ACTIVE (guarded to
+        // P5.1 - approval is this listing's first entry into ACTIVE (guarded to
         // PENDING_REVIEW above, so listedAt is null); stamp discoverability time
         // now so the saved-search matcher alerts on it as a NEW listing rather
         // than silently skipping it (its createdAt is already behind the cursor).
         ...(newStatus === 'ACTIVE'
           ? {
-              expiresAt: new Date(Date.now() + 60 * 24 * 3600_000),
-              listedAt: listing.listedAt ?? new Date(),
+              expiresAt: new Date(now.getTime() + 60 * 24 * 3600_000),
+              listedAt: listing.listedAt ?? now,
               // Stale-listing clock starts when the listing actually becomes
-              // discoverable, not when the draft row was created — otherwise a
+              // discoverable, not when the draft row was created - otherwise a
               // listing that sat a week in review is a week closer to the 90-day
               // auto-expiry before a single buyer ever saw it.
-              lastRenewedAt: new Date(),
+              lastRenewedAt: now,
+              ...(restartAuctionClock
+                ? {
+                    startTime: now,
+                    endTime: new Date(
+                      now.getTime() +
+                        (listing.durationDays ?? 7) * 24 * 3600_000,
+                    ),
+                  }
+                : {}),
             }
           : {}),
       },

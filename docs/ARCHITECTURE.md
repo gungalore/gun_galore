@@ -496,7 +496,10 @@ boolean `reserveMet` is ever public, never `reservePrice`.
 
 **Snipe protection:** a bid inside the final two minutes pushes `endTime` out by
 two minutes, repeatedly. Auctions are ended by a per-minute cron, not by a
-timer. Optional Buy Now is available only while the auction has zero bids.
+timer. **Auction Buy Now is retired:** the sell form no longer offers it, the
+create API rejects `buyNowPrice` on an auction, and checkout's auction branch is
+winner-only. An accepted offer on an auction is promoted to the same winner
+state, so it settles through that one path.
 
 Logic: `backend/src/auctions/auctions.service.ts`. Bid placement and auction
 finalisation are both CAS-guarded (conditional `updateMany` with the expected
@@ -510,7 +513,12 @@ between the two parties. A buyer submits an offer; the seller accepts, rejects
 with a reason, or counters.
 
 - Offers live 48 hours; a counter gives the buyer 24 hours to respond.
-- A buyer gets at most 5 attempts per listing over the row's lifetime.
+- A buyer gets **one** attempt per listing over the row's lifetime.
+- Accepting (or accepting a counter) reserves the item for that buyer in the
+  same transaction: a single-item listing becomes `PAYMENT_PENDING`, a tracked
+  listing reserves one unit, and an accepted offer on an auction closes the
+  auction and promotes the buyer to the normal winner state. A lapsed accepted
+  offer releases the reservation (or is expired by the auction sweep).
 - Auto-accept exists (`autoAcceptThreshold` on the listing, never public) but
   is **never instant** — the seller still confirms.
 - Rejecting requires a reason from a fixed ticklist, and every reason except

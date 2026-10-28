@@ -138,7 +138,9 @@ export class CreateListingDto {
   @Min(100)
   reservePrice?: number;
 
-  // Buy Now price in ZAR cents. Available only while bidCount is 0.
+  // RETIRED. Buy Now on an auction had no buyer path and is rejected by
+  // ListingsService.create(). Kept in the DTO only so an old client sending
+  // it gets a clear 400 instead of a silent field-strip.
   @IsOptional()
   @IsInt()
   @Min(100)

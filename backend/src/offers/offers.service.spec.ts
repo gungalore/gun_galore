@@ -48,6 +48,9 @@ function makeMocks() {
       delete: jest.fn(),
     },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
+    bid: {
+      create: jest.fn().mockResolvedValue({}),
+    },
   };
   (prisma as typeof prisma & { $transaction: unknown }).$transaction =
     jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma));
@@ -350,7 +353,9 @@ describe('accept — single-promise + CAS', () => {
       id: 'O1',
       listingId: 'L1',
       status: OfferStatus.PENDING,
+      offerAmount: 9_000,
       counterAmount: null,
+      buyerId: 'B1',
       listing: tasListing(),
     });
   }
@@ -386,6 +391,81 @@ describe('accept — single-promise + CAS', () => {
     expect(bulk).toBeTruthy();
     expect(spies.notifyBuyerOfReject).toHaveBeenCalledTimes(2);
     expect(spies.notifyBuyerOfAccept).toHaveBeenCalled();
+  });
+
+  it('reserves a single-item listing when the offer is accepted', async () => {
+    const { service, prisma } = makeMocks();
+    primeAccept(prisma);
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'O1',
+      listingId: 'L1',
+      status: OfferStatus.PENDING,
+      offerAmount: 9_000,
+      counterAmount: null,
+      buyerId: 'B1',
+      listing: tasListing({
+        listingType: 'BUY_NOW',
+        trackInventory: false,
+        price: 10_000,
+      }),
+    });
+
+    await service.accept('seller-clerk', 'O1');
+
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', status: 'ACTIVE' },
+      data: { status: 'PAYMENT_PENDING' },
+    });
+  });
+
+  it('closes and promotes an auction when an offer is accepted', async () => {
+    const { service, prisma } = makeMocks();
+    primeAccept(prisma);
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'O1',
+      listingId: 'L1',
+      status: OfferStatus.PENDING,
+      offerAmount: 15_000,
+      counterAmount: null,
+      buyerId: 'B1',
+      listing: tasListing({
+        listingType: 'AUCTION',
+        price: 10_000,
+        currentBid: 15_000,
+        bidCount: 2,
+        endTime: new Date(Date.now() + 3_600_000),
+      }),
+    });
+
+    await service.accept('seller-clerk', 'O1');
+
+    const reserve = prisma.listing.updateMany.mock.calls.find(
+      (c) => c[0].data?.status === 'PAYMENT_PENDING' && c[0].data?.endedAt,
+    );
+    expect(reserve?.[0].where).toEqual(
+      expect.objectContaining({
+        id: 'L1',
+        status: 'ACTIVE',
+        endedAt: null,
+        endTime: { gt: expect.any(Date) },
+      }),
+    );
+    expect(reserve?.[0].data).toEqual(
+      expect.objectContaining({
+        currentBidderId: 'B1',
+        currentBid: 15_000,
+        reserveMet: true,
+      }),
+    );
+    expect(prisma.bid.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        listingId: 'L1',
+        bidderId: 'B1',
+        amount: 15_000,
+        maxAmount: 15_000,
+        isWinner: true,
+      }),
+    });
   });
 });
 

@@ -1042,11 +1042,10 @@ export default function NewListingPage() {
             l.autoDeclineThreshold != null
               ? String(l.autoDeclineThreshold / 100)
               : f.autoDeclineThreshold,
-          offerBuyNow: l.buyNowPrice != null ? true : f.offerBuyNow,
-          buyNowPrice:
-            l.buyNowPrice != null
-              ? String(l.buyNowPrice / 100)
-              : f.buyNowPrice,
+          // Auction Buy Now is retired: never carry a legacy value into a
+          // relist, because create() now rejects it for auctions.
+          offerBuyNow: false,
+          buyNowPrice: '',
         }));
         // Steps 2-4 are now full of the seller's own answers. Nothing needs
         // unlocking any more — the whole form is on screen — so this used to
@@ -2259,10 +2258,8 @@ export default function NewListingPage() {
         // hidden anyway when a reserve is set.
         body.price = Math.floor(reserveCents * 0.7);
       }
-      // Only send buyNowPrice if the seller explicitly opted in.
-      if (form.offerBuyNow && form.buyNowPrice) {
-        body.buyNowPrice = Math.round(parseFloat(form.buyNowPrice) * 100);
-      }
+      // Auction Buy Now is retired and create() rejects it. Nothing may send
+      // buyNowPrice here, including a relist of a legacy auction.
     }
     return body;
   }

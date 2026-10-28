@@ -513,3 +513,40 @@ describe('offerToRunnerUp — moves the isWinner flag with the promotion', () =>
     expect(notifications.resolveByEntity).not.toHaveBeenCalled();
   });
 });
+
+describe('getAuctionState visibility', () => {
+  it('404s a non-public status instead of confirming the row exists', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing({ status: 'PENDING_REVIEW' }),
+      publicVisible: true,
+    });
+
+    await expect(service.getAuctionState('L1')).rejects.toThrow(
+      'Listing not found',
+    );
+  });
+
+  it('404s a members-only auction to an anonymous caller', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing(),
+      publicVisible: false,
+    });
+
+    await expect(service.getAuctionState('L1')).rejects.toThrow(
+      'Listing not found',
+    );
+  });
+
+  it('serves a members-only auction to a signed-in caller', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing(),
+      publicVisible: false,
+    });
+
+    const state = await service.getAuctionState('L1', 'U1');
+    expect(state.id).toBe('L1');
+  });
+});

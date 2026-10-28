@@ -10,6 +10,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuctionsService } from './auctions.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PlaceBidDto } from './dto/place-bid.dto';
 
@@ -17,12 +18,18 @@ import { PlaceBidDto } from './dto/place-bid.dto';
 export class AuctionsController {
   constructor(private readonly auctions: AuctionsService) {}
 
-  // PUBLIC: anyone can view live auction state
-  // SkipThrottle: called from listing detail SSR, would trip the IP bucket.
+  // PUBLIC for public-visible auctions; a members-only auction (firearms)
+  // requires the same session the listing detail page requires. OptionalAuth
+  // means an absent session is anonymous rather than a 401.
+  // SkipThrottle: called from listing detail SSR/polling, would trip the IP bucket.
   @Get(':listingId')
   @SkipThrottle()
-  state(@Param('listingId') listingId: string) {
-    return this.auctions.getAuctionState(listingId);
+  @UseGuards(OptionalAuthGuard)
+  state(
+    @Param('listingId') listingId: string,
+    @CurrentUser() userId?: string,
+  ) {
+    return this.auctions.getAuctionState(listingId, userId);
   }
 
   // BUYER: place / raise a proxy bid

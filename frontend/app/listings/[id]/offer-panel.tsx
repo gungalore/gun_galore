@@ -132,7 +132,13 @@ export default function OfferPanel({
     let active = true;
     const refresh = async () => {
       try {
-        const res = await fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' });
+        // Members-only auctions 404 to anonymous callers, so forward the
+        // session exactly like the auction panel does.
+        const token = await getToken().catch(() => null);
+        const res = await fetch(`${API_URL}/auctions/${listingId}`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!res.ok) return;
         const data = (await res.json()) as { currentBid: number | null; startingBid: number | null };
         if (active) setAuctionHighBid(data.currentBid ?? data.startingBid ?? 0);
@@ -143,7 +149,7 @@ export default function OfferPanel({
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [isAuction, listingId]);
+  }, [isAuction, listingId, getToken]);
 
   // /offers/mine returns every offer this buyer has ever made, each with its
   // listing.id — filter to this listing client-side. No new endpoint needed.

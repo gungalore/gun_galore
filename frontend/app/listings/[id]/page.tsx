@@ -1111,7 +1111,7 @@ export default async function ListingDetailPage({
                 listingId={listing.id}
                 listingPrice={listing.price}
                 sellerId={sellerUserId}
-                isAuction
+                isAuction={listing.listingType === 'AUCTION'}
                 secondary
               />
             )}

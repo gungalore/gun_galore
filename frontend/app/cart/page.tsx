@@ -444,9 +444,11 @@ export default function CartPage() {
         body: JSON.stringify({ buyerTermsAccepted: buyerTermsAck, lines }),
       });
       const data = await res.json().catch(() => ({}));
-      // Phase-1 payment gate: the API returns 503 "card payments are
-      // launching soon" until PAYMENTS_LIVE. Show the launching-soon state.
-      if (res.status === 503 || /launching soon/i.test(data?.message ?? '')) {
+      // Payment gate: the API returns 503 "card payments are launching soon"
+      // until PAYMENTS_LIVE, and a separate "cart checkout is coming soon"
+      // while CART_CHECKOUT_LIVE is off. Both are the friendly gate, not a
+      // failed checkout.
+      if (res.status === 503 || /launching soon|coming soon/i.test(data?.message ?? '')) {
         setComingSoon(true);
         return;
       }

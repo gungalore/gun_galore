@@ -252,10 +252,15 @@ export class TransactionsService {
       checkoutHold = { id: hold.id, quantity: hold.quantity };
     }
 
-    // ---- Offer-based checkout (TAKE_A_SHOT) ----
+    // ---- Offer-based checkout (Buy Now / Auction / legacy Take a Shot) ----
+    // TAKE_A_SHOT is retired but accepted here as a LEGACY completion path:
+    // offers already accepted on old rows must still be payable after the
+    // listing-type retirement. New offers are made on BUY_NOW and AUCTION.
     let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string } | null = null;
-    // P0.2 — auction-winner checkout takes a different validation +
+    // P0.2 - auction-winner checkout takes a different validation +
     // reservation path (the listing is ALREADY reserved for the winner).
+    // An accepted offer on an auction is promoted to this same state by
+    // OffersService.accept/acceptCounter, so it reuses the winner path.
     let auctionWin = false;
     if (dto.offerId) {
       const rawOffer = await this.prisma.offer.findUnique({ where: { id: dto.offerId } });
@@ -277,8 +282,41 @@ export class TransactionsService {
           'This offer is not on the listing you are trying to buy.',
         );
       }
-      if (listing.listingType !== 'TAKE_A_SHOT') throw new BadRequestException('Offer checkout requires a TAKE_A_SHOT listing');
+      if (
+        listing.listingType !== 'BUY_NOW' &&
+        listing.listingType !== 'AUCTION' &&
+        listing.listingType !== 'TAKE_A_SHOT'
+      ) {
+        throw new BadRequestException(
+          'Offers are only available on Buy Now and Auction listings.',
+        );
+      }
       offerRecord = rawOffer;
+      if (listing.listingType === 'AUCTION') {
+        // Same winner-only gate as the direct auction checkout below. The
+        // seller's accept closed the auction and promoted this buyer to the
+        // winning position; from here the offer checkout is byte-for-byte an
+        // auction-win checkout (auction fee split, 24h window, CONVERTED).
+        if (listing.status !== ListingStatus.PAYMENT_PENDING || !listing.endedAt) {
+          throw new BadRequestException(
+            'This auction offer is not awaiting payment - it may still be running, or it has already been settled.',
+          );
+        }
+        if (listing.currentBidderId !== buyer.id) {
+          throw new ForbiddenException(
+            'Only the buyer whose offer was accepted can pay for this auction.',
+          );
+        }
+        if (listing.expiresAt && listing.expiresAt < new Date()) {
+          throw new BadRequestException(
+            'The 24-hour payment window for this accepted offer has lapsed.',
+          );
+        }
+        if (!listing.currentBid || listing.currentBid <= 0) {
+          throw new BadRequestException('Agreed price is missing.');
+        }
+        auctionWin = true;
+      }
     } else if (listing.listingType === 'AUCTION') {
       // ---- Auction-winner checkout (P0.2) ----
       // finalizeAuction already flipped the listing ACTIVE→PAYMENT_PENDING
@@ -395,8 +433,21 @@ export class TransactionsService {
     // a meaningful value.
     const buyerPaysProcessingFee = true;
 
+    // Accepted-offer reservation. OffersService.accept/acceptCounter reserves
+    // the item the moment the seller accepts: a single-item listing flips to
+    // PAYMENT_PENDING, and a tracked listing moves one unit from available to
+    // reserved. This checkout must therefore NOT reserve a second time.
+    // Auction offers are excluded: they were promoted to the auction-win
+    // state, and the expiresAt CAS below is their one-time claim.
+    const offerReserved =
+      offerRecord !== null &&
+      !auctionWin &&
+      (listing.trackInventory
+        ? listing.quantityReserved > 0
+        : listing.status === ListingStatus.PAYMENT_PENDING);
+
     // Quantity (Phase 8a). For every legacy/single-item listing
-    // (trackInventory=false — the default) this resolves to exactly 1, so
+    // (trackInventory=false - the default) this resolves to exactly 1, so
     // the entire flow below is byte-for-byte unchanged. Only an
     // inventory-tracked BUY_NOW listing can resolve quantity > 1. Offers
     // are always single-item.
@@ -405,9 +456,12 @@ export class TransactionsService {
       requested: offerRecord || auctionWin ? 1 : (dto as { quantity?: number }).quantity,
       trackInventory: listing.trackInventory,
       // The hold already removed its ONE unit from quantityAvailable; add it
-      // back so the buyer is not told their own held unit is sold out.
+      // back so the buyer is not told their own held unit is sold out. The
+      // same is true of a unit reserved when an offer was accepted.
       quantityAvailable:
-        listing.quantityAvailable + (checkoutHold?.quantity ?? 0),
+        listing.quantityAvailable +
+        (checkoutHold?.quantity ?? 0) +
+        (offerReserved && listing.trackInventory ? 1 : 0),
       quantityReserved: listing.quantityReserved,
     });
     if ('error' in qres) throw new BadRequestException(qres.error);
@@ -589,6 +643,9 @@ export class TransactionsService {
           }
           reservedExtra = stockRemovedNow;
         }
+      } else if (offerReserved) {
+        // Already reserved by the accepted offer (see offerReserved above).
+        // Claiming it again would double-count stock and could oversell.
       } else {
         const reserve = auctionWin
           ? await this.prisma.listing.updateMany({
@@ -814,6 +871,7 @@ export class TransactionsService {
       buyer,
       quantity,
       auctionWin,
+      offerReserved,
       listingPrice,
       shippingCost,
       shippingHandlingCents,
@@ -1087,6 +1145,7 @@ export class TransactionsService {
       buyer,
       quantity,
       auctionWin,
+      offerReserved,
       listingPrice,
       shippingCost,
       shippingHandlingCents,
@@ -1133,21 +1192,26 @@ export class TransactionsService {
       // unbuyable zombie. This mirrors reversalListingData's auction rule.
       // Tracked listing: give the units back (quantityAvailable += qty,
       // quantityReserved -= qty) + re-activate. Legacy: flip back to ACTIVE.
-      await this.prisma.listing.update({
-        where: { id: listing.id },
-        data: auctionWin
-          ? {
-              status: ListingStatus.PAYMENT_PENDING,
-              expiresAt: listing.expiresAt ?? undefined,
-            }
-          : listing.trackInventory
+      // An accepted offer is different: its reservation must SURVIVE a gateway
+      // failure so the buyer can retry and no third party can buy the item in
+      // the meantime. Leave the listing exactly as the acceptance left it.
+      if (!offerReserved) {
+        await this.prisma.listing.update({
+          where: { id: listing.id },
+          data: auctionWin
             ? {
-                status: ListingStatus.ACTIVE,
-                quantityAvailable: { increment: quantity },
-                quantityReserved: { decrement: quantity },
+                status: ListingStatus.PAYMENT_PENDING,
+                expiresAt: listing.expiresAt ?? undefined,
               }
-            : { status: ListingStatus.ACTIVE },
-      });
+            : listing.trackInventory
+              ? {
+                  status: ListingStatus.ACTIVE,
+                  quantityAvailable: { increment: quantity },
+                  quantityReserved: { decrement: quantity },
+                }
+              : { status: ListingStatus.ACTIVE },
+        });
+      }
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
         `Ozow createPayment failed for tx ${tx.id} (amount R${(
@@ -1165,6 +1229,24 @@ export class TransactionsService {
     // Persist the Ozow payment id (gatewayCheckoutId — the primary webhook
     // match) + the minted merchant ref (fallback match) and mark the offer
     // CONVERTED if this was an offer checkout.
+    // An auction offer can also be paid from the listing page's winner CTA,
+    // which carries no offerId. Resolve that offer here so it does not stay
+    // ACCEPTED (and keep showing a "pay now" card) after the sale is paid.
+    let auctionOffer: { id: string } | null = null;
+    if (auctionWin && !offerRecord) {
+      try {
+        auctionOffer = await this.prisma.offer.findFirst({
+          where: {
+            listingId: listing.id,
+            buyerId: buyer.id,
+            status: 'ACCEPTED',
+          },
+          select: { id: true },
+        });
+      } catch {
+        auctionOffer = null;
+      }
+    }
     const [updated] = await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: tx.id },
@@ -1178,7 +1260,12 @@ export class TransactionsService {
             where: { id: offerRecord.id },
             data: { status: 'CONVERTED', transactionId: tx.id },
           })]
-        : []),
+        : auctionOffer
+          ? [this.prisma.offer.update({
+              where: { id: auctionOffer.id },
+              data: { status: 'CONVERTED', transactionId: tx.id },
+            })]
+          : []),
     ]);
 
     return {

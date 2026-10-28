@@ -28,7 +28,6 @@ const OFFER_TTL_HOURS = 48;
 //   frontend/app/my/offers/page.tsx ("24 hours to act on a counter" +
 //   the ExpiryCountdown on COUNTERED cards).
 const COUNTER_TTL_HOURS = 24;
-const CHECKOUT_TTL_HOURS = 24;
 // eBay-style attempt cap — a buyer gets this many offers per listing
 // across the row's lifetime (re-offers re-use the row; see submit()).
 // ⚠️ ONE. Operator, 2026-08-27: "Buyer gets One chance to make a reasonable
@@ -347,21 +346,34 @@ export class OffersService {
       );
     }
 
-    // Atomic guard: include status=PENDING in the WHERE clause so a
-    // concurrent counter() / reject() cannot interleave between the
-    // read above and this write. If another transition already won,
-    // updateMany returns count=0 and we surface the same error.
-    const guard = await this.prisma.offer.updateMany({
-      where: { id: offerId, status: OfferStatus.PENDING },
-      data: {
-        status: OfferStatus.ACCEPTED,
-        expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
-      },
+    // Reserve the item as part of the SAME transaction as the accept. Without
+    // this the listing stayed ACTIVE and a rival could Buy-Now it while the
+    // accepted-offer buyer was paying. Auction offers are promoted to the
+    // auction-win state (ended, winner, 24h window) so they reuse the proven
+    // winner checkout instead of inventing a second auction settlement path.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.reserveListingForAcceptedOffer(
+        tx,
+        listing,
+        offer.offerAmount,
+        offer.buyerId,
+      );
+      // Atomic guard: include status=PENDING in the WHERE clause so a
+      // concurrent counter() / reject() cannot interleave between the
+      // read above and this write. If another transition already won,
+      // updateMany returns count=0 and we surface the same error.
+      const guard = await tx.offer.updateMany({
+        where: { id: offerId, status: OfferStatus.PENDING },
+        data: {
+          status: OfferStatus.ACCEPTED,
+          expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
+        },
+      });
+      if (guard.count === 0) {
+        throw new BadRequestException('Offer is no longer pending');
+      }
+      return tx.offer.findUnique({ where: { id: offerId } });
     });
-    if (guard.count === 0) {
-      throw new BadRequestException('Offer is no longer pending');
-    }
-    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     // The item is promised to this buyer — decline every other open
     // offer on the listing (eBay behaviour) so no rival buyer is left
@@ -516,8 +528,11 @@ export class OffersService {
   // Buyer accepts the seller's counter
   // ----------------------------------------------------------------
   async acceptCounter(buyerId: string, offerId: string) {
-    const { offer } = await this.loadOfferForBuyer(buyerId, offerId);
+    const { offer, listing } = await this.loadOfferForBuyer(buyerId, offerId);
     if (offer.status !== OfferStatus.COUNTERED) {
+      throw new BadRequestException('No counter to accept');
+    }
+    if (!offer.counterAmount) {
       throw new BadRequestException('No counter to accept');
     }
 
@@ -542,17 +557,27 @@ export class OffersService {
     // clause so a concurrent rejectCounter() / expiry cron cannot interleave
     // between the read above and this write. If another transition already
     // won, updateMany returns count=0 and we surface the same error.
-    const guard = await this.prisma.offer.updateMany({
-      where: { id: offerId, status: OfferStatus.COUNTERED },
-      data: {
-        status: OfferStatus.ACCEPTED,
-        expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
-      },
+    // The listing is reserved in the SAME transaction, so a lost race cannot
+    // leave the item reserved for a buyer whose accept did not land.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.reserveListingForAcceptedOffer(
+        tx,
+        listing,
+        offer.counterAmount!,
+        offer.buyerId,
+      );
+      const guard = await tx.offer.updateMany({
+        where: { id: offerId, status: OfferStatus.COUNTERED },
+        data: {
+          status: OfferStatus.ACCEPTED,
+          expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
+        },
+      });
+      if (guard.count === 0) {
+        throw new BadRequestException('No counter to accept');
+      }
+      return tx.offer.findUnique({ where: { id: offerId } });
     });
-    if (guard.count === 0) {
-      throw new BadRequestException('No counter to accept');
-    }
-    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     // Item promised to this buyer — close out every other open offer.
     void this.declineSiblings(offer.listingId, offerId);
@@ -737,12 +762,27 @@ export class OffersService {
         status: { in: [OfferStatus.PENDING, OfferStatus.COUNTERED, OfferStatus.ACCEPTED] },
         expiresAt: { lt: now },
       },
-      select: { id: true, status: true, buyerId: true, listingId: true },
+      select: {
+        id: true,
+        status: true,
+        buyerId: true,
+        listingId: true,
+        listing: {
+          select: {
+            id: true,
+            listingType: true,
+            status: true,
+            trackInventory: true,
+            quantityAvailable: true,
+            quantityReserved: true,
+          },
+        },
+      },
       take: 200,
     });
     let expired = 0;
     for (const o of stale) {
-      // Guarded flip — a decision landing mid-sweep wins over the expiry.
+      // Guarded flip - a decision landing mid-sweep wins over the expiry.
       const claim = await this.prisma.offer.updateMany({
         where: { id: o.id, status: o.status, expiresAt: { lt: now } },
         data: { status: OfferStatus.EXPIRED },
@@ -752,16 +792,29 @@ export class OffersService {
       // Clear any still-open action-required inbox rows on this offer.
       void this.notifications.resolveByEntity('offer', o.id);
       if (o.status === OfferStatus.PENDING) {
-        // Seller never responded within 48h — tell the buyer AND the
+        // Seller never responded within 48h - tell the buyer AND the
         // seller (who lost a real sale and was previously never told).
         void this.notifyOfferExpired(o.id);
         void this.notifyOfferExpiredSeller(o.id);
       } else if (o.status === OfferStatus.COUNTERED) {
-        // Buyer never answered the counter — tell the seller.
+        // Buyer never answered the counter - tell the seller.
         void this.notifyCounterExpired(o.id);
+      } else if (o.listing?.listingType === 'AUCTION') {
+        // An accepted AUCTION offer was promoted to the auction-win state.
+        // The every-minute unpaid-winner sweep owns that listing (it expires
+        // it and applies the strike), so releasing it here would resurrect an
+        // ended auction that can never be bid on or finalized again.
+        continue;
       } else {
-        // ACCEPTED lapsed: buyer blew the 24h pay window. Tell both
-        // sides and strike the buyer.
+        // ACCEPTED lapsed: buyer blew the 24h pay window. Release the unit we
+        // reserved on accept, then tell both sides and strike the buyer.
+        if (o.listing) {
+          await this.releaseAcceptedOfferReservation(o.listing).catch((err) => {
+            this.logger.error(
+              `releaseAcceptedOfferReservation failed for listing ${o.listingId}: ${(err as Error).message}`,
+            );
+          });
+        }
         void this.notifyAcceptedLapsed(o.id);
         void this.strikeUnpaidOfferBuyer(o.buyerId, o.listingId);
       }
@@ -809,10 +862,18 @@ export class OffersService {
         buyerPayRemindedAt: null,
         expiresAt: { gt: now, lte: new Date(now.getTime() + 6 * 3600_000) },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        listing: { select: { listingType: true } },
+      },
       take: 100,
     });
     for (const o of acceptedSoon) {
+      // Auction offers share the listing's 24h window; the every-minute
+      // auction reminder owns that nudge, and sending a second one would
+      // double-SMS the same buyer. The expiry sweep likewise leaves these to
+      // the auction sweep.
+      if (o.listing?.listingType === 'AUCTION') continue;
       const claim = await this.prisma.offer.updateMany({
         where: {
           id: o.id,
@@ -830,9 +891,148 @@ export class OffersService {
     return { reminded };
   }
 
-  // ----------------------------------------------------------------
+    // ----------------------------------------------------------------
   // Private helpers
   // ----------------------------------------------------------------
+
+  /**
+   * Reserve the item for a buyer whose offer was just accepted.
+   *
+   * MUST run inside the same transaction as the offer status flip. A
+   * single-item listing becomes PAYMENT_PENDING; a track-inventory listing
+   * has ONE unit moved from available to reserved (and only flips to
+   * PAYMENT_PENDING when that was the last unit). An auction offer is
+   * promoted to exactly the state `finalizeAuction` leaves a normal win in:
+   * ended, winner recorded, winning bid row and a fresh 24h pay window. That
+   * is what lets the existing winner-checkout path settle it without a
+   * second, divergent auction-settlement code path.
+   *
+   * Throws BadRequestException when the listing moved on, which rolls the
+   * offer accept back with it.
+   */
+  private async reserveListingForAcceptedOffer(
+    tx: Prisma.TransactionClient,
+    listing: {
+      id: string;
+      listingType: string;
+      trackInventory: boolean;
+      currentBid: number | null;
+    },
+    amount: number,
+    buyerId: string,
+  ): Promise<void> {
+    const now = new Date();
+
+    if (listing.listingType === 'AUCTION') {
+      const claim = await tx.listing.updateMany({
+        where: {
+          id: listing.id,
+          status: 'ACTIVE',
+          endedAt: null,
+          endTime: { gt: now },
+          OR: [{ currentBid: null }, { currentBid: { lte: amount } }],
+        },
+        data: {
+          status: 'PAYMENT_PENDING',
+          endedAt: now,
+          currentBidderId: buyerId,
+          currentBid: amount,
+          reserveMet: true,
+          expiresAt: new Date(now.getTime() + COUNTER_TTL_HOURS * 3_600_000),
+          winnerRemindedAt: null,
+          bidCount: { increment: 1 },
+        },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException(
+          'This auction has already moved on - it may have ended or a higher bid landed. Refresh before accepting.',
+        );
+      }
+      // Same winning-bid semantics as a normal auction win, so /my/bids and
+      // the listing page show the accepted-offer buyer the pay CTA.
+      await tx.bid.create({
+        data: {
+          listingId: listing.id,
+          bidderId: buyerId,
+          amount,
+          maxAmount: amount,
+          isWinner: true,
+        },
+      });
+      return;
+    }
+
+    if (listing.trackInventory) {
+      const claim = await tx.listing.updateMany({
+        where: {
+          id: listing.id,
+          status: 'ACTIVE',
+          quantityAvailable: { gte: 1 },
+        },
+        data: {
+          quantityAvailable: { decrement: 1 },
+          quantityReserved: { increment: 1 },
+        },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException(
+          'This item is no longer available - another buyer is completing checkout, or it has already sold.',
+        );
+      }
+      // Hide it from browse only once the last unit is gone.
+      await tx.listing.updateMany({
+        where: { id: listing.id, quantityAvailable: { lte: 0 } },
+        data: { status: 'PAYMENT_PENDING' },
+      });
+      return;
+    }
+
+    const claim = await tx.listing.updateMany({
+      where: { id: listing.id, status: 'ACTIVE' },
+      data: { status: 'PAYMENT_PENDING' },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'This item is no longer available - another buyer is completing checkout, or it has already sold.',
+      );
+    }
+  }
+
+  /**
+   * Put the item back when an ACCEPTED offer lapses unpaid. Mirrors the
+   * reservation made by reserveListingForAcceptedOffer. Auctions are skipped
+   * by the caller: the every-minute unpaid-winner sweep owns an ended auction
+   * (including the strike), so releasing it here would resurrect a listing
+   * that can no longer be bid on.
+   */
+  private async releaseAcceptedOfferReservation(listing: {
+    id: string;
+    trackInventory: boolean;
+    quantityReserved: number;
+    quantityAvailable: number;
+    status: string;
+  }): Promise<void> {
+    if (listing.trackInventory) {
+      const available = listing.quantityAvailable + 1;
+      await this.prisma.listing.updateMany({
+        where: { id: listing.id, quantityReserved: { gte: 1 } },
+        data: {
+          quantityAvailable: { increment: 1 },
+          quantityReserved: { decrement: 1 },
+          ...(listing.status === 'PAYMENT_PENDING' && available > 0
+            ? { status: 'ACTIVE' }
+            : {}),
+        },
+      });
+      return;
+    }
+    await this.prisma.listing.updateMany({
+      where: { id: listing.id, status: 'PAYMENT_PENDING' },
+      data: { status: 'ACTIVE' },
+    });
+  }
+
+
   private async loadOfferForSeller(sellerId: string, offerId: string) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
@@ -1058,16 +1258,11 @@ export class OffersService {
         1,
         Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000),
       );
-      const token = await this.actionTokens
-        .mint({
-          purpose: 'CHECKOUT',
-          targetType: 'listing',
-          targetId: offer.listing.id,
-          authorisedUserId: offer.buyerId,
-          expiresAt: offer.expiresAt,
-          metadata: { offerId: offer.id, agreedAmount: amount },
-        })
-        .catch(() => null);
+      // The offer checkout page carries the offerId and the agreed amount; the
+      // buyer signs in (or is already signed in) and pays there. An accepted
+      // offer also reserves the listing, so the plain listing checkout would
+      // 404 for it - this is the one correct destination for BOTH Buy Now and
+      // auction offers.
       await this.notifications.offerPayReminderBuyer({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1077,7 +1272,7 @@ export class OffersService {
         offerId: offer.id,
         amount,
         hoursLeft,
-        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
       });
     } catch (err) {
       this.logger.error(`remindBuyerToPay failed: ${(err as Error).message}`);
@@ -1172,22 +1367,9 @@ export class OffersService {
         include: { listing: true, buyer: true },
       });
       if (!offer) return;
-      // Offer accepted → mint a CHECKOUT token for the buyer so the
-      // SMS link drops them straight on the checkout page (no
-      // sign-in). 24h expiry matches the "pay within 24h" rule.
-      const token = await this.actionTokens
-        .mint({
-          purpose: 'CHECKOUT',
-          targetType: 'listing',
-          targetId: offer.listing.id,
-          authorisedUserId: offer.buyerId,
-          expiresAt: new Date(Date.now() + CHECKOUT_TTL_HOURS * 3600_000),
-          metadata: { offerId: offer.id, agreedAmount: offer.offerAmount },
-        })
-        .catch((err) => {
-          this.logger.warn(`CHECKOUT token mint failed: ${(err as Error).message}`);
-          return null;
-        });
+      // Accepted offers reserve the listing, so the buyer must pay on the
+      // offer checkout page (which knows the agreed amount); the plain listing
+      // checkout would see a reserved listing and 404.
       await this.notifications.offerAccepted({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1196,7 +1378,7 @@ export class OffersService {
         listingId: offer.listing.id,
         acceptedAmount: offer.offerAmount,
         offerId: offer.id,
-        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfAccept failed: ${(err as Error).message}`);
@@ -1216,19 +1398,7 @@ export class OffersService {
         include: { listing: true, buyer: true },
       });
       if (!offer || !offer.counterAmount) return;
-      const token = await this.actionTokens
-        .mint({
-          purpose: 'CHECKOUT',
-          targetType: 'listing',
-          targetId: offer.listing.id,
-          authorisedUserId: offer.buyerId,
-          expiresAt: new Date(Date.now() + CHECKOUT_TTL_HOURS * 3600_000),
-          metadata: { offerId: offer.id, agreedAmount: offer.counterAmount },
-        })
-        .catch((err) => {
-          this.logger.warn(`CHECKOUT token mint failed: ${(err as Error).message}`);
-          return null;
-        });
+      // Same destination and reason as notifyBuyerOfAccept.
       await this.notifications.offerAccepted({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1237,7 +1407,7 @@ export class OffersService {
         listingId: offer.listing.id,
         acceptedAmount: offer.counterAmount,
         offerId: offer.id,
-        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfCounterAccept failed: ${(err as Error).message}`);
