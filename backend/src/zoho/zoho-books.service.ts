@@ -483,7 +483,6 @@ export class ZohoBooksService {
    * never throws.
    */
   async createCommissionInvoice(transactionId: string): Promise<void> {
-    if (!this.isEnabled()) return;
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -512,6 +511,13 @@ export class ZohoBooksService {
     // them once the payout actually leaves the bank. (The zero-total
     // settlement advice this used to create is retired.)
     if (tx.commissionZar <= 0) return;
+    // A fee-bearing sale needs its seller document even when the Books rail
+    // is dark. Record the skip loudly instead of returning with a null status,
+    // which made this exact failure invisible.
+    if (!this.isEnabled()) {
+      await this.markDisabled(transactionId);
+      return;
+    }
     // FLOW-F4 (H21) — PRIVATE_ARRANGE was skipped here on the false premise
     // that "we don't hold funds / take commission on that flow". We DO:
     // fee.calculator charges the same commission on PA sales, so skipping the
@@ -648,7 +654,10 @@ export class ZohoBooksService {
    * failures persist as FAILED on the transaction.
    */
   async createBuyerInvoice(transactionId: string): Promise<void> {
-    if (!this.isEnabled()) return;
+    if (!this.isEnabled()) {
+      await this.markDisabled(transactionId);
+      return;
+    }
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -1064,7 +1073,6 @@ export class ZohoBooksService {
    * Idempotent: skips if zohoShippingJournalId is set. Never throws.
    */
   async createShippingCostJournal(transactionId: string): Promise<void> {
-    if (!this.isEnabled()) return;
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -1075,6 +1083,10 @@ export class ZohoBooksService {
     if (tx.zohoShippingJournalId) return; // already recorded
     const carrierCents = Math.max(0, tx.shippingCost ?? 0);
     if (carrierCents <= 0) return; // no waybill on this sale
+    if (!this.isEnabled()) {
+      await this.markDisabled(transactionId);
+      return;
+    }
 
     try {
       const trustAccountId = await this.resolveAccountId(
@@ -1512,6 +1524,51 @@ export class ZohoBooksService {
         zohoSyncLastAttemptAt: new Date(),
       },
     });
+  }
+
+  /**
+   * The Books rail is intentionally dark until ZOHO_BOOKS_ENABLED=true. But a
+   * paid sale that receives no invoice must not disappear silently: stamp the
+   * transaction SKIPPED and raise one Desk alert per transaction so the
+   * operator can enable Books and use /admin/transactions/:id/zoho-retry.
+   */
+  private async markDisabled(transactionId: string): Promise<void> {
+    const reason =
+      'Zoho Books is disabled (ZOHO_BOOKS_ENABLED is not true); no document was raised.';
+    try {
+      await this.markSkipped(transactionId, reason);
+    } catch (err) {
+      this.logger.warn(
+        `Could not stamp Zoho-disabled status on tx ${transactionId}: ${(err as Error).message}`,
+      );
+    }
+
+    try {
+      const existing = await this.prisma.adminAlert.findFirst({
+        where: {
+          type: 'ZOHO_BOOKS_DISABLED',
+          referenceId: transactionId,
+          resolved: false,
+        },
+        select: { id: true },
+      });
+      if (existing) return;
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'ZOHO_BOOKS_DISABLED',
+          referenceId: transactionId,
+          urgent: true,
+          context:
+            `Zoho Books is disabled, so no buyer invoice was raised for transaction ${transactionId}. ` +
+            'Enable ZOHO_BOOKS_ENABLED and the ZOHO_BOOKS_* credentials, then use ' +
+            `POST /api/admin/transactions/${transactionId}/zoho-retry to backfill it.`,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not raise Zoho-disabled alert for tx ${transactionId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   private async markFailed(

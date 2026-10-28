@@ -520,6 +520,44 @@ describe('ZohoBooksService buyer paperwork', () => {
       }),
     );
   });
+
+  it('records a visible skip and raises one alert when Books is disabled', async () => {
+    process.env = {
+      ...originalEnv,
+      ZOHO_BOOKS_ENABLED: 'false',
+      ZOHO_BOOKS_CLIENT_ID: '',
+      ZOHO_BOOKS_CLIENT_SECRET: '',
+      ZOHO_BOOKS_REFRESH_TOKEN: '',
+      ZOHO_BOOKS_ORG_ID: '',
+    };
+    const db = {
+      transaction: { update: jest.fn().mockResolvedValue({}) },
+      adminAlert: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const svc = new ZohoBooksService(db as never);
+    await svc.createBuyerInvoice('tx-dark');
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(db.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tx-dark' },
+        data: expect.objectContaining({ zohoSyncStatus: 'SKIPPED' }),
+      }),
+    );
+    expect(db.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'ZOHO_BOOKS_DISABLED',
+          referenceId: 'tx-dark',
+        }),
+      }),
+    );
+  });
 });
 
 
