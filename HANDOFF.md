@@ -5,7 +5,58 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-27**.
+Last updated: **2026-10-28**.
+
+## 2026-10-28 - BODY-ONLY EVIDENCE, 5.2 SUITABILITY WRITER, DOCUMENT CAPTURE (FULL DEPLOY)
+
+Deployed `75044cc4` (rollback `alloutdoor-20261028-115634.dump`, 34,071,573
+bytes; three migrations applied; health A-2 OK; public 200 A-2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**What changed.**
+
+- **Evidence is body content, always.** Every evidence container is now
+  `placement: 'body'`; `EVIDENCE_ANNEXURE_MAX` is 0. Only DFO/CFR-required
+  documents take an annexure letter. The new **Incident and crime scene** group
+  adds `BREAK_IN_PHOTO`, `DAMAGE_PHOTO`, `CCTV_STILL`,
+  `ARMED_RESPONSE_REPORT`, `REPAIR_QUOTE`, `STOLEN_ITEMS_LIST`, `NEWS_REPORT`
+  and `NEIGHBOUR_STATEMENT`. Optional documents (activity log, incident report,
+  character reference, employment letter, previous motivation, OTHER) also
+  print in the body. Evidence no longer ticks a document row.
+- **The 5.2 page is now written for the application.** `motivation-suitability.ts`
+  builds the exact question ("Why is the Glock 43X, chambered in 9mm, suited for
+  self-defence inside a townhouse?"), and the service writes 12-16 bullet facts
+  in four groups, ~400 words. **Stopping power** and **over-penetration** are
+  required for self-defence and hunting; velocity, energy, weight, dimensions,
+  capacity and availability are refused. Result stored on `Motivation`, hashed
+  for reuse, printed by `motivation-pdf.service.ts`.
+- **The pack chooses its four body items.** A deterministic curator
+  (`motivation-evidence-curator.ts`) ranks the application's evidence by
+  purpose, container, description quality and diversity, stores the selection
+  and the renderer uses it. Older rows fall back to the first four.
+- **One-pass capture.** `DocumentCaptureService` reads the page once (full text
+  + every printed label/value pair; plus a visual description for photographs).
+  It is wired into both extract services, carried through `DocumentIdentify`,
+  and stored on `Credential`/`MotivationUpload` (`captureEncrypted`,
+  `captureVersion`, `captureAt`). The facts reach Jev's filing state. The
+  container projection still uses the existing tuned extractor.
+- **Nothing dormant enters.** Vault `create` and motivation `addUpload` refuse
+  `OTHER`/null-container evidence before bytes are written; if the member gives
+  words, the evidence classifier re-runs once. The motivation sheet shows an
+  unplaced-upload dialog with the reason, two description attempts and a delete
+  nudge after the final refusal. A mismatched endorsement is refused, not
+  demoted to `OTHER`.
+
+**Migrations.** `20261028120000_motivation_suitability`,
+`20261028130000_motivation_evidence_selection`,
+`20261028140000_document_capture`. All additive.
+
+**Gates.** Backend `tsc` clean; 389 suites / 5,944 passed / 8 skipped.
+Frontend `tsc` clean; 159 files / 1,819 passed / 1 skipped; foreground
+production build clean.
+
+**Next:** open one regenerated pack and check the 5.2 page and the Activities
+2×2; the capture is stored but not yet used as the projection source.
 
 ## 2026-10-27 - MOTIVATION EXHIBIT PROMPTS REWRITTEN TO THE IMAGINE GUIDE (BACKEND DEPLOY)
 
