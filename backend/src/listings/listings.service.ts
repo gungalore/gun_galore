@@ -298,6 +298,25 @@ const PUBLICLY_VISIBLE_STATUSES: ListingStatus[] = [
   ListingStatus.EXPIRED,
 ];
 
+// A card needs a cover photo (or an approved hero video). Listings are created
+// ACTIVE before their photos upload (the create call only receives imageCount),
+// so a browse fetch in that gap used to return a "No photo" card - and it stayed
+// stale because adding an image row does NOT change Listing.updatedAt, so the
+// live-refresh token never moved. Every public card query now requires card
+// media; the first addImage() reindexes the listing, which makes it appear (and
+// moves the live-version count). The owner's /my/listings query is deliberately
+// NOT filtered - the seller must see a photo-less row to fix it.
+const HAS_CARD_MEDIA: Prisma.ListingWhereInput = {
+  OR: [
+    { images: { some: { isPrimary: true } } },
+    {
+      video: {
+        is: { status: ListingVideoStatus.APPROVED, isHero: true },
+      },
+    },
+  ],
+};
+
 // Listing types that carry NO listed sale price — the buyer names a price
 // instead (TAKE_A_SHOT). The price guards below treat it accordingly: price
 // must be omitted, not required.
@@ -1895,7 +1914,10 @@ export class ListingsService {
     });
 
     // Only index ACTIVE listings — pending/rejected shouldn't surface in search.
-    if (listing.status === ListingStatus.ACTIVE) {
+    if (
+      listing.status === ListingStatus.ACTIVE &&
+      listing.images.some((i) => i.isPrimary)
+    ) {
       await this.indexListing({ ...listing, category });
     }
 
@@ -1973,6 +1995,7 @@ export class ListingsService {
     const where: Prisma.ListingWhereInput = {
       status: ListingStatus.ACTIVE,
       isDealListing: false,
+      ...HAS_CARD_MEDIA,
       ...this.publicOnly(userId),
     };
     const [catalog, saves] = await Promise.all([
@@ -2483,8 +2506,9 @@ export class ListingsService {
         id: { in: ids },
         status: 'ACTIVE',
         isDealListing: false,
+        ...HAS_CARD_MEDIA,
         // A members-only listing must not come back through the
-        // recently-viewed rail either — the client holds the ids in
+        // recently-viewed rail either - the client holds the ids in
         // localStorage, which survives sign-out.
         ...this.publicOnly(userId),
       },
@@ -2768,7 +2792,7 @@ export class ListingsService {
     }
 
     const rows = await this.prisma.listing.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, ...HAS_CARD_MEDIA },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
@@ -2836,7 +2860,8 @@ export class ListingsService {
     const where: Record<string, unknown> = {
       status: 'ACTIVE',
       isDealListing: false,
-      // …and publicVisible for signed-out callers: the same chokepoint, one
+      ...HAS_CARD_MEDIA,
+      // .and publicVisible for signed-out callers: the same chokepoint, one
       // audience narrower. Regulated stock stays fully functional for members.
       ...this.publicOnly(userId),
     };
@@ -3732,7 +3757,7 @@ export class ListingsService {
       'listings',
     );
 
-    return this.prisma.listingImage.create({
+    const image = await this.prisma.listingImage.create({
       data: {
         listingId: id,
         url,
@@ -3741,6 +3766,18 @@ export class ListingsService {
         isPrimary: imageCount === 0,
       },
     });
+    // The create path deliberately does not index a listing until it has a
+    // cover photo (the browse queries filter for one). Reindex on the first
+    // image so the listing becomes searchable at the same moment it becomes
+    // visible in the browse grids.
+    if (imageCount === 0) {
+      void this.reindexById(id).catch((err) =>
+        this.logger.warn(
+          `reindex after first image failed for ${id}: ${(err as Error).message}`,
+        ),
+      );
+    }
+    return image;
   }
 
   /**

@@ -75,6 +75,15 @@ describe('ListingsService — browse filters & brand facet', () => {
     expect(arg.where).toMatchObject({ status: 'ACTIVE' });
   });
 
+  it('excludes listings with no card media from every browse surface', async () => {
+    await service.browse({} as never);
+    const arg = prisma.listing.findMany.mock.calls[0][0];
+    expect(arg.where.OR).toEqual([
+      { images: { some: { isPrimary: true } } },
+      { video: { is: { status: 'APPROVED', isHero: true } } },
+    ]);
+  });
+
   it('listBrands returns distinct makes (most-listed first), dropping blanks/null', async () => {
     prisma.listing.groupBy.mockResolvedValue([
       { make: 'Glock', _count: { make: 9 } },

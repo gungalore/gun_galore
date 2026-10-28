@@ -205,11 +205,11 @@ export function ListingCard({ listing }: { listing: Listing }) {
             their neighbours. Title drops to secondary; price sits alone in
             League Spartan at 17px. */}
         <div className="p-3">
-          <div className="flex items-center justify-between">
-            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+          <div className="flex flex-wrap items-center justify-between gap-y-1">
+            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap', flexShrink: 0 }}>
               <span
                 style={{
-                  // Gold on auctions, ink on Buy Now — the pack's own
+                  // Gold on auctions, ink on Buy Now - the pack's own
                   // split, and the only thing telling the two modes apart at a
                   // glance in a mixed feed. Every price used to be red.
                   color:
@@ -221,6 +221,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
                   fontSize: 19,
                   letterSpacing: '-0.02em',
                   fontVariantNumeric: 'tabular-nums',
+                  // On a 2-column phone card the seller verification chips
+                  // used to squeeze this span until the browser broke "R 10"
+                  // across two lines. A price is one token; it may not wrap.
+                  // The row wraps instead, dropping the chips to their own
+                  // line when they do not fit.
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {/* For auctions, show the current bid (or starting bid if no bids yet). */}
