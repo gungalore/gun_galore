@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - MOTIVATION EXHIBITS: USER-NAMED QUARRY PRIORITISED OVER RESEARCH DEFAULTS
+
+Deployed `83838288` (full; rollback `alloutdoor-20261029-161855.dump`, 36,000,664 bytes).
+
+**The fault.** When generating Section 3.1 ("Purpose Exhibits"), `quarriesFor` only scanned `cartridgeText` (static cartridge research) and ignored user answers (`intended_quarry`, `hunting_history`). For MO000106 (.45-70 Govt), the cartridge research listed warthog and kudu, so Page 5/6 exhibits showed Warthog and Kudu while Section 3 ("My Hunting") described Blue Wildebeest and Red Hartebeest.
+
+**The fix.** `quarriesFor` now accepts `userText` and prioritises species explicitly named by the applicant in `intended_quarry`, `hunting_history`, or `firearm_fit_reason` ahead of generic cartridge defaults.
+
+**Proof.** Re-rendered purpose plates for MO000106 on production (`grok-imagine-image-2.0`): Page 5 plates are now **Blue wildebeest** and **Red hartebeest**, perfectly aligning Section 3.1 exhibits with Section 3 prose.
+
 ## 2026-10-29 - MOTIVATION SUITABILITY: PLACEHOLDER MODEL "NONE" FILTERED FROM VALIDATION
 
 Deployed `729a96a6` and `729a96a6` (full; rollback
