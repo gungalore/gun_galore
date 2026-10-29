@@ -49,6 +49,19 @@ const REASON_MIN = 3;
 const DANGER_REASON_MIN = 15;
 
 const FLAGS: SettingFlag[] = [
+  // ─── Payments ─────────────────────────────────────────────────
+  {
+    key: 'auto_payouts_enabled',
+    label: 'Auto payouts enabled',
+    hint: 'ON = the scheduled sweep disburses due seller payouts through Ozow without the operator pressing "Execute batch payouts" on /admin/money. OFF = manual only: nothing leaves the float until an admin runs the batch. This moves real money automatically — leave it OFF until the payout rail has been watched through a full settlement cycle.',
+    group: 'Payments',
+    type: 'boolean',
+    default: 'false',
+    // Automates the disbursement of real money from the float. Exactly the
+    // class of switch that demands the typed-key gate and a real audit reason.
+    danger: true,
+  },
+
   // ─── Moderation ───────────────────────────────────────────────
   {
     key: 'ops_alert_phone',

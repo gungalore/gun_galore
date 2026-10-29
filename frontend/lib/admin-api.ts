@@ -645,6 +645,7 @@ export interface PayoutsDue {
   refunds?: unknown[];
   skipped?: Array<Record<string, unknown>>;
   totalCents?: number;
+  autoPayoutsEnabled?: boolean;
   [key: string]: unknown;
 }
 

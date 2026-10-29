@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
 import { PAYMENTS_LIVE } from '../payments/payment-mode';
 import {
@@ -72,6 +73,8 @@ export class ManualPaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // SettingsService is @Global (SettingsModule) — no module import needed.
+    private readonly settings: SettingsService,
     // OzowService is @Global (OzowModule) — no PaymentsModule import needed.
     private readonly ozow: OzowService,
   ) {}
@@ -902,6 +905,9 @@ export class ManualPaymentsService {
   async getPayoutsDuePreview() {
     const due = await this.getPayoutsDue();
     const { skipped } = await this.collectDue(due);
-    return { ...due, skipped };
+    const autoPayoutsEnabled = await this.settings.get(
+      FLAGS.autoPayoutsEnabled,
+    );
+    return { ...due, skipped, autoPayoutsEnabled };
   }
 }

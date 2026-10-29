@@ -15,6 +15,19 @@ interface FlagDefinition<T> {
 
 export const FLAGS = {
   /**
+   * Auto payouts — when ON the scheduled sweep disburses due seller payouts
+   * without the operator pressing "Execute batch payouts". OFF = the historical
+   * manual-only flow, where the admin money screen is the sole trigger.
+   *
+   * Real money leaves the float when this is on, so it is a go-live switch
+   * (danger flag in the admin registry) rather than a tuning knob.
+   */
+  autoPayoutsEnabled: {
+    key: 'auto_payouts_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  /**
    * Where urgent operations alerts are texted. Empty = nothing is sent.
    *
    * A Setting rather than an env var so it can be changed from /admin without a

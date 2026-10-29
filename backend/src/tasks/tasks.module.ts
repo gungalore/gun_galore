@@ -15,6 +15,7 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
 import { ListingsModule } from '../listings/listings.module';
 import { FeedModule } from '../feed/feed.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -48,6 +49,8 @@ import { WhatsappModule } from '../whatsapp/whatsapp.module';
     FeedModule,
     // WhatsApp retry/outage cron needs WhatsappService.retryFailed.
     WhatsappModule,
+    // Auto-payout sweep needs ManualPaymentsService.runDuePayouts.
+    ManualPaymentsModule,
   ],
   providers: [TasksService],
 })

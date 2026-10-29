@@ -8,6 +8,7 @@ import {
   NeonCard,
   Pill,
   SkeletonRows,
+  ToggleSwitch,
   useAdminToast,
   type AdminTone,
 } from '@/components/admin/admin-ui';
@@ -77,6 +78,8 @@ export default function MoneyPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [runOpen, setRunOpen] = useState(false);
   const [lever, setLever] = useState<MoneyLever | null>(null);
+  // The requested payout mode while its confirm dialog is open. null = closed.
+  const [modeDialog, setModeDialog] = useState<boolean | null>(null);
   const status = queue.status;
   const filter = queue.filter;
 
@@ -162,6 +165,17 @@ export default function MoneyPage() {
     toast('Payout batch submitted to Ozow. Rows update as the webhook settles.');
     due.refresh();
     txns.refresh();
+  }
+
+  const autoPayoutsEnabled = due.data?.autoPayoutsEnabled === true;
+
+  async function setAutoPayouts(enabled: boolean, reason: string) {
+    await adminFetch('/admin/settings/auto_payouts_enabled', {
+      method: 'PATCH',
+      body: JSON.stringify({ value: enabled ? 'true' : 'false', reason }),
+    });
+    toast(enabled ? 'Auto payouts enabled.' : 'Auto payouts disabled — manual only.');
+    due.refresh();
   }
 
   function leverBody(kind: MoneyLever): {
@@ -316,6 +330,28 @@ export default function MoneyPage() {
               {formatRand(typeof totalClientFunds === 'number' ? totalClientFunds : 0)}
             </div>
           </div>
+        </div>
+        <div className="adm-toggle-row">
+          <span className="adm-toggle-text">
+            <span className="adm-toggle-name">
+              Payout mode
+              <Pill tone={autoPayoutsEnabled ? 'green' : 'amber'}>
+                {autoPayoutsEnabled ? 'AUTO' : 'MANUAL'}
+              </Pill>
+            </span>
+            <span className="adm-toggle-hint">
+              {autoPayoutsEnabled
+                ? 'Due seller payouts are disbursed automatically every 30 minutes. Turn off to return to operator-triggered batches only.'
+                : 'Nothing leaves the float until you run the batch below. Turn on to disburse due payouts automatically every 30 minutes.'}
+            </span>
+          </span>
+          <ToggleSwitch
+            checked={autoPayoutsEnabled}
+            danger
+            disabled={!isGod}
+            label="Automatic payouts"
+            onChange={(next) => setModeDialog(next)}
+          />
         </div>
         <button
           type="button"
@@ -489,6 +525,21 @@ export default function MoneyPage() {
         danger
         onClose={() => setRunOpen(false)}
         onConfirm={runPayouts}
+      />
+
+      <ReasonDialog
+        open={modeDialog !== null}
+        title={modeDialog ? 'Turn on automatic payouts?' : 'Return to manual payouts?'}
+        body={
+          modeDialog
+            ? 'Due seller payouts will be sent to their banks automatically every 30 minutes, without an operator pressing the batch button. Real money leaves the float on each run.'
+            : 'The automatic sweep stops. Nothing leaves the float until you run the payout batch yourself.'
+        }
+        confirmLabel={modeDialog ? 'Turn on auto payouts' : 'Go manual'}
+        danger
+        minLength={15}
+        onClose={() => setModeDialog(null)}
+        onConfirm={(reason) => setAutoPayouts(modeDialog === true, reason)}
       />
 
       {lever?.kind === 'refund' ? (

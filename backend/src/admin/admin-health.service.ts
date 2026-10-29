@@ -358,6 +358,7 @@ export class AdminHealthService {
       { key: 'credit-poll', label: 'Service credit snapshot poll', schedule: 'every 15 min', expectedIntervalSec: 900 },
       { key: 'firearm-licence-expiry', label: 'Firearm licence expiry sweep', schedule: 'daily 06:00', expectedIntervalSec: 86400 },
       { key: 'pa-payout-reconcile', label: 'Payout reconcile sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'auto-payout-sweep', label: 'Automatic payout sweep', schedule: 'every 30 min', expectedIntervalSec: 2 * 60 * 60 },
       { key: 'orphan-reclaim', label: 'Orphaned reservation reclaim', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'checkout-hold-expiry', label: '15-minute checkout hold expiry', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'order-status-rollup', label: 'Order status rollup', schedule: 'every 30 min', expectedIntervalSec: 1800 },

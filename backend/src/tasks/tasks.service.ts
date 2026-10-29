@@ -27,6 +27,7 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { ListingsService } from '../listings/listings.service';
 import { FeedService } from '../feed/feed.service';
+import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
 import { PostStatus } from '@prisma/client';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
@@ -77,6 +78,7 @@ export class TasksService {
     private readonly alertReconciler: AdminAlertReconcilerService,
     private readonly listings: ListingsService,
     private readonly feed: FeedService,
+    private readonly manualPayments: ManualPaymentsService,
   ) {}
 
   // ─── Community feed: re-run moderation on stranded posts ─────────
@@ -458,6 +460,31 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('pa-payout-reconcile');
+    }
+  }
+
+  // ─── Auto payout sweep ───────────────────────────────────────────
+  // The admin money screen is the manual trigger. When auto payouts are ENABLED
+  // in Settings this cron does the same run unattended, every 30 minutes.
+  // runDuePayouts itself refuses when PAYMENTS_LIVE is off or Ozow Payouts is
+  // unconfigured, and claims each row atomically, so an overlapping manual run
+  // cannot double-pay. The heartbeat is stamped even when the flag is OFF — a
+  // cron that is deliberately idle is not a cron that has wedged.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async autoPayoutSweep(): Promise<void> {
+    try {
+      const enabled = await this.settings.get(FLAGS.autoPayoutsEnabled);
+      if (!enabled) return;
+      const result = await this.manualPayments.runDuePayouts();
+      if (result.attempted > 0) {
+        this.logger.log(
+          `Auto payout sweep: ${result.accepted}/${result.attempted} accepted, ${result.failed} failed, R${(result.totalCents / 100).toFixed(2)}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(`autoPayoutSweep failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('auto-payout-sweep');
     }
   }
 
