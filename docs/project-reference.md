@@ -777,6 +777,12 @@ registered with a provider must point at **alloutdoor.co.za**.
   `notifications.listingStale({kind})`. Auctions and deal listings are excluded.
   ⚠️ **`Listing.expiresAt` is a different field** — the 24h pay window on a won
   auction or accepted offer. Never write it at publish.
+- **Cancelled-listing retention:** a `CANCELLED` listing with **no Transaction and
+  no OrderLineItem** is archived after 90 days by the 04:15 sweep. Its Cloudinary
+  photos/video and DB media rows are deleted, it is de-indexed, and it disappears
+  from `/my/listings`; the Listing row, offers, bids, notifications and audit
+  references are kept. Never hard-delete a sold/offered listing. Manual cleanup:
+  `npm run listings:archive-cancelled -- --days=N [--apply]` (dry-run by default).
 - **Offers:** at most **30% under** the asking price (refused outright — nothing
   stored, no attempt consumed), and **one offer per buyer per listing**. Sellers
   have an auto-accept threshold and a separate `autoDeclineThreshold` that rejects

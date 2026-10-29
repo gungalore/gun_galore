@@ -7,6 +7,34 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - CANCELLED LISTING MEDIA RETENTION + CARD VIDEO PRELOAD (FULL DEPLOY)
+
+Deployed `32d8c8f5` full (rollback `alloutdoor-20261029-071014.dump`,
+35,937,400 bytes; migration `20261029070000_listing_archive_media` applied;
+health x2 OK; public 200 x2; all three PM2 services online).
+
+**Cancelled-listing cleanup.** New `Listing.archivedAt` / `mediaPurgedAt`.
+The 04:15 sweep archives `CANCELLED` listings older than 90 days only when they
+have **no Transaction and no OrderLineItem**, deletes their Cloudinary
+photos/video and DB media rows, de-indexes them, and hides them from
+`/my/listings`. The row, offers, bids, notifications and audit references stay
+in place. Manual script:
+`npm run listings:archive-cancelled -- --days=N [--apply]` (dry-run default).
+
+**Applied now.** Dry-run found the seven old cancelled test listings (Glock 43x,
+five Turret/Distance Turret Tags, Minimalist rear bag). All seven archived,
+zero failures: 7/7 media-purged, 0 media rows remain. My Listings is down to the
+three live listings; no sale/order history was touched.
+
+**Card media.** Hero videos now use a 480px muted rendition with a bounded
+480px poster. Cards no longer autoplay on mount; they buffer within 600px of
+the viewport (`preload="none"` before that) and play only at 35% visibility.
+Detail pages keep the 720px rendition.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,992 passed / 8 skipped; backend
+build clean. Frontend `tsc` clean; 159 files / 1,828 passed / 1 skipped;
+production build clean.
+
 ## 2026-10-29 - ZOHO INVOICE EMAILS SENT BY ZOHO (BACKEND DEPLOY)
 
 Deployed `def99e77` backend-only (rollback `alloutdoor-20261029-063238.dump`,
