@@ -7,6 +7,41 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - MOTIVATION SCOPE: "falls far short" AND "unsuitable" ARE COMPARISONS
+
+Deployed `24ab62c8` (full; rollback
+`alloutdoor-20261029-142421.dump`, 36,155,646 bytes), following `b9e5cee7`
+(the first half of the same fix).
+
+**The fault.** MO000106, a section 16 dedicated-hunter application, went
+FAILED twice on 2026-10-29. Both drafts carried the sentence the capability
+carve-out exists to permit — a held firearm named under section 16, with its
+shortfall stated plainly:
+
+> "…it is a small-calibre rifle whose light bullet weight, limited penetration,
+> and lower muzzle energy make it entirely unsuitable for hunting large plains
+> game."
+
+The gate refused `muzzle energy` / `penetration` as catalogue copy because
+`COMPARING` matched literally and could not see the shortfall: first
+"falls **far** short" (the list held only "falls short"), then "entirely
+**unsuitable**" (the list held "unsuited", not "unsuitable"). The repair pass
+then traded one capability word for the next and the row FAILED at the third
+attempt.
+
+**The fix.** `COMPARING_PATTERN` reads the shortfall shape with its modifiers
+(falls/fall/fell/falling + optional intensifier + short), and `COMPARING` now
+carries `unsuitable`, `not suitable`, `ill-suited`, `ill suited` and
+`incapable`. Two regression specs pin the exact MO000106 sentences.
+
+**Proof.** Regenerated MO000106 from the box after the deploy: **FAILED →
+COMPLETED, score 99**, `failureReason` cleared.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,995 passed / 8 skipped;
+frontend `tsc` clean; 160 files / 1,835 passed / 1 skipped; production build
+clean in the foreground. Health x2 and public 200 x2; all three PM2 services
+online.
+
 ## 2026-10-29 - ACCOUNT HUB: VIEW PROFILE AND EDIT PROFILE SPLIT
 
 Deployed `70db4007` frontend-only (rollback
