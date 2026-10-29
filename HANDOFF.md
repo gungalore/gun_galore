@@ -5,7 +5,29 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-28**.
+Last updated: **2026-10-29**.
+
+## 2026-10-29 - ZOHO INVOICE EMAILS SENT BY ZOHO (BACKEND DEPLOY)
+
+Deployed `def99e77` backend-only (rollback `alloutdoor-20261029-063238.dump`,
+35,936,541 bytes; no pending migrations; health x2 OK; public 200 x2;
+`alloutdoor-backend`, `alloutdoor-frontend` and `warden` online).
+
+**The problem.** Zoho Books was using the organisation sender email
+`gerhard.fourie@gungalore.co.za`, which Zoho reports as unconfirmed (6039), so
+INV-000067 was created and paid but the buyer email failed.
+
+**The fix.** `emailInvoiceDocument()` now sends with
+`send_from_org_email_id: false`. Zoho then sends from its own mail service
+(`message-service@sender.zohobooks.com`) rather than the Books organisation
+address. Applies to buyer and seller invoice/document emails.
+
+**Live check.** INV-000067 was resent with that flag and Zoho answered
+“Your invoice has been sent.” The transaction now has
+`zohoBuyerInvoiceEmailedAt` stamped and `zohoSyncStatus=OK`.
+
+**Gates.** Backend `tsc` clean; 392 suites / 5,989 passed / 8 skipped; backend
+build clean. No frontend change in this deploy.
 
 ## 2026-10-28 - ZOHO ENABLED + SCOPE COVERS BACKFILL; DISABLED-SYNC ALERT (BACKEND DEPLOY)
 
