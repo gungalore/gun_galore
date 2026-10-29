@@ -260,6 +260,21 @@ describe('validation', () => {
     expect(issues.some((i) => i.includes('Glock'))).toBe(true);
   });
 
+  it('accepts a valid argument where firearm_model is NONE', () => {
+    const input: SuitabilityInput = {
+      ...base,
+      answers: {
+        ...base.answers,
+        firearm_make: 'MARLIN',
+        firearm_model: 'NONE',
+        firearm_calibre: '.45-70 Government',
+      },
+    };
+    const arg = validArgument();
+    arg.question = buildSuitabilityQuestion(input);
+    expect(validateSuitability(arg, input)).toEqual([]);
+  });
+
   it('renders grouped headings and bullets', () => {
     const lines = suitabilityPageLines(validArgument());
     expect(lines[0]).toContain('I choose the Glock');

@@ -301,9 +301,12 @@ export function validateSuitability(
     .trim();
 
   if (!arg.question.trim()) issues.push('the page has no question');
-  const make = value(input.answers, 'firearm_make');
-  const model = value(input.answers, 'firearm_model');
-  const calibre = value(input.answers, 'firearm_calibre');
+  const rawMake = value(input.answers, 'firearm_make');
+  const rawModel = value(input.answers, 'firearm_model');
+  const rawCalibre = value(input.answers, 'firearm_calibre');
+  const make = isPlaceholderModel(rawMake) ? '' : rawMake;
+  const model = isPlaceholderModel(rawModel) ? '' : rawModel;
+  const calibre = isPlaceholderModel(rawCalibre) ? '' : rawCalibre;
   for (const part of [make, model, calibre]) {
     if (part && !arg.question.toLowerCase().includes(part.toLowerCase())) {
       issues.push(`the question does not name "${part}"`);
