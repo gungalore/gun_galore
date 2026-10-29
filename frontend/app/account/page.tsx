@@ -479,18 +479,36 @@ export default async function AccountPage() {
               </p>
             )}
           </div>
-          <Link
-            href="/profile"
-            className="text-sm px-3 py-2 rounded-[6px]"
-            style={{
-              color: 'var(--text-secondary)',
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              textDecoration: 'none',
-            }}
-          >
-            Edit profile
-          </Link>
+          {/* ⚠️ TWO LINKS, NOT ONE. "Edit profile" used to land on /profile,
+              which is the READ-ONLY view, so editing cost two taps through a
+              page the member had not asked to see. View and edit are distinct
+              destinations and are named as such here. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/profile"
+              className="text-sm px-3 py-2 rounded-[6px]"
+              style={{
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                textDecoration: 'none',
+              }}
+            >
+              View profile
+            </Link>
+            <Link
+              href="/profile/edit"
+              className="text-sm px-3 py-2 rounded-[6px]"
+              style={{
+                color: '#fff',
+                background: 'var(--red)',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Edit profile
+            </Link>
+          </div>
 
           {/* ⚠️ THE ONLY DESKTOP SIGN-OUT NOW. It used to live solely
               inside the nav's avatar dropdown; the avatar became a link to
