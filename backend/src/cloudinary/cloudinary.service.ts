@@ -70,6 +70,12 @@ export class CloudinaryService implements OnModuleInit {
     });
   }
 
+  /** True when Cloudinary credentials are present. Retention must not delete
+   * DB media rows when the underlying assets cannot actually be destroyed. */
+  isConfigured(): boolean {
+    return this.configured;
+  }
+
   async deleteImage(publicId: string): Promise<void> {
     if (!this.configured) return;
     await cloudinary.uploader.destroy(publicId);

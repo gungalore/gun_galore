@@ -442,24 +442,43 @@ function CardVideo({
     const pause = () => el.pause();
 
     if (typeof IntersectionObserver === 'undefined') {
+      el.preload = 'auto';
       play();
       return () => pause();
     }
 
-    const observer = new IntersectionObserver(
+    // Load roughly one screen ahead so the next card is already buffered when
+    // it scrolls in, but do NOT play it until 35% is visible.
+    const preloadObserver = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting || el.preload === 'auto') return;
+        el.preload = 'auto';
+        if (el.readyState === 0) el.load();
+      },
+      { rootMargin: '600px 0px', threshold: 0 },
+    );
+
+    const playObserver = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.35) play();
         else pause();
       },
       { threshold: [0, 0.35, 1] },
     );
-    observer.observe(el);
+
+    preloadObserver.observe(el);
+    playObserver.observe(el);
     return () => {
-      observer.disconnect();
+      preloadObserver.disconnect();
+      playObserver.disconnect();
       pause();
     };
   }, []);
 
+  // Do NOT set autoPlay. It starts fetching/playing every hero video as soon
+  // as the element mounts, including cards far below the fold. Instead the
+  // preload observer only buffers a card within 600px of the viewport, and the
+  // play observer starts it at 35% visibility.
   return (
     <video
       ref={ref}
@@ -468,9 +487,8 @@ function CardVideo({
       aria-label={`${title} video`}
       muted
       loop
-      autoPlay
       playsInline
-      preload="metadata"
+      preload="none"
       className="absolute inset-0 w-full h-full object-cover pointer-events-none"
     />
   );

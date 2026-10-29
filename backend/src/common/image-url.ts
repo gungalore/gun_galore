@@ -104,5 +104,23 @@ export function optimizedVideoUrl(
   return url.slice(0, at) + bound + '/' + rest;
 }
 
+/**
+ * Poster-frame URL for a card. The thumbnail is a JPEG derived from the video
+ * (`.../video/upload/so_0/...jpg`); without a bound it can be a full-resolution
+ * video frame. This keeps the card poster small enough for a scrolling grid.
+ */
+export function optimizedVideoThumbnailUrl(
+  url: string,
+  maxEdge: number,
+): string {
+  if (!url || !url.includes(VIDEO_UPLOAD_SEGMENT)) return url;
+  const at = url.indexOf(VIDEO_UPLOAD_SEGMENT) + VIDEO_UPLOAD_SEGMENT.length;
+  const rest = url.slice(at);
+  const firstSegment = rest.split('/')[0] ?? '';
+  if (/(^|,)w_\d+/.test(firstSegment)) return url;
+  const bound = `w_${Math.max(1, Math.round(maxEdge))},c_limit,q_auto:eco,f_jpg`;
+  return url.slice(0, at) + bound + '/' + rest;
+}
+
 /** Edge used when compressing a video for a model (not for playback). */
 export const VIDEO_MODEL_EDGE = 720;

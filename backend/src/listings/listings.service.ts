@@ -24,7 +24,10 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
-import { optimizedVideoUrl } from '../common/image-url';
+import {
+  optimizedVideoThumbnailUrl,
+  optimizedVideoUrl,
+} from '../common/image-url';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 import { CategoriesService } from '../categories/categories.service';
@@ -234,6 +237,7 @@ const PUBLIC_CARD_VIDEO_SELECT = {
 
 type PublicCardVideoRow = {
   url: string;
+  thumbnailUrl?: string | null;
   audioEnabled: boolean;
   status?: string | null;
 };
@@ -245,13 +249,18 @@ function withPublicCardVideo<T extends { video?: PublicCardVideoRow | null }>(
   if (!video || (video.status != null && video.status !== 'APPROVED')) {
     return { ...listing, video: null };
   }
-  const playbackUrl = optimizedVideoUrl(video.url, 720, video.audioEnabled);
+  // Cards are ~25–50vw and always muted, so a 720p audio-bearing source is
+  // wasted bytes. Use a 480px muted rendition and a bounded poster frame.
+  const playbackUrl = optimizedVideoUrl(video.url, 480, false);
   return {
     ...listing,
     video: {
       ...video,
-      url: video.audioEnabled ? video.url : playbackUrl,
+      url: playbackUrl,
       playbackUrl,
+      thumbnailUrl: video.thumbnailUrl
+        ? optimizedVideoThumbnailUrl(video.thumbnailUrl, 480)
+        : video.thumbnailUrl,
     },
   };
 }
@@ -3713,6 +3722,121 @@ export class ListingsService {
   }
 
   /**
+   * Cost-safe retention for cancelled listings that never became a sale.
+   *
+   * The database row is deliberately KEPT: offers, bids, notifications and
+   * audit rows may still point at it, and those are cheap. The expensive part
+   * is Cloudinary media. This sweep deletes the listing's photos/video and
+   * hides the row from /my/listings, while refusing any listing that has a
+   * Transaction or OrderLineItem so financial history and evidence survive.
+   *
+   * Defaults to a DRY RUN. The daily cron and the operator script opt in
+   * explicitly with dryRun:false.
+   */
+  async archiveStaleCancelledListings(
+    opts: { olderThanDays?: number; dryRun?: boolean; limit?: number } = {},
+  ): Promise<{
+    dryRun: boolean;
+    olderThanDays: number;
+    candidates: { id: string; title: string; ageDays: number }[];
+    archived: number;
+    failed: number;
+  }> {
+    const olderThanDays = Math.max(0, opts.olderThanDays ?? 90);
+    const dryRun = opts.dryRun ?? true;
+    const limit = Math.min(Math.max(1, opts.limit ?? 50), 200);
+    const cutoff = new Date(Date.now() - olderThanDays * 86_400_000);
+
+    const rows = await this.prisma.listing.findMany({
+      where: {
+        status: ListingStatus.CANCELLED,
+        archivedAt: null,
+        updatedAt: { lte: cutoff },
+        // Never retire media that could be evidence for a real sale/order.
+        transactions: { none: {} },
+        orderLineItems: { none: {} },
+      },
+      select: {
+        id: true,
+        title: true,
+        updatedAt: true,
+        images: { select: { publicId: true } },
+        video: { select: { publicId: true } },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: limit,
+    });
+
+    const candidates = rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      ageDays: Math.floor(
+        (Date.now() - row.updatedAt.getTime()) / 86_400_000,
+      ),
+    }));
+
+    if (dryRun || rows.length === 0) {
+      return { dryRun, olderThanDays, candidates, archived: 0, failed: 0 };
+    }
+
+    if (!this.cloudinary.isConfigured()) {
+      this.logger.warn(
+        'Cancelled-listing archive skipped: Cloudinary is not configured, so media cannot be destroyed safely.',
+      );
+      return {
+        dryRun,
+        olderThanDays,
+        candidates,
+        archived: 0,
+        failed: rows.length,
+      };
+    }
+
+    let archived = 0;
+    let failed = 0;
+    const now = new Date();
+
+    for (const row of rows) {
+      try {
+        if (row.images.length > 0) {
+          await this.cloudinary.deleteImages(
+            row.images.map((image) => image.publicId),
+          );
+        }
+        if (row.video) {
+          try {
+            await this.cloudinary.deleteVideo(row.video.publicId);
+          } catch {
+            // Pending clips are stored as authenticated assets.
+            await this.cloudinary.deleteVideo(row.video.publicId, 'authenticated');
+          }
+        }
+
+        await this.prisma.$transaction([
+          this.prisma.listingImage.deleteMany({ where: { listingId: row.id } }),
+          this.prisma.listingVideo.deleteMany({ where: { listingId: row.id } }),
+          this.prisma.listing.update({
+            where: { id: row.id },
+            data: { archivedAt: now, mediaPurgedAt: now },
+          }),
+        ]);
+        await this.removeFromIndex(row.id);
+        archived += 1;
+      } catch (err) {
+        failed += 1;
+        this.logger.warn(
+          `Could not archive cancelled listing ${row.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Cancelled-listing archive: ${archived} archived, ${failed} failed (older than ${olderThanDays}d)`,
+    );
+    return { dryRun, olderThanDays, candidates, archived, failed };
+  }
+
+  /**
    * Seller confirms a listing is still for sale — resets the stale-listing
    * clock (lastRenewedAt) so the daily 75d-nudge / 90d-expire sweep starts a
    * fresh cycle, and clears renewalNudgedAt so the next cycle can nudge again.
@@ -4267,7 +4391,9 @@ export class ListingsService {
     if (!user) return [];
 
     return this.prisma.listing.findMany({
-      where: { sellerId: user.id },
+      // Archived cancelled listings stay in the DB for history/audit but drop
+      // out of the seller's working list after their media is retired.
+      where: { sellerId: user.id, archivedAt: null },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },

@@ -2,6 +2,7 @@ import {
   boundedImageUrl,
   boundedVideoUrl,
   IMAGE_EDGE,
+  optimizedVideoThumbnailUrl,
   optimizedVideoUrl,
 } from './image-url';
 
@@ -70,5 +71,13 @@ describe('video delivery transformations', () => {
 
   it('removes audio from the delivered file when the listing is muted', () => {
     expect(optimizedVideoUrl(video, 720, false)).toContain('ac_none');
+  });
+
+  it('bounds the card poster frame to a small JPEG', () => {
+    const poster =
+      'https://res.cloudinary.com/demo/video/upload/so_0/v1/listings/clip.jpg';
+    const out = optimizedVideoThumbnailUrl(poster, 480);
+    expect(out).toContain('w_480,c_limit,q_auto:eco,f_jpg');
+    expect(out).not.toContain('f_mp4');
   });
 });

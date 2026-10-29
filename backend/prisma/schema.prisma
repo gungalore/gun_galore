@@ -1289,6 +1289,13 @@ model Listing {
   lastRenewedAt   DateTime  @default(now())
   renewalNudgedAt DateTime?
 
+  // Retention for cancelled listings that never became a sale. The row is
+  // kept (offers/bids/audit references still point at it), but it drops out
+  // of /my/listings and its Cloudinary media is removed once the sweep runs.
+  // Never set on a listing with a Transaction or OrderLineItem.
+  archivedAt      DateTime?
+  mediaPurgedAt   DateTime?
+
   // Legacy first-party-deal marker. Kept as a column (public browse, search
   // and price comps still filter `isDealListing: false` as the public-
   // discovery chokepoint), but nothing writes it true any more.
@@ -1338,6 +1345,8 @@ model Listing {
   // Signed-out discovery — every anonymous browse adds `publicVisible: true`
   // on top of the status filter, so index the pair.
   @@index([status, publicVisible])
+  // Cancelled-listing archive sweep: status + age + not-yet-archived.
+  @@index([status, archivedAt])
 }
 
 // A 15-minute reservation created when a buyer opens the checkout page for a

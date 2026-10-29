@@ -129,7 +129,11 @@ export default function CancelButton({ listingId }: { listingId: string }) {
           <div className="space-y-3 text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
             <p>
               The listing will be removed from search and the marketplace.
-              You can't undo this — relist it later if you change your mind.
+              You can't undo this - relist it later if you change your mind.
+            </p>
+            <p className="text-xs">
+              Old cancelled listings are archived and their photos are removed
+              to keep storage costs down. Order and payment records are kept.
             </p>
 
             {summary.listingType === 'AUCTION' && summary.bidCount > 0 && (

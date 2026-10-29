@@ -343,6 +343,31 @@ export class TasksService {
     }
   }
 
+  // Daily 04:15 - retire expensive media on old cancelled listings that never
+  // became a sale. The row is kept for offers/bids/audit; Cloudinary photos and
+  // video are deleted and the listing drops out of /my/listings.
+  @Cron('15 4 * * *')
+  async cancelledListingArchiveSweep() {
+    try {
+      const r = await this.listings.archiveStaleCancelledListings({
+        olderThanDays: 90,
+        dryRun: false,
+        limit: 50,
+      });
+      if (r.archived > 0 || r.failed > 0) {
+        this.logger.log(
+          `Cancelled listings: archived ${r.archived}, failed ${r.failed}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `cancelledListingArchiveSweep failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('cancelled-listing-archive');
+    }
+  }
+
   // ─── Photo-less ACTIVE listing sweep ────────────────────────────
   // create() sets a moderation-approved listing ACTIVE before any photo has
   // uploaded; photos then stream up one-by-one from the client. If the

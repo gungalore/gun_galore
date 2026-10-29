@@ -32,6 +32,7 @@
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
     "dealer-form:test": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/send-dealer-form-test.ts",
     "listings:backfill-locality": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/backfill-public-locality.ts",
+    "listings:archive-cancelled": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/archive-cancelled-listings.ts",
     "news:poll": "ts-node --transpile-only --project tsconfig.json scripts/news-poll.ts",
     "test:e2e:setup": "node scripts/e2e-db.mjs"
   },
