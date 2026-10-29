@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - AUTO/MANUAL PAYOUT TOGGLE (FULL DEPLOY)
+
+Deployed `461ea207` full (rollback `alloutdoor-20261029-075439.dump`,
+35,938,199 bytes; no pending migrations; health x2 OK; public 200 x2; all three
+PM2 services online).
+
+**The switch.** `/admin/money` now has a **Payout mode** toggle on the
+Disbursement radar. `auto_payouts_enabled` (Setting, default **OFF**) is a
+danger flag: flipping it opens the reason dialog and writes a `SETTING_UPDATE`
+audit row. OFF is the historical manual-only flow — nothing leaves the float
+until an operator runs the batch.
+
+**When ON.** A new `auto-payout-sweep` cron (every 30 min) calls
+`ManualPaymentsService.runDuePayouts()` unattended. It is registered in the
+cron-health panel. `runDuePayouts` still refuses when `PAYMENTS_LIVE` is off or
+Ozow Payouts is unconfigured, and each row is claimed atomically, so an
+overlapping manual run cannot double-pay. The heartbeat is stamped even while
+the flag is OFF (a deliberately idle cron is not a wedged cron).
+
+**Leave it OFF** until the payout rail has been watched through a full
+settlement cycle.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,993 passed / 8 skipped;
+frontend `tsc` clean; 159 files / 1,828 passed / 1 skipped; production build
+clean. (Repo-wide lint remains red on pre-existing prettier drift, not a deploy
+gate.)
+
 ## 2026-10-29 - CANCELLED LISTING MEDIA RETENTION + CARD VIDEO PRELOAD (FULL DEPLOY)
 
 Deployed `32d8c8f5` full (rollback `alloutdoor-20261029-071014.dump`,
