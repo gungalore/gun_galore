@@ -154,6 +154,22 @@ describe('the hunting plates come from the research', () => {
     existing_firearm_1_use: 'sport competition',
   };
 
+  it('prioritises the quarry named in the applicant answers over generic research defaults', () => {
+    const plates = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        ...HUNTING,
+        hunt_game_class: 'plains_medium',
+        intended_quarry: 'blue wildebeest and red hartebeest',
+      },
+      research: 'Well matched to warthog and kudu at bushveld distances.',
+    });
+    expect(plates.map((p) => p.title).slice(0, 2)).toEqual([
+      'Blue wildebeest',
+      'Red hartebeest',
+    ]);
+  });
+
   it('pictures the named species, then fills the two pages from the class', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_HUNT,

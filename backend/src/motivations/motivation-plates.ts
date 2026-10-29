@@ -644,7 +644,15 @@ function huntingSpecs(
   exclude: ReadonlySet<string> = new Set(),
 ): Omit<PlateSpec, 'pageIndex' | 'plateIndex'>[] {
   if (limit <= 0) return [];
+  const userQuarryText = [
+    ctx.answers.intended_quarry,
+    ctx.answers.hunting_history,
+    ctx.answers.firearm_fit_reason,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const named = quarriesFor({
+    userText: userQuarryText,
     cartridgeText: ctx.research,
     gameClasses: ctx.answers.hunt_game_class,
   }).filter((q) => !exclude.has(q.key));

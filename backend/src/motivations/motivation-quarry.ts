@@ -181,9 +181,12 @@ export function quarriesFor(args: {
   cartridgeText?: string;
   /** The applicant's own `hunt_game_class` answer, comma-separated. */
   gameClasses?: string;
+  /** The applicant's own named quarry text (e.g. intended_quarry). */
+  userText?: string;
 }): QuarrySpecies[] {
-  const text = (args.cartridgeText ?? '').toLowerCase();
-  if (!text.trim()) return [];
+  const user = (args.userText ?? '').toLowerCase();
+  const research = (args.cartridgeText ?? '').toLowerCase();
+  if (!user.trim() && !research.trim()) return [];
 
   /**
    * ⚠️ ONLY WHAT THE ROUND IS *FOR*. The same paragraph that lists what a
@@ -200,11 +203,16 @@ export function quarriesFor(args: {
    * steenbok or a duiker — the very animals the document says the round is too
    * heavy for — into the plate.
    */
-  const stop =
-    /under-?matched|not\s+(?:suited|suitable|recommended)|too\s+light\s+for|poorly\s+suited|unsuitable/i.exec(
-      text,
-    );
-  const usable = stop ? text.slice(0, stop.index) : text;
+  const sanitize = (text: string) => {
+    const stop =
+      /under-?matched|not\s+(?:suited|suitable|recommended)|too\s+light\s+for|poorly\s+suited|unsuitable/i.exec(
+        text,
+      );
+    return stop ? text.slice(0, stop.index) : text;
+  };
+
+  const userUsable = sanitize(user);
+  const researchUsable = sanitize(research);
 
   const wanted = new Set(
     (args.gameClasses ?? '')
@@ -213,10 +221,30 @@ export function quarriesFor(args: {
       .filter(Boolean),
   );
 
-  const named = QUARRY.filter((q) =>
-    spellings(q).some((x) => mentions(usable, x)),
-  );
-  if (!named.length) return [];
+  const userNamed = userUsable
+    ? QUARRY.filter((q) => spellings(q).some((x) => mentions(userUsable, x)))
+    : [];
+  const researchNamed = researchUsable
+    ? QUARRY.filter((q) =>
+        spellings(q).some((x) => mentions(researchUsable, x)),
+      )
+    : [];
+
+  /**
+   * ⚠️ THE APPLICANT'S OWN NAMED QUARRY LEADS. Where the applicant explicitly
+   * named species ("blue wildebeest and red hartebeest"), those stand first
+   * so the purpose exhibits match Section 3 ("My hunting").
+   */
+  const combined: QuarrySpecies[] = [];
+  const seen = new Set<string>();
+  for (const q of [...userNamed, ...researchNamed]) {
+    if (!seen.has(q.key)) {
+      seen.add(q.key);
+      combined.push(q);
+    }
+  }
+
+  if (!combined.length) return [];
 
   /**
    * ⚠️ THE APPLICANT'S OWN ANSWERS FILTER THE LINE-UP, they do not merely
@@ -225,7 +253,9 @@ export function quarriesFor(args: {
    * animals in their application that their own paragraphs never mention.
    * Where the two share nothing at all, nothing is printed.
    */
-  const kept = wanted.size ? named.filter((q) => wanted.has(q.klass)) : named;
+  const kept = wanted.size
+    ? combined.filter((q) => wanted.has(q.klass))
+    : combined;
   return kept.slice(0, MAX_IN_PLATE);
 }
 
