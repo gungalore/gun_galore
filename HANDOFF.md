@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - MOTIVATION SUITABILITY: PLACEHOLDER MODEL "NONE" FILTERED FROM VALIDATION
+
+Deployed `729a96a6` and `729a96a6` (full; rollback
+`alloutdoor-20261029-145343.dump`, 36,163,577 bytes).
+
+**The fault.** When a firearm has no model name (e.g. MARLIN with `firearm_model = "NONE"`), `buildSuitabilityQuestion` intentionally strips placeholder strings like `"NONE"` so the title reads naturally ("Why is the MARLIN, chambered in .45-70 Government..."). However, `validateSuitability` did not call `isPlaceholderModel`, so it demanded that the question contain `"NONE"`. Every generated draft was refused twice (`the question does not name "NONE"`), causing Section 5.2 to fall back to `purposeFallback()`'s 4 generic placeholder bullets on a nearly blank page. Additionally, `FORBIDDEN` matched bare `velocity`, refusing valid qualitative comparisons ("high-velocity", "moderate velocity").
+
+**The fix.** `validateSuitability` now filters placeholder models via `isPlaceholderModel`, and `FORBIDDEN` was refined to match `muzzle velocity` and `magazine capacity` instead of bare words.
+
+**Proof.** Regenerated MO000106 on production: Section 5.2 now generates a full 369-word 4-group custom suitability argument (score 99), completely eliminating the 4 fallback bullets and blank page.
+
 ## 2026-10-29 - MOTIVATION SCOPE: "falls far short" AND "unsuitable" ARE COMPARISONS
 
 Deployed `24ab62c8` (full; rollback
