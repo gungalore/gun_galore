@@ -823,6 +823,19 @@ describe('⚠️ the capability carve-out reads the paragraph', () => {
     );
   });
 
+  it('⚠️ AND "falls FAR short" IS STILL A COMPARISON, which MO000106 tripped on', () => {
+    // The list held the literal "falls short"; "falls far short" is not that
+    // string, so a valid shortfall sentence read as catalogue copy and the
+    // repair pass traded one capability word for another until the row FAILED.
+    const body =
+      'The MARLIN .45-70 GOVERNMENT rifle is licensed under section 16. ' +
+      'It fires a bullet that falls far short in muzzle energy, penetration, ' +
+      'and bullet weight for this purpose.';
+    expect(
+      scope(body).filter((i) => /muzzle energy|penetration/.test(i)),
+    ).toEqual([]);
+  });
+
   it('still refuses it in a paragraph that names no held firearm', () => {
     // The teeth are unchanged: loose admiration of a cartridge is still a
     // product page, however it is phrased.

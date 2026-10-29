@@ -447,6 +447,22 @@ export const COMPARING = [
   'inadequate',
 ] as const;
 
+/**
+ * ⚠️ THE SHORTFALL PHRASE TAKES MODIFIERS, AND THE LIST DID NOT.
+ *
+ * MO000106 was binned on 2026-10-29 for the sentence a section 16 application
+ * is supposed to carry: "the Nordiske Precision .223 Remington rifle licensed
+ * under Section 16 ... falls far short in muzzle energy, penetration, and
+ * bullet weight". `COMPARING` holds the literal "falls short", and "falls far
+ * short" is not that string — so a valid comparison read as catalogue copy and
+ * the repair pass traded one capability word for another until the row FAILED.
+ *
+ * The shape is the argument, not the adverb: falls/fall/fell/falling, an
+ * optional intensifier, then "short".
+ */
+const COMPARING_PATTERN =
+  /\b(?:falls?|fell|falling)\s+(?:far\s+|well\s+|somewhat\s+|way\s+)?short\b/i;
+
 /** Reloading, which is never an S13 fact at all. */
 const RELOADING_WORDS = ['reload', 'handload', 'propellant', 'primer'] as const;
 
@@ -1003,7 +1019,8 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
        */
       const comparing =
         heldInParagraph &&
-        COMPARING.some((w) => contains(s, w) || lc(s).includes(w));
+        (COMPARING.some((w) => contains(s, w) || lc(s).includes(w)) ||
+          COMPARING_PATTERN.test(s));
       if (!comparing) {
         for (const w of COMPARISON_TERMS) {
           if (contains(s, w)) {
