@@ -7,6 +7,32 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - BUSINESS ADDRESS REPLACED ON SITE + ZOHO PAPERWORK
+
+Deployed `ac44f759` frontend-only (rollback
+`alloutdoor-20261029-083948.dump`, 35,940,078 bytes; no backend change; health
+x2 OK; public 200 x2; all three PM2 services online).
+
+**Old home address removed from public surfaces.** Every occurrence of
+`36 Sterappel Crescent` in the footer and the legal pages (`/about`,
+`/contact`, `/legal`, `/paia`, `/privacy`, `/terms`) now reads
+**Essenhout Plein, Langeberg Glen, Cape Town, 7570, South Africa**. The
+licence-centre test fixture still uses the old string as a synthetic sample;
+it is not rendered anywhere.
+
+**Zoho Books (configuration, not code).** The organization address is now
+`Essenhout Plein / Langeberg Glen / Cape Town / Western Cape / 7570 / South
+Africa`, and the printed address block on all Zoho paperwork was changed to
+`support@alloutdoor.co.za` through the global Organisation Address Format
+(`Settings → Preferences → General`). Zoho still holds
+`gerhard.fourie@gungalore.co.za` as the **primary contact** (the API ignores
+changes to it); replacing it requires verifying `support@alloutdoor.co.za` as
+a sender and marking it primary.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,993 passed / 8 skipped;
+frontend `tsc` clean; 159 files / 1,828 passed / 1 skipped; production build
+clean.
+
 ## 2026-10-29 - AUTO/MANUAL PAYOUT TOGGLE (FULL DEPLOY)
 
 Deployed `461ea207` full (rollback `alloutdoor-20261029-075439.dump`,
