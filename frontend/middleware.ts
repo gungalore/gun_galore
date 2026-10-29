@@ -346,9 +346,13 @@ export default async function middleware(request: NextRequest) {
 // /scan/v3/docaligner-lcnet100.onnx. Without the extension here the file was
 // 307'd to sign-in on the handoff phone, and the new scanner opened with a
 // manual shutter and no outline: the same trap as ort and mjs, one file over.
+// ⚠️ AND mp4/webm, FOR THE HERO VIDEO (2026-10-29). /hero-video.mp4 is the
+// landing page's motion plate. Without these the browser got a 307 to sign-in
+// where it expected a video, the <video> ended in NETWORK_NO_SOURCE, and the
+// hero silently fell back to its poster on the one page every visitor sees.
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort|onnx)).*)',
+    '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|mp4|webm|wasm|ort|onnx)).*)',
     '/(api|trpc)(.*)',
   ],
 };

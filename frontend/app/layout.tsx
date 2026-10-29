@@ -285,12 +285,14 @@ export default function RootLayout({
               route because the file is tiny + cached after first hit;
               non-homepage routes pay a one-time ~30 KB hit and warm
               the cache for the inevitable hero-page visit. */}
-          {/* Preload the hero LCP image (the outdoor golden-hour photo).
+          {/* Preload the hero LCP image — the poster still for the hero video
+              (frame 0 of /hero-video.mp4).
               WebP is what modern browsers fetch via the .hero-bg image-set;
-              keep this href in sync with that url().
+              keep this href in sync with that url(). The VIDEO itself is not
+              preloaded: it is 2.6 MB and must not compete with the LCP fetch.
               ⚠️ media-gated since 2026-09-30: the hero is only rendered from
-             768px up (components/hero.tsx), so phones and the phone PWA were
-             downloading a plate they never show — and counting it as LCP. */}
+              768px up (components/hero.tsx), so phones and the phone PWA were
+              downloading a plate they never show — and counting it as LCP. */}
           <link
             rel="preload"
             as="image"

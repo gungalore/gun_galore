@@ -1,10 +1,11 @@
-﻿// Homepage hero. Full-bleed moonlit overlanding scene with the store intro
-// set on it. Server component — no JS.
+﻿// Homepage hero. Full-bleed outdoor montage with the store intro set on it.
+// Server component, with one client island: HeroVideo (the motion plate).
 // Focus: outdoor, hunting & sport recreation (firearms stay in the catalogue
 // + nav, just not the landing headline).
 
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
+import { HeroVideo } from './hero-video';
 
 export function Hero() {
   return (
@@ -28,23 +29,28 @@ export function Hero() {
         background: '#121211',
       }}
     >
-      {/* The frame carries the plate's OWN aspect ratio on desktop, so the
-          whole photograph is visible: 2172x724, a 3:1 panorama. On a 1600px
-          page that is a 533px band — big without eating the fold.
-
-          Phones get a 4:3 window instead. A 3:1 band is only ~130px tall at
-          390px wide, which reads as a letterbox strip rather than a hero, so
-          the frame keeps its own ratio there and background-size: cover crops
-          the sides. Which slice you get is set by background-position below. */}
+      {/* The frame is a fixed-height band (330px from 768px up, then hidden on
+          phones). The plate inside it is 16:9 (1280x720), so `cover` shows the
+          middle horizontal slice — 330px of a ~900px-tall render at 1600px
+          wide. object-position/background-position: center is what chooses
+          that slice; see the notes on .hero-bg and .hero-video below. */}
       <div className="hero-frame">
-        {/* Background plate — WebP for modern browsers (~22 KB) with a JPEG
-            fallback (~43 KB). image-set() is the only way to do per-browser
+        {/* Poster plate — WebP for modern browsers (~28 KB) with a JPEG
+            fallback (~52 KB). image-set() is the only way to do per-browser
             format selection on a CSS background; <picture> isn't an option
             because the plate combines with the gradient overlay below.
 
-            Preloaded in app/layout.tsx so the browser starts the fetch in
-            parallel with the JS bundle. This is the LCP element. */}
+            This is BOTH the LCP image (preloaded in app/layout.tsx) and the
+            permanent fallback floor: the video above it is transparent until
+            it is playing, so this still is what no-JS, data-saver, reduced-
+            motion and autoplay-blocked visitors get. It is frame 0 of the
+            video, so the fade in has nothing to jump from. */}
         <div className="hero-bg absolute inset-0" aria-hidden />
+
+        {/* The motion plate. Client island — it owns playbackRate and the
+            loop's fade in/out. Renders nothing at all below 768px, so phones
+            (where this whole section is display:none) fetch no video bytes. */}
+        <HeroVideo />
 
         {/* Gradient overlay — viewport-aware. See the <style> block for what
             each breakpoint does and why the desktop wash is so light. */}
@@ -60,22 +66,15 @@ export function Hero() {
             can't express @media rules. */}
         <style>{`
         .hero-bg {
-          /* Outdoor hero — operator-supplied brand scene, 2026-08-27: a
-             moonlit Karoo night, layered mountain ridges, a dirt two-track
-             running out of frame and a kitted bakkie with a rooftop tent and
-             a campfire on the right-hand rise.
+          /* Poster plate — operator-supplied video, 2026-10-29. public/
+             hero-outdoor.* is now frame 0 of public/hero-video.mp4 instead of
+             a standalone photograph (the previous plate was the moonlit Karoo
+             night, 2172x724). Keeping the still and the clip on the same frame
+             is what lets the loop fade in from nothing.
 
-             REPLACED the golden-hour Table Mountain plate (kudu / bakkie /
-             acacia) that shipped 2026-08-12. That one was 1672x941; this is
-             2172x724, so the frame ratio below changed with it.
-
-             ⚠️ THE PLATE IS ALREADY DARK — that is the whole reason the
-             overlay below is so light. Measured on the source: the desktop
-             copy column (left 38%) runs 12.3:1 against white at its
-             BRIGHTEST tile and 20.5:1 at its darkest, with no scrim at all.
-             The old 0.84 black wash existed to rescue white text off a lit
-             golden-hour sky; applied here it just crushes the mountains to
-             a black rectangle and buys no legibility.
+             ⚠️ THIS IS STILL THE LCP IMAGE. The video is 2.6 MB and is
+             deliberately NOT preloaded; this 28 KB WebP is. Do not swap it for
+             a video frame the clip never starts on.
 
              Versioned to match the <link rel=preload> in layout.tsx. These
              used to be bare paths while the preload carried ?v= — two
@@ -89,27 +88,41 @@ export function Hero() {
             url('${av('/hero-outdoor.jpg')}') type('image/jpeg')
           );
           background-size: cover;
-          /* BOTTOM, not centre. Once the band is capped at the design's 330px
-             it can only show ~62% of a 3:1 plate, so which 62% is a real
-             decision. Anchoring to the bottom keeps the ridge line, the
-             two-track, the bakkie, the tent and the campfire — every subject
-             that makes this read as overlanding — and gives up only sky, which
-             is the emptiest part of the frame. Centre keeps the moon and loses
-             the camp; top is almost entirely sky. */
-          background-position: center bottom;
+          /* CENTRE, to match object-position on .hero-video. The poster is
+             16:9 and the band is 330px, so only ~37% of the frame's height
+             fits; the still has to crop exactly where the video does or the
+             cross-fade between them jumps. */
+          background-position: center center;
           background-repeat: no-repeat;
-          /* No brightness filter. The previous plate carried brightness(0.95)
-             to keep white type crisp over a lit sky; this one is a night
-             scene and any further darkening loses the ridge separation that
-             makes it read as a photograph at all. */
+          /* No brightness filter. The montage runs through bright river and
+             daylight scenes, but the video element is the bright layer — the
+             still only shows while that layer is at zero. Darkening it would
+             make the fallback visibly dimmer than the clip. */
+        }
+        .hero-video {
+          /* Sits on top of .hero-bg and is invisible until playback actually
+             starts (opacity is written inline by HeroVideo). object-fit:
+             cover + the same centre anchor as the poster, so the two layers
+             are cropping identically and the fade is a pure opacity ramp. */
+          object-fit: cover;
+          object-position: center center;
+          pointer-events: none;
+          /* Hint only. No transition: the opacity value is updated every
+             animation frame, and a transition on top of that lags the fade. */
+          will-change: opacity;
         }
         .hero-overlay {
-          /* Desktop — a soft left-weighted wash, plus the red brand glow in
-             the bottom-left corner. The wash is for FOCUS, not contrast (see
-             the measurement note above): it settles the copy column and lets
-             the red CTA pop without flattening the moonlight. */
+          /* Desktop — a left-weighted wash, plus the red brand glow in the
+             bottom-left corner.
+
+             ⚠️ HEAVIER THAN THE PHOTOGRAPH'S WASH. That plate was a night
+             scene and needed almost nothing; this clip cuts between a rifle
+             bench, a bright dust-lit 4x4, a reloading bench, a bow hunter and
+             a backlit river. The copy column sits over whichever of those is
+             up, so the left third needs a floor that holds white type at
+             4.5:1 across all five. */
           background:
-            linear-gradient(90deg, rgba(8,10,14,0.55) 0%, rgba(8,10,14,0.30) 34%, rgba(8,10,14,0.06) 62%, rgba(8,10,14,0) 100%),
+            linear-gradient(90deg, rgba(8,10,14,0.76) 0%, rgba(8,10,14,0.52) 34%, rgba(8,10,14,0.14) 62%, rgba(8,10,14,0) 100%),
             radial-gradient(circle at 0% 100%, rgba(227,6,19,0.10) 0%, transparent 45%);
         }
         @media (max-width: 767.98px) {
@@ -129,16 +142,11 @@ export function Hero() {
             display: none;
           }
           .hero-bg {
-            /* A 4:3 window shows only 44% of a 3:1 plate's width, so WHICH
-               44% is a real composition decision, not a default. 80% keeps
-               the whole story: the moon top-right, the bakkie, the tent and
-               its campfire on the rise, the ridges behind, and the two-track
-               leading in from the bottom-left.
-
-               Checked against the alternatives rather than guessed — centre
-               (50%) drops the camp off the right edge entirely, 72% clips the
-               bakkie, and 76% still cuts the tent in half. */
-            background-position: 80% center;
+            /* Dead while the hero is hidden on phones, kept so the band can be
+               restored. The poster is 16:9 now, and centre is the anchor that
+               matches object-position on the video, so a returning band crops
+               the still and the clip identically. */
+            background-position: center center;
           }
           .hero-overlay {
             /* ⚠️ THE COPY IS OVER THE PICTURE ON PHONES NOW, NOT UNDER IT.
@@ -159,15 +167,15 @@ export function Hero() {
         }
 
         /* ── Frame + content placement ───────────────────────────────
-           Mobile: the picture is a full-width 4:3 band and the copy sits
-           BELOW it, on the section's dark panel.
-           Desktop: the copy is absolutely positioned over the frame, in the
-           empty left third of the photograph — which is exactly what that
-           negative space is for on this plate. */
+           Mobile: hidden entirely (see the rule above).
+           Desktop: the copy is absolutely positioned over the frame, on the
+           left-hand side behind the overlay's heaviest wash. */
         .hero-frame {
           position: relative;
           width: 100%;
-          aspect-ratio: 2172 / 724;
+          /* Only a fallback: both breakpoints below replace this with an
+             explicit height. 16:9 matches the poster and the video. */
+          aspect-ratio: 16 / 9;
         }
         @media (max-width: 767.98px) {
           /* A FIXED BAND, like the desktop rule below, not a ratio.
