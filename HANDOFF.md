@@ -7,6 +7,48 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - HOMEPAGE HERO IS NOW A LOOPING VIDEO
+
+Deployed `40988d34` frontend-only (rollback
+`alloutdoor-20261029-104727.dump`, 35,941,780 bytes; no backend change; no
+pending migrations; health x2 OK; public 200 x2; all three PM2 services
+online; verified live in a browser at 0.75x, 13.33s, playing).
+
+**What shipped.** `components/hero.tsx` keeps the static plate as its floor and
+layers `components/hero-video.tsx` (the only client island in the hero) on top.
+The clip is `public/hero-video.mp4`: operator-supplied 1920x1080 montage,
+transcoded to 1280x720 H.264, audio stripped, **0.75x baked in with
+`setpts=1.333333*PTS`** (2,606,399 bytes, 13.33s, `+faststart`). The slowdown is
+in the file because Safari and some Android builds ignore `playbackRate` on
+looping muted video; `playbackRate = 0.75` is still pinned as a fallback.
+
+**Loop fade.** Opacity is driven from `currentTime`: 1.4s fade in, 1.6s fade
+out, written straight to the element from `requestAnimationFrame` with a
+`timeupdate` backstop (rAF stops in a backgrounded tab and would otherwise
+freeze the video at a half-transparent opacity). `hero-outdoor.webp`/`.jpg` were
+replaced with frame 0 of the clip, so the fade has nothing to jump from and it
+doubles as the fallback for no-JS, `prefers-reduced-motion`, `saveData` and
+blocked autoplay. The video element is not mounted below 768px, where the hero
+is `display:none`. `ASSET_VERSION` bumped to `20261029a` (Cloudflare holds
+`/public` for 30 days).
+
+**Middleware trap found and fixed.** `.mp4`/`.webm` were missing from the
+public-asset exclusion regex, so `/hero-video.mp4` was 307'd to `/sign-in` and
+the element ended in `NETWORK_NO_SOURCE` — the hero silently showed its poster.
+That comment block already warned that any new binary in `public/` needs its
+extension added; it now has both.
+
+**Brand caveat, recorded deliberately.** `docs/design/brand-pack-v1.2/DESIGN.md`
+§1 forbids firearms and ammunition in hero art. This montage opens on a scoped
+rifle (silhouette targets downrange) and includes a reloading bench with live
+rounds. The operator reviewed it and approved shipping as-is; if that rule is
+enforced later, cut to the 4x4 (≈4.0-6.6s) and river-fishing (≈11.9-13.3s)
+scenes only.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,993 passed / 8 skipped;
+frontend `tsc` clean; 160 files / 1,835 passed / 1 skipped; production build
+clean (run in the foreground).
+
 ## 2026-10-29 - BUSINESS ADDRESS REPLACED ON SITE + ZOHO PAPERWORK
 
 Deployed `ac44f759` frontend-only (rollback
