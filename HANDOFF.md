@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-10-29**.
 
+## 2026-10-29 - ACCOUNT HUB: VIEW PROFILE AND EDIT PROFILE SPLIT
+
+Deployed `70db4007` frontend-only (rollback
+`alloutdoor-20261029-122026.dump`, 35,945,849 bytes; no backend change; no
+pending migrations; health x2 OK; public 200 x2; all three PM2 services
+online).
+
+**The double tap is gone.** The identity card on `/account` had a single
+`Edit profile` button pointing at `/profile` — the read-only view — which then
+offered a second `Edit profile` into `/profile/edit`. The card now carries two
+named links: `View profile` (`/profile`, neutral) and `Edit profile`
+(`/profile/edit`, red primary). Both read as distinct destinations; nothing
+else on the hub changed. `ACCOUNT_GROUPS` already had a `Profile` row pointing
+at the view, so the dropdown / drawer / More sheet needed no change.
+
+**Gates.** Backend `tsc` clean; 393 suites / 5,993 passed / 8 skipped;
+frontend `tsc` clean; 160 files / 1,835 passed / 1 skipped; production build
+clean (run in the foreground).
+
+**Deploy note.** The deploy script's `git diff --quiet` gate is fooled by line
+endings: run from WSL bash (or PowerShell calling bare `bash`) it sees the whole
+CRLF worktree as dirty and refuses. Run it through Git Bash
+(`"C:\Program Files\Git\bin\bash.exe"`), where `core.autocrlf=true` is in
+effect and the tree reads clean unless something is genuinely staged/unstaged.
+The first attempt also hit a transient SSH timeout to the box; a retry
+connected immediately.
+
 ## 2026-10-29 - HOMEPAGE HERO IS NOW A LOOPING VIDEO
 
 Deployed `40988d34` frontend-only (rollback
