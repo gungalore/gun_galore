@@ -278,7 +278,7 @@ export const SUITABILITY_SCHEMA: Record<string, unknown> = {
 };
 
 const FORBIDDEN =
-  /\b(velocity|muzzle energy|foot.?pound|bullet weight|grains?|chamber pressure|saami pressure|cip pressure|capacity|barrel length|chamber length|overall length|dimensions?|platform|tactical|battle.?proven|proven track record|state.?of.?the.?art|cutting.?edge|readily available|in stock|availability)\b/i;
+  /\b(muzzle velocity|muzzle energy|foot.?pound|bullet weight|\d+\s*grains?|saami pressure|cip pressure|chamber pressure|magazine capacity|high capacity|barrel length|chamber length|overall length|platform|tactical|battle.?proven|proven track record|state.?of.?the.?art|cutting.?edge|readily available|in stock)\b/i;
 
 function words(text: string): number {
   return text
