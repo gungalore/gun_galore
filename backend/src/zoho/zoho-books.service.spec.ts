@@ -224,6 +224,7 @@ describe('ZohoBooksService buyer paperwork', () => {
       (c) => c.url.includes('/invoices/inv1/email') && c.init?.method === 'POST',
     );
     expect(JSON.parse(String(buyerEmail?.init?.body))).toEqual({
+      send_from_org_email_id: false,
       to_mail_ids: ['buyer@example.com'],
       subject: 'Your ALL Outdoor invoice',
       body: expect.any(String),
@@ -455,6 +456,7 @@ describe('ZohoBooksService buyer paperwork', () => {
 
     const email = calls.find((c) => c.url.includes('/invoices/inv-s/email'));
     expect(JSON.parse(String(email?.init?.body))).toEqual({
+      send_from_org_email_id: false,
       to_mail_ids: ['seller@example.com'],
       subject: 'Your ALL Outdoor seller document',
       body: expect.any(String),

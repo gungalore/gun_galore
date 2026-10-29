@@ -1783,7 +1783,16 @@ export class ZohoBooksService {
     await this.request<{ code?: number; message?: string }>(
       'POST',
       `/invoices/${invoiceId}/email`,
-      { to_mail_ids: [toEmail], subject, body },
+      {
+        // Send from Zoho's own mail service, not the Books organisation's
+        // personal/legacy sender address. Zoho replaces an unauthenticated
+        // custom From with message-service@sender.zohobooks.com; setting this
+        // false is what makes the send succeed without "email not confirmed".
+        send_from_org_email_id: false,
+        to_mail_ids: [toEmail],
+        subject,
+        body,
+      },
     );
   }
 
