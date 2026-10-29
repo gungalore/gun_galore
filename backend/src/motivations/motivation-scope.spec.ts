@@ -836,6 +836,19 @@ describe('⚠️ the capability carve-out reads the paragraph', () => {
     ).toEqual([]);
   });
 
+  it('⚠️ AND "unsuitable" IS A SHORTFALL, not catalogue copy (MO000106, retry)', () => {
+    // The regeneration after the first fix phrased the same argument as
+    // "make it entirely unsuitable"; "unsuited" was listed, "unsuitable" was
+    // not, so a valid comparison failed the gate a second time.
+    const body =
+      'The MARLIN .45-70 GOVERNMENT rifle is licensed under section 16. ' +
+      'Its light bullet weight, limited penetration, and lower muzzle energy ' +
+      'make it entirely unsuitable for hunting large plains game.';
+    expect(
+      scope(body).filter((i) => /muzzle energy|penetration/.test(i)),
+    ).toEqual([]);
+  });
+
   it('still refuses it in a paragraph that names no held firearm', () => {
     // The teeth are unchanged: loose admiration of a cartridge is still a
     // product page, however it is phrased.
