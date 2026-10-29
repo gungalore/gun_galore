@@ -45,7 +45,7 @@ export default function TermsPage() {
         agreement between you and <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
         (registration number <strong>2026/639713/07</strong>), a private
         company registered in the Republic of South Africa with its
-        registered office at <strong>36 Sterappel Crescent, Langeberg
+        registered office at <strong>Essenhout Plein, Langeberg
         Glen, Cape Town, 7570</strong>{' '}
         (collectively "<strong>ALL Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>" or "<strong>our</strong>"). ALL Outdoor
@@ -656,7 +656,7 @@ export default function TermsPage() {
         <br />
         <strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}
         <br />
-        <strong>Postal:</strong> ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
+        <strong>Postal:</strong> ALLOUTDOOR (PTY) LTD, Essenhout Plein, Langeberg Glen, Cape Town, 7570
       </p>
 
       <h2>21. ECT Act § 43 disclosures</h2>
@@ -669,7 +669,7 @@ export default function TermsPage() {
         <li><strong>Registration number:</strong> 2026/639713/07</li>
         <li><strong>Trading as:</strong> ALL Outdoor</li>
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
-        <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
+        <li><strong>Physical address:</strong> Essenhout Plein, Langeberg Glen, Cape Town, 7570, South Africa</li>
         <li><strong>Email:</strong> {SUPPORT_EMAIL}</li>
         <li><strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}</li>
         <li><strong>VAT registration:</strong> Not yet registered for VAT</li>

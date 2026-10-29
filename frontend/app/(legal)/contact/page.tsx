@@ -69,7 +69,7 @@ export default function ContactPage() {
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />
-          <strong>Registered office:</strong> 36 Sterappel Crescent,
+          <strong>Registered office:</strong> Essenhout Plein,
           Langeberg Glen, Cape Town, 7570, South Africa
           <br />
           <strong>VAT registration:</strong> Not yet registered for VAT

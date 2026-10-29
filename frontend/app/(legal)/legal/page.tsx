@@ -165,7 +165,7 @@ export default function LegalIndexPage() {
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />
-          <strong>Physical address:</strong> 36 Sterappel Crescent,
+          <strong>Physical address:</strong> Essenhout Plein,
           Langeberg Glen, Cape Town, 7570, South Africa
           <br />
           <strong>Email:</strong>{' '}

@@ -221,7 +221,7 @@ export function SiteFooter() {
         }}
       >
         <p style={{ margin: 0 }}>
-          © {year} ALLOUTDOOR (PTY) LTD · Registration No. 2026/639713/07 · 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
+          © {year} ALLOUTDOOR (PTY) LTD · Registration No. 2026/639713/07 · Essenhout Plein, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             {SUPPORT_EMAIL}
           </a>

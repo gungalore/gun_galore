@@ -63,7 +63,7 @@ export default function PrivacyPage() {
       >
         <strong>Gerhard Johan Petrus Fourie</strong>
         <br />
-        ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
+        ALLOUTDOOR (PTY) LTD, Essenhout Plein, Langeberg Glen,
         Cape Town, 7570
         <br />
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>

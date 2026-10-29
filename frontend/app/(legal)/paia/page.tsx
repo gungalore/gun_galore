@@ -51,7 +51,7 @@ export default function PaiaPage() {
         <br />
         <strong>Trading as:</strong> ALL Outdoor
         <br />
-        <strong>Registered office:</strong> 36 Sterappel Crescent,
+        <strong>Registered office:</strong> Essenhout Plein,
         Langeberg Glen, Cape Town, 7570, South Africa
         <br />
         <strong>Email:</strong>{' '}
@@ -86,7 +86,7 @@ export default function PaiaPage() {
       >
         <strong>Gerhard Johan Petrus Fourie</strong>
         <br />
-        ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
+        ALLOUTDOOR (PTY) LTD, Essenhout Plein, Langeberg Glen,
         Cape Town, 7570
         <br />
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
