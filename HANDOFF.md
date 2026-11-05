@@ -5,7 +5,56 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-10-29**.
+Last updated: **2026-11-05**.
+
+## 2026-11-05 - RELEASE: PEACH DUAL RAIL, LEGAL CORPUS + OCR, MOTIVATION INTAKE
+
+Deployed `03a0a43b` (full; rollback `alloutdoor-20261105-130100.dump`,
+36,871,904 bytes). 144 migrations applied, **six** of them new:
+`motivation_intake`, `legal_corpus`, `motivation_output_mode`,
+`document_engine_notice`, `dual_payment_rails`, `gateway_redirect_url`.
+
+**Gates.** Backend `tsc` clean, 406 suites / 6,095 tests passing; frontend
+`tsc` clean, 161 files / 1,841 tests passing; foreground production build OK.
+Backend health 200 x2, frontend health 200 x2, public site 200 x2, and all
+three pm2 services (`alloutdoor-backend`, `alloutdoor-frontend`, `warden`)
+online. Boot log is clean: Meilisearch and Cloudinary connected, Bob Go live,
+both raw-DDL FTS columns/indexes re-ensured.
+
+**What shipped.**
+
+- **Peach second rail.** `peach.service.ts` (Checkout V2 pay-in, refunds,
+  Payouts, BANV), `peach-signature.ts`, `peach-banks.ts` and
+  `payment-rails.service.ts` for rail-locked routing — a sale is refunded and
+  paid out on the rail it was paid on, with no cross-rail fallback. Peach is
+  **INERT**: `peach_payin_enabled` and `peach_payouts_enabled` are both OFF in
+  `/admin/settings`, and with no `PEACH_*` env the adapter returns mock
+  checkouts. Nothing buys or pays out through Peach until the operator runs
+  the Peach section of `PAYMENTS-GO-LIVE.md` and funds the payout float.
+- **Gateway redirect + resume.** `gateway_redirect_url` migration, the
+  `/checkout/resume/[transactionId]` page, and the payment-method picker
+  (`payment-method-section.tsx`, `lib/payment-methods.ts`).
+- **Legal corpus.** FCA 2000 / 2006 amendment / 2004 regulations under
+  `backend/data/legal/`, `legal-parser.ts`, `legal.service.ts` and
+  `/api/legal`, plus `scripts/ingest-legal.ts` and the `legal_corpus` table.
+- **Motivation intake + writer.** `motivations/intake/*` (agent, planner,
+  strategies, controller), `motivation-writer-agent.service.ts`,
+  `motivation-case-research.service.ts`, `motivation-hunt-classes.ts`,
+  `motivation-output.ts` and the document-engine notice.
+- **Licence centre flow.** `/licence-centre/[id]/interview`, `/start`,
+  `/licence-centre/profile`, and the `intake-blocked` state.
+- **Local OCR.** `common/local-ocr/local-ocr.service.ts` plus the PaddleOCR-VL
+  sidecar in `backend/ocr/` (Python; not started by pm2).
+
+**One gate fix to know about.** The uncommitted auth change added a
+non-production fallback that prints the code when a verification email throws.
+`email-otp.spec.ts` "keeps the hash when the send throws" now pins
+`NODE_ENV=production` inside the test, because outside production the call
+resolves by design. Production still throws `BadRequestException`.
+
+**Left untracked on purpose:** `.dsh/`, the three root browser snapshots
+(`localhost-current.yml`, `localhost-firefox-snapshot.yml`, `yesno-current.yml`)
+and `backend/ocr/__pycache__/`. They are local scratch, not release content.
 
 ## 2026-10-29 - MOTIVATION EXHIBITS: USER-NAMED QUARRY PRIORITISED OVER RESEARCH DEFAULTS
 
