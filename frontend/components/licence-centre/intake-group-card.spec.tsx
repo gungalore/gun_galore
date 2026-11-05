@@ -160,3 +160,59 @@ describe('the grouped interview card', () => {
     expect(onStuck).not.toHaveBeenCalled();
   });
 });
+
+describe('the grouped interview card — closed choices', () => {
+  /**
+   * ?? A CLOSED CHOICE HAS NO TYPED ANSWER. "Type of firearm" accepts four
+   * values and nothing else; a box under it invites an answer the sheet will
+   * refuse. Operator, 2026-11-05: "remove the textbox as it serves no purpose
+   * on this question as the buttons are the only possible answers."
+   */
+  it('shows no text box when the buttons are the only answers', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'firearm_type',
+            id: 'firearm_type',
+            label: 'Type of firearm',
+            kind: 'choice',
+            choices: [
+              { value: 'Rifle', label: 'Rifle' },
+              { value: 'Shotgun', label: 'Shotgun' },
+            ],
+          }),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Shotgun' })).toBeDefined();
+    expect(screen.queryByPlaceholderText(/type your own answer/i)).toBeNull();
+  });
+
+  it('keeps the text box when the chips are only suggestions', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'intended_quarry',
+            id: 'intended_quarry',
+            label: 'What do you hunt?',
+            kind: 'multi',
+            multi: true,
+            choices: [{ value: 'kudu', label: 'Kudu' }],
+          }),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Kudu' })).toBeDefined();
+    expect(
+      screen.getByPlaceholderText(/type your own answer/i),
+    ).toBeDefined();
+  });
+});

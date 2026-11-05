@@ -100,6 +100,22 @@ export default function IntakeGroupCard({
   const settled = Math.max(0, group.totalInGroup - group.questions.length);
   const position = Math.min(group.totalInGroup, settled + 1);
 
+  /**
+   * ⚠️ A CLOSED CHOICE HAS NO TYPED ANSWER, SO IT GETS NO BOX.
+   *
+   * "Type of firearm" offers four values and the sheet accepts nothing else;
+   * a box underneath it invites an answer the validator will refuse, and it
+   * reads as though the buttons might not be enough. Operator, 2026-11-05:
+   * "remove the textbox as it serves no purpose on this question as the
+   * buttons are the only possible answers."
+   *
+   * A free-text field keeps its box even when it carries chips — the chips are
+   * suggestions there ("snakes" beside the species list), not a closed set.
+   */
+  const closedChoice =
+    question.choices.length > 0 &&
+    (question.kind === 'choice' || question.kind === 'yesno');
+
   if (!question) return null;
 
   if (stuck) {
@@ -172,22 +188,24 @@ export default function IntakeGroupCard({
           </div>
         ) : null}
 
-        <input
-          value={typed}
-          type={question.kind === 'date' ? 'date' : 'text'}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder={
-            question.choices.length
-              ? 'Or type your own answer…'
-              : question.customPlaceholder
-          }
-          className="mt-2 min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
-          style={{
-            borderColor: 'var(--border)',
-            background: 'var(--bg-inset)',
-            color: 'var(--text-primary)',
-          }}
-        />
+        {closedChoice ? null : (
+          <input
+            value={typed}
+            type={question.kind === 'date' ? 'date' : 'text'}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={
+              question.choices.length
+                ? 'Or type your own answer…'
+                : question.customPlaceholder
+            }
+            className="mt-2 min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--bg-inset)',
+              color: 'var(--text-primary)',
+            }}
+          />
+        )}
       </fieldset>
 
       <div className="mt-4 flex items-center justify-between gap-3">
