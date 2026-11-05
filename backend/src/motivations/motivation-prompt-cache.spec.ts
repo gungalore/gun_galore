@@ -350,30 +350,35 @@ const BEFORE_THE_REORDER: Record<
    * wording was made type-neutral ("the measures section and storage already
    * carry them") because it is no longer hunting-only. Same line counts,
    * different text, so the hash moves and the count does not.
+   *
+   * ⚠️ AND A FOURTH TIME, WHEN THE FOUR SECTIONS LANDED (2026-11-05 evening):
+   * shooting history, comparison, PAJA and the association-rulebook appendix
+   * are now in every type's plan, so every prompt gained their briefs. The
+   * line count rose by five or six on most types and by six on S24.
    */
   S14_RESTRICTED_SELF_DEFENCE: {
-    lines: 127,
-    sha: 'c66df6e9f4bdab9deb0482a0b49012b2fda0f571e89a14369e014ac051fde40b',
+    lines: 133,
+    sha: '6db3398f8acdf4a854efdc3f65eedcb827ac469ae03c7463d89f62f24729c18f',
   },
   S13_SELF_DEFENCE: {
-    lines: 128,
-    sha: '003ef0a13d8b59db48d6b2bdc03685bad0cd0a62df9b98fbdfebc007c36ec656',
+    lines: 134,
+    sha: 'ba96999b4c75411a6bb565351408c7efd70a949d359bc76fb935156cb5f2ff1a',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 128,
-    sha: 'bc6924f425c135bb2889067d3c26ecb7881a95521e28a200b1e3f56676a3b8d7',
+    lines: 134,
+    sha: '1d6e8c5df43d0509a16fe801ead6aa7708573e46303ff908c7545db620e3b940',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 128,
-    sha: '538302be45485d233d2ecde06028769e26d37908a3b5cf3685641e9c4b8be292',
+    lines: 134,
+    sha: '99069e9c644ba90917c26d9f35804d64f842ab8f9410f1943b2ae6986f7505b5',
   },
   S16_DEDICATED_SPORT: {
-    lines: 128,
-    sha: '669616b8acdfa9e0ccf103d99b5b871b4bc9435dbe177330fbe103b873ab4a4a',
+    lines: 134,
+    sha: '790f0cd68b193005df5aeb21f2db3ca43b566c03c6b49759005637cd7049b89c',
   },
   S24_RENEWAL: {
-    lines: 122,
-    sha: 'da3582f3f9fc1f96c1b7ff500c71914af08cd8ded1ce4ee9f9b375bda6919aeb',
+    lines: 128,
+    sha: '8e616cdd801d7db77b4fa9280c8b040781aab4cbfab95a0312a4c02269834f51',
   },
 };
 

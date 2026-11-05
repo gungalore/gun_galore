@@ -208,3 +208,63 @@ describe('section parity across licence types', () => {
     }
   });
 });
+
+// --------------------------------------------------------------------
+// THE FOUR SECTIONS THE PROFESSIONAL MOTIVATIONS CARRY (2026-11-05).
+//
+// The three section 16 motivations we analysed open with a shooting history,
+// argue the alternatives, append the association's rulebook and close with an
+// administrative-justice paragraph. All four are now part of EVERY type's
+// spine, not just section 16 — this is the test that keeps it that way.
+// --------------------------------------------------------------------
+describe('the four professional sections are not section-16-only', () => {
+  const FULL_OPTS = {
+    holdsFirearms: true,
+    hasRecord: true,
+    isAssociationMember: true,
+    hasRulebook: true,
+  };
+  it('every type plans a shooting history, a comparison and a PAJA section', () => {
+    for (const type of TYPES) {
+      const ids = planFor(type, 0, FULL_OPTS).sections.map((s) => s.id);
+      expect(ids).toContain('shooting_history');
+      expect(ids).toContain('comparison');
+      expect(ids).toContain('paja');
+    }
+  });
+
+  it('the rulebook appendix follows the association section, and only when there is a rulebook', () => {
+    for (const type of TYPES) {
+      const withBook = planFor(type, 0, FULL_OPTS).sections.map((s) => s.id);
+      const associationTypes =
+        type === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+        type === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+        type === MotivationLicenceType.S16_DEDICATED_SPORT ||
+        type === MotivationLicenceType.S24_RENEWAL;
+      if (!associationTypes) continue;
+      expect(withBook).toContain('association');
+      expect(withBook).toContain('association_rules');
+      // ?? Order matters: the rules come after the membership they belong to.
+      expect(withBook.indexOf('association_rules')).toBeGreaterThan(
+        withBook.indexOf('association'),
+      );
+      // Without a rulebook the appendix must not appear at all.
+      const withoutBook = planFor(type, 0, {
+        ...FULL_OPTS,
+        hasRulebook: false,
+      }).sections.map((s) => s.id);
+      expect(withoutBook).not.toContain('association_rules');
+    }
+  });
+
+  it('every section in the new spine still carries a brief', () => {
+    for (const type of TYPES) {
+      const plan = planFor(type, 0, FULL_OPTS);
+      const prompt = generationUserPrompt(packFor(type), plan);
+      for (const section of plan.sections) {
+        expect(prompt).toContain(section.heading);
+        expect(section.paragraphs).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+});

@@ -52,6 +52,21 @@ const COMMON = {
   // order tests about the question they name.
   marital_status: 'Married',
   residence_type: 'Townhouse or complex',
+  // Required, and asked before the firearm now - see SHOOTING_LIFE_FIELDS.
+  shooting_history:
+    'My father took me to the range from the age of ten and I have hunted every season since, mostly on a friend farm in the Eastern Cape.',
+  alternative_considered:
+    'A .308 Winchester, because the .45-70 suits the bushveld ranges I actually shoot at.',
+  // Optional membership slots two and three: the single-question planner asks
+  // them (the grouped card skips optional fields), so an order test that walks
+  // past the association block answers them.
+  association_2_name: 'Kraaifontein Sport Shooting Club',
+  association_2_number: '#2980',
+  association_2_joined: '2021-03-28',
+  association_3_name: 'SA Hunters',
+  association_3_number: 'M-1',
+  association_3_joined: '2018-01-01',
+  association_3_dedicated_since: '2018-02-01',
   competency_number: 'C1',
   competency_for: 'Manual rifle',
   competency_issued: '2020-01-01',
@@ -158,6 +173,8 @@ describe('the hunt intention question', () => {
         ...COMMON,
         firearm_calibre: '.223 Remington',
         firearm_use_kind: 'hunting',
+        // The exercise is asked with the association block, before the quarry.
+        discipline_exercise: '100m, Small-Bore Centre-Fire Rifle Exercise',
         association_name: 'SA Hunters',
         association_number: 'M1',
         association_joined: '2020-01-01',
@@ -244,9 +261,9 @@ describe('planGroup', () => {
   });
 });
 
-describe('planGroup — optional questions', () => {
+describe('planGroup - optional questions', () => {
   /**
-   * ?? AN OPTIONAL QUESTION WOULD HOLD THE CARD HOSTAGE. The conversation asks
+   * AN OPTIONAL QUESTION WOULD HOLD THE CARD HOSTAGE. The conversation asks
    * one question at a time and Continue needs an answer, so a question nobody
    * is obliged to answer would be re-served forever. Operator, 2026-11-05:
    * "It should keep things minimal."

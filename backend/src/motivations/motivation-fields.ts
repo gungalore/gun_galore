@@ -3327,10 +3327,97 @@ const NOT_ASKED_BY_TYPE: Partial<
  * still saves, and the registry-integrity suite, which checks that a showIf
  * clause is well-formed rather than that it is reachable.
  */
+/**
+ * ── THE APPLICANT'S OWN SHOOTING LIFE, AND THE COMPARISON ──────────────────
+ *
+ * ⚠️ THESE ARE THE FACTS THE PROFESSIONAL MOTIVATIONS CARRY AND OURS DID NOT.
+ * All three documents we studied open with a "FIREARM EXPERIENCE" page — who
+ * introduced them, the family rifle, hunting on a relative's farm, the sports
+ * they played, the shop they work in, how often they shoot, the training
+ * behind the competency — and every one of them carries a comparison section
+ * (self-loading rifle versus pistol carbine runs four pages in the Barrett
+ * document). A DFO reads both: one to see that shooting is part of somebody's
+ * life, the other to see that an alternative was weighed rather than a
+ * preference indulged.
+ *
+ * ⚠️ AND THEY APPLY TO EVERY LICENCE TYPE. A section 13 applicant has a
+ * shooting life too, and the comparison is what answers "why this firearm"
+ * on a first application where there is no battery to compare against.
+ *
+ * ⚠️ KEPT AS THEIR OWN BLOCK RATHER THAN SPLICED INTO COMMON_FIELDS because the
+ * common array declares `association_name` twice — once in the common set and
+ * once in a type's own list — so an insertion there lands in whichever copy
+ * the anchor happens to match. This block is appended once, and its keys are
+ * unique.
+ */
+const SHOOTING_LIFE_FIELDS: readonly MotivationField[] = [
+  {
+    key: 'shooting_history',
+    label: 'How you came to shooting, and what you shoot',
+    kind: 'long',
+    section: 'Activities',
+    required: true,
+    help: 'Who introduced you, what you shoot and how often, what you hunt or compete in. Four or five sentences is plenty.',
+    maxLength: 3000,
+  },
+  {
+    key: 'training_history',
+    label: 'Training beyond your competency',
+    kind: 'long',
+    section: 'Activities',
+    help: 'Optional. Courses, instructors, unit standards — anything beyond the competency certificate.',
+    maxLength: 1500,
+  },
+  {
+    /**
+     * ⚠️ THE EXERCISE, NOT A FREE-TEXT DISCIPLINE. The association publishes
+     * its exercises by code and reproduces their rules; the interview serves
+     * the ones that fit this firearm as chips, and the pack appends the named
+     * exercise's rulebook verbatim. Not `required` here because only the sport
+     * routes need it and the registry has no per-type required flag —
+     * `missingDetail()` enforces it for S16 dedicated sport and for an S15
+     * whose purpose is sport.
+     */
+    key: 'discipline_exercise',
+    label: 'The exercise or discipline this firearm is for',
+    kind: 'short',
+    section: 'Activities',
+    help: 'Your association publishes these by code. We list the ones your firearm fits.',
+    maxLength: 160,
+  },
+  {
+    /**
+     * ⚠️ REQUIRED ON EVERY TYPE, INCLUDING SELF-DEFENCE. "Why this one" is the
+     * question a DFO asks of every application; the comparison section is
+     * built from this answer and from the battery where one exists.
+     */
+    key: 'alternative_considered',
+    label: 'What else you considered, and why this one',
+    kind: 'short',
+    section: 'The firearm',
+    required: true,
+    help: 'The other model, calibre or type you weighed up — and the reason this firearm won.',
+    maxLength: 300,
+  },
+  {
+    key: 'association_3_dedicated_since',
+    docSourced: 'ASSOCIATION_CARD',
+    label: 'Dedicated status there since',
+    kind: 'date',
+    section: 'Dedicated status',
+    focusOffsetYears: -10,
+    reach: 'far',
+  },
+];
+
 export function allFieldsFor(
   type: MotivationLicenceType,
 ): readonly MotivationField[] {
-  return [...COMMON_FIELDS, ...(TYPE_FIELDS[type] ?? [])];
+  return [
+    ...COMMON_FIELDS,
+    ...SHOOTING_LIFE_FIELDS,
+    ...(TYPE_FIELDS[type] ?? []),
+  ];
 }
 
 export function fieldsFor(

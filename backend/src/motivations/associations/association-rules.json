@@ -1,0 +1,449 @@
+{
+  "nhsa": {
+    "name": "Natshoot (NHSA) — National Hunting and Shooting Association",
+    "sourceUrl": "https://natshoot.co.za/sport-shooting/ (exercise library) and https://natshoot.co.za/sport-shooting/national-competition/exercise-rules/ (competition codes)",
+    "fetchedOn": "2026-11-05",
+    "exercises": [
+      {
+        "code": "Com01",
+        "title": "10m Air Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": "This exercise is designed to shoot air pistols so that the participant can endeavour to achieve the best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position, from the bench or with \"crossed sticks\" or with a single support of a similar design.\n FIREARMS PERMITTED: Only Springer, CO2, or PCP Air Pistols in the following Calibres may be used (.177 / 4.5mm ; .20 / 5mm ; .22 / 5,58mm ; .25 / 6,35mm)\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 10 meters.\n COURSE OF FIRE: Two shots per small target printed on one A4 page shot at 10m with score counting out of 100points\n FIRING POSITION: Standing position, Air Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": ".22 Rimfire Semi-Auto Pistol Exercises (Precision Shooting)",
+        "appliesTo": "handgun",
+        "text": "5m, .22 Rimfire Derringer & Vest Gun Exercise - Exercise Rules \nA .22 Rimfire Derringer & Vest-Gun is a handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Rimfire Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: .22 Rimfire Derringers and .22 Rimfire calibre Vest-Guns (.22S, .22LR, .22Mag) and .22wmr calibre revolvers (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "5m, .22 Rimfire Derringer & Vest Gun Exercise",
+        "appliesTo": "handgun",
+        "text": "A .22 Rimfire Derringer & Vest-Gun is a handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Rimfire Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: .22 Rimfire Derringers and .22 Rimfire calibre Vest-Guns (.22S, .22LR, .22Mag) and .22wmr calibre revolvers (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": "Com08",
+        "title": "5m, .22 Rimfire Snubby /Pocket Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": ".22 RIMFIRE \"SNUBBY\" & POCKET PISTOL: All Calibres of .22 Rimfire Semi-Auto Pistols and Revolvers of which the barrel is not longer than 100mm and the grip below the trigger guard is not longer than 90mm (5mm variance on all sides allowed).\nThe Rimfire Snubby / Pocket Pistol must fit the boxes described on the page you can Download HERE \n FIREARMS PERMITTED: Only .22S, .22LR, and .22Mag calibres allowed in Rimfire Semi-Auto Pistols OR Singe/Double Action Revolvers conforming to the definition of \"Snubby\" & Pocket Pistol – only fixed metallic sights allowed\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Rimfire \"Snubby\" or Pocket Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": "Com09",
+        "title": "8m, .22 Rimfire Box-Gun Exercise",
+        "appliesTo": "handgun",
+        "text": "RIMFIRE BOX-GUN: A .22 Rimfire Box-Gun is a Rimfire handgun of which the whole frame, sights and grip, fits into a rectangle of 210mm [L] x 160mm [H].\nThe Box-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: Only handguns in calibres from .22S, .22LR and .22Mag, which fit in the prescribed Rectangle (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 8 metres.\n COURSE OF FIRE: Total of 5 shots at 8m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Box-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": "Com10",
+        "title": "10m, .22 Rimfire Handgun Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED: Only .22 Rimfire Handguns in calibres .22S, .22LR & 22Mag. (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 10 metres.\n COURSE OF FIRE: 5 shots at 10m shot on the relevant Target, in your own time scored out of 50 points.\n FIRING POSITION: Standing position, handgun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": ".22 Rimfire Revolver Exercises (Precision Shooting)",
+        "appliesTo": "handgun",
+        "text": "5m, .22 Rimfire Derringer & Vest Gun Exercise - Exercise Rules \nA .22 Rimfire Derringer & Vest-Gun is a handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Rimfire Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: .22 Rimfire Derringers and .22 Rimfire calibre Vest-Guns (.22S, .22LR, .22Mag) and .22wmr calibre revolvers (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "Centre-Fire Semi-Auto Pistol Exercises (Precision Shooting)",
+        "appliesTo": "handgun",
+        "text": "5m, Derringer & Vest Gun Exercise - Exercise Rules \n VEST-GUN: A Centre-Fire Derringer & Vest-Gun is a centre-fire handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: Only Centre-Fire Derringers and Centre-Fire Vest-Guns in calibres from .25 up to 7,65mm (.32) (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "5m, Derringer & Vest Gun Exercise",
+        "appliesTo": "handgun",
+        "text": "VEST-GUN: A Centre-Fire Derringer & Vest-Gun is a centre-fire handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: Only Centre-Fire Derringers and Centre-Fire Vest-Guns in calibres from .25 up to 7,65mm (.32) (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": "Com03",
+        "title": "5m, Centre-Fire Snubby/Pocket Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": "CENTRE-FIRE \"SNUBBY\" & POCKET PISTOL: All Centre-Fire Calibres Semi-Auto Pistol of which the barrel is not longer than 100mm and the grip below the trigger guard is not longer than 80mm OR all Centre-Fire Single/Double Action Revolvers of which the barrel is not longer than 90mm and the grip below the trigger guard is not longer than 80mm.\nThe Snubby / Pocket Pistol must fit the boxes described on the page you can Download HERE \n FIREARMS PERMITTED: All Calibres of Centre-Fire Semi-Auto Pistols AND all Calibres of Singe/Double Action Centre-Fire Revolvers conforming to the definition of \"Snubby\" & Pocket Pistol – only fixed metallic sights allowed\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, \"Snubby\" or Pocket Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "5m, Centre-Fire Compact Carry Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": "SEMI-AUTO COMPACT CARRY PISTOL:   THIS IS A SEMI-AUTO PISTOLS ONLY EXERCISE:   All Centre-Fire Semi-Auto Pistol in calibres .380 ACP (9mmK) or larger of which the barrel is not longer than 89mm (3.5 inch) and which, unloaded but with magazine inserted , fits in a Box 165mm long x 120mm high as described on the page you can Download HERE \n FIREARMS PERMITTED:  All Calibres of Centre-Fire Semi-Auto Pistol with only metallic sights s conforming to the definition of SEMI-AUTO COMPACT CARRY PISTOL \n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE:   Total of  5 shots at 5m  – shot on your own time, on one A4 target and scored out of  50 points.  Target can be downloaded from relevant registered firearm on member's Natshoot Portal.\n FIRING POSITION:  Standing position, Compact Carry Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "7m, Centre-Fire Carry Gun Exercise",
+        "appliesTo": "handgun",
+        "text": "CARRY GUN: Centre-Fire Handguns of calibre 7,65mm and larger, fitting in a Box [rectangle] of 190mm [L] x 140mm [H] (all types of sight configuration allowed)\nThe Carry Gun must fit the Box described on the page you can Download HERE \n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 7 metres.\n COURSE OF FIRE: Total of 5 shots at 7m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Carry Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "7m, Historic Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED: \n Revolvers issued and used in the Anglo-Boer War, the Great War (WW I) and WWII (pre-1950 Production) in the following calibres, i.e.: 38 Smith and Wesson, Colt 38 police, Webley 38, .45 ACP Smith & Wesson, Webley 455 (no barrel length restrictions – only iron open sights allowed).\n Semi-Auto Pistols issued and used in the Anglo-Boer War, the Great War (WW I) and WWII (pre-1950 Production) in the following calibres, i.e.: 9mmP, 9mmS, .45 ACP (no barrel length restrictions – only iron open sights allowed).\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 7 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, revolver held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": "Com04",
+        "title": "8m, Centre-Fire Box-Gun Exercise",
+        "appliesTo": "handgun",
+        "text": "CENTRE-FIRE BOX-GUN: A Centre-Fire Box-Gun is a centre-fire handgun of which the whole frame, sights and grip, fits into a rectangle of 210mm [L] x 160mm [H] (5mm variance on both sides allowed).\nThe Centre-Fire Box-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: All Calibre Centre-Fire Handguns up to .50 Cal, which fit in the prescribed Rectangle (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 8 metres.\n COURSE OF FIRE: Total of 5 shots at 8m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Box-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support"
+      },
+      {
+        "code": null,
+        "title": "10m, Centre-Fire Handgun Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED: Only Centre-Fire Handguns in Calibres up to .50 Cal (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 10 metres.\n COURSES OF FIRE: 5 shots at 10m shot on the relevant A4 Handgun Target, in your own time scored out of 50 points.\n FIRING POSITION: Standing position, handgun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "20m, Hunting Handgun (Pistol) Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED: All purpose built Centre-Fire Hunting Handguns in typical Centre-Fire Rifle Calibres (i.e. Thompson Contender) – OR minimum 4 inch barrelled Centre-Fire Revolvers in calibres from .38 Spec and larger (Only Pistol allowed: Desert Eagle in .44 Mag cal and larger) (al types of sight configurations allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 20 meters.\n COURSES OF FIRE: 5 shots at 20m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is allowed – use of shooting sticks is allowed – or shooting from a bench over a rest."
+      },
+      {
+        "code": null,
+        "title": "Centre-Fire Revolver Exercises (Precision Shooting)",
+        "appliesTo": "handgun",
+        "text": "5m, Derringer & Vest Gun Exercise - Exercise Rules \n VEST-GUN: A Centre-Fire Derringer & Vest-Gun is a centre-fire handgun of which the barrel is not longer than 3 inches and of which the whole frame, sights and grip, fits into a rectangle of 130mm x 100mm.\nThe Derringer & Vest-Gun must fit into the box described on the page you can Download HERE \n FIREARMS PERMITTED: Only Centre-Fire Derringers and Centre-Fire Vest-Guns in calibres from .25 up to 7,65mm (.32) (all types of sight configuration allowed)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 5 metres.\n COURSE OF FIRE: Total of 5 shots at 5m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Derringer or Vest-Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      },
+      {
+        "code": null,
+        "title": "50m Centre-fire Hunting Handgun Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED:  All calibres of Hunting Revolvers in handgun calibres with barrel length between 4 inches and 10 inches (any sight configuration)\n SHOOTING DISTANCE:  The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 meters.\n COURSE OF FIRE:   5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION:  Any shooting position is allowed – use of shooting sticks is allowed – or shooting from a bench over a rest."
+      },
+      {
+        "code": null,
+        "title": "20m, Single Shot Sporting Handgun Exercise",
+        "appliesTo": "handgun",
+        "text": "This exercise is designed to shoot air rifles for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner.\n FIREARMS PERMITTED: Only Springer, CO2, or PCP Air Rifles in the following Calibres may be used (.177 / 4.5mm ; .20 / 5mm ; .22 / 5,5mm ; .25 / 6,35mm)\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 25 metres.\n COURSE OF FIRE: Strictly two shots on each of the 5 smaller circles on the A4 Target, shot @ 25m on your own time, and scored out of 100 points.\n FIRING POSITION: Any shooting position is valid, with the exception that the butt of the gunstock may not be rested or supported on anything else than being in the shoulder."
+      },
+      {
+        "code": null,
+        "title": "Handgun Rapid Fire Exercises (Rapid Fire Shooting)",
+        "appliesTo": "handgun",
+        "text": "10m, .22 Rimfire Pistol Rapid Fire Exercise \n FIREARMS PERMITTED:  Only Semi-Automatic Pistols in .22S, .22LR & .22 Mag Calibres (al types of sight configurations allowed)\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 10 meters.\n COURSE OF FIRE:   10 shots at 10m in 30 seconds shot on the correct exercise specific target in your own time, and scored out of 100 points.\n1.   Load 10 rounds in magazine;\n2.   De-cock pistol on empty chamber with hammer down – magazine in pistol;\n3.   On start signal, cock pistol and fire string of 10 shots at prescribed target @ 10 metres;\n4.   Participants may use pre-loaded second magazine if first magazine does not take 10 rounds;\n Note:   Time for exercise to be completed is 30 Seconds.  Timing starts when time keeper gives the command Start (Fire) and ends when the last shot has been fired.\n FIRING POSITION:   Standing position, Rimfire Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support"
+      },
+      {
+        "code": null,
+        "title": "10m, .22 Rimfire Pistol Rapid Fire Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED:  Only Semi-Automatic Pistols in .22S, .22LR & .22 Mag Calibres (al types of sight configurations allowed)\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 10 meters.\n COURSE OF FIRE:   10 shots at 10m in 30 seconds shot on the correct exercise specific target in your own time, and scored out of 100 points.\n1.   Load 10 rounds in magazine;\n2.   De-cock pistol on empty chamber with hammer down – magazine in pistol;\n3.   On start signal, cock pistol and fire string of 10 shots at prescribed target @ 10 metres;\n4.   Participants may use pre-loaded second magazine if first magazine does not take 10 rounds;\n Note:   Time for exercise to be completed is 30 Seconds.  Timing starts when time keeper gives the command Start (Fire) and ends when the last shot has been fired.\n FIRING POSITION:   Standing position, Rimfire Pistol held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support"
+      },
+      {
+        "code": null,
+        "title": "10m, Centre-Fire Rapid Fire Pistol Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED:  Only Semi-Automatic Pistols in calibres form 9mmP and larger (al types of sight configurations allowed)\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 10 meters.\n COURSES OF FIRE:   10 shots at 10m in 30 seconds shot on the correct exercise specific target in your own time, and scored out of 100 points.\n–        Load 10 rounds in magazine;\n–        De-cock pistol on empty chamber with hammer down – magazine in pistol;\n–        On start signal, cock pistol and fire string of 10 shots at prescribed target @ 10 metres;\n–        Participants may use pre-loaded second magazine if first magazine does not take 10 rounds;\nNote:  Time for exercise to be completed is 30 Seconds.  Timing starts when time keeper gives the command Start (Fire) and ends when the last shot has been fired.\n FIRING POSITION:   Standing position, handgun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support"
+      },
+      {
+        "code": null,
+        "title": "10m, Centre-Fire Rapid Fire Revolver Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED:   Revolvers in centre-fire calibres from .38 Special and Larger\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 10 meters.\n COURSES OF FIRE:    The exercise consists of firing two strings of 5 shots in 30 seconds at 10 metres on the same prescribed NHSA A4 target, with manually reloading of revolver in between shooting of two strings to score 100 points\n DOUBLE OR SINGLE ACTION REVOLVERS :   no optical sights allowed – maximum barrel length 4,2 inches / 100mm:\n–        Load 5 rounds in cylinder;\n–        De-cock revolver and place empty cylinder under hammer (hammer down)\n–        On start signal, fire first string of 5 shots at prescribed target @ 10 metres;\n–        Manually load next 5 rounds in cylinder and fire second string of 5 shots at same prescribed target @ 10 metres;\n Note:   Time for exercise to be completed is 30 seconds – speed loaders may be used – or a maximum of 5 rounds may be manually loaded at a time. \nTiming starts when time keeper gives the command Start (Fire) and ends when the last shot has been fired.\n FIRING POSITION:   Standing position, handgun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support"
+      },
+      {
+        "code": null,
+        "title": "20m, Handgun Steel Plate Exercise (Pistols & Revolvers)",
+        "appliesTo": "handgun",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to the Steel Plates being shot at.\n FIREARMS PERMITTED:   All Calibres and all actions of Handguns allowed.\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 20 metres.\n COURSES OF FIRE:  Stationary Falling Plate Exercise: 5 shots at 20m on your own time, shot on 5 individual falling steel plates set-up next to one another, and scored out of 50 points\n SCORING:  10 points per dropped plate and 5 points per hit steel plate which did not fall over and 0 points per missed steel plate. \nPlates to be spaced with at least 200mm gap between them, and set up on a flat / horizontal surface.\n FIRING POSITION:  Any firing positions allowed \n TARGETS:  Shall be of square profile of maximum 300mm (w) x 300mm (h)  x 10mm thick (b), with a support base extending at least 50mm in font of upright of plate. 5% variation in any of above measurements are allowed."
+      },
+      {
+        "code": null,
+        "title": "20m, Handgun Gong Exercise (Pistols & Revolvers)",
+        "appliesTo": "handgun",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to Gong being shot at.\n FIREARMS PERMITTED:  All Calibres and Actions of Handguns Allowed\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 20 metres.\n COURSES OF FIRE – Gong Exercise:   5 shots at 20m on one gong on your own time, shot on one swinging gong (or multiple swinging gongs) and scored out of 50 points – 10 points per hit and 0 points per missed shot (gong).\n FIRING POSITION:   Any firing positions allowed\n TARGETS:  Gongs:  shall be of round profile with a maximum diameter of 300mm excluding the support brackets / chains etc. Smaller gongs may be used, but no adjustment in scoring or distance are allowed."
+      },
+      {
+        "code": null,
+        "title": "15m, Black Powder Handgun Exercise",
+        "appliesTo": "handgun",
+        "text": "FIREARMS PERMITTED:   Either flint lock or cap lock pistols as well as cap revolvers in only the following calibres: .32, .36, .44, .45, .50, & .57\nOnly cast lead bullets, with or without gas checks, may be used;\nEither smokeless or black powder loads may be used;\nOptical or metallic sights may be used (mark sight type on target).\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 15 metres.\n COURSE OF FIRE:   5 shots at 15m shot on the relevant A4 NSA Black Powder Handgun Target, in your own time scored out of 50 points.\n FIRING POSITION:   Free style (out of hand) standing, kneeling, sitting or prone position with no additional support whatsoever (i.e. bag) for handgun.  Shooter`s elbows may rest on ground, on knees or on bench-top"
+      },
+      {
+        "code": "Com02",
+        "title": "25m Air Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot air rifles for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner.\n FIREARMS PERMITTED: Only Springer, CO2, or PCP Air Rifles in the following Calibres may be used (.177 / 4.5mm ; .20 / 5mm ; .22 / 5,5mm ; .25 / 6,35mm)\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 25 metres.\n COURSE OF FIRE: Strictly two shots on each of the 5 smaller circles on the A4 Target, shot @ 25m on your own time, and scored out of 100 points.\n FIRING POSITION: Any shooting position is valid, with the exception that the butt of the gunstock may not be rested or supported on anything else than being in the shoulder."
+      },
+      {
+        "code": null,
+        "title": "22 Rimfire Rifle Exercises (Precision Shooting)",
+        "appliesTo": "rifle",
+        "text": "25m, .22 Rimfire Rifle Exercise - Exercise Rules \n FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard .22 Mag, .22 Short, and .22LR Rimfire Calibre (Bolt / Pump / Lever Actions Rifles) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 25 metres.\n COURSE OF FIRE: 5 shots at 25m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "25m, .22 Rimfire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard .22 Mag, .22 Short, and .22LR Rimfire Calibre (Bolt / Pump / Lever Actions Rifles) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 25 metres.\n COURSE OF FIRE: 5 shots at 25m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": "Com11",
+        "title": "50m, .22 Rimfire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard .22 Mag, .22LR and 22 Short Rimfire Calibre (Bolt / Pump / Lever Action) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m, .22 Rimfire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard .22 Short, .22LR and .22Mag Rimfire Calibres (Bolt / Pump / Lever Action) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 100 metres.\n COURSE OF FIRE: 5 shots at 100m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "High Power Rimfire Rifle Exercises (Precision Shooting)",
+        "appliesTo": "rifle",
+        "text": "50m, Hi-Power Rimfire Rifle Exercise - Exercise Rules \n FIREARMS PERMITTED:   Only Rimfire Rifles chambered for the following calibres similar to .22 WMR, .17 WSM & .17 HMR  (Open metalic sights or scopes are permitted)\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE:   5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION:   Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "50m, Hi-Power Rimfire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:   Only Rimfire Rifles chambered for the following calibres similar to .22 WMR, .17 WSM & .17 HMR  (Open metalic sights or scopes are permitted)\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE:   5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION:   Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m, All Actions High Power, Small-Bore Centre-Fire Rifle",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:  \n Rimfire Rifles chambered for .22 WMR, .17 WSM & .17 HMR – any type of sight.\n Centre-Fire Rifles chambered for  .17 Rem, .17 Hornet and similar calibres below .204 Ruger – any type of sight.\n SHOOTING DISTANCE:  The shooting distance measured from the target to the front edge of the Shooter's firing line is 100 metres.\n COURSES OF FIRE:  5 shots at 50m – shot in each of the five circles on one A4 page in your own time scored out of 50 points.\n FIRING POSITION:   Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "Centre-Fire Rifle Exercises (Precision Shooting)",
+        "appliesTo": "rifle",
+        "text": "25m, Large Calibre Hunting Rifle Exercise - Exercise Rules \n FIREARMS PERMITTED:   All Standard Double Barrelled Centre-Fire Rifles OR Bolt Action Centre-Fire Riles OR Falling Block Centre-Fire Rifles in Caibres from 9.3×62 and larger up to 700 NE\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 25 metres.\n COURSE OF FIRE:    4 shots at 25m shot on one A4 target in your own time scored out of 40 points.\n FIRING POSITION:    Standing position – Shooting stick and/or slings may be used."
+      },
+      {
+        "code": null,
+        "title": "25m, Large Calibre Hunting Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:   All Standard Double Barrelled Centre-Fire Rifles OR Bolt Action Centre-Fire Riles OR Falling Block Centre-Fire Rifles in Caibres from 9.3×62 and larger up to 700 NE\n SHOOTING DISTANCE:   The shooting distance measured from the target to the front edge of the Shooter's firing line is 25 metres.\n COURSE OF FIRE:    4 shots at 25m shot on one A4 target in your own time scored out of 40 points.\n FIRING POSITION:    Standing position – Shooting stick and/or slings may be used."
+      },
+      {
+        "code": null,
+        "title": "50m, Historic Rife Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot historic centre-fire rifles for the participant to achieve the best and most consistent accuracy.  The shooter shoots in the traditional manner from the prone position, from the bench or with \"crossed sticks\" or with a single support of a similar design.\n HISTORIC RIFLES \nAny centre-fire calibre of which the specific rifle with which the target is shot, is manufactured before 1950, or is a proven centre-fire military bolt action rifle, or falling block or with lever action, which could have been manufactured after 1950, but excludes all specific sniper rifles manufactured after 1950.\nAny centre-fire calibre of any rifle design (pre-1900 reproduction) with an external hammer is also allowed, if build to pre-1900 specification and fitted with correct period metallic sights.\n Only open metallic sights are allowed. \n THE EXERCISE \n FIREARMS ALLOWED:   \nAny centre-fire calibre of which the specific rifle with which the target is shot, is proven to be produced before 1950 (proof of year of production of rifle must  accompany all shot target scores logged on your personal Natshoot web page).\nAny centre-fire calibre of any rifle design (pre-1900 reproduction) with an external hammer is allowed, if build to pre-1900 specification and fitted with correct period metallic sights.\nAny centre-fire calibre bolt action military rifle\nOnly open sights are allowed.\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 metres.\n COURSE OF FIRE:    3 shots at 50m shot on one A4 target in your own time scored out of 30 points.\n FIRING POSITION:   Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m, Small Calibre Centre-Fire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Small-Bore Centre-fire Rifles, in calibres smaller than .22 Hornet, i.e. .17 REM, .17 Hornet & ,204 Ruger calibres\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 100 metres.\n COURSE OF FIRE: 5 shots at 100m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m, All Actions Centre-Fire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Centre-Fire Rifles chambered for calibres up to .50 Cal in any kind of action\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 100 metres.\n COURSE OF FIRE: 5 shots at 100m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": "Com16",
+        "title": "200m, All Actions Centre-Fire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Actions in Standard Centre-Fire Rifles chambered for calibres up to .50 Cal\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 200 metres.\n COURSE OF FIRE: 5 shots at 200m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid, rifles may be rested on a bench with the front rested on a bi-pod or similar device, with exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "300m, All Actions Centre-Fire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED: All Standard Centre-Fire Rifles chambered for calibres up to .50 Cal any action allowed\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 300 metres.\n COURSE OF FIRE: 5 shots at 300m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m - 600m Rifle Steel Plate Shooting Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:  All Rifle Calibres\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 100m or 200m or 300m or 400m or 500m or 600m depending on the distance the shot chooses to complete the exercise\n COURSES OF FIRE – LONG DISTANCE STATIONARY STEEL PLATE EXERCISE:  5 shots in your own time, shot on 5 individual falling steel plates at the chosen distance, set-up next to one another, and scored out of 50 points\n SCORING  – 10 points per hit per steel plate and 0 points per missed steel plate.  Plates to be spaced with at least 200mm gap between them, and set up on a flat / horizontal surface.\n TARGETS:    Stationary Falling plates:  shall be of square profile of maximum 300mm (w) x 300mm (h)  x 10mm thick (b), with a support base extending at least 50mm in font of upright of plate. 5% variation in any of above measurements are allowed. \n FIRING POSITION:  Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "100m - 600m Rifle Gong Shooting Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:  All Rifle Calibres\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 100m or 200m or 300m or 400m or 500m or 600m depending on the distance the shot chooses to complete the exercise\n COURSES OF FIRE – HANGING GONG EXERCISE:   5 shots in your own time, shot on one swinging gong (or multiple swinging gongs) set at the chosen distance between 100m and 600m, and scored out of 50 points – 10 points per hit and 0 points per missed shot.\n TARGETS:  Hanging Gongs:  shall be of round profile with a maximum diameter of 300mm excluding the support brackets / chains etc. Smaller gongs may be used, but no adjustment in scoring or distance are allowed.\n FIRING POSITION:  Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": ".22 Lever Action Rifle Exercise (Precision Shooting)",
+        "appliesTo": "rifle",
+        "text": "50m, .22 Rimfire Lever Action Rifle Exercise - Exercise Rules \nThis exercise is designed to shoot .22 Rimfire Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner\n FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard 22LR and 22 Short Rimfire Calibre (Bolt / Pump / Lever Action) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "50m, .22 Rimfire Lever Action Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot .22 Rimfire Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner\n FIREARMS PERMITTED: All Standard Rimfire Rifles chambered for the standard 22LR and 22 Short Rimfire Calibre (Bolt / Pump / Lever Action) (Open metallic sights or scopes are permitted)\n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "Center-Fire Lever Action Rifle Exercise (Precision Shooting)",
+        "appliesTo": "rifle",
+        "text": "50m, Pistol Calibre Lever Action Rifle Exercise - Exercise Rules \n This exercise is designed to shoot centre-fire pistol calibre Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner \n FIREARMS ALLOWED:   All Typical Centre-fire Pistol Calibre Lever Action Rifles\n SHOOTING DISTANCE:  The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE:  5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": "Com17",
+        "title": "50m, Pistol Calibre Lever Action Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot centre-fire pistol calibre Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner \n FIREARMS ALLOWED:   All Typical Centre-fire Pistol Calibre Lever Action Rifles\n SHOOTING DISTANCE:  The shooting distance measured from the target to the front edge of the Shooter's firing line is 50 metres.\n COURSE OF FIRE:  5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": "Com18",
+        "title": "50m, Rifle Calibre Lever Action Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot centre-fire calibre Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner\n FIREARMS ALLOWED: Only Center-Fire Rifle Calibre Lever Action Rifles\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on one A4 target in your own time scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "50m, USA Medium-Bore Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot medium-bore USA Rimmed calibres centre-fire calibre Lever Action Rifles and for the participant to achieve best and most consistent accuracy. The shooter shoots in the traditional manner from the prone position to the bench or with ‘crossed sticks’ or a single support of a similar manner \nFIREARMS ALLOWED – MEDIUM BORE USA RIMMED CALIBRE RIFLES: Members may participate in this exercise with lever actions and with falling block single shot rifles.\nOnly rimmed straight taper or rimmed bottleneck cartridges with a minimum calibre of ,300 and maximum calibre of ,360 and with minimum case length of 2.00” (inches) or larger, may be used. Suggested cartridges include: .30-30 Win. / .30-40 / .32-40 / and .32 Win. Spl.\nOnly cast lead bullets, with or without gas checks, may be used;\nEither smokeless or black powder cartridge loads may be used;\nOptical or metallic sights may be used.\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on an A4 Target in your own time, and scored out of 50 points.\n FIRING POSITION: Free style (out of hand) standing, kneeling, sitting or prone position with no additional support whatsoever (i.e. bag or bi-pod) for rifle. Shooter`s elbows may rest on ground, on knees or on bench-top"
+      },
+      {
+        "code": null,
+        "title": "50m, Western Big-Bore Rife Exercise",
+        "appliesTo": "rifle",
+        "text": "This exercise is designed to shoot historically correct rifles with the correct vintage cartridge styles at representative ranges suitable to the rifles design, sights and ammunition capabilities. Being vintage style ammunition, it requires the shooter's skill to reload custom prepared ammunition with hand cast lead bullets and custom loads to achieve best and most consistent accuracy. The shooter shoots in the traditional manner with ‘crossed sticks’ or a single support of a similar manner\n FIREARMS ALLOWED: Members may participate in the Classic Western/Big Bore rimmed cartridge exercise with lever action rifles (or falling block single shot rifles).\nOnly rimmed straight taper cartridges with a minimum bore of 0.375 or greater and with cartridge case of min. 2.00” (inches) or larger, may be used in the following calibres: .375 win / .38-55 / .40-65 / .405Win / /45-70 / all Sharps .380+ / Martini-Henry / .444 Marlin.\nOnly cast lead bullets, with or without gas checks, may be used;\nEither smokeless or black powder cartridge loads may be used;\nOptical or metallic open sights may be used\n SHOOTING DISTANCE: The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 metres.\n COURSE OF FIRE: 5 shots at 50m shot on an A4 Target in your own time, and scored out of 50 points.\n FIRING POSITION: Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": "50m, Black Powder Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "FIREARMS PERMITTED:    Any flint-lock, cap-lock or in line Black Powder rifle in calibres between .32 and .75 \nOnly cast lead bullets, with or without gas checks, may be used;\nEither smokeless or black powder cartridge loads may be used;\nOptical or metallic sights may be used (mark sight type on target).\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 50 metres.\n COURSE OF FIRE:  5 Shots at 50m shot on one A4 Target in your own time, and scored out of 50 points.\n FIRING POSITION:   Any shooting position is valid; rifles may be rested on a bench, with the exception that rifle rests of which the front and the back are connected by a centre piece, may not be used."
+      },
+      {
+        "code": null,
+        "title": ".22 Semi-Auto Rapid Fire Rifle Exercise (Rapid Fire Shooting)",
+        "appliesTo": "rifle",
+        "text": ".22 Semi-Auto Rimfire Rifle Exercise - Exercise Rules \nIt is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only .22 Rimfire Calibre in Semi-Auto Rifles or in Pistol Carbine Conversion Kits (i.e. 22LR Rimfire) \nExercise shot on two Targets against time\n A-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)  \n B-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring\n TIME PENALTIES:  All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target.\n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Ex ercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open iron sights or any optical or laser sight).\n___________________\n FIRING POSITIONS:   The standing position without support is mandatory for whole exercise – gun strap may be used."
+      },
+      {
+        "code": "Com19",
+        "title": ".22 Semi-Auto Rimfire Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only .22 Rimfire Calibre in Semi-Auto Rifles or in Pistol Carbine Conversion Kits (i.e. 22LR Rimfire) \nExercise shot on two Targets against time\n A-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)  \n B-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring\n TIME PENALTIES:  All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target.\n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Ex ercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open iron sights or any optical or laser sight).\n___________________\n FIRING POSITIONS:   The standing position without support is mandatory for whole exercise – gun strap may be used."
+      },
+      {
+        "code": null,
+        "title": "Centre-Fire Semi-Auto Rapid Fire Rifle Exercise (Rapid Fire Shooting)",
+        "appliesTo": "rifle",
+        "text": "Pistol Calibre Semi-Auto Rifle Exercise - Exercise Rules \nIt is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only Pistol Calibres in Semi-Auto Rifles or in Pistol Carbine Conversion Kits (i.e. 7,65×17; 9mmP; .357 Mag; .40 S&W; .45 ACP) \nExercise shot on two Targets against time\n A-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)  \n B-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring\n TIME PENALTIES:   All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target. \n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Exercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open iron sights or any optical or laser sight).\n___________________\n FIRING POSITIONS:   The standing position withnno support is mandatory for all semi-auto exercises – gun straps may be used."
+      },
+      {
+        "code": "Com20",
+        "title": "Pistol Calibre Semi-Auto Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only Pistol Calibres in Semi-Auto Rifles or in Pistol Carbine Conversion Kits (i.e. 7,65×17; 9mmP; .357 Mag; .40 S&W; .45 ACP) \nExercise shot on two Targets against time\n A-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)  \n B-Target  – Rapid fire: Firing of 10 shots at  25 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring\n TIME PENALTIES:   All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target. \n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Exercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open iron sights or any optical or laser sight).\n___________________\n FIRING POSITIONS:   The standing position withnno support is mandatory for all semi-auto exercises – gun straps may be used."
+      },
+      {
+        "code": "Com21",
+        "title": "(20 Cal) 223 / 5,56 Calibre Semi-Auto Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only Centre-fire Semi-auto Rifle/Carbines below so-called .30 calibres – (i.e. 5.45 x 39mm, .223 Rem. = 5.56, .243 Win., .270 Win., .270 WSM, 6.8mm Rem. SPC, 7mm WSM) (7mm = 0.275591 inch)\nExercise shot on two Targets against time\n A-Target  – Rapid fire: 10 shots at  25 metres  – timed string (no time limits)  \n B-Target  – Rapid fire: 10 shots at  50 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring.\n TIME PENALTIES:   All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target. \n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the B-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Exercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open or scoped sights).\n___________________\n FIRING POSITIONS:   The standing position with no support is mandatory – gun strap may be used."
+      },
+      {
+        "code": "Com22",
+        "title": "(30 Cal) 308 / 7,62 Calibre Semi-Auto Rifle Exercise",
+        "appliesTo": "rifle",
+        "text": "It is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to target A and target B. The video must also capture the shooting time used for both targets of this exercise.\n FIREARMS ALLOWED:   Only Centre-fire Semi-auto Rifle/Carbines FROM AND ABOVE the so-called .30 calibres (i.e. .300 Win. Mag., .300 WSM, 7.62 x 39mm, .308 Win. = 7.62x51mm, .30/06, .35 Whelen)\nExercise shot on two Targets against time\n A-Target  – Rapid fire: 10 shots at  25 metres  – timed string (no time limits)  \nB-Target – Rapid fire: 10 shots at  50 metres  – timed string (no time limits)      \n SCORING: \nParticipants must shoot 10 shots at each target\nShots count according to the number of the scoring ring they are fired into.  Cut shots counts the higher number – a cut shot is a shot of which the hole of the shot (not its leaded edge) cuts the outside line of any scoring ring\n TIME PENALTIES:   All shots outside of scoring rings but still on the edge of the paper the target is printed upon, or which are totally off the target (A or B), represents a time penalty of + 3,00 seconds / per shot for that specific target. \n Scoring the A-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 30,00 seconds = a Mark of 2,33)\n Scoring the B-Target:   Score is calculated as the number of points scored with the 10 shot string – that total is then divided by the number of seconds (two decimals) it took to shoot the 10 shots (Original time plus time penalties) = the Mark for the A-Target (i.e. 70 points divided by 22,00 seconds = a Mark of 3,18)\n Example of scoring:  Mark for A-Target is 2,33 + Mark for B-Target is 3,18 – add Mark for A-Target and Mark for B-Target =  Exercise Mark of 5,52 \nThe score achieved for each Target is entered onto the Score Sheet, which must accompany the Targets at submission of scores on the participant`s Personal Natshoot Profile Page.\n___________________\n TIME KEEPING:   Time keeping may be done with a stopwatch and by any person who is able and willing to assist members with the exercise and who signs the targets and the score sheet on the relevant space provided with inclusion of his/her ID number and cell phone number.\nTiming starts when time keeper says Start (fire) and ends when the last shot has been fired.\n___________________\n SIGHT CONFIGURATION:   Any sight configuration may be used (open or scoped sights).\n___________________\n FIRING POSITIONS:   The standing position is mandatory for all exercises – gun straps may be used."
+      },
+      {
+        "code": null,
+        "title": "Shotgun Clay Target Shooting",
+        "appliesTo": "shotgun",
+        "text": "FIREARMS ALLOWED: All double barrelled shotguns in bores (calibres) from 410, 12Ga, 16Ga, 18Ga, and 20Ga.\nSemi-automatic and pump action shotguns allowed if ranges allow them – Single barrelled shotguns specific for ATA Trap are allowed where ranges allow such shotguns\n COURSES OF FIRE \n COMPAK – Any Compak range set-up consisting of one round of, or multiples of rounds of, 25 clays.\n SKEET (NSSA Skeet)\nAll variants of Skeet consisting of one round of, or multiples of rounds of, 25 clays.\n ATA & Olympic TRAP \nAll forms of Trap disciplines consisting of one round of, or multiples of rounds of, 25 clays.\n DTL Trap \nConsisting of one round of, or multiples of rounds of, 25 clays counting 75 points.\n SPORTING CLAYS (FITASC Sporting, English Sporting & English Doubles)\nAll variants of Sporting Clays consisting of one round of, or multiples of rounds of, 25 clays.\n UNIVERSAL TRENCH: All forms of Trench disciplines consisting of one round of, or multiples of rounds of, 25 clays.\n FIRING POSITION: It is NHSA policy that participants conform to standard acceptable shotgunning stances and that shotguns will be handled with the utmost of care and safety in mind – conform to range set standards at all times (eye and ear protection is mandatory).\n TARGETS: A normal round of any of the above mentioned clay target shooting disciplines, consisting of a combination of normal clays, midi clays, mini clays, super mini clays, battue clays, or rabbit clays (thrown with a hand trap or with an electric operated trap machine).\nSkeet, (NSSA Skeet) (per round of 25 clays);\nSporting Clays (FITASC Sporting, English Sporting & English Doubles) (per round of 25 clays);\nTrap (ATA Trap or DTL Trap & Olympic Trap) (per round of 25 clays), and;\nUniversal Trench (all formats of trench) (per round of 25 clays)."
+      },
+      {
+        "code": null,
+        "title": "20m All Action Shotguns Steel Plate Shooting Exercise",
+        "appliesTo": "shotgun",
+        "text": "FIREARMS PERMITTED:   All Action Shotguns in Bores 10Ga, 11Ga, 12Ga, 16Ga, 18Ga, 20Ga & 28Ga & 410 Calibre\n SHOT SIZE:  Strictly only #3 shot to #8 shot\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 20 metres.\n COURSES OF FIRE  (Stationary Falling Plate only):  \nThe exercise consists of firing 10 shots at 20m on 10 individual falling steel plates, set-up next to one another.\n SCORING:  Each of the 10 steel plates hit, scores 10 points – Each of the 10 steel plates missed, scores 0 points – Score for exercise is calculated out of 100 points.\n FIRING POSITION:   The standing position is mandatory – no gun-slings allowed.\n TARGETS:    Stationary Falling plates:  shall be of square profile of maximum 300m (w) x 300mm (h)  x 10mm thick (b), with a support base extending at least 50mm in font of upright of plate. 5% variation in any of above measurements are allowed.\nIt is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to falling plates being shot at."
+      },
+      {
+        "code": null,
+        "title": "20m All Action Shotguns Gong Shooting Exercise",
+        "appliesTo": "shotgun",
+        "text": "FIREARMS PERMITTED:   All Actions Shotguns in bores 110Ga, 11Ga, 12Ga, 16Ga, 18Ga, 20Ga, 28Ga & 410 calibre\n SHOT SIZE:  Strictly only #3 shot to #8 shot\n SHOOTING DISTANCE:   The shooting distance measured from the target to the edge of the firing line closest to the shooter is 20 metres.\n COURSES OF FIRE  (Hanging Gong only):  The exercise consists of firing 10 shots at 20m on 1 or more hanging gongs.\n SCORING:  Each Gong hit, scores 10 points – Each Gong missed, scores 0 points – Score for exercise is calculated out of 100 points.\n FIRING POSITION:   The standing position is mandatory – no gun-slings allowed.\n TIME LIMIT:    The exercise must be completed in 60 seconds\n TARGETS:  Hanging Gongs:  shall be of round profile with a maximum diameter of 300mm excluding the support brackets / chains etc.  Smaller gongs may be used, but no adjustment in scoring or distance are allowed. \nIt is compulsory that a video of the exercise being shot shall be made for ratification if need arises. The video must be taken from behind the shooter in such a manner that the shooting position of the shooter is visible in relationship to Gong being shot at."
+      },
+      {
+        "code": null,
+        "title": "7m, Centre-Fire Carry Gun Exercise",
+        "appliesTo": "any",
+        "text": "7m CENTRE-FIRE CARRY GUN EXERCISE \n CARRY GUN: Centre-Fire Handguns of calibre 7,65mm and larger, fitting in a Box [rectangle] of 190mm [L] x 140mm [H] (all types of sight configuration allowed)\nThe Carry Gun must fit the Box described on the page you can Download HERE \n SHOOTING DISTANCE: The shooting distance measured from the target to the front edge of the Shooter's firing line is 7 metres.\n COURSE OF FIRE: Total of 5 shots at 7m – shot on your own time, on one target and scored out of 50 points.\n FIRING POSITION: Standing position, Carry Gun held in one or both hands, with all portions of the shooter`s clothing, body and firearm clear of artificial support."
+      }
+    ]
+  },
+  "fosa": {
+    "name": "FOSA — Firearms Owners South Africa",
+    "sourceUrl": "https://fosa.co.za/ShootingDisciplines.aspx",
+    "fetchedOn": "2026-11-05",
+    "note": "FOSA publishes target templates and the distance/shot count for each discipline, not a verbatim course of fire. The rules text below is the published listing, not a rulebook.",
+    "exercises": [
+      {
+        "code": null,
+        "title": "Practice Target",
+        "appliesTo": "any",
+        "text": "Distance: 10m. Shots: 10."
+      },
+      {
+        "code": null,
+        "title": "Centerfire Compact Handguns",
+        "appliesTo": "handgun",
+        "text": "Distance: 7m. Shots: 5."
+      },
+      {
+        "code": null,
+        "title": "Rimfire Target",
+        "appliesTo": "any",
+        "text": "Distance: 25m. Shots: 20."
+      },
+      {
+        "code": null,
+        "title": "Lever Action",
+        "appliesTo": "rifle",
+        "text": "Distance: 25m. Shots: 10."
+      },
+      {
+        "code": null,
+        "title": "Precision Rifle",
+        "appliesTo": "rifle",
+        "text": "Distance: 100m. Shots: 5."
+      },
+      {
+        "code": null,
+        "title": "Load Development",
+        "appliesTo": "any",
+        "text": "Distance: 100m. Shots: 12."
+      },
+      {
+        "code": null,
+        "title": "Scope Setting Target",
+        "appliesTo": "any",
+        "text": "Distance: Various. Shots: Various."
+      },
+      {
+        "code": null,
+        "title": "Historical Handgun",
+        "appliesTo": "handgun",
+        "text": "Distance: Various. Shots: 5."
+      },
+      {
+        "code": null,
+        "title": "Semi Auto Rifle Practice",
+        "appliesTo": "rifle",
+        "text": "Distance: Various. Shots: Various."
+      },
+      {
+        "code": null,
+        "title": "Dedicated Course Target",
+        "appliesTo": "any",
+        "text": "Distance: Various. Shots: Various."
+      },
+      {
+        "code": null,
+        "title": "Scope Settings Target MOA",
+        "appliesTo": "any",
+        "text": "Distance: Various. Shots: Various."
+      }
+    ]
+  }
+}

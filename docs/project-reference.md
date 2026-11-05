@@ -1248,17 +1248,35 @@ result: a document that read as stitched together. A DFO does not compare
 applicants' letters for plagiarism — they compare the facts to the annexures,
 and one consistent spine makes that faster.
 
-**Twelve numbered headings, the same ones every time**, per book Part 4.2:
-introduction, my circumstances, the purpose, what I already do and where it
-stops, the firearm, firearms already licensed to me, competency, association,
-safe storage, my record, section N applied, declaration and request.
+**Sixteen numbered headings, the same ones every time.** The generated SAPS 271
+was retired on 2026-11-05, so the numbers no longer mirror that form; they are
+our own spine now, and the four sections the professional motivations we
+analysed carry were added to it:
+
+1. Introduction · 2. My circumstances · 3. My history with firearms ·
+4. The purpose (self-defence / hunting / sport / continued use) · 5. What I
+already do and where it stops · 6. The firearm applied for · 7. Why this firearm
+and not the alternatives · 8. Firearms already licensed to me · 9. My competency
+and training · 10. Association membership and dedicated status · 11. The
+association's rules for this exercise · 12. Safe storage and transport ·
+13. My record · 14. Section N applied · 15. Administrative justice ·
+16. Declaration and request.
 
 - ⚠️ **The numbers do NOT re-sequence when a section is omitted.** A section 15
-  runs 1, 3, 5, 6, 7, 8, 9, 11, 12. The gaps say heading 2 is a self-defence
-  heading and heading 10 is for somebody with something to declare.
-- Headings **2 and 4** are self-defence only. Headings **6, 8 and 10** turn on
-  the applicant's own answers, read by four pure helpers in
-  `motivation-fields.ts`.
+  with nothing held, nothing to declare and no rulebook runs 1, 3, 4, 6, 7, 9,
+  12, 14, 15, 16. The absent numbers say which headings this application never
+  needed.
+- Headings **2 and 5** are self-defence only. **8, 10, 11 and 13** turn on the
+  applicant's own answers, read by pure helpers in `motivation-fields.ts`.
+- ⚠️ **Heading 11 is appended, never written.** The writer produces one lead-in
+  sentence; `appendRulebook()` in `motivation-rulebook.ts` puts the association's
+  published exercise rules underneath it, verbatim, with the source line. The
+  library is `association-rules.ts` + `associations/association-rules.json`
+  (NHSA 61 exercises, FOSA 11), and the raw captures live in the gitignored
+  `backend/data/association-rules/` the way the C.I.P. sheets do.
+- Heading **15** is the same paragraph in every document: a request for a lawful,
+  fair decision with reasons under the Promotion of Administrative Justice Act.
+
 - **No trailing colon.** The PDF tells a heading from a paragraph by its NUMBER;
   the colon test is kept only for documents written before the change.
 - The plan is a pure function of (type, options). **`StructurePlan.seed` is an

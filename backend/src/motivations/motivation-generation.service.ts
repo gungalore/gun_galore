@@ -197,6 +197,8 @@ import {
   parsePressClippingIds,
 } from './motivation-fields';
 import { isMotivationOnly } from './motivation-output';
+import { rulebookForAnswers } from './association-rules';
+import { missingDetail, missingDetailMessage } from './motivation-completeness';
 import { readSaId } from './sa-id';
 import { overlapFromAnswers } from './motivation-overlap';
 import { documentLabel, documentStatus } from './motivation-documents';
@@ -662,6 +664,18 @@ export class MotivationGenerationService {
       );
     }
 
+    /**
+     * ⚠️ THE DOCUMENT'S ARGUMENTS, AFTER THE FORM AND THE HARD RULES.
+     *
+     * `missingRequired` answers "is the registry filled in" and
+     * `applicationBlockers` answers "may this be granted at all"; this answers
+     * "is there anything to write from". The order matters: an empty form must
+     * hear "you have not finished", and an impossible firearm must hear why —
+     * not "your shooting history is too short". Only once the application is
+     * complete and lawful does the detail gate speak. See
+     * motivation-completeness.ts for the list and why it is drawn from the
+     * professional motivations we analysed.
+     */
     const missing = missingRequired(row.licenceType, answers);
     if (missing.length) {
       throw new ConflictException({
@@ -692,6 +706,26 @@ export class MotivationGenerationService {
         message: blockers.map((b) => b.message).join(' '),
         code: 'motivation-not-eligible',
         blockers,
+      });
+    }
+
+    /**
+     * THE DOCUMENT'S ARGUMENTS, AFTER THE FORM AND THE HARD RULES.
+     *
+     * `missingRequired` answers "is the registry filled in" and
+     * `applicationBlockers` answers "may this be granted at all"; this answers
+     * "is there anything to write from". The order matters: an empty form must
+     * hear "you have not finished", and an impossible firearm must hear why,
+     * not "your shooting history is too short". Only once the application is
+     * complete and lawful does the detail gate speak. See
+     * motivation-completeness.ts for the list.
+     */
+    const gaps = missingDetail(answers, row.licenceType);
+    if (gaps.length) {
+      throw new ConflictException({
+        message: missingDetailMessage(gaps),
+        code: 'motivation-needs-detail',
+        missingDetail: gaps,
       });
     }
 
@@ -1574,6 +1608,12 @@ export class MotivationGenerationService {
         intendedUses,
         draftedReason,
         /**
+         * ⚠️ THE RULEBOOK IS APPENDED, NEVER WRITTEN. The writer gets it only so
+         * the lead-in can name the exercise accurately; the text itself is
+         * printed verbatim by the renderer after the association_rules heading.
+         */
+        rulebook: rulebookForAnswers(answers) ?? undefined,
+        /**
          * âš ï¸ THE "COMMON SERVICE CALIBRE" FACT IS GONE WITH THE CLAIM IT
          * SUPPORTED. It read `calibre_fact_sheet: 'held'` whenever The Bench
          * held a dimension sheet for the round, and the S13 brief treated that
@@ -1637,6 +1677,7 @@ export class MotivationGenerationService {
         holdsFirearms: holdsFirearms(answers),
         hasRecord: hasDeclaredRecord(answers),
         isAssociationMember: isAssociationMember(answers),
+        hasRulebook: Boolean(rulebookForAnswers(answers)),
         purpose: s15Purpose(answers),
       };
       let seed = row.variantSeed;

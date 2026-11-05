@@ -20,6 +20,14 @@ const COMMON_FIRST = [
   'licence_holder_type',
   'occupation',
   /**
+   * ⚠️ THE SHOOTING LIFE COMES BEFORE THE FIREARM. Every professional
+   * motivation we analysed opens with a "FIREARM EXPERIENCE" page — who
+   * introduced them, what they shoot, how often, the training behind the
+   * competency — and a DFO reads it before the hardware. Asking it here also
+   * means the writer has it in hand when the purpose section is written.
+   */
+  'shooting_history',
+  /**
    * ⚠️ REQUIRED BY THE REGISTRY, SO THE INTERVIEW MUST ASK IT.
    *
    * `marital_status` is `required: true`, it is not document-sourced and it is
@@ -36,6 +44,12 @@ const COMMON_FIRST = [
   'firearm_model',
   'firearm_calibre',
   'firearm_serial',
+  /**
+   * ⚠️ "WHY THIS ONE RATHER THAN ANOTHER" IS ASKED WITH THE FIREARM. The
+   * comparison section is built from this, and on a first application it is
+   * the only comparison material there is. See SHOOTING_LIFE_FIELDS.
+   */
+  'alternative_considered',
   // Only now can the correct competency/proficiency be chosen.
   'competency_number',
   'competency_for',
@@ -84,6 +98,27 @@ const SPORTING_COMMON = [
   'association_joined',
   'association_expiry',
   'dedicated_since',
+  /**
+   * ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE. The professional motivations we
+   * studied each list more than one body ("a member in good standing with X
+   * since DATE, membership number Y"), and the registry has carried slots two
+   * and three since 2026-08-20 — but no strategy ever asked them, so they were
+   * dead questions. Slot three's dedicated date joins them here.
+   */
+  'association_2_name',
+  'association_2_number',
+  'association_2_joined',
+  'association_3_name',
+  'association_3_number',
+  'association_3_joined',
+  'association_3_dedicated_since',
+  /**
+   * ⚠️ THE EXERCISE THE FIREARM IS ENTERED IN, AND IT MATTERS MORE THAN THE
+   * MEMBERSHIP. The pack appends that exercise's published rulebook verbatim;
+   * without the choice there is no rulebook to append and the document is
+   * thinner than the one a DFO expects.
+   */
+  'discipline_exercise',
 ];
 
 const HUNTING_FIELDS = [

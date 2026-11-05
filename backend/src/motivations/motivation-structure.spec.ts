@@ -40,6 +40,7 @@ const FULL: PlanOptions = {
   holdsFirearms: true,
   hasRecord: true,
   isAssociationMember: true,
+  hasRulebook: true,
 };
 
 const idsFor = (type: MotivationLicenceType, opts: PlanOptions = FULL) =>
@@ -82,15 +83,15 @@ describe('the fixed skeleton', () => {
   });
 
   it('⚠️ DOES NOT RE-SEQUENCE THE NUMBERS WHEN A SECTION IS OMITTED', () => {
-    // The gaps are the point. A section 15 with nothing held and nothing to
-    // declare runs 1, 3, 5, 7, 9, 11, 12 — a DFO who reads these packs sees at
-    // a glance that heading 2 is a self-defence heading and that there was
-    // nothing to declare, rather than counting to work out which spine this is.
+    // The gaps are the point. A section 15 with nothing held, nothing to
+    // declare and no rulebook runs 1, 3, 4, 6, 7, 9, 12, 14, 15, 16 — the
+    // absent numbers say which headings this application never needed rather
+    // than leaving a reader to count.
     expect(numbersOf(MotivationLicenceType.S15_OCCASIONAL_HUNTER, {})).toEqual([
-      1, 3, 5, 7, 9, 11, 12,
+      1, 3, 4, 6, 7, 9, 12, 14, 15, 16,
     ]);
     expect(numbersOf(MotivationLicenceType.S13_SELF_DEFENCE, {})).toEqual([
-      1, 2, 3, 4, 5, 7, 9, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 9, 12, 14, 15, 16,
     ]);
   });
 
@@ -102,25 +103,25 @@ describe('the fixed skeleton', () => {
       headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'personal_circumstances'),
     ).toBe('2. My circumstances');
     expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'the_threat')).toBe(
-      '3. Why I need a firearm for self-defence',
+      '4. Why I need a firearm for self-defence',
     );
     expect(
       headingFor(MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE, 'the_threat'),
-    ).toBe('3. Why a section 13 firearm will not provide sufficient protection');
+    ).toBe('4. Why a section 13 firearm will not provide sufficient protection');
     expect(
       headingFor(MotivationLicenceType.S15_OCCASIONAL_HUNTER, 'the_quarry'),
-    ).toBe('3. My hunting');
+    ).toBe('4. My hunting');
     expect(
       headingFor(MotivationLicenceType.S16_DEDICATED_SPORT, 'the_discipline'),
-    ).toBe('3. My sport shooting');
+    ).toBe('4. My sport shooting');
     expect(headingFor(MotivationLicenceType.S24_RENEWAL, 'use_since_licensing')).toBe(
-      '3. How I have used this firearm since it was licensed',
+      '4. How I have used this firearm since it was licensed',
     );
     expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'held_firearms')).toBe(
-      '6. Firearms already licensed to me',
+      '8. Firearms already licensed to me',
     );
     expect(headingFor(MotivationLicenceType.S13_SELF_DEFENCE, 'conclusion')).toBe(
-      '12. Declaration and request',
+      '16. Declaration and request',
     );
   });
 
@@ -138,12 +139,12 @@ describe('the fixed skeleton', () => {
 
   it('names the section it is quoting, for every type', () => {
     const section: Record<MotivationLicenceType, string> = {
-      S13_SELF_DEFENCE: '11. Section 13 applied to my application',
-      S14_RESTRICTED_SELF_DEFENCE: '11. Section 14 applied to my application',
-      S15_OCCASIONAL_HUNTER: '11. Section 15 applied to my application',
-      S16_DEDICATED_HUNTER: '11. Section 16 applied to my application',
-      S16_DEDICATED_SPORT: '11. Section 16 applied to my application',
-      S24_RENEWAL: '11. Section 24 applied to my application',
+      S13_SELF_DEFENCE: '14. Section 13 applied to my application',
+      S14_RESTRICTED_SELF_DEFENCE: '14. Section 14 applied to my application',
+      S15_OCCASIONAL_HUNTER: '14. Section 15 applied to my application',
+      S16_DEDICATED_HUNTER: '14. Section 16 applied to my application',
+      S16_DEDICATED_SPORT: '14. Section 16 applied to my application',
+      S24_RENEWAL: '14. Section 24 applied to my application',
     };
     for (const type of ALL_TYPES) {
       expect(headingFor(type, 'statutory_application')).toBe(section[type]);
@@ -303,9 +304,9 @@ describe('the three headings the applicant’s own answers decide', () => {
     // defines an occasional hunter as somebody who is NOT a member of an
     // accredited association, so a section 15 claiming dedicated status argues
     // itself out of the section it is applying under.
-    expect(headingFor(s15, 'association')).toBe('8. Association membership');
+    expect(headingFor(s15, 'association')).toBe('10. Association membership');
     expect(headingFor(MotivationLicenceType.S16_DEDICATED_HUNTER, 'association')).toBe(
-      '8. Association membership and dedicated status',
+      '10. Association membership and dedicated status',
     );
   });
 });

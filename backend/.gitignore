@@ -4,3 +4,6 @@ node_modules
 .env.dummyrun
 
 /generated/prisma
+
+# Association rulebooks — captured published text, not our source (same rule as data/cip/).
+data/association-rules/

@@ -1,3 +1,4 @@
+import { exercisesFor, resolveAssociation } from '../association-rules';
 import type { IntakeChoice } from './intake.types';
 
 /**
@@ -89,4 +90,38 @@ export function normaliseChoices(
     if (choices.length >= MAX_INTERVIEW_CHOICES) break;
   }
   return choices;
+}
+
+/**
+ * THE EXERCISE CHIPS, FROM THE ASSOCIATION'S PUBLISHED RULES.
+ *
+ * ?? VALUE IS THE TITLE. `rulesFor()` matches an exercise by code OR title, and
+ * the sheet should read "100m, Small-Bore Centre-Fire Rifle Exercise" rather
+ * than "Com13". The label carries the code so a member recognises it from the
+ * association's own literature.
+ *
+ * ?? AN UNKNOWN ASSOCIATION IS NOT AN ERROR. We hold rulebooks for two bodies;
+ * a member of a third gets the free-text question the field already is, which
+ * is why this returns [] rather than throwing.
+ */
+export function exerciseChoices(
+  associationName: string | undefined,
+  firearmType: string | undefined,
+): IntakeChoice[] {
+  const slug = resolveAssociation(associationName);
+  if (!slug) return [];
+  const seen = new Set<string>();
+  const out: IntakeChoice[] = [];
+  for (const exercise of exercisesFor(slug, firearmType)) {
+    const title = exercise.title.trim();
+    if (!title || seen.has(title.toLowerCase())) continue;
+    seen.add(title.toLowerCase());
+    out.push({
+      value: title,
+      label: exercise.code ? `${exercise.code} · ${title}` : title,
+    });
+    // A wall of 61 buttons is not a shortlist either.
+    if (out.length >= 15) break;
+  }
+  return out;
 }

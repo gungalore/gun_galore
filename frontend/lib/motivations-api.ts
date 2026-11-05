@@ -632,6 +632,12 @@ export interface IntakeState {
   stage: IntakeStage;
   blocked: IntakeBlocked | null;
   summary: string;
+  /**
+   * What the DOCUMENT still needs, not what the form still needs. Computed by
+   * the same rule the generation gate refuses on, so the interview can say it
+   * before the member presses Generate.
+   */
+  needsDetail?: { code: string; label: string; hint: string }[];
   /** The current topic, with what we already hold and what it still needs. */
   topic: IntakeTopicState | null;
   /** The category being asked, with every pending question in it. */

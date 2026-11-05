@@ -2,6 +2,7 @@ import {
   MAX_CHOICE_LENGTH,
   MAX_INTERVIEW_CHOICES,
   addCustomChoice,
+  exerciseChoices,
   normaliseChoices,
 } from './intake-choices';
 
@@ -14,9 +15,9 @@ describe('normaliseChoices', () => {
   });
 
   it('keeps a usable label when the model supplies one', () => {
-    expect(
-      normaliseChoices([{ value: 's16', label: 'Dedicated hunter' }]),
-    ).toEqual([{ value: 's16', label: 'Dedicated hunter' }]);
+    expect(normaliseChoices([{ value: 's16', label: 'Dedicated hunter' }])).toEqual(
+      [{ value: 's16', label: 'Dedicated hunter' }],
+    );
   });
 
   it('uses the label as the value when the value is missing', () => {
@@ -25,9 +26,6 @@ describe('normaliseChoices', () => {
     ]);
   });
 
-  // ⚠️ Two buttons that read the same are one answer with a duplicate the
-  // member can tap twice. Trailing punctuation is the model's favourite way to
-  // produce it.
   it('drops answers that differ only by case or a trailing full stop', () => {
     expect(
       normaliseChoices(['I own a farm', 'i own a farm.', 'I own a farm!']),
@@ -40,7 +38,6 @@ describe('normaliseChoices', () => {
     );
   });
 
-  // A paragraph reads as an answer the interview has already written for them.
   it('drops an answer too long to be a button', () => {
     const long = 'x'.repeat(MAX_CHOICE_LENGTH + 1);
     expect(normaliseChoices([long, 'Kudu'])).toEqual([
@@ -51,12 +48,11 @@ describe('normaliseChoices', () => {
   it('falls back to the value when only the label is over-long', () => {
     const short = 'Kudu';
     const longLabel = 'y'.repeat(MAX_CHOICE_LENGTH + 1);
-    expect(
-      normaliseChoices([{ value: short, label: longLabel }]),
-    ).toEqual([{ value: short, label: short }]);
+    expect(normaliseChoices([{ value: short, label: longLabel }])).toEqual([
+      { value: short, label: short },
+    ]);
   });
 
-  // "Occupation" is not an answer to "What is your occupation?".
   it('never offers the field label back as an answer', () => {
     expect(
       normaliseChoices(['Occupation', 'Farmer'], { fieldLabel: 'Occupation' }),
@@ -77,9 +73,6 @@ describe('normaliseChoices', () => {
 });
 
 describe('addCustomChoice', () => {
-  // ?? THE MO000059 FAULT: a ticked chip plus a typed answer became only the
-  // typed answer, and the document argued one quarry where the applicant had
-  // named two.
   it('keeps the ticked answer and appends the typed one', () => {
     expect(addCustomChoice('helmeted-guineafowl', 'snakes')).toBe(
       'helmeted-guineafowl, snakes',
@@ -98,5 +91,28 @@ describe('addCustomChoice', () => {
 
   it('leaves the list alone when the typed answer is blank', () => {
     expect(addCustomChoice('kudu', '   ')).toBe('kudu');
+  });
+});
+
+describe('exerciseChoices', () => {
+  // The entry chips come from the association's published rules, so a member
+  // of a body we hold no rulebook for still gets a question - a free-text one.
+  it('walks the published exercises for a known association', () => {
+    const choices = exerciseChoices('Natshoot NHSA', 'Handgun');
+    expect(choices.length).toBeGreaterThan(0);
+    expect(choices.length).toBeLessThanOrEqual(15);
+    expect(choices[0].label).toMatch(/Com\d+/);
+    // The value is the title, which is what rulesFor() matches on.
+    expect(choices[0].value).not.toMatch(/Com\d+/);
+  });
+
+  it('returns nothing for an association whose rulebook we do not hold', () => {
+    expect(exerciseChoices('Some Other Club', 'Rifle')).toEqual([]);
+    expect(exerciseChoices(undefined, 'Rifle')).toEqual([]);
+  });
+
+  it('offers no duplicate exercise twice', () => {
+    const values = exerciseChoices('NHSA', 'Rifle').map((choice) => choice.value);
+    expect(new Set(values).size).toBe(values.length);
   });
 });

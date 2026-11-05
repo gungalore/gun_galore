@@ -50,7 +50,9 @@ import {
   type SuitabilityArgument,
 } from './motivation-suitability';
 import { SettingsService, FLAGS } from '../settings/settings.service';
-import { type SectionId } from './motivation-structure';
+import { type SectionId, headingFor } from './motivation-structure';
+import { rulebookForAnswers } from './association-rules';
+import { appendRulebook } from './motivation-rulebook';
 import {
   buildAnnexures,
   BODY_DOCUMENT_KINDS,
@@ -1564,6 +1566,24 @@ export class MotivationRenderService {
     // The purpose exhibits — a read, on every download, never a model call.
     const storedPlates = await this.plates.storedFor(row.id).catch(() => []);
 
+    /**
+     * ⚠️ THE ASSOCIATION'S RULES ARE PRINTED, NOT WRITTEN.
+     *
+     * The writer produces one lead-in sentence under the heading; the
+     * published exercise text goes in beneath it here, verbatim and with its
+     * source. `appendRulebook` leaves the body untouched when the heading is
+     * absent, so a type with no association section cannot gain a floating
+     * rulebook.
+     */
+    const rulebook = rulebookForAnswers(answers);
+    const printableBody = rulebook
+      ? appendRulebook(
+          body,
+          headingFor(row.licenceType, 'association_rules'),
+          rulebook,
+        )
+      : body;
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -1571,7 +1591,7 @@ export class MotivationRenderService {
       // is worthless.
       applicantName: answers.full_name || 'The applicant',
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
-      body,
+      body: printableBody,
       disclaimer: DISCLAIMER_TEXT,
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
       // Validated on read: the columns are plain VARCHARs so adding a template

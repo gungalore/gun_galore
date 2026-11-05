@@ -1,6 +1,7 @@
 import type { MotivationLicenceType } from '@prisma/client';
 import type { EvidenceGroup } from '../evidence-taxonomy';
 import type { MotivationOutputMode } from '../motivation-output';
+import type { DetailGap } from '../motivation-completeness';
 
 export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
 
@@ -156,6 +157,14 @@ export interface IntakeState {
    * single-question shape keeps working; the grouped UI reads this.
    */
   group: IntakeGroup | null;
+  /**
+   * ⚠️ WHAT THE DOCUMENT STILL NEEDS, NOT WHAT THE FORM STILL NEEDS.
+   *
+   * Computed by `missingDetail()` — the same list the generation gate refuses
+   * on — so the member can be sent back to the group that fills it instead of
+   * being told after the fact that the application needed more detail.
+   */
+  needsDetail: DetailGap[];
   /** True when the member's Document Library holds no documents at all. */
   vaultEmpty: boolean;
   documents: {

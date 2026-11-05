@@ -45,6 +45,13 @@ import { MotivationLicenceType } from '@prisma/client';
 export type SectionId =
   | 'introduction'
   | 'personal_circumstances'
+  /**
+   * The applicant's own history with firearms — how they came to shooting,
+   * who introduced them, what they shoot and how often, the training behind
+   * their competency. ⚠️ NOT `experience`, which is the competency section:
+   * this is the narrative that makes a sporting life visible.
+   */
+  | 'shooting_history'
   // ── The purpose section — heading 3, four ids ──────────────────────
   //
   // ⚠️ FOUR IDS FOR ONE SLOT, ON PURPOSE. They all sit at number 3 and only
@@ -76,6 +83,11 @@ export type SectionId =
   | 'existing_measures'
   | 'the_firearm'
   /**
+   * Why THIS firearm and not the alternatives — the battery the applicant
+   * already holds, and the other class the same money buys.
+   */
+  | 'comparison'
+  /**
    * The battery: the table of what is already licensed, then one sentence per
    * firearm on why it cannot do this job.
    *
@@ -99,6 +111,12 @@ export type SectionId =
    * status, which is the wording the Act's definition still turns on.
    */
   | 'association'
+  /**
+   * The association's own rulebook for the exercise this firearm is entered
+   * in, appended verbatim by the renderer. The writer writes one lead-in
+   * sentence and never reproduces the rules.
+   */
+  | 'association_rules'
   | 'storage_safety'
   /** The six SAPS 271 declaration items — present only if one is a Yes. */
   | 'compliance_history'
@@ -110,6 +128,11 @@ export type SectionId =
    * else; everywhere else is plain language.
    */
   | 'statutory_application'
+  /**
+   * Administrative justice — a short, fixed section asking for a decision
+   * taken lawfully, fairly and with reasons. Carried by every type.
+   */
+  | 'paja'
   | 'conclusion';
 
 /**
@@ -125,37 +148,45 @@ export type SectionId =
 const SECTION_NUMBER: Record<SectionId, number> = {
   introduction: 1,
   personal_circumstances: 2,
-  the_threat: 3,
-  the_quarry: 3,
-  the_discipline: 3,
-  use_since_licensing: 3,
-  existing_measures: 4,
-  the_firearm: 5,
-  held_firearms: 6,
-  experience: 7,
-  association: 8,
-  storage_safety: 9,
-  compliance_history: 10,
-  statutory_application: 11,
-  conclusion: 12,
+  shooting_history: 3,
+  the_threat: 4,
+  the_quarry: 4,
+  the_discipline: 4,
+  use_since_licensing: 4,
+  existing_measures: 5,
+  the_firearm: 6,
+  comparison: 7,
+  held_firearms: 8,
+  experience: 9,
+  association: 10,
+  association_rules: 11,
+  storage_safety: 12,
+  compliance_history: 13,
+  statutory_application: 14,
+  paja: 15,
+  conclusion: 16,
 };
 
 /** The heading TITLE, word for word from book Part 4.2. */
 const SECTION_TITLES: Record<SectionId, string> = {
   introduction: 'Introduction',
   personal_circumstances: 'My circumstances',
+  shooting_history: 'My history with firearms',
   the_threat: 'Why I need a firearm for self-defence',
   the_quarry: 'My hunting',
   the_discipline: 'My sport shooting',
   use_since_licensing: 'How I have used this firearm since it was licensed',
   existing_measures: 'What I already do and where it stops',
   the_firearm: 'The firearm applied for and why it suits the purpose',
+  comparison: 'Why this firearm and not the alternatives',
   held_firearms: 'Firearms already licensed to me',
   experience: 'My competency and training',
   association: 'Association membership and dedicated status',
+  association_rules: "The association's rules for this exercise",
   storage_safety: 'Safe storage and transport',
   compliance_history: 'My record',
   statutory_application: 'Section applied to my application',
+  paja: 'Administrative justice',
   conclusion: 'Declaration and request',
 };
 
@@ -252,21 +283,29 @@ export interface StructurePlan {
 const PARAGRAPHS: Record<SectionId, number> = {
   introduction: 1,
   personal_circumstances: 3,
+  // The applicant's own history: two paragraphs is the floor a reviewer reads
+  // as a real sporting life rather than a line about liking guns.
+  shooting_history: 2,
   the_threat: 3,
   the_quarry: 3,
   the_discipline: 3,
   use_since_licensing: 2,
   existing_measures: 2,
   the_firearm: 2,
+  // One paragraph against the held battery, one against the alternative class.
+  comparison: 2,
   // The table carries the facts; the prose is one sentence per firearm.
   held_firearms: 1,
   experience: 1,
   association: 1,
+  // The lead-in only; the rulebook itself is appended verbatim.
+  association_rules: 1,
   storage_safety: 1,
   compliance_history: 1,
   // Quote an element, answer it with a fact, then the next. The count is the
   // number of elements the section's statute block sets out.
   statutory_application: 4,
+  paja: 1,
   conclusion: 1,
 };
 
@@ -323,14 +362,17 @@ const SECTION_SKELETONS: Record<
   S13_SELF_DEFENCE: [
     'introduction',
     'personal_circumstances',
+    'shooting_history',
     'the_threat',
     'existing_measures',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
   // Identical spine to the section 13. What differs is the purpose heading,
@@ -339,14 +381,17 @@ const SECTION_SKELETONS: Record<
   S14_RESTRICTED_SELF_DEFENCE: [
     'introduction',
     'personal_circumstances',
+    'shooting_history',
     'the_threat',
     'existing_measures',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
   // ⚠️ THE PURPOSE ID IS SUBSTITUTED PER APPLICANT. A section 15 is hunting OR
@@ -355,50 +400,66 @@ const SECTION_SKELETONS: Record<
   // the applicant answered the sport cards and not the hunting ones.
   S15_OCCASIONAL_HUNTER: [
     'introduction',
+    'shooting_history',
     'the_quarry',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'association',
+    'association_rules',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
   S16_DEDICATED_HUNTER: [
     'introduction',
+    'shooting_history',
     'the_quarry',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'association',
+    'association_rules',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
   S16_DEDICATED_SPORT: [
     'introduction',
+    'shooting_history',
     'the_discipline',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'association',
+    'association_rules',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
   S24_RENEWAL: [
     'introduction',
+    'shooting_history',
     'use_since_licensing',
     'the_firearm',
+    'comparison',
     'held_firearms',
     'experience',
     'association',
+    'association_rules',
     'storage_safety',
     'compliance_history',
     'statutory_application',
+    'paja',
     'conclusion',
   ],
 };
@@ -436,6 +497,12 @@ export interface PlanOptions {
    * naming their association — which is the safe direction to be wrong in.
    */
   isAssociationMember?: boolean;
+  /**
+   * True when the association's published rules for the named exercise are in
+   * the library. Drives the rulebook appendix: a section that says "the rules
+   * follow" and then has no rules behind it is worse than no section at all.
+   */
+  hasRulebook?: boolean;
   /**
    * Which purpose heading a section 15 OR section 16 document leads with.
    *
@@ -492,6 +559,14 @@ export function planFor(
           licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
           licenceType === MotivationLicenceType.S16_DEDICATED_SPORT ||
           opts.isAssociationMember === true
+        );
+      }
+      if (id === 'association_rules') {
+        return (
+          opts.hasRulebook === true &&
+          (licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+            licenceType === MotivationLicenceType.S16_DEDICATED_SPORT ||
+            opts.isAssociationMember === true)
         );
       }
       return true;

@@ -60,6 +60,17 @@ export function topicForField(key: string): IntakeTopicId {
     return 'existing';
   }
   if (/^firearm_/.test(key)) return 'firearm';
+  /**
+   * ⚠️ THE SHOOTING LIFE HAS ITS OWN GROUP. `discipline_` used to fall into the
+   * association bucket, which put "which exercise is this firearm for" beside
+   * membership numbers rather than beside the shooting it belongs to.
+   */
+  if (
+    /^(shooting_history|training_history|discipline_exercise)$/.test(key)
+  ) {
+    return 'activities';
+  }
+  if (key === 'alternative_considered') return 'firearm';
   if (/^competency_|^proficiency_/.test(key)) return 'credentials';
   if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';
   if (

@@ -888,6 +888,34 @@ describe('MotivationsService.generate', () => {
     for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
       answers[k] = 'A sufficient answer for testing purposes.';
     }
+    /**
+     * ⚠️ THE SHOOTING HISTORY HAS A WORD FLOOR. `missingDetail()` refuses a
+     * history under sixty words, and the generic one-liner above is six — so
+     * every test that expects generation to proceed needs a real paragraph
+     * here. See motivation-completeness.ts.
+     */
+    answers.shooting_history = Array.from(
+      { length: 8 },
+      () => 'I have shot since childhood and I hunt every season with my father.',
+    ).join(' ');
+    /**
+     * ⚠️ AND THE DETAIL GATE READS FACTS THE REGISTRY DOES NOT MARK REQUIRED.
+     * `requiredKeys` is the form's contract; `missingDetail` is the document's.
+     * These are the difference between the two, and a fixture that satisfies
+     * only the form now stops here rather than at generation.
+     */
+    Object.assign(answers, {
+      competency_for: 'Rifle',
+      competency_issued: '2020-01-01',
+      safe_present: 'Yes',
+      safe_type: 'Rifle safe',
+      safe_mounted: 'Yes',
+      safe_mounted_to: 'Wall',
+      safe_key_holder: 'Only me',
+      firearm_use_kind: 'hunting',
+      intended_quarry: 'Kudu',
+      association_joined: '2019-01-01',
+    });
     return { ...READY, answersEncrypted: encryptJson(answers), ...over };
   }
 
@@ -1036,6 +1064,21 @@ describe('MotivationsService.generate', () => {
       for (const k of requiredKeys(T13)) {
         answers[k] = 'A sufficient answer for testing purposes.';
       }
+      // The detail gate reads facts the registry does not mark required.
+      Object.assign(answers, {
+        competency_for: 'Handgun',
+        competency_issued: '2020-01-01',
+        safe_present: 'Yes',
+        safe_type: 'Handgun safe',
+        safe_mounted: 'Yes',
+        safe_mounted_to: 'Wall',
+        safe_key_holder: 'Only me',
+        firearm_use_kind: 'self-defence',
+        shooting_history: Array.from(
+          { length: 8 },
+          () => 'I have owned and carried a firearm for years and practise monthly.',
+        ).join(' '),
+      });
       return {
         id: 'mo-1',
         userId: 'user-1',
@@ -1705,6 +1748,23 @@ describe('MotivationsService â€” beta seat accounting and cost', () => {
     for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
       answers[k] = 'A sufficient answer for testing purposes.';
     }
+    // The detail gate reads facts the registry does not mark required.
+    Object.assign(answers, {
+      competency_for: 'Rifle',
+      competency_issued: '2020-01-01',
+      safe_present: 'Yes',
+      safe_type: 'Rifle safe',
+      safe_mounted: 'Yes',
+      safe_mounted_to: 'Wall',
+      safe_key_holder: 'Only me',
+      firearm_use_kind: 'hunting',
+      intended_quarry: 'Kudu',
+      association_joined: '2019-01-01',
+      shooting_history: Array.from(
+        { length: 8 },
+        () => 'I have shot since childhood and I hunt every season with my father.',
+      ).join(' '),
+    });
     return { ...READY2, answersEncrypted: encryptJson(answers), ...over };
   }
 
@@ -3047,6 +3107,23 @@ describe('generation refuses on a missing document', () => {
     for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
       a[k] = 'A sufficient answer for testing purposes.';
     }
+    // The detail gate reads facts the registry does not mark required.
+    Object.assign(a, {
+      competency_for: 'Rifle',
+      competency_issued: '2020-01-01',
+      safe_present: 'Yes',
+      safe_type: 'Rifle safe',
+      safe_mounted: 'Yes',
+      safe_mounted_to: 'Wall',
+      safe_key_holder: 'Only me',
+      firearm_use_kind: 'hunting',
+      intended_quarry: 'Kudu',
+      association_joined: '2019-01-01',
+      shooting_history: Array.from(
+        { length: 8 },
+        () => 'I have shot since childhood and I hunt every season with my father.',
+      ).join(' '),
+    });
     return a;
   };
 

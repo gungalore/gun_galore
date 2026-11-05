@@ -1400,3 +1400,58 @@ describe('missingRequired for the motivation-only letter', () => {
   });
 });
 
+describe('the shooting-life fields', () => {
+  const TYPES = Object.values(MotivationLicenceType);
+
+  /**
+   * The professional motivations we analysed open with a firearm-experience
+   * page on every licence type - a section 13 applicant has a shooting life
+   * too - so these fields are asked everywhere, not only on section 16.
+   */
+  it('asks the shooting history and the comparison on every type', () => {
+    for (const type of TYPES) {
+      const history = fieldByKey(type, 'shooting_history');
+      const comparison = fieldByKey(type, 'alternative_considered');
+      expect(history).toBeDefined();
+      expect(history!.required).toBe(true);
+      expect(history!.kind).toBe('long');
+      expect(comparison).toBeDefined();
+      expect(comparison!.required).toBe(true);
+      expect(isVisible(history!, {})).toBe(true);
+      expect(isVisible(comparison!, {})).toBe(true);
+    }
+  });
+
+  it('keeps the training history optional', () => {
+    for (const type of TYPES) {
+      const training = fieldByKey(type, 'training_history');
+      expect(training).toBeDefined();
+      expect(training!.required).toBeUndefined();
+    }
+  });
+
+  /**
+   * The exercise is a sport route question: it is asked wherever the sporting
+   * strategy runs, and `missingDetail()` is what makes it mandatory for a
+   * dedicated sport application and an S15 that argues sport.
+   */
+  it('offers the exercise wherever the sporting strategy runs', () => {
+    const exercise = fieldByKey(
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+      'discipline_exercise',
+    );
+    expect(exercise).toBeDefined();
+    expect(exercise!.kind).toBe('short');
+    expect(exercise!.required).toBeUndefined();
+  });
+
+  it('asks for a third membership where memberships are asked', () => {
+    const third = fieldByKey(
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      'association_3_dedicated_since',
+    );
+    expect(third).toBeDefined();
+    expect(third!.kind).toBe('date');
+  });
+});
+

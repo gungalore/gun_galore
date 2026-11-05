@@ -46,12 +46,13 @@ import {
   normaliseOutputMode,
   type MotivationOutputMode,
 } from '../motivation-output';
+import { missingDetail } from '../motivation-completeness';
 import {
   MotivationIntakeAgentService,
   type InterviewAgentContext,
 } from './intake-agent.service';
 import type { FactCandidate } from './intake-agent.prompts';
-import { addCustomChoice, normaliseChoices } from './intake-choices';
+import { addCustomChoice, exerciseChoices, normaliseChoices } from './intake-choices';
 import {
   correctionFor,
   isCorrectableField,
@@ -268,6 +269,12 @@ export class MotivationIntakeService {
       summary: blocked?.message ?? strategy.intro,
       topic,
       group,
+      /**
+       * ⚠️ THE SAME LIST THE GENERATION GATE REFUSES ON. Computed here so the
+       * interview can say what is still missing before the member presses
+       * Generate, rather than an SMS afterwards.
+       */
+      needsDetail: missingDetail(answers, row.licenceType),
       vaultEmpty: !(library.items ?? []).some((i) => i.source === 'credential'),
       documents,
       evidence,
@@ -1227,6 +1234,33 @@ const sourceText = (body.message ?? body.value ?? '').trim();
           question: { ...base, choices, multi: true },
         };
       }
+    }
+
+    /**
+     * ⚠️ THE EXERCISE CHIPS COME FROM THE ASSOCIATION'S PUBLISHED RULES.
+     *
+     * The association publishes its exercises by code; the pack later appends
+     * the chosen one's rules verbatim, which is where 12–23 pages of a
+     * professional motivation come from. The choice list is therefore data,
+     * not a static array: resolve the association the applicant named (slot
+     * one, then slot two) and list the exercises that fit this firearm.
+     *
+     * ⚠️ VALUE IS THE TITLE, because that is what `rulesFor()` matches on and
+     * what the sheet should show. An unknown association falls back to a plain
+     * free-text question — never a throw.
+     */
+    if (base.fieldKey === 'discipline_exercise' && !base.sensitive) {
+      const named =
+        answers.association_name?.trim() ||
+        answers.association_2_name?.trim() ||
+        '';
+      return {
+        question: {
+          ...base,
+          choices: exerciseChoices(named, answers.firearm_type),
+          multi: false,
+        },
+      };
     }
 
     if (base.sensitive || !this.llm.isConfigured()) {
