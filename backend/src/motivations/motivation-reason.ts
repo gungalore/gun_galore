@@ -1,4 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { namesMatch } from './motivation-name-match';
 
 // ────────────────────────────────────────────────────────────────────
 // "WHY THIS FIREARM" — THE ONE PARAGRAPH THE PRODUCT EXISTS TO WRITE.
@@ -696,25 +697,18 @@ export function validateReason(
   }
 
   /**
-   * ⚠️ A MAKE THE APPLICANT DOES NOT OWN IS THE WORST FAILURE HERE, because it
-   * reads as fact on a document they sign. Checked as whole words against every
-   * firearm in play — the spec's "any make/model/calibre in paragraph not
-   * present in applied_for or arsenal", made safe for substrings.
+   * ⚠️ A NEAR MISS IS A MATCH, AND THE PROSE IS THE PRODUCT.
+   *
+   * This used to split the held firearms into lower-case tokens and ask
+   * `known.includes(maker.toLowerCase())`. MO000063 holds `mosberg` — the
+   * applicant's own spelling — so a paragraph saying "Mossberg" was rejected
+   * as naming a firearm they do not hold. namesMatch allows a small bounded
+   * edit against the whole held text, and a genuinely different make is still
+   * far outside that distance.
    */
-  const known = ctx.knownFirearms
-    .join(' ')
-    .toLowerCase()
-    .split(/[^a-z0-9.]+/)
-    /**
-     * ⚠️ TWO CHARACTERS IS A MAKE. This filtered `length > 2` and dropped "CZ"
-     * — one of the commonest makes in South Africa — out of the held list, so
-     * a paragraph correctly naming the applicant's own CZ was rejected as
-     * naming a firearm they do not hold. Single characters are noise; two are
-     * not.
-     */
-    .filter((t) => t.length > 1);
+  const knownText = ctx.knownFirearms.join(' ');
   for (const maker of KNOWN_MAKERS) {
-    if (has(maker) && !known.includes(maker.toLowerCase())) {
+    if (has(maker) && !namesMatch(knownText, maker)) {
       bad.push(`paragraph names "${maker}", which the applicant does not hold`);
     }
   }

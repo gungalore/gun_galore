@@ -574,7 +574,12 @@ export default function IntakeInterviewPage() {
 
 
       {group && group.questions.length ? (
-        <IntakeGroupCard group={group} busy={busy} onSubmit={sendBatch} />
+        <IntakeGroupCard
+          group={group}
+          busy={busy}
+          onSubmit={sendBatch}
+          onStuck={(message) => setError(message)}
+        />
       ) : q ? (
         <div className="mt-4">
           <Progress q={q} />

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { isSportingLicence, resolveSportingPurpose } from './motivation-purpose';
 import { fieldByKey } from './motivation-fields';
 import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
+import { namesMatch } from './motivation-name-match';
 import type { ArsenalRow } from './motivation-arsenal';
 
 // ────────────────────────────────────────────────────────────────────
@@ -308,7 +309,14 @@ export function validateSuitability(
   const model = isPlaceholderModel(rawModel) ? '' : rawModel;
   const calibre = isPlaceholderModel(rawCalibre) ? '' : rawCalibre;
   for (const part of [make, model, calibre]) {
-    if (part && !arg.question.toLowerCase().includes(part.toLowerCase())) {
+    /**
+     * ⚠️ A NEAR MISS IS A MATCH. MO000063 recorded `mosberg` / `12 gayge`, the
+     * writer corrected both, and this check refused the corrected question
+     * because it compared raw strings. The member's spelling is not the
+     * document's problem; namesMatch allows a small bounded edit and still
+     * refuses a genuinely different make.
+     */
+    if (part && !namesMatch(arg.question, part)) {
       issues.push(`the question does not name "${part}"`);
     }
   }

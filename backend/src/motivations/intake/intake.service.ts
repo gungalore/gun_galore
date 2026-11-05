@@ -53,6 +53,11 @@ import {
 import type { FactCandidate } from './intake-agent.prompts';
 import { addCustomChoice, normaliseChoices } from './intake-choices';
 import {
+  correctionFor,
+  isCorrectableField,
+  parseIntakeReply,
+} from './intake-reply';
+import {
   INTAKE_SCHEMA,
   SPECIES_SCHEMA,
   intakeSystemPrompt,
@@ -86,17 +91,10 @@ const GROUP_CONCURRENCY = 4;
 
 
 /**
- * Only these fields may be rewritten by the agent's spelling correction.
- * A model suggestion must never silently change an address, an ID number or a
- * declaration answer.
+ * Only these fields may be rewritten by a spelling correction — see
+ * intake-reply.ts, which owns the whitelist because the one-shot path now
+ * produces corrections as well as the agent path.
  */
-const CORRECTABLE_FIELDS = new Set([
-  'firearm_type',
-  'firearm_action',
-  'firearm_make',
-  'firearm_model',
-  'firearm_calibre',
-]);
 
 interface TranscriptMessage {
   role: 'assistant' | 'user';
@@ -202,7 +200,7 @@ export class MotivationIntakeService {
     if (
       phrased?.correction &&
       previousFieldKey &&
-      CORRECTABLE_FIELDS.has(previousFieldKey)
+      isCorrectableField(previousFieldKey)
     ) {
       const original = (answers[previousFieldKey] ?? '').trim();
       if (this.spellingFix(original, phrased.correction)) {
@@ -1343,13 +1341,8 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         json: { schema: INTAKE_SCHEMA },
         timeoutMs: 20_000,
       });
-      const parsed = JSON.parse(res.text) as {
-        question?: unknown;
-        acknowledgement?: unknown;
-        choices?: unknown;
-      };
-      const question =
-        typeof parsed.question === 'string' ? parsed.question.trim() : '';
+      const parsed = parseIntakeReply(res.text);
+      const question = parsed?.question ?? '';
       if (!question) return { question: base };
       /**
        * ⚠️ SAME RULE ON THE ONE-SHOT PATH. This is the fallback used when the
@@ -1357,8 +1350,14 @@ const sourceText = (body.message ?? body.value ?? '').trim();
        * construction — the schema had no `choices` in it. It has one now, and a
        * reply that still arrives without chips keeps the pair the planner
        * already had rather than losing every button.
+       *
+       * ⚠️ AND IT CARRIES THE SPELLING CORRECTION. MO000063 stored `mosberg`
+       * and `12 gayge` because this path answered without correcting, and the
+       * writer's corrected prose was then refused against the raw strings. The
+       * whitelist is checked here, and `spellingFix` still decides whether the
+       * edit is small enough to be a typo in stateInternal.
        */
-      const choices = normaliseChoices(parsed.choices);
+      const choices = normaliseChoices(parsed?.choices);
       return {
         question: {
           ...base,
@@ -1368,10 +1367,8 @@ const sourceText = (body.message ?? body.value ?? '').trim();
             ? 'Or type your own answer…'
             : base.customPlaceholder,
         },
-        acknowledgement:
-          typeof parsed.acknowledgement === 'string'
-            ? parsed.acknowledgement.trim()
-            : undefined,
+        acknowledgement: parsed?.acknowledgement,
+        correction: correctionFor(previousFieldKey, parsed),
       };
     } catch (err) {
       this.logger.warn(

@@ -34,23 +34,20 @@ function group(questions: IntakeQuestion[]): IntakeGroup {
   };
 }
 
+const holder = question({
+  fieldKey: 'licence_holder_type',
+  id: 'licence_holder_type',
+  label: 'What kind of licence holder are you?',
+  kind: 'choice',
+  choices: [{ value: 'Main firearm licence holder', label: 'Main holder' }],
+});
+
 describe('the grouped interview card', () => {
-  it('renders every question in the category with its chips', () => {
+  // ⚠️ A CARD OF SIX QUESTIONS IS A FORM. One at a time.
+  it('asks one question at a time, with its chips', () => {
     render(
       <IntakeGroupCard
-        group={group([
-          question({
-            fieldKey: 'licence_holder_type',
-            id: 'licence_holder_type',
-            label: 'What kind of licence holder are you?',
-            kind: 'choice',
-            choices: [
-              { value: 'Main firearm licence holder', label: 'Main holder' },
-              { value: 'Second firearm licence holder', label: 'Second holder' },
-            ],
-          }),
-          question(),
-        ])}
+        group={group([holder, question()])}
         busy={false}
         onSubmit={() => undefined}
       />,
@@ -58,11 +55,12 @@ describe('the grouped interview card', () => {
 
     expect(screen.getByText('About you')).toBeDefined();
     expect(screen.getByText('What kind of licence holder are you?')).toBeDefined();
-    expect(screen.getByText('What is your full name?')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Main holder' })).toBeDefined();
+    expect(screen.queryByText('What is your full name?')).toBeNull();
+    expect(screen.getByText('Question 1 of 2')).toBeDefined();
   });
 
-  it('blocks Continue until the required questions are answered', async () => {
+  it('blocks Continue until the shown question is answered', async () => {
     const user = userEvent.setup();
     render(
       <IntakeGroupCard
@@ -82,53 +80,83 @@ describe('the grouped interview card', () => {
     expect(cta).toHaveProperty('disabled', false);
   });
 
-  it('lets an optional question stay empty', () => {
-    render(
-      <IntakeGroupCard
-        group={group([question({ optional: true })])}
-        busy={false}
-        onSubmit={() => undefined}
-      />,
-    );
-    expect(
-      screen.getByText('All required answers on this card are filled'),
-    ).toBeDefined();
-  });
-
-  it('submits the whole card as one batch', async () => {
+  it('submits just that answer as a one-element batch', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
       <IntakeGroupCard
-        group={group([
-          question({
-            fieldKey: 'licence_holder_type',
-            id: 'licence_holder_type',
-            label: 'What kind of licence holder are you?',
-            kind: 'choice',
-            choices: [{ value: 'Main firearm licence holder', label: 'Main holder' }],
-          }),
-          question(),
-        ])}
+        group={group([holder, question()])}
         busy={false}
         onSubmit={onSubmit}
       />,
     );
 
     await user.click(screen.getByRole('button', { name: 'Main holder' }));
-    await user.type(
-      screen.getAllByPlaceholderText('Or type your own answer…')[1],
-      'Gerhard Fourie',
-    );
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls[0][0]).toEqual([
-      {
-        fieldKey: 'licence_holder_type',
-        value: 'Main firearm licence holder',
-      },
-      { fieldKey: 'full_name', message: 'Gerhard Fourie' },
+      { fieldKey: 'licence_holder_type', value: 'Main firearm licence holder' },
     ]);
+  });
+
+  // ⚠️ A FIELD THAT COMES BACK AFTER IT WAS ANSWERED DID NOT SAVE. Showing it
+  // again looks like the tap did nothing, and the member taps again forever.
+  it('surfaces a stuck answer instead of showing the same field twice', async () => {
+    const user = userEvent.setup();
+    const onStuck = vi.fn();
+    const first = group([question()]);
+    const { rerender } = render(
+      <IntakeGroupCard
+        group={first}
+        busy={false}
+        onSubmit={() => undefined}
+        onStuck={onStuck}
+      />,
+    );
+
+    await user.type(
+      screen.getByPlaceholderText('Or type your own answer…'),
+      'Gerhard Fourie',
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // The server replied with a new group whose first field is the same one.
+    rerender(
+      <IntakeGroupCard
+        group={group([question()])}
+        busy={false}
+        onSubmit={() => undefined}
+        onStuck={onStuck}
+      />,
+    );
+
+    expect(onStuck).toHaveBeenCalledWith('We could not save that answer. Try again.');
+    expect(
+      screen.getByText('We could not save that answer. Try again.'),
+    ).toBeDefined();
+    expect(screen.queryByText('What is your full name?')).toBeNull();
+  });
+
+  it('does not cry stuck when the group simply has not replied yet', async () => {
+    const user = userEvent.setup();
+    const onStuck = vi.fn();
+    const first = group([question()]);
+    render(
+      <IntakeGroupCard
+        group={first}
+        busy={false}
+        onSubmit={() => undefined}
+        onStuck={onStuck}
+      />,
+    );
+
+    await user.type(
+      screen.getByPlaceholderText('Or type your own answer…'),
+      'Gerhard Fourie',
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(onStuck).not.toHaveBeenCalled();
   });
 });

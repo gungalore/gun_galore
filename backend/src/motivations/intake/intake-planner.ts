@@ -379,8 +379,20 @@ export function planGroup(
   cap: number = GROUP_CAP,
 ): PlannedGroup | null {
   const { merged, items, fields } = plannerContext(input);
-  const pending = fields.filter(({ key }) =>
-    isPending(key, merged, items, input.provenance),
+  /**
+   * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED IN THE CONVERSATION.
+   *
+   * The card shows one question at a time and Continue needs an answer, so an
+   * optional question would hold the member hostage — the server keeps it
+   * pending because nothing answers it, and the client would re-serve the same
+   * field forever. Optional values stay reachable on the sheet and from the
+   * profile; they are simply not part of the walk. Operator, 2026-11-05:
+   * "It should keep things minimal."
+   */
+  const pending = fields.filter(
+    ({ key, field }) =>
+      field.required === true &&
+      isPending(key, merged, items, input.provenance),
   );
   if (!pending.length) return null;
 
@@ -398,7 +410,9 @@ export function planGroup(
   const order = TOPIC_ORDER.filter((id) => byTopic.has(id));
   const id = order[0];
   const groupPending = byTopic.get(id) ?? [];
-  const inTopic = fields.filter((f) => topicForField(f.key) === id);
+  const inTopic = fields.filter(
+    (f) => topicForField(f.key) === id && f.field.required === true,
+  );
   return {
     id,
     title: TOPIC_TITLES[id],

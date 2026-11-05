@@ -243,3 +243,33 @@ describe('planGroup', () => {
     ).toBeNull();
   });
 });
+
+describe('planGroup — optional questions', () => {
+  /**
+   * ?? AN OPTIONAL QUESTION WOULD HOLD THE CARD HOSTAGE. The conversation asks
+   * one question at a time and Continue needs an answer, so a question nobody
+   * is obliged to answer would be re-served forever. Operator, 2026-11-05:
+   * "It should keep things minimal."
+   */
+  it('never puts an optional question in a group', () => {
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {},
+      sheet: EMPTY_SHEET,
+    });
+    expect(group).not.toBeNull();
+    expect(group!.questions.length).toBeGreaterThan(0);
+    for (const question of group!.questions) {
+      expect(question.field.required).toBe(true);
+    }
+  });
+
+  it('counts only required questions in the group total', () => {
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {},
+      sheet: EMPTY_SHEET,
+    });
+    expect(group!.totalInGroup).toBe(group!.questions.length);
+  });
+});
