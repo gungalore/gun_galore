@@ -1,4 +1,4 @@
-import { MotivationLicenceType } from '@prisma/client';
+﻿import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import {
   pendingFields,
@@ -53,8 +53,11 @@ const COMMON = {
   marital_status: 'Married',
   residence_type: 'Townhouse or complex',
   // Required, and asked before the firearm now - see SHOOTING_LIFE_FIELDS.
+  // ⚠️ IT MUST CLEAR THE SIXTY-WORD FLOOR. The planner keeps a short history
+  // pending (see isPending), so a stub here would sit in front of every order
+  // test below and hide the question they actually name.
   shooting_history:
-    'My father took me to the range from the age of ten and I have hunted every season since, mostly on a friend farm in the Eastern Cape.',
+    'My father took me to the range from the age of ten and I have hunted every season since, mostly on a friend farm in the Eastern Cape where we walked and stalked rather than sat in a hide. I shot my first springbok at fourteen and have since taken kudu, impala and warthog with a borrowed .30-06. I joined the local club in my twenties and now shoot a postal target every month, which is how I keep my dedicated status and my marksmanship up between seasons.',
   alternative_considered:
     'A .308 Winchester, because the .45-70 suits the bushveld ranges I actually shoot at.',
   // Optional membership slots two and three: the single-question planner asks
@@ -249,7 +252,13 @@ describe('planGroup', () => {
       answers,
       sheet: EMPTY_SHEET,
     })) {
-      answers[key] = 'x';
+      // ⚠️ THE HISTORY HAS A SIXTY-WORD FLOOR. A one-character answer keeps it
+      // pending on purpose (see isPending), so this test fills it properly
+      // rather than pretending a stub settles it.
+      answers[key] =
+        key === 'shooting_history'
+          ? Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')
+          : 'x';
     }
     expect(
       planGroup({
@@ -288,5 +297,30 @@ describe('planGroup - optional questions', () => {
       sheet: EMPTY_SHEET,
     });
     expect(group!.totalInGroup).toBe(group!.questions.length);
+  });
+});
+describe('shooting history stays pending until it is substantial', () => {
+  const history = (words: number) =>
+    Array.from({ length: words }, (_, i) => `word${i}`).join(' ');
+
+  // ?? Operator, 2026-11-05: "I should not stop the interview until it has all
+  // the required information." A one-line answer satisfied the planner, ended
+  // the interview, and then the write step refused it.
+  it('re-asks a history below the sixty-word floor', () => {
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_SPORT,
+      answers: { shooting_history: history(12) },
+      sheet: EMPTY_SHEET,
+    }).map((p) => p.key);
+    expect(pending).toContain('shooting_history');
+  });
+
+  it('moves on once it reaches the floor', () => {
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_SPORT,
+      answers: { shooting_history: history(60) },
+      sheet: EMPTY_SHEET,
+    });
+    expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');
   });
 });

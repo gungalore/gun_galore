@@ -845,12 +845,29 @@ export default function IntakeInterviewPage() {
         ) : (
           <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <p className="m-0 text-[15px] font-medium text-[var(--text-primary)]">
-              That’s everything I need.
+              {data.needsDetail?.length
+                ? 'A few more details before I can write it.'
+                : 'That’s everything I need.'}
             </p>
             <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
-              Review the answers on the sheet before you write. Anything the
-              documents already answered is marked with its source.
+              {data.needsDetail?.length
+                ? 'The motivation cannot be written until these are in, so the interview stays open.'
+                : 'Review the answers on the sheet before you write. Anything the documents already answered is marked with its source.'}
             </p>
+            {data.needsDetail?.length ? (
+              <div
+                className="mt-2 rounded-lg border px-3 py-2"
+                style={{ borderColor: 'var(--red)', background: 'var(--red-wash)' }}
+              >
+                <ul className="m-0 list-disc pl-5 text-[12.5px] leading-5 text-[var(--text-primary)]">
+                  {data.needsDetail.map((gap) => (
+                    <li key={gap.code}>
+                      <span className="font-medium">{gap.label}</span> — {gap.hint}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {!motivationOnly && (missingDocs.length || sourceMissing) ? (
               <div className="mt-2 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)' }}>
                 <p className="m-0 text-[12.5px] text-[var(--text-secondary)]">
@@ -870,7 +887,7 @@ export default function IntakeInterviewPage() {
             ) : null}
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || Boolean(data.needsDetail?.length)}
               onClick={() => void finish()}
               className="mt-3 rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white disabled:opacity-60"
               style={{ background: 'var(--red)' }}

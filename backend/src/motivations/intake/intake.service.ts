@@ -46,7 +46,10 @@ import {
   normaliseOutputMode,
   type MotivationOutputMode,
 } from '../motivation-output';
-import { missingDetail } from '../motivation-completeness';
+import {
+  missingDetail,
+  missingDetailMessage,
+} from '../motivation-completeness';
 import {
   MotivationIntakeAgentService,
   type InterviewAgentContext,
@@ -243,17 +246,36 @@ export class MotivationIntakeService {
         (need) => need.tier === 'required' && !need.have,
       );
 
+    /**
+     * ⚠️ THE INTERVIEW IS NOT OVER WHILE THE DOCUMENT'S ARGUMENTS ARE MISSING.
+     *
+     * Operator, 2026-11-05: "I should not stop the interview until it has all
+     * the required information." The stage used to fall to REVIEW as soon as
+     * no question was left, which offered "write the motivation" and then let
+     * generation refuse with "it still needs your shooting history" — the gate
+     * firing after the member had been told they were done.
+     *
+     * `missingDetail` is the same list the generation gate throws on, so the
+     * two can never disagree. A completed row is reopened the same way: an
+     * application finished before these facts existed comes back to the
+     * interview rather than failing at the write step.
+     */
+    const needsDetail = missingDetail(answers, row.licenceType);
+    const detailMissing = needsDetail.length > 0;
+
     const stage: IntakeState['stage'] = blocked
       ? 'BLOCKED'
       : !row.intakeMode
         ? 'MODE'
         : row.intakeCompletedAt
-          ? 'REVIEW'
+          ? detailMissing
+            ? 'INTERVIEW'
+            : 'REVIEW'
           : !row.intakeDocumentsAt
             ? 'DOCUMENTS'
             : row.intakeMode === 'DOCUMENTS'
               ? 'REVIEW'
-              : question || requiredDocsMissing
+              : question || requiredDocsMissing || detailMissing
                 ? 'INTERVIEW'
                 : 'REVIEW';
 
@@ -274,7 +296,7 @@ export class MotivationIntakeService {
        * interview can say what is still missing before the member presses
        * Generate, rather than an SMS afterwards.
        */
-      needsDetail: missingDetail(answers, row.licenceType),
+      needsDetail,
       vaultEmpty: !(library.items ?? []).some((i) => i.source === 'credential'),
       documents,
       evidence,
@@ -916,6 +938,21 @@ const sourceText = (body.message ?? body.value ?? '').trim();
   async finish(userId: string, id: string): Promise<IntakeState> {
     const row = await this.load(userId, id);
     this.assertEditable(row);
+    /**
+     * ⚠️ THE INTERVIEW CANNOT BE CLOSED WHILE A FACT THE DOCUMENT NEEDS IS
+     * MISSING. Without this, "finish" marked the interview complete, the pack
+     * page offered to write, and generation refused — the member was told they
+     * were done and then told they were not. Same list, same words.
+     */
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const gaps = missingDetail(answers, row.licenceType);
+    if (gaps.length) {
+      throw new ConflictException({
+        message: missingDetailMessage(gaps),
+        code: 'motivation-needs-detail',
+        missingDetail: gaps,
+      });
+    }
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: { intakeCompletedAt: new Date() },

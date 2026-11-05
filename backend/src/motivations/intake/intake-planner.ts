@@ -171,8 +171,14 @@ export function pendingFields(
   const items = new Map(input.sheet.items.map((i) => [i.key, i]));
   const merged = { ...input.answers };
   for (const item of input.sheet.items) merged[item.key] = item.value;
-  return visibleFields(input.type, strategy, merged).filter(
-    ({ key }) => valueOf(key, merged, items) === '',
+  /**
+   * ⚠️ SAME PENDING RULE AS planQuestion, NOT "VALUE IS EMPTY". The shooting
+   * history with a one-line answer is answered but not yet enough, and every
+   * caller of this list must agree with the two planners about that or the
+   * order tests and the interview disagree about what is left.
+   */
+  return visibleFields(input.type, strategy, merged).filter(({ key }) =>
+    isPending(key, merged, items, input.provenance),
   );
 }
 /**
@@ -279,12 +285,26 @@ function isPending(
 ): boolean {
   const existing = valueOf(key, merged, items);
   if (!existing) return true;
+  /**
+   * ⚠️ ANSWERED IS NOT THE SAME AS ENOUGH. The shooting history is the one
+   * field whose gate demands substance (60 words), so a one-line answer used
+   * to satisfy the planner, end the interview and then fail at write time.
+   * An answer below the floor stays pending, which keeps the interview open
+   * and re-asks it — the alternative is telling somebody they are finished and
+   * then refusing to write.
+   */
+  if (key === 'shooting_history' && wordCount(existing) < 60) return true;
   const confirmThisApplication =
     key === 'intended_quarry' || key === 'firearm_use_kind';
   const source = provenance?.[key]?.source;
   return Boolean(
     confirmThisApplication && source !== undefined && source !== 'MEMBER',
   );
+}
+
+/** Same counting rule the completeness gate uses for the 60-word floor. */
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function plannerContext(input: PlannerInput) {
