@@ -559,6 +559,36 @@ export default function IntakeInterviewPage() {
   }
 
 
+  /**
+   * ⚠️ THE UPLOAD AFFORDANCE BELONGS TO BOTH CARDS, SO IT IS DEFINED ONCE.
+   * The grouped card asks one question at a time; a document for this topic can
+   * still prefill it, so the same control renders beside either card rather
+   * than disappearing with the legacy one.
+   */
+  const documentButtons = (
+    <DocumentAddButtons
+      motivationId={id}
+      busy={busy}
+      onFiles={(files) => uploadDocument('', files)}
+      onHandoffArrived={() => void load()}
+      onPreview={(uploadId) =>
+        motivationsApi.uploadBlobUrl(getToken, id, uploadId)
+      }
+      onApply={async (answers) => {
+        await motivationsApi.saveAnswers(getToken, id, answers);
+      }}
+      onReviewComplete={() => void load()}
+      unavailable={engine ? !engine.available : false}
+      unavailableMessage={engine?.message}
+      onNotify={() => {
+        void motivationsApi
+          .engineInterest(getToken, 'MOTIVATION_UPLOAD', id)
+          .then(() => setError('We will email you as soon as it is back.'))
+          .catch(() => setError('We could not save that request. Please try again.'));
+      }}
+    />
+  );
+
   return (
     <main className="mx-auto w-full max-w-[720px] px-4 pb-32 pt-5">
       <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
@@ -574,12 +604,20 @@ export default function IntakeInterviewPage() {
 
 
       {group && group.questions.length ? (
-        <IntakeGroupCard
-          group={group}
-          busy={busy}
-          onSubmit={sendBatch}
-          onStuck={(message) => setError(message)}
-        />
+        <>
+          <IntakeGroupCard
+            group={group}
+            busy={busy}
+            onSubmit={sendBatch}
+            onStuck={(message) => setError(message)}
+          />
+          <div className="mt-3">
+            <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Have a document for this?
+            </p>
+            {documentButtons}
+          </div>
+        </>
       ) : q ? (
         <div className="mt-4">
           <Progress q={q} />
@@ -599,7 +637,7 @@ export default function IntakeInterviewPage() {
         </p>
       ) : null}
 
-      {data.topic && !historyTurn ? (
+      {data.topic && !group && !historyTurn ? (
         <section
           className="mt-4 rounded-xl border px-4 py-3"
           style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
@@ -717,7 +755,7 @@ export default function IntakeInterviewPage() {
               </button>
             </div>
           </div>
-        ) : q ? (
+        ) : !group && q ? (
           <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <p className="m-0 text-[15px] font-medium leading-6 text-[var(--text-primary)]">
               {q.label}
@@ -740,27 +778,7 @@ export default function IntakeInterviewPage() {
               <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
                 Have a document for this?
               </p>
-              <DocumentAddButtons
-                motivationId={id}
-                busy={busy}
-                onFiles={(files) => uploadDocument('', files)}
-                onHandoffArrived={() => void load()}
-                onPreview={(uploadId) =>
-                  motivationsApi.uploadBlobUrl(getToken, id, uploadId)
-                }
-                onApply={async (answers) => {
-                  await motivationsApi.saveAnswers(getToken, id, answers);
-                }}
-                onReviewComplete={() => void load()}
-                unavailable={engine ? !engine.available : false}
-                unavailableMessage={engine?.message}
-                onNotify={() => {
-                  void motivationsApi
-                    .engineInterest(getToken, 'MOTIVATION_UPLOAD', id)
-                    .then(() => setError('We will email you as soon as it is back.'))
-                    .catch(() => setError('We could not save that request. Please try again.'));
-                }}
-              />
+              {documentButtons}
             </div>
 
             {choices.length ? (
