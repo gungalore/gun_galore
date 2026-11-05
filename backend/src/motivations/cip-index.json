@@ -17,6 +17,18 @@
   "twistMm": 350,
   "file": "1173.pdf"
  },
+ "1270": {
+  "name": "12/70",
+  "pmaxBar": 740,
+  "twistMm": null,
+  "file": "12-70.pdf"
+ },
+ "2070": {
+  "name": "20/70",
+  "pmaxBar": 830,
+  "twistMm": null,
+  "file": "20-70.pdf"
+ },
  "5714": {
   "name": "5,7/14",
   "pmaxBar": 4100,
@@ -76,6 +88,12 @@
   "pmaxBar": 4500,
   "twistMm": null,
   "file": "6818.pdf"
+ },
+ "41070": {
+  "name": "410/70",
+  "pmaxBar": 830,
+  "twistMm": null,
+  "file": "410-70.pdf"
  },
  "46x30": {
   "name": "4,6 x 30",

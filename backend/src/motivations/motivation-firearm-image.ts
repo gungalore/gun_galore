@@ -94,6 +94,7 @@ export function plausiblyShows(
   const m = flat(make);
   const d = flat(model);
   if (!t || !m || !d) return false;
+  if (PEOPLE_OR_EVENT.test(title)) return false;
   // A make can be written several ways ("Ceska Zbrojovka", "CZ"); any word of
   // it appearing is enough, provided the model designation is there too.
   const makeHit = make
@@ -114,6 +115,19 @@ export function plausiblyShows(
  */
 const AWKWARD =
   /\b(assault|sniper|military|army|navy|marine|police|swat|tactical|combat|war|soldier|troops)\b/i;
+
+/**
+ * A PERSON IS NOT A FIREARM.
+ *
+ * ⚠️ MO000059'S COVER WAS A SOLDIER IN CAMOUFLAGE, captioned "MOSSBERG 500 12
+ * GAUGE, SERIAL 12345678". The title carried both tokens, so plausiblyShows
+ * passed it — but the picture showed somebody holding a rifle in woodland, and
+ * a cover whose photograph contradicts its own caption is worse than a cover
+ * with no photograph at all. A title that reads as a person or an event is
+ * refused outright, not merely scored down.
+ */
+const PEOPLE_OR_EVENT =
+  /\b(assault|sniper|military|army|navy|marine|police|swat|tactical|combat|war|soldier|troops|man|men|woman|women|people|person|boy|girl|child|children|ceremony|parade|re-enactment)\b/i;
 
 /** Lower is better. */
 export function scoreTitle(title: string): number {

@@ -58,6 +58,72 @@ export function interviewAgentSystemPrompt(): string {
   ].join('\n');
 }
 
+/**
+ * THE ONE JOB: turn a question into the answers somebody would actually give.
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE MAIN TURN IS ALLOWED TO FORGET ITS CHIPS. The
+ * interview agent is asked for 3-5 choices on every question, and it usually
+ * obliges — but "usually" is a form with a text box on the days it does not,
+ * and a member who has just answered eight questions with taps should never
+ * meet a blank input because one model turn dropped a field.
+ */
+export const CHOICES_SCHEMA = {
+  type: 'object',
+  properties: {
+    choices: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          value: { type: 'string' },
+          label: { type: 'string' },
+        },
+        required: ['value', 'label'],
+      },
+    },
+  },
+  required: ['choices'],
+} as const;
+
+export function choicesSystemPrompt(): string {
+  return [
+    'You write the tappable answers for one question in a South African firearm-licence interview.',
+    'The applicant is a real person applying to the Central Firearms Register; your answers are the ones they would plausibly give, offered so they can tap instead of typing.',
+    '',
+    'RULES',
+    '1. Return 3 to 5 answers. Never fewer than 3 unless the question truly has fewer.',
+    '2. Each answer must fit THAT question only — an answer to "what do you hunt" is a species, not a sentence about your job.',
+    '3. Write it as the applicant would say it, first person, 5 to 15 words. "I farm maize near Bethlehem", not "Farming".',
+    '4. Tailor it to what is already known: their firearm, calibre, province, occupation and previous answers. Do not contradict a known fact.',
+    '5. Never invent a fact about them and never present a legal conclusion as an answer.',
+    '6. Do not number them, do not explain them, do not repeat the question.',
+    '7. If the question is closed (yes/no or a short list), return the plausible answers to it, in their words.',
+    '8. No two answers may mean the same thing.',
+    '',
+    'Return JSON only, matching the schema.',
+  ].join('\n');
+}
+
+export function choicesUserPrompt(args: {
+  licenceLabel: string;
+  question: string;
+  help?: string;
+  known: string[];
+  previousAnswer?: string;
+}): string {
+  return [
+    `APPLICATION: ${args.licenceLabel}`,
+    `WHAT THE APPLICANT HAS ALREADY TOLD US: ${args.known.length ? args.known.join('; ') : '(nothing yet)'}`,
+    args.previousAnswer ? `THEIR LAST ANSWER: ${args.previousAnswer}` : '',
+    `THE QUESTION: ${args.question}`,
+    args.help ? `WHY IT MATTERS: ${args.help}` : '',
+    '',
+    'Write the 3 to 5 answers this applicant is most likely to give, as tappable buttons.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function interviewAgentUserPrompt(args: {
   licenceLabel: string;
   previousQuestion?: string;

@@ -44,6 +44,7 @@ import {
   type InterviewAgentContext,
 } from './intake-agent.service';
 import type { FactCandidate } from './intake-agent.prompts';
+import { addCustomChoice, normaliseChoices } from './intake-choices';
 import {
   INTAKE_SCHEMA,
   SPECIES_SCHEMA,
@@ -648,7 +649,21 @@ export class MotivationIntakeService {
               'Choose one of the options, or type a different answer.',
             );
           }
-          patch[customKey] = message;
+          /**
+           * ⚠️ A TYPED ANSWER ADDS TO THE BUTTONS, IT DOES NOT REPLACE THEM.
+           *
+           * MO000059 ticked a species chip and then typed "snakes" in the same
+           * answer. The chip was written into the field, then this branch
+           * assigned the typed text to the same field — because that field's
+           * custom key IS the field — and the tick was gone. The document then
+           * had one quarry where the applicant had named two, and the exhibits
+           * fell back to whatever the calibre research suggested.
+           */
+          if (customKey === key) {
+            patch[key] = addCustomChoice(patch[key], message);
+          } else {
+            patch[customKey] = message;
+          }
         }
       }
     }
@@ -1107,10 +1122,24 @@ export class MotivationIntakeService {
     };
     const agentReply = await this.agent.phrase(agentContext);
     if (agentReply) {
-      const choices =
-        agentReply.choices && agentReply.choices.length > 0
-          ? agentReply.choices
-          : base.choices;
+      /**
+       * ⚠️ A QUESTION THE MEMBER CAN ONLY TYPE IS A REGRESSION, NOT A FALLBACK.
+       * The agent is asked for chips on every open question and usually returns
+       * them; when it does not, ask once more for the answers alone rather than
+       * dropping to a blank input. The deterministic planner's own choices are
+       * the last resort — they are at least correct for the field.
+       */
+      let choices = normaliseChoices(agentReply.choices);
+      if (choices.length < 2) {
+        choices = await this.agent.choicesFor({
+          licenceLabel: sheet.application.licenceTypeLabel,
+          question: agentReply.question,
+          help: base.help,
+          known: this.knownFacts(answers),
+          previousAnswer: previousAnswer ?? undefined,
+        });
+      }
+      if (!choices.length) choices = base.choices;
       return {
         question: {
           ...base,
@@ -1149,12 +1178,28 @@ export class MotivationIntakeService {
       const parsed = JSON.parse(res.text) as {
         question?: unknown;
         acknowledgement?: unknown;
+        choices?: unknown;
       };
       const question =
         typeof parsed.question === 'string' ? parsed.question.trim() : '';
       if (!question) return { question: base };
+      /**
+       * ⚠️ SAME RULE ON THE ONE-SHOT PATH. This is the fallback used when the
+       * tool-using agent cannot answer at all, and it used to be a text box by
+       * construction — the schema had no `choices` in it. It has one now, and a
+       * reply that still arrives without chips keeps the pair the planner
+       * already had rather than losing every button.
+       */
+      const choices = normaliseChoices(parsed.choices);
       return {
-        question: { ...base, label: question },
+        question: {
+          ...base,
+          label: question,
+          choices: choices.length ? choices : base.choices,
+          customPlaceholder: choices.length
+            ? 'Or type your own answer…'
+            : base.customPlaceholder,
+        },
         acknowledgement:
           typeof parsed.acknowledgement === 'string'
             ? parsed.acknowledgement.trim()

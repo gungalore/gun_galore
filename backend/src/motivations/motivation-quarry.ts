@@ -338,7 +338,7 @@ export function quarryPrompt(species: readonly QuarrySpecies[]): string {
   const subjects = species.map((q) => q.subject).join(', then ');
   const count = species.length;
   return [
-    `Photorealistic wildlife documentary photograph of ${count === 1 ? 'one animal' : `${count} animals`} standing in a single horizontal line across a dry grass clearing in the South African bushveld: ${subjects}.`,
+    `Photorealistic wildlife documentary photograph of ${count === 1 ? 'one animal' : `${count} animals`} standing in a single horizontal line across a dry grass clearing: ${subjects}.`,
     'Every animal stands in full broadside side-on profile facing left with all four hooves on level red-brown sandy earth, evenly spaced with clear daylight between them, all at the exact same distance from the camera so their body heights and horn lengths are in true proportion to one another, sharp hair-coat texture and natural horn ridges.',
     'Flat golden grass in the foreground, scattered flat-topped acacia thorn trees in the distant background.',
     'Warm low-angle morning sun from the front-left with bright, even fill light across the flank of every animal, crisp highlights and open, readable shadow detail.',

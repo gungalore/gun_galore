@@ -98,6 +98,7 @@ import { CIP_INSET_SCALE, rasterisePdfToDir } from './pdf-raster';
 import { DocumentPageRasterService } from './document-page-raster.service';
 import sharp from 'sharp';
 import { findCartridge } from './motivation-cartridge';
+import { shotShellFor, shotshellDrawing } from './motivation-shotshell';
 import {
   cartridgeDimRows,
   cartridgeDrawing,
@@ -1828,6 +1829,62 @@ export class MotivationRenderService {
   > {
     const printed = (calibre ?? '').trim();
     if (!printed) return undefined;
+
+    /**
+     * ⚠️ A SHOTGUN IS NOT A RIFLE AND THE CARTRIDGE TABLE KNOWS ONLY RIFLES.
+     *
+     * A 12-, 20- or .410-bore shell has no entry in the Bench cartridge data, so
+     * this used to fall through to `return undefined` — no drawing on the
+     * cover, and the stock-photo fallback printed a soldier captioned as the
+     * applicant's Mossberg. The three gauges now have their C.I.P. Tab VII
+     * sheets indexed and a shell drawing of their own: brass head at the rear,
+     * red plastic hull in front, crimped mouth, and only the figures the sheet
+     * prints.
+     */
+    const shell = shotShellFor(printed);
+    if (shell) {
+      try {
+        const rasterShell = async (opts: { hero: boolean }) => {
+          const d = shotshellDrawing(shell, opts);
+          return {
+            png: await sharp(Buffer.from(d.svg), { density: 300 })
+              .flatten({ background: '#ffffff' })
+              .png()
+              .toBuffer(),
+            widthMm: d.widthMm,
+            heightMm: d.heightMm,
+            texts: d.texts,
+          };
+        };
+        const drawing = await rasterShell({ hero: !!heroLine });
+        const cip = opts.skipCip ? null : await this.cipInset(shell.name);
+        const mm = (v: number) => `${v.toFixed(2)} mm`;
+        return {
+          png: drawing.png,
+          widthMm: drawing.widthMm,
+          heightMm: drawing.heightMm,
+          texts: drawing.texts,
+          label: `The cartridge \u2014 ${displayCalibre(printed) || shell.name}`,
+          name: shell.name,
+          specs: [
+            { label: 'Case length', value: mm(shell.lengthMm) },
+            { label: 'Rim diameter', value: mm(shell.rimMm) },
+            { label: 'Head diameter', value: mm(shell.headMm) },
+            { label: 'Hull diameter', value: mm(shell.hullMm) },
+            { label: 'Rim thickness', value: mm(shell.rimThickMm) },
+            { label: 'Maximum average pressure', value: `${shell.pmaxBar} bar` },
+          ],
+          ...(heroLine ? { hero: { subtitle: heroLine } } : {}),
+          dimension: cip ?? (heroLine ? await rasterShell({ hero: false }) : drawing),
+          dimensionIsCip: !!cip,
+        };
+      } catch (err) {
+        this.logger?.warn?.(
+          `Shot-shell drawing failed for "${printed}": ${(err as Error).message}`,
+        );
+      }
+    }
+
     try {
       const all = await this.prisma.benchCartridge.findMany({
         select: {

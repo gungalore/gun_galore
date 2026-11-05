@@ -1158,11 +1158,11 @@ function renderOverlap(note: string | undefined): string {
  */
 const SECTION_BRIEFS: Record<SectionId, string> = {
   introduction:
-    'Start by naming me in full and copying my ID number exactly as it appears in the facts. Then state what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing. \u26a0\ufe0f WHERE THE DIRECTION ABOVE SAYS I ALREADY HOLD SOMETHING IN THE SAME CLASS, this paragraph must also say, in one sentence and in my own terms, that nothing I hold serves this purpose. It is the first thing a reviewer skimming the page sees, and the detailed answer further down is worth less if the opening does not signal that the question has been met. Word it freshly \u2014 not as a formula repeated from document to document.',
+    'Start by naming me in full and copying my ID number exactly as it appears in the facts. Then state what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing. \u26a0\ufe0f WHERE THE DIRECTION ABOVE SAYS I ALREADY HOLD SOMETHING IN THE SAME CLASS, this paragraph must also say, in one sentence and in my own terms, that nothing I hold serves this purpose. It is the first thing a reviewer skimming the page sees, and the detailed answer further down is worth less if the opening does not signal that the question has been met. Word it freshly \u2014 not as a formula repeated from document to document. \u26a0\ufe0f WHERE THE FACTS RECORD BOTH HUNTING AND SPORT SHOOTING, NAME BOTH, in one short clause each. The rest of the document argues both, and an opening that names only one of them reads as an application for the other.',
   personal_circumstances:
     'The home, the work and the movements, in that order and in the applicant\u2019s own detail. The home: the type of dwelling, who lives there, who depends on me, the character of the street at night. The work: the occupation, where, the hours, the travel, cash or equipment carried, sites visited, overnight stays, alone or not. The movements: the routes and times that recur \u2014 the early commute, the late return, the farm road \u2014 stated as my own routine. \u26a0\ufe0f FACTS, NOT ADJECTIVES, AND NOT FORM DATA. My employer\u2019s street address, my spouse\u2019s identity number and my marital status stated for its own sake are boxes on the SAPS 271; in this document they are a paragraph a reviewer has to read before reaching the argument. \u26a0\ufe0f AND NO HUNTING OR SPORT WORDS ANYWHERE IN IT \u2014 a routine that mentions the range or the farm I hunt on has put a different section\u2019s purpose into a self-defence application.',
   the_quarry:
-    'What I hunt and where. Name the species, the terrain and the province or region, the typical range a shot is taken at, the conditions. Where the research gives the animals\u2019 weight range or the ground\u2019s character, use it. \u26a0\ufe0f GO FURTHER THAN NAMING THEM: for each species, say what hunting it actually demands \u2014 the energy needed at the range it is taken at, whether the shot is usually standing or from a rest, whether the animal is likely to run on, what the terrain does to shot placement and follow-up. This is the section that shows I understand my quarry rather than merely wanting a rifle. Do not invent species or places I did not mention.',
+    'What I want to hunt, and why this cartridge suits it. Name the species I intend to hunt, and for each say what hunting it actually demands \u2014 the energy needed to reach the vitals, whether the shot is usually standing or from a rest, whether a wounded animal is likely to run on \u2014 and tie that to the calibre and the bullet it can carry. That is the whole section: the quarry, what it takes to hunt it humanely, and why this cartridge is matched to that job. \u26a0\ufe0f NO PLACE UNLESS THE FACTS CARRY ONE. Never name a province, region, town, farm, ranch, reserve or hunting area. The applicant\u2019s answers and the annexure list are the only two sources of a place: where a hunting-farm letter or a named farm is in the pack, name it once and only for what that document supports; where neither names one, write no location at all \u2014 not as scene-setting, not as atmosphere, not "in the bushveld" either. \u26a0\ufe0f AND DO NOT INVENT SPECIES, terrain or conditions to fill the gap: a short, grounded section is correct and a longer one built on scenery I did not supply is a false statement I have to sign.',
   the_discipline:
     'The disciplines I shoot and what each one demands: the course of fire, the distances, the positions, the time limits, the class or division, and what the association requires to keep dedicated status. \u26a0\ufe0f ADDRESS EVERY DISCIPLINE NAMED, each in its own right \u2014 an applicant who shoots three has three reasons for the firearm, and a paragraph that covers only the first throws away two of them. Where the answers carry the published equipment rules for a discipline, work from those. This is the section that shows the firearm was chosen against a defined standard rather than a preference.',
   the_threat:
@@ -1225,6 +1225,9 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
  * "high magazine capacities" and "terminal ballistics" are phrases a Registrar
  * reads AGAINST an applicant. A section 13 needs four facts and a paragraph.
  */
+const COMPETENCY_AND_TRAINING_BRIEF =
+  'My competency and training. The SAPS competency certificate: its number, the category it covers, when it was issued and when it expires \u2014 every one of those the facts carry. Then the training behind it, and only where the facts say so. Then what I actually do to stay competent: how often I shoot, what I shoot, and how the firearm applied for fits that practice. \u26a0\ufe0f NO SECURITY MEASURES HERE AT ALL. Burglar bars, gates, alarms and armed response are not competency and not training; on a hunting or sport application they belong in storage and transport, which has its own section later. \u26a0\ufe0f AND ONLY WHAT THE FACTS CARRY: never invent a course, a date, a unit standard, a club or a score.';
+
 const BRIEF_OVERRIDES: Partial<
   Record<MotivationLicenceType, Partial<Record<SectionId, string>>>
 > = {
@@ -1237,6 +1240,28 @@ const BRIEF_OVERRIDES: Partial<
   [MotivationLicenceType.S13_SELF_DEFENCE]: {
     the_firearm:
       'ONE PARAGRAPH, AT MOST SIXTY WORDS, AND FOUR FACTS: the type and make applied for, the calibre, why a handgun rather than a rifle or shotgun (it can be carried on the person, which is the whole point of a firearm kept for defence), and the role the calibre plays in practice. \u26a0\ufe0f NOTHING ELSE. No action type, no barrel, no capacity, no trigger system, no frame material, no ballistics, no comparison with other models, no manufacturer\u2019s history. A self-defence application is not about the firearm; it is about the risk, and a paragraph describing the product reads as somebody who wants this one rather than somebody who needs one. \u26a0\ufe0f AND SAY NOTHING ABOUT WHAT AMMUNITION IS AVAILABLE. The pack holds no stock or supply fact for this round, and a scarce chambering (6.35mm Browning, .32 S&W) makes the claim false; say only that I intend to practise with it and where I shoot. \u26a0\ufe0f AND DO NOT RECITE THE DIMENSION SHEET\u2019S FIGURES. Case length, overall length and pressure are printed on the sheet that follows this section; repeating them in prose is a catalogue, not an argument.',
+  },
+  /**
+   * \u26a0\ufe0f THE HUNTING AND SPORT APPLICATION GETS ITS OWN SECTION 7.
+   *
+   * The base brief for `experience` is written for section 13: "what this
+   * applicant ALREADY does about the risk, and where each measure stops". On a
+   * hunting application that produced a section headed "My competency and
+   * training" whose every sentence was about burglar bars and security gates,
+   * while the competency certificate \u2014 the one document a DFO opens the pack
+   * for \u2014 appeared nowhere in the body. Same id, different job.
+   */
+  [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: {
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
+  },
+  [MotivationLicenceType.S16_DEDICATED_HUNTER]: {
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
+  },
+  [MotivationLicenceType.S16_DEDICATED_SPORT]: {
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
+  },
+  [MotivationLicenceType.S24_RENEWAL]: {
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
   },
 };
 
@@ -1291,6 +1316,13 @@ const FINAL_INSTRUCTION = `BEFORE YOU WRITE â€” the two things that fail a 
 2. SHAPE. Return the body only: the exact headings given above, each on its own
    line, then paragraphs separated by blank lines. No markdown, no bullets, no
    tables, no preamble, no sign-off.
+3. PLACES. Never name a province, region, town, farm, ranch, reserve or hunting
+   area that is not in the blocks above. A place the applicant did not supply
+   and no document names is invented, and invented geography on a licence
+   application is a false statement under the applicant's signature.
+4. NAMES ARE COPIED, NOT PARAPHRASED. The make, model and calibre strings are
+   written exactly as the facts give them \u2014 if the model is "600 PLUS
+   AMERICAN", it is never shortened to "600 American" anywhere in the document.
 
 Write the document now.`;
 

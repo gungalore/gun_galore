@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import {
   GAP,
@@ -19,6 +19,7 @@ import {
   type CertificationLevel,
 } from './motivation-checklist';
 import { COVER_FRAME_MM } from './motivation-cover-photo';
+import { repointAnnexureRefs } from './motivation-annexure-refs';
 import { coverMasthead, edgeBar, EDGE_BAR_W } from './motivation-pdf-cover';
 import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
 import * as K from './motivation-pdf-chrome';
@@ -1761,8 +1762,23 @@ export class MotivationPdfService {
    * receipt/SAPS-534 controllers already stream.
    */
   async render(
-    input: MotivationPdfInput,
+    rawInput: MotivationPdfInput,
   ): Promise<{ pdf: Buffer; filename: string }> {
+    /**
+     * ⚠️ THE LETTERS ARE RE-DERIVED HERE, WHERE THE PACK IS FINALLY LETTERED.
+     *
+     * The writer cites annexures from the list it was given at generation time,
+     * and that list can have moved by the time the pack is assembled \u2014 a
+     * document added or dropped re-letters everything after it. MO000057 went
+     * out citing "Annexure E: Association membership proof" when E was the
+     * existing licence and membership was F. Matching by title fixes the letter
+     * without guessing: a citation whose title is not in this pack is left
+     * exactly as written.
+     */
+    const input: MotivationPdfInput = {
+      ...rawInput,
+      body: repointAnnexureRefs(rawInput.body, rawInput.annexures ?? []),
+    };
     const doc = new PDFDocument({
       size: [PAGE_WIDTH, PAGE_HEIGHT],
       // \u26a0\ufe0f THE TOP MARGIN CLEARS THE RUNNING BANNER. pdfkit paginates

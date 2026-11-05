@@ -139,13 +139,11 @@ export function purposeFor(
 
 /** The natural setting each game class is hunted in. */
 const HABITAT: Record<string, string> = {
-  small: 'a rocky outcrop or a dry riverbed in the South African bushveld',
-  plains_light:
-    'open grassy plains with scattered thorn trees in the South African bushveld',
-  plains_medium:
-    'open bushveld and grassy plains in South Africa with a line of trees behind',
-  dangerous: 'dense riverine bushveld in South Africa',
-  wingshooting: 'a waterhole fringed with reeds in the South African veld',
+  small: 'a rocky outcrop or a dry riverbed',
+  plains_light: 'open grassy plains with scattered thorn trees',
+  plains_medium: 'open bushveld and grassy plains with a line of trees behind',
+  dangerous: 'dense riverine bush',
+  wingshooting: 'a waterhole fringed with reeds',
 };
 
 /**
@@ -273,8 +271,7 @@ function speciesPlate(
     title: species.name,
     description:
       `${species.name} ${nature}. ${calibreFitClause(species, answers)} It is ` +
-      `pictured in ${habitat}, the setting a licence for this purpose is ` +
-      `intended for.`,
+      `pictured in ${habitat}.`,
     prompt: imageBrief({
       subject:
         `${capitalise(species.subject)}, standing broadside in ${habitat}, ` +

@@ -323,29 +323,49 @@ const BEFORE_THE_REORDER: Record<
    * section K is completed for this section and no other, and the DFO
    * transcribes the premises facts out of the document.
    */
+  /**
+   * ⚠️ RE-BASELINED A THIRD TIME, 2026-11-05, AND AGAIN ON PURPOSE.
+   *
+   * MO000057 invented the province it was hunted in ("the Free State and
+   * Northern Cape" for an applicant living in Cape Town who had answered no
+   * location at all). Three content changes fix that, and every one of them
+   * moves this hash:
+   *
+   *  - the `the_quarry` brief no longer asks for "the terrain and the province
+   *    or region"; it forbids a place outright unless the answers or an
+   *    annexure name one, and asks for the species and the cartridge instead;
+   *  - hunting and sport applications get their own `experience` brief
+   *    (competency and training) rather than the section 13 one, which was
+   *    producing a "My competency and training" heading over burglar bars;
+   *  - the final instruction gained rule 3 (no place that is not in the facts)
+   *    and rule 4 (make, model and calibre copied, never paraphrased).
+   *
+   * The line counts moved by seven on most types because rule 3 and rule 4 are
+   * new lines, and by three on S24 where the section list is shorter.
+   */
   S14_RESTRICTED_SELF_DEFENCE: {
-    lines: 120,
-    sha: '85e03a0784cb8bc6b450ab82040480884f46bb1bba41c4a293709248bc37d5fd',
+    lines: 127,
+    sha: '2e0492d7821f9539611e26b955c1734d1a0a5e9d91b6a1dd75ebfb781e41a365',
   },
   S13_SELF_DEFENCE: {
-    lines: 121,
-    sha: '5df2e9b04e10708a51cdecce5d16d2f5fd1f70a7cf8de86861ae742b68cf9cb5',
+    lines: 128,
+    sha: '99e0ced8a818bbbebccf599df3bda194457e6fe804fce15ef2bef42b31c252cc',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 121,
-    sha: 'f518d20b72857e345420b20b4f0aa7bed2adf9b16067de8169d8080d9f500a97',
+    lines: 128,
+    sha: '8fa44ea1e617b508e1923b4e7c3d04a21b693ee9b215960ac777f8b60b888ad4',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 121,
-    sha: '08cc894fa3fdc81858b6274fa4554625bddcec8eb3d1c1d6c4a9431ec00f1467',
+    lines: 128,
+    sha: '1b30519691d70e419f992303e9f8e074b26d2e209369fde24fea618bdf32bd47',
   },
   S16_DEDICATED_SPORT: {
-    lines: 121,
-    sha: '8d17cf25ebb7193842c9a958ff6d216d9c130c49a942bd719bb468ac28d7eace',
+    lines: 128,
+    sha: 'acdaeddfc507d9ebdb2848952c7ff6bfed485f1f41063cbf116dff433b7f3f5b',
   },
   S24_RENEWAL: {
-    lines: 115,
-    sha: '9cdf0a882d41ba64ca15552ec40fcc1846e9b2fb98863dbb210b3e0cc425e747',
+    lines: 122,
+    sha: '8cce35a4203163fa8c9c43e37ea69f4682102f3f17e3637ae673bc977338c6fc',
   },
 };
 
@@ -425,6 +445,49 @@ describe('generation prompt — the reorder changed no content', () => {
       expect(notice).toBeLessThan(facts);
       // Nothing between them but the notice's own paragraph.
       expect(facts - notice).toBeLessThan(600);
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// MO000057 WENT OUT WITH A PROVINCE THE APPLICANT HAD NEVER MENTIONED.
+//
+// "in the Free State and Northern Cape provinces" on an application whose
+// answers carried no hunting location at all, because the `the_quarry` brief
+// asked the writer to "name the terrain and the province or region". These
+// assertions are the guard on the fix: no brief may invite a place the facts
+// do not carry, on any licence type.
+// ────────────────────────────────────────────────────────────────────────────
+describe('generation prompt — no invented places', () => {
+  it('tells every type that a place must come from the facts', () => {
+    for (const t of TYPES) {
+      const p = generationUserPrompt(packFor(t, 'a'), planFor(t, 7));
+      expect(p).toContain('3. PLACES.');
+      expect(p).toContain('4. NAMES ARE COPIED');
+    }
+  });
+
+  it('no longer asks the hunting section for a terrain or a province', () => {
+    for (const t of [
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    ]) {
+      const p = generationUserPrompt(packFor(t, 'a'), planFor(t, 7));
+      expect(p).not.toContain('the terrain and the province or region');
+      expect(p).toContain('NO PLACE UNLESS THE FACTS CARRY ONE');
+    }
+  });
+
+  // ⚠️ SECTION 7 ON A HUNTING APPLICATION IS COMPETENCY AND TRAINING. It used
+  // to inherit the section 13 brief and came out about burglar bars.
+  it('gives a hunting application the competency brief, not the risk one', () => {
+    for (const t of [
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ]) {
+      const p = generationUserPrompt(packFor(t, 'a'), planFor(t, 7));
+      expect(p).toContain('NO SECURITY MEASURES HERE AT ALL');
     }
   });
 });

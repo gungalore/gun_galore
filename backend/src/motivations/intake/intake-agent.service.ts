@@ -3,14 +3,18 @@ import { LlmService } from '../../common/llm/llm.service';
 import type { LlmTool, LlmToolCall } from '../../common/llm/llm.types';
 import type { IntakeChoice, IntakeQuestion, IntakeState } from './intake.types';
 import {
+  CHOICES_SCHEMA,
   FACT_SCHEMA,
   INTERVIEW_AGENT_SCHEMA,
+  choicesSystemPrompt,
+  choicesUserPrompt,
   factSystemPrompt,
   factUserPrompt,
   interviewAgentSystemPrompt,
   interviewAgentUserPrompt,
   type FactCandidate,
 } from './intake-agent.prompts';
+import { normaliseChoices } from './intake-choices';
 
 const PURPOSE = 'motivation.interview.agent';
 
@@ -125,6 +129,60 @@ export class MotivationIntakeAgentService {
         `Interview agent turn failed: ${(err as Error).message}`,
       );
       return null;
+    }
+  }
+
+  /**
+   * THE CHIPS, WHEN THE MAIN TURN FORGOT THEM.
+   *
+   * The interview agent is asked for 3-5 tap answers on every open question and
+   * usually returns them. When it does not — a dropped field, a truncated JSON
+   * reply, a model that wrote prose instead — the member is left with a blank
+   * input after eight questions of tapping, which reads like the system broke.
+   *
+   * ⚠️ TWO IS THE FLOOR. One button is not a shortlist, it is a leading
+   * question; the caller falls back to the ordinary text box instead.
+   *
+   * Fail-soft and cheap: no model, no question, or a bad reply returns [].
+   */
+  async choicesFor(args: {
+    licenceLabel: string;
+    question: string;
+    help?: string;
+    known: string[];
+    previousAnswer?: string;
+  }): Promise<IntakeChoice[]> {
+    if (!this.llm.isConfiguredFor(PURPOSE)) return [];
+    if (!args.question.trim()) return [];
+    try {
+      const res = await this.llm.complete({
+        system: choicesSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: choicesUserPrompt({
+              licenceLabel: args.licenceLabel,
+              question: args.question,
+              help: args.help,
+              known: args.known,
+              previousAnswer: args.previousAnswer,
+            }),
+          },
+        ],
+        maxTokens: 400,
+        temperature: 0.4,
+        purpose: PURPOSE,
+        json: { schema: CHOICES_SCHEMA },
+        timeoutMs: 12_000,
+      });
+      const parsed = JSON.parse(res.text) as { choices?: unknown };
+      const choices = normaliseChoices(parsed.choices);
+      return choices.length >= 2 ? choices : [];
+    } catch (err) {
+      this.logger.warn(
+        `Interview choices turn failed: ${(err as Error).message}`,
+      );
+      return [];
     }
   }
 
@@ -306,21 +364,10 @@ function parseReply(
       typeof parsed.question === 'string' ? parsed.question.trim() : '';
     if (!question) return null;
 
-    const rawChoices = Array.isArray(parsed.choices) ? parsed.choices : [];
-    const choices: IntakeChoice[] = [];
-    for (const c of rawChoices) {
-      if (typeof c === 'string' && c.trim()) {
-        choices.push({ value: c.trim(), label: c.trim() });
-      } else if (c && typeof c === 'object') {
-        const item = c as Record<string, unknown>;
-        const val = typeof item.value === 'string' ? item.value.trim() : '';
-        const lab = typeof item.label === 'string' ? item.label.trim() : val;
-        if (val || lab) {
-          choices.push({ value: val || lab, label: lab || val });
-        }
-      }
-      if (choices.length >= 5) break;
-    }
+    // ⚠️ THE SAME NORMALISER AS EVERY OTHER CHIP PATH. Duplicates, empty
+    // strings and paragraph-length "answers" are dropped rather than rendered:
+    // a button that stores nothing is worse than no button.
+    const choices = normaliseChoices(parsed.choices);
 
     return {
       question,

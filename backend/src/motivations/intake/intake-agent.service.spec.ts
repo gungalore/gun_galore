@@ -231,3 +231,64 @@ describe('the fact extractor', () => {
     expect(out).toEqual({});
   });
 });
+
+describe('the chips turn', () => {
+  function chipLlm(text: string) {
+    return {
+      isConfiguredFor: () => true,
+      complete: async () => ({ text }),
+    } as unknown as LlmService;
+  }
+
+  const ask = (llm: LlmService) =>
+    new MotivationIntakeAgentService(llm).choicesFor({
+      licenceLabel: 'Section 15 — occasional hunter',
+      question: 'What do you hunt?',
+      help: 'Name the species you actually hunt.',
+      known: ['Rifle', '.30-06 Springfield'],
+    });
+
+  it('returns the answers it was given, capped and de-duplicated', async () => {
+    const llm = chipLlm(
+      JSON.stringify({
+        choices: [
+          { value: 'Kudu', label: 'Kudu' },
+          { value: 'kudu.', label: 'Kudu' },
+          { value: 'Blue wildebeest', label: 'Blue wildebeest' },
+          { value: 'Impala', label: 'Impala' },
+        ],
+      }),
+    );
+
+    expect(await ask(llm)).toEqual([
+      { value: 'Kudu', label: 'Kudu' },
+      { value: 'Blue wildebeest', label: 'Blue wildebeest' },
+      { value: 'Impala', label: 'Impala' },
+    ]);
+  });
+
+  // ⚠️ One button is a leading question, not a shortlist — the caller keeps its
+  // text box instead.
+  it('returns nothing when fewer than two answers survive', async () => {
+    const llm = chipLlm(JSON.stringify({ choices: [{ value: 'Kudu' }] }));
+    expect(await ask(llm)).toEqual([]);
+  });
+
+  it('returns nothing when the model is unavailable', async () => {
+    const llm = {
+      isConfiguredFor: () => false,
+      complete: async () => ({ text: '{}' }),
+    } as unknown as LlmService;
+    expect(await ask(llm)).toEqual([]);
+  });
+
+  it('returns nothing when the turn throws', async () => {
+    const llm = {
+      isConfiguredFor: () => true,
+      complete: async () => {
+        throw new Error('timeout');
+      },
+    } as unknown as LlmService;
+    expect(await ask(llm)).toEqual([]);
+  });
+});

@@ -114,3 +114,30 @@ describe('scoreTitle', () => {
     expect(scoreTitle('File:Army rifle.jpg')).toBeGreaterThan(200);
   });
 });
+
+// --------------------------------------------------------------------
+// ?? MO000059'S COVER WAS A SOLDIER IN CAMOUFLAGE.
+//
+// The title carried both "Mossberg" and "500", so the make-and-model rule
+// passed it, and the page printed a woodland photograph of a person captioned
+// "MOSSBERG 500 12 GAUGE, SERIAL 12345678". A cover whose picture contradicts
+// its caption is worse than a cover with no picture, so a title that reads as
+// a person or an event is now refused outright.
+// --------------------------------------------------------------------
+describe('plausiblyShows — a person is not a firearm', () => {
+  it('refuses a photograph of somebody holding the right model', () => {
+    expect(
+      plausiblyShows('File:Soldier with Mossberg 500 shotgun.jpg', 'Mossberg', '500'),
+    ).toBe(false);
+    expect(
+      plausiblyShows('File:Man firing Mossberg 500.jpg', 'Mossberg', '500'),
+    ).toBe(false);
+  });
+
+  it('still accepts a plain product photograph of the same model', () => {
+    expect(plausiblyShows('File:Mossberg 500.jpg', 'Mossberg', '500')).toBe(true);
+    expect(
+      plausiblyShows('File:Mossberg 500 Field 12 gauge.jpg', 'Mossberg', '500'),
+    ).toBe(true);
+  });
+});
