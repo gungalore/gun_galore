@@ -7,6 +7,58 @@ overwritten.
 
 Last updated: **2026-11-05**.
 
+## 2026-11-05 (LATE) - THE PROFESSIONAL SPINE, ASSOCIATION RULEBOOKS, DETAIL GATE
+
+Deployed `042b4f94` (full; rollback `alloutdoor-20261105-231413.dump`,
+33,481,043 bytes). Backend 407 suites / 6,044 tests, frontend 161 files /
+1,843 tests, production build OK, both health checks twice, public 200 twice,
+three pm2 services online.
+
+**What triggered it.** Three real Section 16 sport motivations (94 pages) from
+another practitioner were supplied for analysis. They carry four things ours
+did not: a firearm-history narrative, a comparison against the alternatives, a
+PAJA section, and the association's own rulebook quoted verbatim — which is
+12 to 23 of their 21 to 38 pages, the "detail" a DFO actually reads.
+
+**Rulebooks.** NHSA (61 exercises: 26 handgun, 31 rifle, 3 shotgun) and FOSA
+(11 entries — published distances and shot counts only; FOSA publishes no
+course of fire) are captured like the C.I.P. sheets: raw JSON gitignored under
+`backend/data/association-rules/`, index at
+`backend/src/motivations/associations/association-rules.json`. The interview
+serves the exercises that fit the firearm as chips for `discipline_exercise`,
+and the named exercise's rulebook is appended verbatim under heading 11 with a
+source line. `followsPlan()` requires that heading, so a draft that omits it
+regenerates instead of shipping rules-less.
+
+⚠️ The Barrett motivation's "(20 CAL) .223/5.56" appendix is NHSA Com21, not a
+FOSA document. Do not attribute it to Firearms Owners SA.
+
+**The spine is ours now** (the SAPS 271 no longer dictates it): 1 Introduction ·
+2 My circumstances · 3 My history with firearms · 4 purpose · 5 What I already
+do · 6 The firearm · 7 Why this firearm and not the alternatives · 8 Firearms
+already licensed · 9 Competency and training · 10 Association · 11 The
+association's rules for this exercise · 12 Safe storage · 13 My record ·
+14 Section N applied · 15 Administrative justice · 16 Declaration and request.
+An omitted section leaves its number absent — a lean S15 runs 1,3,4,6,7,9,12,
+14,15,16.
+
+**The gate.** `motivation-completeness.ts` refuses generation with
+`motivation-needs-detail` until the document's arguments exist — identity,
+competency, association and dedicated status (S16), the named exercise (S16
+sport, S15 sport), a shooting history of at least 60 words, the alternative
+considered, safe detail and purpose. It runs AFTER the form and eligibility
+checks so an empty form hears "answers missing" rather than "history too
+short", and it is surfaced on `IntakeState.needsDetail` so the member is sent
+back to the right interview group instead of getting an SMS afterwards.
+
+**Not yet proven:** no pack has been regenerated with the new spine, and the
+rulebook appendix has not been seen in a real PDF. First live application is
+the test.
+
+**Open policy question:** S15 and S24 do not require an association membership
+(an occasional hunter may not be a member), while both S16 routes do. If S15
+should require it, that is a deliberate change.
+
 ## 2026-11-05 EVENING - THE SAPS 271 IS GONE, TWO PRODUCTS, GROUPED INTERVIEW
 
 Deployed `2fc7f010` (full; rollback `alloutdoor-20261105-205152.dump`,
