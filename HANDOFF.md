@@ -44,7 +44,12 @@ both raw-DDL FTS columns/indexes re-ensured.
 - **Licence centre flow.** `/licence-centre/[id]/interview`, `/start`,
   `/licence-centre/profile`, and the `intake-blocked` state.
 - **Local OCR.** `common/local-ocr/local-ocr.service.ts` plus the PaddleOCR-VL
-  sidecar in `backend/ocr/` (Python; not started by pm2).
+  sidecar in `backend/ocr/` (Python; not started by pm2). **Operator decision,
+  2026-11-05: Gemini is the OCR**, local and production — the sidecar stays
+  dormant and `LOCAL_OCR_ENABLED=false` is now set in the box's `.env` (backup
+  `.env.bak-ocr-20261105170927`) and in local `backend/.env`. The flag reads as
+  "enabled unless false", so leaving it unset had been firing a call at the
+  dead 8090 port on every upload before falling back to Gemini.
 
 **One gate fix to know about.** The uncommitted auth change added a
 non-production fallback that prints the code when a verification email throws.
