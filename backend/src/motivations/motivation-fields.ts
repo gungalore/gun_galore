@@ -78,7 +78,7 @@ import { answerValue } from '../common/card-placeholder';
 //            'Your premises' section; `existing_firearm_N_primary_use` on all
 //            fourteen owned rows; `overlap_angle`; the field properties
 //            `options`, `scope` and `internal`; `showIf.hasAny`.
-//   RETIRED  `fill_saps271` AS A QUESTION. The SAPS 271 is always produced now
+//   RETIRED  THE OLD FORM OPT-IN AS A QUESTION. The SAPS 271 is always produced now
 //            and Part F is filled by source route. The key is still ACCEPTED
 //            (see RETIRED_FIELDS) so a draft holding it still saves.
 //   RE-MEANT `formOnly`. It no longer decides what is ASKED, only what reaches
@@ -169,7 +169,7 @@ export const SOURCE_ESTATE = 'Inherited from a deceased estate';
  * key is where that answer is PUT so the checklist can read it back.
  *
  * âš ï¸ HIDDEN BY `internal`, SINCE 2026-09-08. It used to be hidden by two rules
- * that contradicted each other — formOnly (hidden unless fill_saps271 was
+ * that contradicted each other — formOnly (hidden unless the retired form opt-in was
  * 'Fill it in for me') set against showIf (shown only when it was 'My dealer
  * will fill it in'), so no answer satisfied both. That was written because
  * there WAS no internal flag, and inventing one would have had to be honoured
@@ -203,10 +203,6 @@ export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
  * longer a registry field, so it never reaches the writer or the sheet.
  */
 export const OVERLAP_ANGLE_KEY = 'overlap_angle';
-
-export const SAPS271_OPT_KEY = 'fill_saps271';
-export const SAPS271_FILL = 'Fill it in for me';
-export const SAPS271_DEALER = 'My dealer will fill it in';
 
 /**
  * PRESS CLIPPINGS THE MEMBER CHOSE TO ATTACH BEHIND THEIR OWN CIRCUMSTANCES.
@@ -365,8 +361,8 @@ export interface MotivationField {
    *
    * âš ï¸ THIS REPLACED A DELIBERATE CONTRADICTION, and the history matters
    * because it is the reason this flag is safe now and was not before. Those
-   * three used to be hidden by setting `formOnly` (needs fill_saps271 = "Fill
-   * it in for me") against `showIf` (needs fill_saps271 = "My dealer will fill
+   * three used to be hidden by setting `formOnly` (needs the retired form opt-in = "Fill
+   * it in for me") against `showIf` (needs the retired form opt-in = "My dealer will fill
    * it in") so no answer satisfied both. That trick was written because
    * isVisible() had a MIRROR in frontend/lib/motivations-api.ts, and a flag
    * honoured by one side and not the other puts a box in front of somebody.
@@ -999,19 +995,11 @@ const LEGACY_OWNED_FIELDS: readonly MotivationField[] = Array.from(
  * still be openable — which is precisely why the three never-asked fields
  * stopped being gated on it. See `internal`.
  *
- * 2026-09-08: the SAPS 271 stopped being an opt-in extra. Part F is filled by
- * source route instead (dealer blank, private from the seller consent, estate
- * from the executor letter), so nothing is decided by asking, and the ~48
- * questions this used to un-hide are simply asked of everybody. Brief §2.5.
+ * 2026-11-05: THE OLD "SHOULD WE FILL IN YOUR FORM" QUESTION IS DELETED, not
+ * retired. We no longer produce a SAPS 271 at all, so there is no answer left
+ * for it to gate and nothing that reads it.
  */
 const RETIRED_FIELDS: readonly MotivationField[] = [
-  {
-    key: SAPS271_OPT_KEY,
-    label: 'Should we fill in your SAPS 271 application form as well?',
-    kind: 'choice',
-    section: 'The SAPS 271 form',
-    choices: [SAPS271_DEALER, SAPS271_FILL],
-  },
   /**
    * 2026-09-09: THE DISCIPLINE QUESTIONS, REPLACED BY THE GENERATED USES.
    *
@@ -2526,7 +2514,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'short',
       section: 'Your circumstances',
       // âš ï¸ WRITTEN BY US, NEVER ASKED — see `internal`. Was hidden by a
-      // formOnly Ã— showIf contradiction against the retired fill_saps271;
+      // formOnly Ã— showIf contradiction against the retired form opt-in;
       // that trick stopped working the day formOnly stopped gating.
       internal: true,
       maxLength: 60,
@@ -2568,7 +2556,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Your circumstances',
       help: `A JSON array of up to ${PRESS_CLIPPINGS_MAX} chosen article ids — written by the picker, not typed.`,
       // âš ï¸ WRITTEN BY THE PICKER, NEVER ASKED — see `internal`. Was hidden by a
-      // formOnly Ã— showIf contradiction against the retired fill_saps271.
+      // formOnly Ã— showIf contradiction against the retired form opt-in.
       internal: true,
       maxLength: 4000,
     },
@@ -3289,7 +3277,7 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
  *                    asking them to prove a transfer that is not happening".
  *                    Only the screens the member sees were missed.
  *
- *   fill_saps271     GONE FROM HERE because the field itself is retired, not
+ *   the retired form opt-in     GONE FROM HERE because the field itself is retired, not
  *                    because a renewal stopped needing the exemption — see
  *                    RETIRED_FIELDS. It is no longer in COMMON_FIELDS, so
  *                    there is nothing for this set to filter out. The reason
@@ -3390,7 +3378,7 @@ export function isVisible(
 
   // âš ï¸ formOnly NO LONGER DECIDES WHAT IS ASKED — 2026-09-08, brief §2.6.
   //
-  // It used to hide every SAPS-271-only field behind the fill_saps271 opt-in,
+  // It used to hide every SAPS-271-only field behind the the retired form opt-in opt-in,
   // and roughly half the registry hung off that one tap: phones, postal codes,
   // marital status, the spouse, the six history questions. The 271 is no
   // longer optional (Part F is filled by source route instead — see
@@ -3435,13 +3423,25 @@ export function isVisible(
  * Conditional fields count only when their condition holds, so pass the answers
  * where you have them. Without them the unconditional set is returned — which
  * is what the wizard wants for a progress denominator at the very start.
+ *
+ * ⚠️ A FIELD THE INTERVIEW NEVER ASKS CAN NEVER BE A REASON TO REFUSE. The
+ * form-only fields and the six history declarations were retired from the
+ * interview on 2026-11-05 (with the SAPS 271 that wanted them); leaving them in
+ * the required set would have blocked every print-ready application on
+ * questions it could not put on screen.
  */
 export function requiredKeys(
   type: MotivationLicenceType,
   answers: Record<string, string> = {},
 ): string[] {
   return fieldsFor(type)
-    .filter((f) => f.required && isVisible(f, answers))
+    .filter(
+      (f) =>
+        f.required &&
+        !f.formOnly &&
+        !f.key.startsWith('history_') &&
+        isVisible(f, answers),
+    )
     .map((f) => f.key);
 }
 
@@ -3729,13 +3729,10 @@ export function allowedValues(field: MotivationField): readonly string[] {
 export function missingRequired(
   type: MotivationLicenceType,
   answers: Record<string, string>,
-  options: { motivationOnly?: boolean } = {},
 ): string[] {
-  return requiredKeys(type, answers).filter((key) => {
-    if (options.motivationOnly) {
-      const field = fieldByKey(type, key);
-      if (field?.formOnly || key.startsWith('history_')) return false;
-    }
-    return !(answers[key] ?? '').trim();
-  });
+  // The form-only and history fields are already out of requiredKeys: nobody is
+  // asked them, so nobody can be refused for leaving them blank.
+  return requiredKeys(type, answers).filter(
+    (key) => !(answers[key] ?? '').trim(),
+  );
 }

@@ -342,30 +342,38 @@ const BEFORE_THE_REORDER: Record<
    *
    * The line counts moved by seven on most types because rule 3 and rule 4 are
    * new lines, and by three on S24 where the section list is shorter.
+   *
+   * ⚠️ AND AGAIN THE SAME DAY, FROM THE PARITY MATRIX: S13 and S14 still
+   * carried the section 13 RISK brief under the "My competency and training"
+   * heading — arguing the security measures a second time and never the
+   * competency certificate. They now use the competency brief too, and its
+   * wording was made type-neutral ("the measures section and storage already
+   * carry them") because it is no longer hunting-only. Same line counts,
+   * different text, so the hash moves and the count does not.
    */
   S14_RESTRICTED_SELF_DEFENCE: {
     lines: 127,
-    sha: '2e0492d7821f9539611e26b955c1734d1a0a5e9d91b6a1dd75ebfb781e41a365',
+    sha: 'c66df6e9f4bdab9deb0482a0b49012b2fda0f571e89a14369e014ac051fde40b',
   },
   S13_SELF_DEFENCE: {
     lines: 128,
-    sha: '99e0ced8a818bbbebccf599df3bda194457e6fe804fce15ef2bef42b31c252cc',
+    sha: '003ef0a13d8b59db48d6b2bdc03685bad0cd0a62df9b98fbdfebc007c36ec656',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 128,
-    sha: '8fa44ea1e617b508e1923b4e7c3d04a21b693ee9b215960ac777f8b60b888ad4',
+    sha: 'bc6924f425c135bb2889067d3c26ecb7881a95521e28a200b1e3f56676a3b8d7',
   },
   S16_DEDICATED_HUNTER: {
     lines: 128,
-    sha: '1b30519691d70e419f992303e9f8e074b26d2e209369fde24fea618bdf32bd47',
+    sha: '538302be45485d233d2ecde06028769e26d37908a3b5cf3685641e9c4b8be292',
   },
   S16_DEDICATED_SPORT: {
     lines: 128,
-    sha: 'acdaeddfc507d9ebdb2848952c7ff6bfed485f1f41063cbf116dff433b7f3f5b',
+    sha: '669616b8acdfa9e0ccf103d99b5b871b4bc9435dbe177330fbe103b873ab4a4a',
   },
   S24_RENEWAL: {
     lines: 122,
-    sha: '8cce35a4203163fa8c9c43e37ea69f4682102f3f17e3637ae673bc977338c6fc',
+    sha: 'da3582f3f9fc1f96c1b7ff500c71914af08cd8ded1ce4ee9f9b375bda6919aeb',
   },
 };
 

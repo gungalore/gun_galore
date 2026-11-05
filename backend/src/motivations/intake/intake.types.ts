@@ -1,4 +1,4 @@
-﻿import type { MotivationLicenceType } from '@prisma/client';
+import type { MotivationLicenceType } from '@prisma/client';
 import type { EvidenceGroup } from '../evidence-taxonomy';
 import type { MotivationOutputMode } from '../motivation-output';
 
@@ -120,6 +120,20 @@ export interface IntakeTopicState {
   actions: ('upload' | 'scan' | 'manual')[];
 }
 
+export interface IntakeGroup {
+  id: IntakeTopicId;
+  title: string;
+  /** 1-based position among the groups that still have work. */
+  index: number;
+  /** How many groups still have work. */
+  total: number;
+  /** Answered fields in this category. */
+  answered: number;
+  /** Every visible field in this category, answered or not. */
+  totalInGroup: number;
+  questions: IntakeQuestion[];
+}
+
 export interface IntakeState {
   motivationId: string;
   referenceNumber: string;
@@ -135,6 +149,13 @@ export interface IntakeState {
   summary: string;
   /** The topic the current question belongs to. Null outside the interview. */
   topic: IntakeTopicState | null;
+  /**
+   * The category being asked, with every pending question in it.
+   *
+   * \u26a0\ufe0f `question` STAYS THE FIRST OF THESE. Anything reading the old
+   * single-question shape keeps working; the grouped UI reads this.
+   */
+  group: IntakeGroup | null;
   /** True when the member's Document Library holds no documents at all. */
   vaultEmpty: boolean;
   documents: {

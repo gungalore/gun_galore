@@ -662,9 +662,7 @@ export class MotivationGenerationService {
       );
     }
 
-    const missing = missingRequired(row.licenceType, answers, {
-      motivationOnly,
-    });
+    const missing = missingRequired(row.licenceType, answers);
     if (missing.length) {
       throw new ConflictException({
         message: 'Some required answers are still missing.',

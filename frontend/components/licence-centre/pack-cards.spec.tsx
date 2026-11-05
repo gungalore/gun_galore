@@ -4,7 +4,6 @@ import { render, screen } from '@testing-library/react';
 import PackSummary from './pack-summary';
 import CompetencyLines from './competency-lines';
 import { filled, needsYou } from './__fixtures__/sheet.fixture';
-import type { Saps271Coverage } from '@/lib/motivations-api';
 
 // ConsentCard wraps MotivationSellerConsent, which calls useAuth(). Same mock
 // the Bench specs use — see components/bench/BulletPicker.spec.tsx.
@@ -17,105 +16,27 @@ vi.mock('../../lib/auth', () => {
 // THE THREE CARDS THAT SIT BESIDE THE ROWS.
 // ────────────────────────────────────────────────────────────────────
 
-// ⚠️ THE SHAPE THE SERVER ACTUALLY SENDS. This fixture invented `key`,
-// `total` and `done`; saps271-coverage.ts emits `id`, `applicable`, `answered`,
-// `percent`, `status`, `note` and `missingRequired`, and Saps271Meter reads
-// those. A fixture that agrees with nothing is a test that proves nothing —
-// and the same invented names had been copied into the page, where
-// `sellerSigned` read `c.key`/`c.done` and could only ever be false.
-const coverage = {
-  sections: [
-    {
-      id: 'D',
-      label: 'Type of application',
-      applicable: 2,
-      answered: 2,
-      percent: 100,
-      missingRequired: 0,
-      status: 'complete',
-    },
-    {
-      id: 'F',
-      label: 'Current owner',
-      applicable: 0,
-      answered: 0,
-      percent: null,
-      missingRequired: 0,
-      status: 'theirs',
-      note: 'Waiting on the seller. Nothing for you to do.',
-    },
-    {
-      id: 'G',
-      label: 'The applicant',
-      applicable: 20,
-      answered: 18,
-      percent: 90,
-      missingRequired: 2,
-      status: 'partial',
-    },
-  ],
-  applicable: 22,
-  answered: 20,
-  percent: 91,
-} as unknown as Saps271Coverage;
-
-describe('PackSummary — Part F is not the applicant’s work', () => {
-  it('⚠️ NAMES THE ROUTE, NEVER SCORES THE APPLICANT ON IT', () => {
-    // Part F is the CURRENT OWNER's half. Scoring it against the applicant
-    // says they are behind on something that was never theirs.
-    render(
-      <PackSummary
-        coverage={coverage}
-        licenceType="S16_DEDICATED_SPORT"
-        sourceRoute="dealer"
-        needs={[]}
-      />,
-    );
-    expect(screen.getByText(/left for your dealer/)).toBeDefined();
-    expect(screen.getByText(/SAPS 350\(a\)/)).toBeDefined();
+describe('PackSummary — what the pack holds', () => {
+  it('says the pack is the motivation with the documents behind it', () => {
+    render(<PackSummary licenceType="S16_DEDICATED_SPORT" needs={[]} />);
+    expect(
+      screen.getByText(/with a copy of every document we hold/i),
+    ).toBeDefined();
   });
 
-  it('says the seller fills it on a private sale', () => {
-    render(
-      <PackSummary
-        coverage={coverage}
-        licenceType="S16_DEDICATED_SPORT"
-        sourceRoute="seller"
-        needs={[]}
-      />,
-    );
-    expect(screen.getByText(/signed consent/)).toBeDefined();
+  // ⚠️ A RENEWAL IS LODGED ON THE 518(a), NOT A FORM OF OURS. Naming the wrong
+  // paperwork is how somebody arrives at a counter with the wrong file.
+  it('⚠️ NEVER CLAIMS A 271 ON A RENEWAL', () => {
+    render(<PackSummary licenceType="S24_RENEWAL" needs={[]} />);
+    expect(screen.getByText(/SAPS 518\(a\)/)).toBeDefined();
+    expect(document.body.textContent).not.toContain('271');
   });
 
-  it('asks the question rather than guessing when the route is unstated', () => {
+  it('says how many answers are still outstanding', () => {
     render(
-      <PackSummary
-        coverage={coverage}
-        licenceType="S16_DEDICATED_SPORT"
-        sourceRoute="unstated"
-        needs={[]}
-      />,
+      <PackSummary licenceType="S16_DEDICATED_SPORT" needs={[]} outstanding={2} />,
     );
-    expect(screen.getByText(/Tell us where the firearm is coming from/)).toBeDefined();
-  });
-
-  it('⚠️ CLAIMS NO 271 ON A RENEWAL', () => {
-    // A section 24 is lodged on the SAPS 518(a) and the backend refuses to
-    // render a 271 for one. Naming the wrong form is how somebody arrives at a
-    // counter with the wrong paperwork.
-    render(
-      <PackSummary
-        coverage={coverage}
-        licenceType="S24_RENEWAL"
-        sourceRoute="dealer"
-        needs={[]}
-      />,
-    );
-    // ⚠️ getAllByText, NOT getByText — the meter ALSO names the 518(a) for a
-    // renewal, which is the meter doing its own job correctly. What this case
-    // is really about is that the dealer line does not appear.
-    expect(screen.getAllByText(/518\(a\)/).length).toBeGreaterThan(0);
-    expect(document.body.textContent).not.toContain('left for your dealer');
+    expect(screen.getByText(/2 answers are still outstanding/i)).toBeDefined();
   });
 
   it('⚠️ NEVER CALLS AN "expected" DOCUMENT OPTIONAL', () => {
@@ -123,9 +44,7 @@ describe('PackSummary — Part F is not the applicant’s work', () => {
     // statute behind it, and you are not getting in without it.
     render(
       <PackSummary
-        coverage={coverage}
         licenceType="S16_DEDICATED_SPORT"
-        sourceRoute="dealer"
         needs={[
           { kind: 'A', label: 'Proof of address', tier: 'expected', have: false },
           { kind: 'B', label: 'Range record', tier: 'strengthens', have: false },
@@ -201,7 +120,7 @@ describe('CompetencyLines — one line per certificate', () => {
 // the only visibility decision in the system.
 
 describe('gate (c) — the private-sale variant', () => {
-  it('⚠️ THE PART F LINE CHANGES ONCE THE SELLER SIGNS', async () => {
+  it('⚠️ THE CONSENT LINE CHANGES ONCE THE SELLER SIGNS', async () => {
     const ConsentCard = (await import('./consent-card')).default;
     const { rerender } = render(
       <ConsentCard
@@ -211,7 +130,7 @@ describe('gate (c) — the private-sale variant', () => {
         signed={false}
       />,
     );
-    expect(screen.getByText(/When they sign, Part F/)).toBeDefined();
+    expect(screen.getByText(/When they sign, their signed page/)).toBeDefined();
 
     rerender(
       <ConsentCard
@@ -221,7 +140,7 @@ describe('gate (c) — the private-sale variant', () => {
         signed
       />,
     );
-    expect(screen.getByText(/Signed\. Part F/)).toBeDefined();
+    expect(screen.getByText(/Signed\. Their signed page/)).toBeDefined();
   });
 
   it('never blames the applicant for a signature they cannot hurry', async () => {

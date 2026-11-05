@@ -171,7 +171,6 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
     knowledge: { state: 'CONFIRMED', alert: null },
     pairNote: null,
   },
-  coverage: {},
   overlap: { verdict: { kind: 'clear' }, prompt: null, suggestedAngle: null },
   preview: [],
   missing: ['firearm_calibre', 's13_reasons'],

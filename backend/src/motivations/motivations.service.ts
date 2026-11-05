@@ -39,7 +39,6 @@ import { credentialOffer } from './motivation-credentials';
 import { asScheme, asFormat } from './motivation-pdf.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { buildChecklist } from './motivation-checklist';
-import { saps271Coverage } from './saps271-coverage';
 import {
   FIELD_REGISTRY_VERSION,
   LICENCE_TYPE_LABELS,
@@ -1604,11 +1603,6 @@ export class MotivationsService {
     return this.render.removeCoverPhoto(userId, id);
   }
 
-  /** @see MotivationRenderService.renderSaps271 */
-  renderSaps271(userId: string, id: string) {
-    return this.render.renderSaps271(userId, id);
-  }
-
   /**
    * The live submission checklist, for the platform and the PWA.
    *
@@ -1702,11 +1696,6 @@ export class MotivationsService {
         row.status === MotivationStatus.COMPLETED,
         { waitingOn: this.waitingOn(seller), answers },
       ),
-      // Section-by-section completeness, counted in QUESTIONS rather than in
-      // form boxes â€” saps271-coverage.ts explains why the unit matters.
-      coverage: saps271Coverage(row.licenceType, answers, {
-        seller: { status: seller.status, name: seller.name },
-      }),
       provenance,
       prefill: {
         // âš ï¸ COUNTED AGAINST THE ANSWERS, not against the map. A field we

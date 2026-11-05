@@ -414,8 +414,6 @@ function build(
     pdf as never,
     settings as never,
     cip as never,
-    saps271 as never,
-    sellerConsent as never,
     firearmImages as never,
     witnesses as never,
     shared,
@@ -867,6 +865,14 @@ describe('MotivationsService.generate', () => {
     referenceNumber: 'MO000123',
     licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
     status: MotivationStatus.DRAFT,
+    /**
+     * ⚠️ PRINT-READY ON PURPOSE. Every test here that expects generation to
+     * STOP is testing a pack gate — the missing document, the proficiency
+     * shortfall. Motivation-only is the new default and skips those gates, so a
+     * fixture without a mode would silently pass the very gate it exists to
+     * prove.
+     */
+    outputMode: 'PRINT_READY' as string,
     answersEncrypted: null as string | null,
     declarationAcceptedAt: new Date() as Date | null,
     variantSeed: 4242,
@@ -2755,21 +2761,7 @@ describe('the pack payload carries the section meter', () => {
     ...over,
   });
 
-  it('returns per-section percentages beside the checklist', async () => {
-    const { svc, prisma } = build();
-    prisma.motivation.findFirst.mockResolvedValue(row());
-    prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
-
-    const out = await svc.pack('c1', 'mo-1');
-    expect(out.coverage.sections.length).toBeGreaterThan(3);
-    expect(out.coverage.percent).toBeGreaterThan(0);
-    // Counted in questions, not in the 144 boxes of the form.
-    expect(out.coverage.applicable).toBeLessThan(100);
-    const owned = out.coverage.sections.find((s: any) => s.id === 'G2')!;
-    expect(owned.note).toBe('1 firearm listed.');
-  });
-
-  it('reads the seller once and tells the checklist and the meter the same thing', async () => {
+  it('reads the seller once and tells the checklist the same thing', async () => {
     // âš ï¸ ONE READ, TWO CONSUMERS. If the row and the section panel decided
     // separately, one could say "waiting on Piet" while the other scored him.
     const { svc, prisma } = build();
@@ -2784,25 +2776,12 @@ describe('the pack payload carries the section meter', () => {
     const item = out.checklist.sections
       .flatMap((s: any) => s.items)
       .find((i: any) => i.key === 'upload_firearm_source_proof');
-    const f = out.coverage.sections.find((s: any) => s.id === 'F')!;
 
     expect(item.state).toBe('waiting-on-someone');
     expect(item.closer).toContain('Piet Malan');
-    expect(f.status).toBe('theirs');
-    expect(f.note).toContain('Piet Malan');
-    // âš ï¸ AND HIS SECTION IS NOT SCORED AGAINST THE APPLICANT.
-    expect(f.percent).toBeNull();
     expect(prisma.motivationSellerConsent.findUnique).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the meter out of nobodyâ€™s reach when there is no seller', async () => {
-    const { svc, prisma } = build();
-    prisma.motivation.findFirst.mockResolvedValue(row());
-    prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
-
-    const out = await svc.pack('c1', 'mo-1');
-    expect(out.coverage.sections.find((s: any) => s.id === 'F')).toBeUndefined();
-  });
 });
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -3077,6 +3056,10 @@ describe('generation refuses on a missing document', () => {
     referenceNumber: 'MO000123',
     licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
     status: MotivationStatus.DRAFT,
+    // ⚠️ PRINT-READY, because this suite exists to prove the PACK gate. A
+    // motivation-only row (the default now) legitimately skips the document
+    // check, and would make this assertion pass for the wrong reason.
+    outputMode: 'PRINT_READY',
     answersEncrypted: encryptJson(readyAnswers()),
     declarationAcceptedAt: new Date(),
     variantSeed: 1,

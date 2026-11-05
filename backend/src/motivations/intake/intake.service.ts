@@ -27,13 +27,20 @@ import {
   fieldByKey,
   fieldsFor,
   LICENCE_TYPE_LABELS,
+  type MotivationField,
 } from '../motivation-fields';
 import {
   applicationBlockers,
   firearmShape,
 } from '../motivation-eligibility';
 import { containerById, type EvidenceGroup } from '../evidence-taxonomy';
-import { pendingFields, planQuestion, purposeForAnswers } from './intake-planner';
+import {
+  pendingFields,
+  planGroup,
+  planQuestion,
+  purposeForAnswers,
+  questionForField,
+} from './intake-planner';
 import { strategyFor } from './intake-strategies';
 import {
   normaliseOutputMode,
@@ -57,6 +64,7 @@ import type {
   IntakeBlocked,
   IntakeChoice,
   IntakeDocumentItem,
+  IntakeGroup,
   IntakeMode,
   IntakeQuestion,
   IntakeState,
@@ -64,108 +72,18 @@ import type {
   IntakeTopicState,
   TickState,
 } from './intake.types';
+import {
+  TOPIC_DOCUMENTS,
+  TOPIC_TITLES,
+  topicForField,
+  topicsFor,
+} from './intake-topics';
 
 const INTERVIEW_VERSION = '2026-10-29a';
 const MAX_TRANSCRIPT = 40;
+/** How many grouped questions are phrased at once. */
+const GROUP_CONCURRENCY = 4;
 
-/**
- * The interview, grouped by what the member is being asked about.
- *
- * ⚠️ IDENTITY BEFORE FIREARM. The ID number is how an existing licence is
- * proven to be this applicant's, and the firearm is what selects the
- * competency and proficiency. The old order put the firearm first and the
- * certificate rows appeared before either was known.
- */
-const TOPIC_ORDER: readonly IntakeTopicId[] = [
-  'identity',
-  'firearm',
-  'credentials',
-  'existing',
-  'address',
-  'association',
-  'activities',
-  'safe',
-  'declarations',
-  'other',
-];
-
-const TOPIC_TITLES: Record<IntakeTopicId, string> = {
-  identity: 'About you',
-  firearm: 'The firearm you are applying for',
-  credentials: 'Competency and proficiency',
-  existing: 'Firearms you already hold',
-  address: 'Your address',
-  association: 'Association and dedicated status',
-  activities: 'Your hunting and shooting',
-  safe: 'Safe and storage',
-  declarations: 'Declarations',
-  other: 'Other details',
-};
-
-const TOPIC_DOCUMENTS: Partial<Record<IntakeTopicId, string[]>> = {
-  identity: ['IDENTITY_DOCUMENT'],
-  firearm: ['FIREARM_SOURCE_PROOF', 'SELLER_LICENCE'],
-  credentials: ['COMPETENCY_CERTIFICATE', 'PROFICIENCY_CERTIFICATE'],
-  existing: ['CURRENT_LICENCE'],
-  address: ['ADDRESS_CONFIRMATION'],
-  association: [
-    'ASSOCIATION_CARD',
-    'GOOD_STANDING_LETTER',
-    'ASSOCIATION_ENDORSEMENT',
-  ],
-  safe: ['SAFE_PHOTOGRAPHS'],
-};
-
-function topicForField(key: string): IntakeTopicId {
-  if (/^history_/.test(key)) return 'declarations';
-  if (/^existing_firearm_|^existing_licence_|^licence_expiry$|^continued_use$/.test(key)) {
-    return 'existing';
-  }
-  if (/^firearm_/.test(key)) return 'firearm';
-  if (/^competency_|^proficiency_/.test(key)) return 'credentials';
-  if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';
-  if (
-    /^association_|^dedicated_since$|^discipline_|^hunting_|^competition_record$|^activity_record$|^intended_quarry$|^sport_/.test(
-      key,
-    )
-  ) {
-    return 'association';
-  }
-  if (
-    /^safe_|^premises_|^alarm_|^armed_response$|^burglar_bars$|^security_gates$/.test(
-      key,
-    )
-  ) {
-    return 'safe';
-  }
-  if (
-    /^full_name$|^id_number$|^licence_holder_type$|^occupation$|^date_of_birth$|^marital_status$|^spouse_|^cellphone$|^home_telephone$|^work_telephone$/.test(
-      key,
-    )
-  ) {
-    return 'identity';
-  }
-  return 'other';
-}
-
-function topicsFor(
-  type: MotivationLicenceType,
-  answers: Record<string, string>,
-  documentKinds: readonly string[],
-): IntakeTopicId[] {
-  const fieldTopics = new Set(fieldsFor(type).map((field) => topicForField(field.key)));
-  const hasExisting =
-    Object.keys(answers).some((key) => key.startsWith('existing_firearm_')) ||
-    documentKinds.includes('CURRENT_LICENCE');
-  return TOPIC_ORDER.filter((topic) => {
-    if (topic === 'existing') return hasExisting;
-    if (topic === 'association' || topic === 'activities') {
-      return fieldTopics.has(topic);
-    }
-    if (topic === 'other') return fieldTopics.has('other');
-    return true;
-  });
-}
 
 /**
  * Only these fields may be rewritten by the agent's spelling correction.
@@ -245,22 +163,34 @@ export class MotivationIntakeService {
       normaliseOutputMode(row.outputMode) === 'MOTIVATION_ONLY';
     const blocked = this.blockedFor(row.licenceType, answers);
 
-    const phrased =
+    const inInterview = Boolean(
       !blocked &&
-      row.intakeMode === 'INTERVIEW' &&
-      row.intakeDocumentsAt &&
-      !row.intakeCompletedAt
-        ? await this.phrasedQuestion(
-            row,
-            sheet,
-            answers,
-            previousAnswer,
-            previousQuestion,
-            previousFieldKey,
-            library,
-          )
-        : null;
+        row.intakeMode === 'INTERVIEW' &&
+        row.intakeDocumentsAt &&
+        !row.intakeCompletedAt,
+    );
+    const grouped = inInterview
+      ? await this.phrasedGroup(
+          row,
+          sheet,
+          answers,
+          previousAnswer,
+          previousQuestion,
+          previousFieldKey,
+          library,
+        )
+      : null;
+    const phrased = grouped
+      ? {
+          question: grouped.questions[0],
+          acknowledgement: grouped.acknowledgement,
+          correction: grouped.correction,
+        }
+      : null;
     const question = phrased?.question ?? null;
+    const group: IntakeGroup | null = grouped
+      ? { ...grouped.group, questions: grouped.questions }
+      : null;
 
     /**
      * âš ï¸ A CORRECTION IS SAVED, NOT JUST SPOKEN. The next question says
@@ -339,6 +269,7 @@ export class MotivationIntakeService {
       blocked,
       summary: blocked?.message ?? strategy.intro,
       topic,
+      group,
       vaultEmpty: !(library.items ?? []).some((i) => i.source === 'credential'),
       documents,
       evidence,
@@ -417,7 +348,7 @@ export class MotivationIntakeService {
     this.assertEditable(row);
     const next = normaliseOutputMode(outputMode);
     if (
-      outputMode !== 'FULL_PACK' &&
+      outputMode !== 'PRINT_READY' &&
       outputMode !== 'MOTIVATION_ONLY'
     ) {
       throw new BadRequestException('Choose what you need us to produce.');
@@ -510,62 +441,32 @@ export class MotivationIntakeService {
     return this.state(userId, id);
   }
 
-  async answer(
-    userId: string,
-    id: string,
+  /**
+   * Turn ONE submitted answer into the patch it would write, after validating
+   * it exactly as the single-answer path always has.
+   *
+   * ⚠️ THIS IS SHARED BY BOTH PATHS ON PURPOSE. A batch that validated
+   * differently would let a grouped answer store something a single answer
+   * refuses, and the member would never see why. The body below is the body
+   * the single-answer path always ran.
+   */
+  private async patchForAnswer(args: {
+    row: IntakeRow;
+    sheet: SheetResponse;
+    answers: Record<string, string>;
+    current: IntakeQuestion;
+    key: string;
+    field: MotivationField;
     body: {
-      fieldKey?: string;
       value?: string;
       values?: string[];
       message?: string;
-      /** Declaration follow-ups submitted with a Yes answer. */
       fields?: Record<string, string>;
-    },
-  ): Promise<IntakeState & { acknowledgement?: string }> {
-    const row = await this.load(userId, id);
-    this.assertEditable(row);
-    if (row.intakeMode !== 'INTERVIEW') {
-      throw new ConflictException('Start the guided interview first.');
-    }
-    if (!row.intakeDocumentsAt) {
-      throw new ConflictException('Confirm your documents before the interview.');
-    }
-    if (row.intakeCompletedAt) {
-      throw new ConflictException('This application is already at the review stage.');
-    }
+    };
+  }): Promise<Record<string, string>> {
+    const { row, sheet, answers, current, key, field, body } = args;
 
-    const sheet = await this.sheets.sheetFor(userId, id);
-    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
-    const blocked = this.blockedFor(row.licenceType, answers);
-    if (blocked) throw new ConflictException(blocked.message);
-    const current = planQuestion({
-      type: row.licenceType,
-      answers,
-      sheet,
-      provenance: parseProvenance(row.answerProvenance),
-      outputMode: normaliseOutputMode(row.outputMode),
-    });
-    if (!current) {
-      await this.finish(userId, id);
-      return this.state(userId, id);
-    }
-
-    const key = (body.fieldKey ?? current.fieldKey).trim();
-    if (key !== current.fieldKey) {
-      throw new BadRequestException('That question has moved on; reload the interview.');
-    }
-    const field = fieldByKey(row.licenceType, key);
-    if (!field) throw new BadRequestException('Unknown question.');
-
-    /**
-     * âš ï¸ ONE TURN CAN ANSWER SEVERAL FIELDS. A person says "Mauser M96
-     * straight-pull in .30-06" to the make question and expects the model and
-     * calibre to land too. The extractor only sees visible, unanswered,
-     * non-sensitive fields, and every value is validated below before it can be
-     * saved. It is fail-soft: no model, no text, or an unparseable answer just
-     * leaves the ordinary single-field path.
-     */
-    const sourceText = (body.message ?? body.value ?? '').trim();
+const sourceText = (body.message ?? body.value ?? '').trim();
     let extracted: Record<string, string> = {};
     if (
       sourceText &&
@@ -579,7 +480,6 @@ export class MotivationIntakeService {
         answers,
         sheet,
         provenance: parseProvenance(row.answerProvenance),
-        outputMode: normaliseOutputMode(row.outputMode),
       })) {
         const pendingField = pending.field;
         if (pendingField.sensitive || pendingField.formOnly) continue;
@@ -689,6 +589,73 @@ export class MotivationIntakeService {
       throw new BadRequestException('Choose an answer or type one in.');
     }
 
+    return patch;
+  }
+
+  async answer(
+    userId: string,
+    id: string,
+    body: {
+      fieldKey?: string;
+      value?: string;
+      values?: string[];
+      message?: string;
+      /** Declaration follow-ups submitted with a Yes answer. */
+      fields?: Record<string, string>;
+    },
+  ): Promise<IntakeState & { acknowledgement?: string }> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    if (row.intakeMode !== 'INTERVIEW') {
+      throw new ConflictException('Start the guided interview first.');
+    }
+    if (!row.intakeDocumentsAt) {
+      throw new ConflictException('Confirm your documents before the interview.');
+    }
+    if (row.intakeCompletedAt) {
+      throw new ConflictException('This application is already at the review stage.');
+    }
+
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const blocked = this.blockedFor(row.licenceType, answers);
+    if (blocked) throw new ConflictException(blocked.message);
+    const current = planQuestion({
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+    });
+    if (!current) {
+      await this.finish(userId, id);
+      return this.state(userId, id);
+    }
+
+    const key = (body.fieldKey ?? current.fieldKey).trim();
+    if (key !== current.fieldKey) {
+      throw new BadRequestException('That question has moved on; reload the interview.');
+    }
+    const field = fieldByKey(row.licenceType, key);
+    if (!field) throw new BadRequestException('Unknown question.');
+
+    /**
+     * âš ï¸ ONE TURN CAN ANSWER SEVERAL FIELDS. A person says "Mauser M96
+     * straight-pull in .30-06" to the make question and expects the model and
+     * calibre to land too. The extractor only sees visible, unanswered,
+     * non-sensitive fields, and every value is validated below before it can be
+     * saved. It is fail-soft: no model, no text, or an unparseable answer just
+     * leaves the ordinary single-field path.
+     */
+    const patch = await this.patchForAnswer({
+      row,
+      sheet,
+      answers,
+      current,
+      key,
+      field,
+      body,
+    });
+
     const corePatch = { ...patch };
     this.composePurposeFields(row.licenceType, patch, answers);
 
@@ -760,6 +727,183 @@ export class MotivationIntakeService {
       userText,
       current.label,
       current.fieldKey,
+    );
+    return { ...state };
+  }
+
+  /**
+   * ANSWER A WHOLE GROUP IN ONE TURN.
+   *
+   * ⚠️ VALIDATE EVERYTHING, THEN WRITE ONCE. Each answer goes through the
+   * same patch builder the single-answer path uses, so a grouped answer can
+   * never store something a single answer would refuse. Nothing is written
+   * until every submitted answer has passed, and a refusal names the field.
+   *
+   * ⚠️ ONE STATE AT THE END. Six answers each rebuilding the interview state
+   * is six model rounds for one tap; the member waits once.
+   */
+  async answerBatch(
+    userId: string,
+    id: string,
+    items: {
+      fieldKey?: string;
+      value?: string;
+      values?: string[];
+      message?: string;
+      fields?: Record<string, string>;
+    }[],
+  ): Promise<IntakeState & { acknowledgement?: string }> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    if (row.intakeMode !== 'INTERVIEW') {
+      throw new ConflictException('Start the guided interview first.');
+    }
+    if (!row.intakeDocumentsAt) {
+      throw new ConflictException('Confirm your documents before the interview.');
+    }
+    if (row.intakeCompletedAt) {
+      throw new ConflictException('This application is already at the review stage.');
+    }
+    if (!Array.isArray(items) || !items.length) {
+      throw new BadRequestException('Answer at least one question.');
+    }
+
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const blocked = this.blockedFor(row.licenceType, answers);
+    if (blocked) throw new ConflictException(blocked.message);
+
+    const input = {
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+    };
+    const plan = planGroup(input);
+    if (!plan) {
+      await this.finish(userId, id);
+      return this.state(userId, id);
+    }
+    const allowed = new Set(plan.questions.map((q) => q.key));
+
+    const patch: Record<string, string> = {};
+    const seen = new Set<string>();
+    for (const item of items) {
+      const key = (item.fieldKey ?? '').trim();
+      if (!key) {
+        throw new BadRequestException('Every answer needs a fieldKey.');
+      }
+      if (!allowed.has(key)) {
+        throw new BadRequestException(
+          `"${key}" is not part of this group; reload the interview.`,
+        );
+      }
+      if (seen.has(key)) {
+        throw new BadRequestException(`"${key}" was answered twice.`);
+      }
+      const current = questionForField(input, key);
+      const field = fieldByKey(row.licenceType, key);
+      if (!current || !field) {
+        throw new BadRequestException(
+          `"${key}" is not a question any more; reload the interview.`,
+        );
+      }
+      seen.add(key);
+      try {
+        const own = await this.patchForAnswer({
+          row,
+          sheet,
+          answers: { ...answers, ...patch },
+          current,
+          key,
+          field,
+          body: item,
+        });
+        Object.assign(patch, own);
+      } catch (err) {
+        if (err instanceof BadRequestException) {
+          throw new BadRequestException(
+            `"${key}": ${(err as Error).message}`,
+          );
+        }
+        throw err;
+      }
+    }
+    if (!Object.keys(patch).length) {
+      throw new BadRequestException('Choose an answer or type one in.');
+    }
+
+    const corePatch = { ...patch };
+    this.composePurposeFields(row.licenceType, patch, answers);
+
+    let saved = await this.motivations.saveAnswers(userId, id, patch);
+    if (saved.refused.length) {
+      saved = await this.motivations.saveAnswers(userId, id, corePatch);
+    }
+    if (saved.refused.length) {
+      throw new BadRequestException(
+        'That answer did not fit the question. Please choose one of the options.',
+      );
+    }
+
+    for (const key of seen) {
+      if (key === 'intended_quarry' || key === 'firearm_use_kind') {
+        try {
+          await this.motivations.confirmAnswer(userId, id, key);
+        } catch (err) {
+          this.logger.warn(
+            `Intake ${row.id}: confirmation of ${key} could not be recorded — ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+    if (seen.has('firearm_type') || seen.has('firearm_action')) {
+      try {
+        await this.motivations.autolink(userId, id);
+      } catch (err) {
+        this.logger.warn(
+          `Intake ${row.id}: certificate autolink after a group failed — ${(err as Error).message}`,
+        );
+      }
+    }
+
+    const first = plan.questions[0];
+    const firstLabel = first
+      ? questionForField(input, first.key)?.label ?? first.key
+      : 'Answers';
+    const userText = Object.values(corePatch).join(' ').slice(0, 500);
+    /**
+     * ⚠️ THE TRANSCRIPT IS BOOKKEEPING, NOT THE ANSWER. A transcript that
+     * cannot be written must never cost a group the member has just filled in.
+     */
+    try {
+      await this.appendTranscript(row.id, [
+        {
+          role: 'assistant',
+          text: `${plan.title} — ${plan.questions.length} questions`.slice(
+            0,
+            500,
+          ),
+          at: new Date().toISOString(),
+        },
+        {
+          role: 'user',
+          text: userText,
+          at: new Date().toISOString(),
+        },
+      ]);
+    } catch (err) {
+      this.logger.warn(
+        `Intake ${row.id}: the group transcript could not be written — ${(err as Error).message}`,
+      );
+    }
+
+    const state = await this.stateInternal(
+      userId,
+      id,
+      userText,
+      firstLabel,
+      first?.key ?? null,
     );
     return { ...state };
   }
@@ -1052,18 +1196,25 @@ export class MotivationIntakeService {
     previousQuestion: string | null,
     previousFieldKey: string | null,
     library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+    /**
+     * ⚠️ THE GROUPED PATH HANDS IN THE QUESTION IT ALREADY CHOSE. Without this
+     * the grouped turn would re-run the planner and phrase the first pending
+     * field over and over instead of the fields in the group.
+     */
+    baseOverride?: IntakeQuestion,
   ): Promise<{
     question: IntakeQuestion;
     acknowledgement?: string;
     correction?: string;
   } | null> {
-    const base = planQuestion({
-      type: row.licenceType,
-      answers,
-      sheet,
-      provenance: parseProvenance(row.answerProvenance),
-      outputMode: normaliseOutputMode(row.outputMode),
-    });
+    const base =
+      baseOverride ??
+      planQuestion({
+        type: row.licenceType,
+        answers,
+        sheet,
+        provenance: parseProvenance(row.answerProvenance),
+      });
     if (!base) return null;
 
     /**
@@ -1211,6 +1362,86 @@ export class MotivationIntakeService {
       );
       return { question: base };
     }
+  }
+
+  /**
+   * THE NEXT CATEGORY, PHRASED DOWN TO ITS QUESTIONS.
+   *
+   * ⚠️ CONCURRENT, IN SMALL BATCHES. A group of six open questions phrased
+   * one at a time is six model round-trips; four in flight makes it roughly
+   * two. The cap is low on purpose: this runs on every turn, and the provider
+   * rate-limits per key rather than per member.
+   */
+  private async phrasedGroup(
+    row: IntakeRow,
+    sheet: SheetResponse,
+    answers: Record<string, string>,
+    previousAnswer: string | null,
+    previousQuestion: string | null,
+    previousFieldKey: string | null,
+    library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+  ): Promise<{
+    group: Omit<IntakeGroup, 
+      'questions'>;
+    questions: IntakeQuestion[];
+    acknowledgement?: string;
+    correction?: string;
+  } | null> {
+    const input = {
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+    };
+    const plan = planGroup(input);
+    if (!plan) return null;
+
+    const bases: IntakeQuestion[] = [];
+    for (const entry of plan.questions) {
+      const base = questionForField(input, entry.key);
+      if (base && !bases.some((b) => b.fieldKey === base.fieldKey)) {
+        bases.push(base);
+      }
+    }
+
+    const phrased: {
+      question: IntakeQuestion;
+      acknowledgement?: string;
+      correction?: string;
+    }[] = [];
+    for (let i = 0; i < bases.length; i += GROUP_CONCURRENCY) {
+      const chunk = bases.slice(i, i + GROUP_CONCURRENCY);
+      const settled = await Promise.all(
+        chunk.map((base) =>
+          this.phrasedQuestion(
+            row,
+            sheet,
+            answers,
+            previousAnswer,
+            previousQuestion,
+            previousFieldKey,
+            library,
+            base,
+          ),
+        ),
+      );
+      for (const reply of settled) if (reply) phrased.push(reply);
+    }
+    if (!phrased.length) return null;
+
+    return {
+      group: {
+        id: plan.id,
+        title: plan.title,
+        index: plan.index,
+        total: plan.total,
+        answered: plan.answered,
+        totalInGroup: plan.totalInGroup,
+      },
+      questions: phrased.map((entry) => entry.question),
+      acknowledgement: phrased[0].acknowledgement,
+      correction: phrased[0].correction,
+    };
   }
 
   private knownFacts(answers: Record<string, string>): string[] {

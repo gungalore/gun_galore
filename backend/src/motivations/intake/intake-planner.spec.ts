@@ -1,12 +1,14 @@
-﻿import { MotivationLicenceType } from '@prisma/client';
+import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import {
   pendingFields,
+  planGroup,
   planQuestion,
   purposeForAnswers,
 } from './intake-planner';
 import { fieldByKey } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
+import { topicForField } from './intake-topics';
 
 const EMPTY_SHEET = {
   application: {
@@ -45,6 +47,11 @@ const COMMON = {
   id_number: '8001015009087',
   residential_address: '1 Main Road',
   occupation: 'Engineer',
+  // Both are required and neither is form-only any more, so the interview asks
+  // them in the identity and address blocks. Answering them here keeps these
+  // order tests about the question they name.
+  marital_status: 'Married',
+  residence_type: 'Townhouse or complex',
   competency_number: 'C1',
   competency_for: 'Manual rifle',
   competency_issued: '2020-01-01',
@@ -90,11 +97,18 @@ describe('the intake planner', () => {
     ).toBe('self-defence');
   });
 
-  it('opens the declaration follow-ups when the answer is Yes', () => {
+  /**
+   * ⚠️ THE DECLARATIONS ARE NO LONGER ASKED. 2026-11-05: the six history
+   * questions existed to fill boxes G.62 to G.67 on a SAPS 271 we no longer
+   * produce. They stay in the registry (a document can still raise one, and the
+   * writer reads them when it does) but the interview never puts them in front
+   * of the applicant.
+   */
+  it('never asks the declaration history, even with everything else answered', () => {
     const strategy = strategyFor(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
     const answers: Record<string, string> = {};
     for (const key of strategy.fields) {
-      if (key === 'history_conviction') continue;
+      if (key.startsWith('history_')) continue;
       const field = fieldByKey(MotivationLicenceType.S15_OCCASIONAL_HUNTER, key);
       if (!field) continue;
       if (field.kind === 'cards' && field.options?.length) {
@@ -114,34 +128,25 @@ describe('the intake planner', () => {
       answers,
       sheet: EMPTY_SHEET,
     });
-    expect(q?.fieldKey).toBe('history_conviction');
-    expect(q?.details?.map((d) => d.key)).toContain(
-      'history_conviction_detail',
-    );
-    expect(q?.choices.map((c) => c.value)).toEqual(['Yes', 'No']);
-  });});
+    // Whatever is left, it is never a declaration.
+    expect(q?.fieldKey?.startsWith('history_') ?? false).toBe(false);
+  });
+});
 
-describe('MOTIVATION_ONLY', () => {
-  it('does not ask SAPS 271 form-only answers', () => {
+describe('the form-only retirement', () => {
+  it('never asks a form-only field, in either mode', () => {
     const answers = {
       ...COMMON,
       firearm_use_kind: 'hunting',
       marital_status: 'Married',
       spouse_id_type: 'SA ID',
     };
-    const full = pendingFields({
+    const pending = pendingFields({
       type: MotivationLicenceType.S16_DEDICATED_HUNTER,
       answers,
       sheet: EMPTY_SHEET,
     });
-    const letter = pendingFields({
-      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
-      answers,
-      sheet: EMPTY_SHEET,
-      outputMode: 'MOTIVATION_ONLY',
-    });
-    expect(full.map((f) => f.key)).toContain('spouse_id_number');
-    expect(letter.map((f) => f.key)).not.toContain('spouse_id_number');
+    expect(pending.map((f) => f.key)).not.toContain('spouse_id_number');
   });
 });
 
@@ -166,3 +171,75 @@ describe('the hunt intention question', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// THE GROUPED INTERVIEW. A cold applicant is asked a category at a time; these
+// pin the order, the exclusions, the cap and that no question appears twice.
+// ---------------------------------------------------------------------------
+describe('planGroup', () => {
+  const cold = () =>
+    planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {},
+      sheet: EMPTY_SHEET,
+    });
+
+  it('starts a cold application on identity', () => {
+    expect(cold()?.id).toBe('identity');
+    expect(cold()?.title).toBe('About you');
+  });
+
+  it('asks only identity questions in that first group', () => {
+    for (const q of cold()?.questions ?? []) {
+      expect(topicForField(q.key)).toBe('identity');
+    }
+  });
+
+  it('never repeats a question inside a group', () => {
+    const keys = (cold()?.questions ?? []).map((q) => q.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('caps the card and keeps the overflow for the next turn', () => {
+    const group = planGroup(
+      {
+        type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        answers: {},
+        sheet: EMPTY_SHEET,
+      },
+      2,
+    );
+    expect(group?.questions).toHaveLength(2);
+  });
+
+  it('moves on once a group is answered', () => {
+    const first = cold();
+    const answers = Object.fromEntries(
+      (first?.questions ?? []).map((q) => [q.key, 'x']),
+    );
+    const next = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers,
+      sheet: EMPTY_SHEET,
+    });
+    expect(next?.id).not.toBe('identity');
+  });
+
+  it('is null when nothing is left to ask', () => {
+    const answers: Record<string, string> = {};
+    for (const { key } of pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers,
+      sheet: EMPTY_SHEET,
+    })) {
+      answers[key] = 'x';
+    }
+    expect(
+      planGroup({
+        type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        answers,
+        sheet: EMPTY_SHEET,
+      }),
+    ).toBeNull();
+  });
+});

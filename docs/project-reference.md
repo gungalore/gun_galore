@@ -1,4 +1,4 @@
-﻿# All Outdoor — Claude Code Context
+# All Outdoor — Claude Code Context
 
 ## How to use this file
 
@@ -1198,11 +1198,42 @@ checklist and PDF branch keys off it:
 | `S16_DEDICATED_SPORT` | dedicated sports shooter, accredited sport-shooting body |
 | `S24_RENEWAL` | renewal of a licence already held |
 
-⚠️ **A section 24 renewal is lodged on the SAPS 518(a), not the SAPS 271.** The 271
-is an application for a NEW licence under sections 13–20. This product does not
-fill in the 518(a); an S24 pack ships the motivation alone and says so. The 271
-itself is an **opt-in extra**, not the product — one early question decides it, and
-answering yes un-hides roughly forty-eight form-only questions.
+⚠️ **A section 24 renewal is lodged on the SAPS 518(a), not a SAPS 271.** This
+product does not fill in the 518(a); an S24 pack ships the motivation alone and
+says so.
+
+### Two products, and the generated form is gone
+
+The **generated SAPS 271 was retired on 2026-11-05.** What the product sells is
+the motivation, in two shapes:
+
+| Mode | What the member gets | Documents |
+|---|---|---|
+| `MOTIVATION_ONLY` (**default**) | the motivation document | none — never asked for any |
+| `PRINT_READY` | the motivation, every annexure lettered in DFO order, and the document checks | required; the pack is gated until they are attached |
+
+`FULL_PACK` is the retired name for `PRINT_READY`; `normaliseOutputMode` still
+maps it so old rows keep their annexures. A new application defaults to
+motivation-only and is offered print-ready as an upgrade.
+
+⚠️ **Nothing asks the form-only questions any more.** The thirty-eight
+`formOnly` registry fields and the six `history_*` declarations are never put to
+the applicant — declarations surface only when an uploaded document raises one,
+so heading 10 appears when a paper produces it, not because somebody was asked
+six yes/no boxes. `requiredKeys`/`missingRequired` follow the same rule: a
+question the screen cannot show can never block a pack.
+
+### The interview asks one category at a time
+
+`planGroup()` in `intake-planner.ts` returns the first topic in `TOPIC_ORDER`
+that still has pending questions, at most six per card, and the page renders
+them together with the same tap-answer chips every question carries. The card's
+questions are phrased concurrently, so a group costs roughly one model round
+instead of six. `POST /motivations/:id/intake/answers` validates the whole card
+before writing anything, writes once, and rebuilds the state once.
+
+Everything the motivation still argues with stays: identity, the firearm,
+competency, association, safe storage and the purpose sections.
 
 ### The motivation itself — a FIXED skeleton, not a varied one
 
@@ -1245,8 +1276,8 @@ a supplied `2027-06-30` and `2004-06-07` against `2024-06-07`. Neither the
 three attempts nor the repair pass can help — the repair pass refuses a CLAIM
 on purpose, because mending one means choosing which fact was meant. Nothing
 downstream loses the digits: `packConsistency` reads document and answers
-through one `datesIn` that parses both forms, and the SAPS 271 prefill reads
-the answers rather than the document.
+through one `datesIn` that parses both, and the document checks read the
+answers rather than the scanned page.
 
 ⚠️ **A RESEARCH ASK REACHES A MOTIVATION THAT ALREADY HAS RESEARCH.**
 `RESEARCH_ASK_VERSION` lives in the SHARED cache key, so rewording an ask used

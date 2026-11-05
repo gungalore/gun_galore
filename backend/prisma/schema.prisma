@@ -4923,11 +4923,13 @@ model Motivation {
   // collected the same registry answers. The distinction never reaches the
   // writer; it only decides which front door the member used.
   intakeMode          String?   @db.VarChar(16)
-  /// What the member asked us to produce: FULL_PACK (motivation, SAPS 271 and
-  /// annexures) or MOTIVATION_ONLY (the legal motivation on its own). Stored
-  /// as a plain string so a new mode is a deploy, not a migration. The
-  /// default keeps every row created before this column on the complete pack.
-  outputMode          String    @default("FULL_PACK") @db.VarChar(24)
+  /// What the member asked us to produce: MOTIVATION_ONLY (the legal motivation
+  /// on its own, the default) or PRINT_READY (the same motivation plus the
+  /// lettered annexures and the document checks — a pack, not a form). Stored
+  /// as a plain string so a new mode is a deploy, not a migration. Rows written
+  /// before 2026-11-05 hold the retired name FULL_PACK and are normalised to
+  /// PRINT_READY on read, never silently demoted to motivation-only.
+  outputMode          String    @default("MOTIVATION_ONLY") @db.VarChar(24)
   intakeStartedAt     DateTime?
   /// When the member confirmed the document/evidence selection. The interview
   /// does not begin until this is set.

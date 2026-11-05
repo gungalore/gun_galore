@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -398,14 +398,14 @@ export default function IntakeStartPage() {
               Motivation letter only
             </span>
             <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              The legal motivation on its own, ready to attach to a form you or
-              your dealer complete. Fastest option; no document uploads needed.
+              The legal motivation on its own — the document you sign and hand to
+              the DFO. This is where most people start, and it needs no documents.
             </span>
           </button>
           <button
             type="button"
             disabled={busy}
-            onClick={() => void setOutput('FULL_PACK')}
+            onClick={() => void setOutput('PRINT_READY')}
             className="rounded-xl border p-4 text-left"
             style={{
               borderColor: !motivationOnly ? 'var(--red)' : 'var(--border)',
@@ -413,11 +413,12 @@ export default function IntakeStartPage() {
             }}
           >
             <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              Print-ready application pack
+              Print-ready pack
             </span>
             <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              The motivation, a prefilled SAPS 271 and every annexure, checked
-              and put in order. Everything a DFO expects in one file.
+              The same motivation plus every annexure, lettered in the order the
+              DFO works through, with the document checks done — the pack you walk
+              in with. It needs your documents uploaded.
             </span>
           </button>
         </div>

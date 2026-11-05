@@ -19,6 +19,16 @@ const COMMON_FIRST = [
   'id_number',
   'licence_holder_type',
   'occupation',
+  /**
+   * ⚠️ REQUIRED BY THE REGISTRY, SO THE INTERVIEW MUST ASK IT.
+   *
+   * `marital_status` is `required: true`, it is not document-sourced and it is
+   * not a profile field, so `requiredKeys()` counted it and `missingRequired()`
+   * would refuse the pack — but no strategy asked it. A cold applicant could
+   * finish the whole interview and then be told answers were missing, with no
+   * question left to answer. The parity matrix caught it.
+   */
+  'marital_status',
   // Then the firearm being applied for.
   'firearm_type',
   'firearm_action',
@@ -32,6 +42,13 @@ const COMMON_FIRST = [
   'competency_issued',
   // Address and the rest follow.
   'residential_address',
+  /**
+   * ⚠️ SAME GAP AS `marital_status`. Required, not document-sourced, not a
+   * profile field, and never asked — the self-defence briefs reason from the
+   * premises ("townhouse or complex"), so an answer that never arrives leaves
+   * both the pack gate and the threat argument short.
+   */
+  'residence_type',
 ];
 
 const SAFE = [

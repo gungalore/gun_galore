@@ -263,7 +263,7 @@ export interface SheetResponse {
     id: string;
     referenceNumber: string;
     licenceType: string;
-    outputMode?: 'FULL_PACK' | 'MOTIVATION_ONLY';
+    outputMode?: 'MOTIVATION_ONLY' | 'PRINT_READY';
     licenceTypeLabel: string;
     label: string | null;
     /**
@@ -307,7 +307,6 @@ export interface SheetResponse {
     missingRequired?: string[];
   };
   credentials: SheetCredentials;
-  coverage: unknown;
   overlap: {
     verdict: { kind: string; withCalibres?: string[]; withTypes?: string[] };
     prompt: string | null;

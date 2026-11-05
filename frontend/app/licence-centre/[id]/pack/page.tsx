@@ -54,13 +54,6 @@ import SheetFooter from '@/components/licence-centre/sheet-footer';
 // Download would be the page shouting at somebody who has already arrived.
 // ────────────────────────────────────────────────────────────────────
 
-const SOURCE_ROUTE: Record<string, 'dealer' | 'seller' | 'estate' | 'unstated'> =
-  {
-    'From a dealer': 'dealer',
-    'From a private owner': 'seller',
-    'Inherited from a deceased estate': 'estate',
-  };
-
 /**
  * The statuses the writer passes through on its way to COMPLETED.
  *
@@ -250,44 +243,26 @@ export default function PackPage() {
   );
 
   /**
-   * Both documents, one tap.
+   * The pack, one tap.
    *
-   * ⚠️ THE TWO SAVES FIRE IN THE SAME TICK, AFTER BOTH FETCHES. A download
-   * triggered after an `await` has lost the user gesture that allowed it; both
-   * bytes are held first and then the anchors are clicked back to back. The
-   * 271 is skipped on a renewal, where there is no 271 to fetch.
+   * ⚠️ NO SECOND DOCUMENT ANY MORE. The generated SAPS 271 is gone, so the
+   * motivation is the whole download; the annexures are already printed inside
+   * the PDF rather than saved beside it.
    */
   const download = useCallback(async () => {
     setDownloading(true);
     setError(null);
     try {
       const reference = sheet?.application.referenceNumber ?? 'motivation';
-      const isRenewal = sheet?.application.licenceType === 'S24_RENEWAL';
       const reusableMotivation = pdfUrl;
       const motivation =
         reusableMotivation ?? (await motivationsApi.pdfBlobUrl(getToken, id));
 
-      let form: string | null = null;
-      let formError: string | null = null;
-      if (!isRenewal) {
-        try {
-          form = await motivationsApi.saps271BlobUrl(getToken, id);
-        } catch (err) {
-          // ⚠️ THE MOTIVATION STILL DOWNLOADS. A refusal on the form — a
-          // section 24 by name, a form the map cannot fill — must not take the
-          // document the member actually came for down with it.
-          formError = (err as Error).message;
-        }
-      }
-
       saveBlob(motivation, `${reference}.pdf`);
-      if (form) saveBlob(form, `${reference}-saps271.pdf`);
 
       if (!reusableMotivation) {
         window.setTimeout(() => URL.revokeObjectURL(motivation), 60_000);
       }
-      if (form) window.setTimeout(() => URL.revokeObjectURL(form), 60_000);
-      if (formError) setError(formError);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -345,9 +320,7 @@ export default function PackPage() {
     );
   }
 
-  const source =
-    sheet.items.find((i) => i.key === 'firearm_source')?.value ?? '';
-  // A renewal has no 271: it is lodged on the SAPS 518(a), which we do not fill.
+  // A renewal is lodged on the SAPS 518(a), which we do not fill.
   const isRenewal = sheet.application.licenceType === 'S24_RENEWAL';
   const missingDocuments = sheet.needs.needs.filter(
     (need) => need.tier === 'required' && !need.have,
@@ -521,9 +494,7 @@ export default function PackPage() {
           What SAPS needs
         </h2>
         <PackSummary
-          coverage={sheet.coverage as never}
           licenceType={sheet.application.licenceType}
-          sourceRoute={SOURCE_ROUTE[source] ?? 'unstated'}
           needs={sheet.needs.needs}
         />
       </section>

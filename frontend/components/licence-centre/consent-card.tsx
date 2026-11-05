@@ -9,27 +9,26 @@ import MotivationSellerConsent from '@/components/motivation-seller-consent';
 // route is no longer picked up front — it is read off whatever the member
 // uploads — so this card is shown until the route is known to be a dealer sale.
 // The consent link is the second way to settle it: the owner signs on their own
-// phone, and the licence and Part F come back into the application. A dealer
-// completes Part F and their own SAPS 350(a), so the card is hidden once we know
-// it is a dealer purchase.
+// phone, and the licence and their signed particulars come back into the
+// application. A dealer handles their own side, so the card is hidden once we
+// know it is a dealer purchase.
 //
-// ⚠️ THE PART F LINE IS THE POINT OF WRAPPING IT. The consent flow already
-// captures every box of section F 81-87, and until now the seller signed a
-// consent letter while the F page went to the DFO blank. The same data now
-// prints as the seller's own page inside their link, so they sign both on
-// their phone and the pack arrives complete — intake plan §6.1.
+// ⚠️ THE CONSENT LINE IS THE POINT OF WRAPPING IT. The consent flow captures the
+// seller's particulars, and the same data now prints as the seller's own signed
+// page inside their link — an annexure in the pack, no longer a half of a form
+// we generate. Intake plan §6.1.
 //
 // ⚠️ THE INNER PANEL IS IMPORTED, NOT REBUILT. It owns the invite, the
 // read-back of the signature and the firearm snapshot, all of which are
-// tested where they live. This adds the framing and the one line about F, and
-// nothing else — Phase 4 moves the file, it does not rewrite it.
+// tested where they live. This adds the framing and the one line about the
+// signature, and nothing else — Phase 4 moves the file, it does not rewrite it.
 // ────────────────────────────────────────────────────────────────────
 
 export interface ConsentCardProps {
   motivationId: string;
   applicantName: string;
   firearm: Record<string, string | undefined>;
-  /** True once the seller has actually signed. Drives the Part F line. */
+  /** True once the seller has actually signed. Drives the consent line. */
   signed: boolean;
   onAdopt?: (fields: Record<string, string>) => void;
   /** The seller answered while the page was open. Reload the application. */
@@ -71,8 +70,8 @@ export default function ConsentCard({
         }`}
       >
         {signed
-          ? 'Signed. Part F of your SAPS 271 is filled in from what the seller gave us, and their signed page goes in the pack.'
-          : 'When they sign, Part F of your SAPS 271 fills in from what they give us — they sign the form page and the consent together.'}
+          ? 'Signed. Their signed page and consent go into your pack as an annexure.'
+          : 'When they sign, their signed page and consent go into your pack as an annexure.'}
       </p>
     </div>
   );

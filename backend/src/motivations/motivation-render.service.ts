@@ -9,7 +9,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  MotivationLicenceType,
   MotivationStatus,
   MotivationUploadKind,
 } from '@prisma/client';
@@ -86,7 +85,6 @@ export interface EvidenceUploadForRender {
   evidenceType?: string | null;
   evidenceDescriptionEncrypted?: string | null;
 }
-import { MotivationSellerConsentService } from './motivation-seller-consent.service';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { applicationWarnings } from './motivation-warnings';
 import { buildCompletedStatement } from './motivation-character-statement';
@@ -124,7 +122,6 @@ import {
   parsePressClippingIds,
 } from './motivation-fields';
 import { isMotivationOnly } from './motivation-output';
-import { Saps271Service } from './saps271.service';
 import {
   MotivationSharedService,
   TEMPLATE_VERSION,
@@ -600,8 +597,6 @@ export class MotivationRenderService {
     private readonly pdf: MotivationPdfService,
     private readonly settings: SettingsService,
     private readonly cip: CipSheetService,
-    private readonly saps271: Saps271Service,
-    private readonly sellerConsent: MotivationSellerConsentService,
     private readonly firearmImages: FirearmImageService,
     private readonly witnesses: MotivationWitnessService,
     private readonly shared: MotivationSharedService,
@@ -2631,149 +2626,4 @@ export class MotivationRenderService {
     }
     return { choice: null, hasOwn: false };
   }
-
-  /**
-   * The pre-filled SAPS 271 — ONLY for applicants who asked for it.
-   *
-   * The 271 is an opt-in addition, not the product (operator, 2026-08-19):
-   * most dealers complete the form with the buyer, so the default path never
-   * asks the form-tier questions and never produces this document. Requesting
-   * it without opting in is answered with a plain explanation, not a 404 —
-   * the motivation exists; the form was declined.
-   *
-   * Available from the moment they opt in, not only after generation: the
-   * whole point is that the form and the motivation are separate deliverables,
-   * and leftBlank tells them exactly which boxes still need a pen.
-   *
-   * âš ï¸ EXCEPT THAT NOBODY IS TOLD ANYTHING YET, AND THE LINE ABOVE HAS BEEN
-   * WRONG FOR AS LONG AS IT HAS BEEN THERE. `leftBlank` is built, returned
-   * from here — and DROPPED at motivations.controller.ts:415, which
-   * destructures `{ pdf, filename }` and streams the PDF. The route returns a
-   * file, so there is nowhere in this response for it to go; it needs an
-   * endpoint of its own (or a header) and a panel to render it.
-   *
-   * So every entry the map records — "mark Marital status yourself", "you have
-   * not answered this history question", and now the barrel-serial column of
-   * item 2.1 — reaches the member as an EMPTY BOX ON A PDF and nothing else.
-   * That is worth fixing and it is not a reason to stop recording them: the
-   * facts are pinned by saps271-owned-firearms.spec.ts and the day a panel
-   * exists it is already correct. Do not "simplify" leftBlank away on the
-   * grounds that nothing reads it.
-   */
-  async renderSaps271(userId: string, id: string) {
-    await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(userId);
-    const row = await this.prisma.motivation.findFirst({
-      where: { id, userId: user.id },
-      select: {
-        id: true,
-        userId: true,
-        referenceNumber: true,
-        licenceType: true,
-        answersEncrypted: true,
-        uploads: { select: { kind: true } },
-      },
-    });
-    if (!row) throw new NotFoundException('Motivation not found');
-
-    // âš ï¸ A RENEWAL IS A DIFFERENT FORM, AND THE ANSWER CANNOT OVERRIDE THAT.
-    //
-    // This gate read the opt-in and nothing else, while saps271Map throws for
-    // a section 24 further down ("the SAPS 271 is an application for a NEW
-    // licence (sections 13-20); a section 24 renewal uses a different form")
-    // — a bare Error, surfaced as a 409, AFTER the member had answered the
-    // roughly forty-eight extra questions the opt-in un-hides. A renewal uses
-    // the SAPS 518(a), which this product does not fill in.
-    //
-    // Refused here, by name, before any of that. Old drafts can still hold the
-    // answer, which is exactly why the licence type decides rather than it.
-    if (row.licenceType === MotivationLicenceType.S24_RENEWAL) {
-      throw new ConflictException(
-        'A section 24 renewal is lodged on the SAPS 518(a), not the SAPS 271, so there is no form for us to fill in here. Your motivation goes with it as it stands.',
-      );
-    }
-
-    // âš ï¸ NO OPT-IN GATE HERE ANY MORE. Until 2026-09-08 this is where a member
-    // who had answered "My dealer will fill it in" was turned away with a 409.
-    // The 271 is no longer something the applicant elects to receive — every
-    // pack ships one (D, G and H are always ours to complete; section F below
-    // is filled or left blank by `firearm_source`, never by this choice) — so
-    // there is nothing left to check the answer against. Brief Â§2.5,
-    // `MOTIVATION-INTAKE-PLAN.md` Â§1. `fill_saps271` itself is retired in
-    // motivation-fields.ts and kept only so an old draft still saves.
-    /**
-     * âš ï¸ THE PROFILE UNDERNEATH, OR HALF THE FORM PRINTS BLANK.
-     *
-     * `readAnswers` opens THIS APPLICATION's blob and nothing else. Every
-     * `scope: 'profile'` field — the safe, whether it is mounted and to what,
-     * marital status, the premises — is stored on the MEMBER
-     * (MemberProfileAnswers), because a wall does not move between
-     * applications. So the 271 asked `a('safe_present')`, got nothing, and
-     * left items 26/27 and the whole of 68, 68.1, 69 and 69.1 unticked on a
-     * form the applicant signs — while the review sheet, which does layer the
-     * profile, showed those answers as given.
-     *
-     * Operator, 2026-09-09: "Maritial status missing", "All safe questions
-     * ticks missing".
-     *
-     * `answersFor` is the same door the writer already uses (see
-     * motivation-generation.service.ts) — profile underneath, application on
-     * top, because a value on this application is the member having changed it
-     * here.
-     */
-    const answers = await this.shared.answersFor(
-      row.userId,
-      row.answersEncrypted,
-    );
-
-    const account = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { email: true },
-    });
-
-    try {
-      // âš ï¸ THE LETTER, NOT A GUESS AT IT. Items 68.1 and 69.1 are answered by
-      // citing the photographs of the safe, so the citation has to carry the
-      // letter this pack's index actually gives them — which moves with what
-      // else was uploaded. annexureByKind rather than a find() over the
-      // entries, because the safe kinds collapse onto one letter and a lookup
-      // by member kind misses every member but the group's representative.
-      const safeAnnexureLetter = annexureByKind(
-        buildAnnexures((row.uploads ?? []).map((u) => u.kind)),
-      ).get(MotivationUploadKind.SAFE_PHOTOGRAPHS)?.letter;
-
-      // âš ï¸ SECTION F, AT LAST. Twenty-two boxes were mapped, tested and
-      // UNREACHABLE: this call never passed a seller, so the current owner's
-      // half of the form went to every DFO blank while the coverage panel
-      // told the applicant it was done. Operator, 2026-08-28: "F should be
-      // filled, type A."
-      //
-      // âš ï¸ NULL ON EVERY ROUTE BUT A SIGNED PRIVATE SALE, and that is the
-      // point: sectionF() returns nothing until the seller has actually
-      // completed and signed, and saps271-map refuses to fill the block
-      // unless the applicant said the route was private. Two independent
-      // gates, because printing one person's particulars under another
-      // person's declaration is the failure this section can produce.
-      const seller = (await this.sellerConsent.sectionF(row.id)) ?? undefined;
-
-      const { pdf, leftBlank } = await this.saps271.build({
-        licenceType: row.licenceType,
-        answers,
-        email: account?.email ?? undefined,
-        motivationReference: row.referenceNumber,
-        safeAnnexureLetter,
-        seller,
-      });
-      return {
-        pdf,
-        filename: `saps271-${row.referenceNumber}.pdf`,
-        leftBlank,
-      };
-    } catch (err) {
-      // buildSaps271 throws a plain Error for a section 24 renewal — the 271
-      // is the wrong form for it. Said plainly rather than surfaced as a 500.
-      throw new ConflictException((err as Error).message);
-    }
-  }
 }
-

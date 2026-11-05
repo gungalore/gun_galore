@@ -6,9 +6,6 @@ import {
   isVisible,
   requiredKeys,
   sanitiseAnswers,
-  SAPS271_DEALER,
-  SAPS271_FILL,
-  SAPS271_OPT_KEY,
 } from '../motivations/motivation-fields';
 import {
   competencyCategoriesFrom,
@@ -498,18 +495,15 @@ describe('seeding the 517(g) finding', () => {
       COMPETENCY_RENEWS_KEY,
     )!;
     expect(field).toBeDefined();
-    // Every state of the one question that un-hides form-only fields, plus the
-    // field holding its own value — the two gates on it contradict each other,
-    // so there is no answer anywhere that shows it.
-    for (const opt of ['', SAPS271_FILL, SAPS271_DEALER]) {
-      expect(isVisible(field, { [SAPS271_OPT_KEY]: opt })).toBe(false);
-      expect(
-        isVisible(field, {
-          [SAPS271_OPT_KEY]: opt,
-          [COMPETENCY_RENEWS_KEY]: 'Yes',
-        }),
-      ).toBe(false);
-    }
+    // The two gates on it contradict each other, so no answer shows it — and
+    // the form opt-in that used to be half of that contradiction no longer
+    // exists at all.
+    expect(isVisible(field, {})).toBe(false);
+    expect(
+      isVisible(field, {
+        [COMPETENCY_RENEWS_KEY]: 'Yes',
+      }),
+    ).toBe(false);
     // And never demanded before a pack can be generated.
     expect(
       requiredKeys(MotivationLicenceType.S24_RENEWAL, {

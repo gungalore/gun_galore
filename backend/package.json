@@ -24,7 +24,6 @@
     "seed:feed-ads": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/seed-feed-ads.ts",
     "legal:ingest": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/ingest-legal.ts",
     "feed:flags": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/feed-flags.ts",
-    "saps271:checksum": "node scripts/saps271-checksum.js",
     "crime-stats:load": "ts-node --transpile-only --project tsconfig.json scripts/crime-stats-load.ts",
     "motivation:eval": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-eval.ts",
     "motivation:golden": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/motivation-golden.ts",

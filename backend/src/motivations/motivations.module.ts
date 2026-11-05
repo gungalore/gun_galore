@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MotivationsController } from './motivations.controller';
 import { MotivationsIntakeController } from './intake/intake.controller';
 import { MotivationIntakeService } from './intake/intake.service';
@@ -51,7 +51,6 @@ import {
   MotivationsWitnessController,
   WitnessPublicController,
 } from './motivations-witness.controller';
-import { Saps271Service } from './saps271.service';
 import { MotivationModelService } from './motivation-model.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
@@ -142,7 +141,6 @@ import { LegalModule } from '../legal/legal.module';
     CipSheetService,
     QuarryPlateService,
     MotivationPlatesService,
-    Saps271Service,
     FirearmImageService,
     MotivationWitnessService,
     MotivationSellerConsentService,

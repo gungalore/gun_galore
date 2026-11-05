@@ -1226,7 +1226,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
  * reads AGAINST an applicant. A section 13 needs four facts and a paragraph.
  */
 const COMPETENCY_AND_TRAINING_BRIEF =
-  'My competency and training. The SAPS competency certificate: its number, the category it covers, when it was issued and when it expires \u2014 every one of those the facts carry. Then the training behind it, and only where the facts say so. Then what I actually do to stay competent: how often I shoot, what I shoot, and how the firearm applied for fits that practice. \u26a0\ufe0f NO SECURITY MEASURES HERE AT ALL. Burglar bars, gates, alarms and armed response are not competency and not training; on a hunting or sport application they belong in storage and transport, which has its own section later. \u26a0\ufe0f AND ONLY WHAT THE FACTS CARRY: never invent a course, a date, a unit standard, a club or a score.';
+  'My competency and training. The SAPS competency certificate: its number, the category it covers, when it was issued and when it expires \u2014 every one of those the facts carry. Then the training behind it, and only where the facts say so. Then what I actually do to stay competent: how often I shoot, what I shoot, and how the firearm applied for fits that practice. \u26a0\ufe0f NO SECURITY MEASURES HERE AT ALL. Burglar bars, gates, alarms and armed response are not competency and not training; the measures section and storage already carry them, and repeating them under this heading says nothing about my competence. \u26a0\ufe0f AND ONLY WHAT THE FACTS CARRY: never invent a course, a date, a unit standard, a club or a score.';
 
 const BRIEF_OVERRIDES: Partial<
   Record<MotivationLicenceType, Partial<Record<SectionId, string>>>
@@ -1236,20 +1236,27 @@ const BRIEF_OVERRIDES: Partial<
       'TWO PARAGRAPHS AT MOST, 120 WORDS: the type, make, model and calibre; that it is semi-automatic and cannot readily be converted into a fully automatic firearm (s14(1)(a)); the manufactured capacity, stated plainly and without emphasis; and one sentence on why that type answers the deficiency the section above described. \u26a0\ufe0f NOTHING MILITARY. No "engage", no "suppress", no "firepower", no "tactical", no rate of fire, no shots per second, no ballistics, no product copy, no "battle-proven". \u26a0\ufe0f AND NEVER SUGGEST IT WILL BE CARRIED IN PUBLIC \u2014 a restricted firearm licensed under section 14 stays on the premises it was motivated for.',
     existing_measures:
       'What is already in place at these premises and where each measure stops \u2014 the fencing and its length, the gates, the dogs, the lighting, the alarm, the radio or farm-watch network, the armed-response contract and the response time actually experienced, and the section 13 firearm if one is held and why it is insufficient. \u26a0\ufe0f THIS IS THE FIRST LIMB OF s14(4) IN ALL BUT NAME. The applicant must show a section 13 firearm "will not provide sufficient protection"; a list of measures with no sentence on where each one stops has not shown it. Only what the facts carry: never invent a measure to knock down, never say one failed on an occasion the applicant did not describe, and never disparage the police or an armed-response company \u2014 the honest sentence is that a response takes minutes and an attack takes seconds.',
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
   },
   [MotivationLicenceType.S13_SELF_DEFENCE]: {
     the_firearm:
       'ONE PARAGRAPH, AT MOST SIXTY WORDS, AND FOUR FACTS: the type and make applied for, the calibre, why a handgun rather than a rifle or shotgun (it can be carried on the person, which is the whole point of a firearm kept for defence), and the role the calibre plays in practice. \u26a0\ufe0f NOTHING ELSE. No action type, no barrel, no capacity, no trigger system, no frame material, no ballistics, no comparison with other models, no manufacturer\u2019s history. A self-defence application is not about the firearm; it is about the risk, and a paragraph describing the product reads as somebody who wants this one rather than somebody who needs one. \u26a0\ufe0f AND SAY NOTHING ABOUT WHAT AMMUNITION IS AVAILABLE. The pack holds no stock or supply fact for this round, and a scarce chambering (6.35mm Browning, .32 S&W) makes the claim false; say only that I intend to practise with it and where I shoot. \u26a0\ufe0f AND DO NOT RECITE THE DIMENSION SHEET\u2019S FIGURES. Case length, overall length and pressure are printed on the sheet that follows this section; repeating them in prose is a catalogue, not an argument.',
+    experience: COMPETENCY_AND_TRAINING_BRIEF,
   },
   /**
-   * \u26a0\ufe0f THE HUNTING AND SPORT APPLICATION GETS ITS OWN SECTION 7.
+   * \u26a0\ufe0f EVERY LICENCE TYPE GETS ITS OWN SECTION 7.
    *
-   * The base brief for `experience` is written for section 13: "what this
-   * applicant ALREADY does about the risk, and where each measure stops". On a
-   * hunting application that produced a section headed "My competency and
-   * training" whose every sentence was about burglar bars and security gates,
-   * while the competency certificate \u2014 the one document a DFO opens the pack
-   * for \u2014 appeared nowhere in the body. Same id, different job.
+   * The base brief for `experience` is written for the self-defence RISK
+   * argument: "what this applicant ALREADY does about the risk, and where each
+   * measure stops". Under the heading "My competency and training" that
+   * produced a section about burglar bars and security gates, while the
+   * competency certificate \u2014 the one document a DFO opens the pack for \u2014
+   * appeared nowhere in the body. It was fixed for hunting and sport first;
+   * the parity matrix then caught that S13 and S14, which HAVE the same
+   * heading and also carry `existing_measures` for the risk argument, were
+   * still arguing the same ground twice and never the competency.
+   *
+   * Same id, different job, on every type.
    */
   [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: {
     experience: COMPETENCY_AND_TRAINING_BRIEF,

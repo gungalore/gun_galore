@@ -12,6 +12,9 @@ import {
   type IntakeState,
 } from '@/lib/motivations-api';
 import IntakeBlocked from '@/components/licence-centre/intake-blocked';
+import IntakeGroupCard, {
+  type GroupAnswer,
+} from '@/components/licence-centre/intake-group-card';
 import ConsentCard from '@/components/licence-centre/consent-card';
 import type { SheetResponse } from '@/components/licence-centre/contract';
 import DocumentAddButtons, {
@@ -139,6 +142,7 @@ export default function IntakeInterviewPage() {
   }, [data, id, router]);
 
   const q = data?.question ?? null;
+  const group = data?.group ?? null;
   const historyTurn =
     historyIndex !== null ? (turns[historyIndex] ?? null) : null;
   const choices = q?.choices ?? [];
@@ -205,6 +209,43 @@ export default function IntakeInterviewPage() {
       setTurns((prev) => [
         ...prev,
         { question: q.label, answer: shown || 'Answered' },
+      ]);
+      setHistoryIndex(null);
+      setData(next);
+      setText('');
+      setSelected([]);
+      setDetailFor(null);
+      setDetailValues({});
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+
+  /**
+   * \u26a0\ufe0f A WHOLE CATEGORY IN ONE POST. The server validates every answer before
+   * it writes any of them, and rebuilds the interview once — so the member
+   * waits for one round rather than one per question.
+   */
+  async function sendBatch(answers: GroupAnswer[]) {
+    if (!group || !answers.length || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await motivationsApi.answerIntakeBatch(
+        getToken,
+        id,
+        answers,
+      );
+      setTurns((prev) => [
+        ...prev,
+        {
+          question: group.title,
+          answer: `${answers.length} ${answers.length === 1 ? 'answer' : 'answers'}`,
+        },
       ]);
       setHistoryIndex(null);
       setData(next);
@@ -532,7 +573,9 @@ export default function IntakeInterviewPage() {
 
 
 
-      {q ? (
+      {group && group.questions.length ? (
+        <IntakeGroupCard group={group} busy={busy} onSubmit={sendBatch} />
+      ) : q ? (
         <div className="mt-4">
           <Progress q={q} />
           {q.progress.answered > 0 ? (

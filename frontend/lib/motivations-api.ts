@@ -515,7 +515,7 @@ export interface LibraryItem {
 // own answers.
 
 export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
-export type MotivationOutputMode = 'FULL_PACK' | 'MOTIVATION_ONLY';
+export type MotivationOutputMode = 'MOTIVATION_ONLY' | 'PRINT_READY';
 export type IntakeStage =
   | 'MODE'
   | 'DOCUMENTS'
@@ -610,6 +610,18 @@ export interface IntakeTopicState {
   actions: ('upload' | 'scan' | 'manual')[];
 }
 
+export interface IntakeGroup {
+  id: IntakeTopicId;
+  title: string;
+  /** 1-based position among the groups that still have work. */
+  index: number;
+  /** How many groups still have work. */
+  total: number;
+  answered: number;
+  totalInGroup: number;
+  questions: IntakeQuestion[];
+}
+
 export interface IntakeState {
   motivationId: string;
   referenceNumber: string;
@@ -622,6 +634,8 @@ export interface IntakeState {
   summary: string;
   /** The current topic, with what we already hold and what it still needs. */
   topic: IntakeTopicState | null;
+  /** The category being asked, with every pending question in it. */
+  group: IntakeGroup | null;
   /** True when the member's Document Library holds no documents at all. */
   vaultEmpty: boolean;
   documents: {
@@ -900,9 +914,9 @@ export interface FollowUp {
 // THE PACK â€” ONE CALL FOR THE WHOLE LEFT COLUMN AND THE RIGHT RAIL.
 //
 // ?? EVERY TYPE BELOW IS A MIRROR, NOT A DEFINITION. The server owns these
-// shapes: backend/src/motivations/motivation-checklist.ts,
-// saps271-coverage.ts and common/answer-provenance.ts. When one of them
-// changes, this changes to match â€” it never leads.
+// shapes: backend/src/motivations/motivation-checklist.ts and
+// common/answer-provenance.ts. When one of them changes, this changes to
+// match — it never leads.
 //
 // The screen used to assemble itself from several endpoints, which is how two
 // parts of one page end up disagreeing about the same row while both are
@@ -959,37 +973,6 @@ export interface ChecklistProgress {
 }
 
 /** `theirs` is never scored against the applicant, and `unscored` has nothing to score. */
-export type CoverageStatus =
-  | 'complete'
-  | 'in-progress'
-  | 'not-started'
-  | 'theirs'
-  | 'unscored';
-
-export interface CoverageSection {
-  /** The letter the SAPS 271 uses, so the panel and the form agree. */
-  id: string;
-  label: string;
-  applicable: number;
-  answered: number;
-  /**
-   * ?? NULL IS A REAL VALUE AND MEANS UNSCORED, NOT ZERO. Section F is
-   * somebody else's half of the form; rendering `null` as an empty progress
-   * bar tells the member they are 0% done on work that is not theirs.
-   */
-  percent: number | null;
-  missingRequired: number;
-  status: CoverageStatus;
-  note?: string;
-}
-
-export interface Saps271Coverage {
-  sections: CoverageSection[];
-  applicable: number;
-  answered: number;
-  percent: number;
-}
-
 export type ProvenanceSource =
   | 'PROFILE'
   | 'VAULT'
@@ -1023,7 +1006,6 @@ export interface MotivationPack {
   licenceType: string;
   status: string;
   checklist: ChecklistProgress;
-  coverage: Saps271Coverage;
   /**
    * Whether they hold 117705, across every application they have made.
    *
@@ -1391,6 +1373,24 @@ export const motivationsApi = {
       t,
       `/${id}/intake/answer`,
       { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** A whole category in one turn. The grouped interview posts here. */
+  answerIntakeBatch: (
+    t: TokenGetter,
+    id: string,
+    answers: {
+      fieldKey: string;
+      value?: string;
+      values?: string[];
+      message?: string;
+      fields?: Record<string, string>;
+    }[],
+  ) =>
+    request<IntakeState & { acknowledgement?: string }>(
+      t,
+      `/${id}/intake/answers`,
+      { method: 'POST', body: JSON.stringify({ answers }) },
     ),
 
   finishIntake: (t: TokenGetter, id: string) =>
@@ -2145,11 +2145,8 @@ export const motivationsApi = {
       theirsTotal: number;
     }>(t, `/${id}/checklist`),
 
-  /** The finished document. Blob, not JSON â€” it is a PDF. */
+  /** The finished document. Blob, not JSON — it is a PDF. */
   pdfUrl: (id: string) => `${API_URL}/motivations/${id}/pdf`,
-
-  /** The pre-filled SAPS 271 â€” only answers for applicants who opted in. */
-  saps271Url: (id: string) => `${API_URL}/motivations/${id}/saps271`,
 
   /**
    * ?? THE URLS ABOVE CANNOT BE PUT IN AN <a href>. Every motivation endpoint
@@ -2203,17 +2200,6 @@ export const motivationsApi = {
     }
     return r.arrayBuffer();
   },
-
-  saps271BlobUrl: async (t: TokenGetter, id: string): Promise<string> => {
-    const token = await t();
-    const r = await fetch(`${API_URL}/motivations/${id}/saps271`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!r.ok) {
-      throw new MotivationApiError('We could not open the form.', r.status);
-    }
-    return URL.createObjectURL(await r.blob());
-  },
 };
 
 /**
@@ -2223,7 +2209,6 @@ export const motivationsApi = {
  * being asked, or the wizard shows a question the server will not accept â€”
  * or hides one it insists on.
  */
-/** The SAPS 271 opt-in. Mirrors SAPS271_OPT_KEY / SAPS271_FILL on the server. */
 
 // -- the cover photograph --------------------------------------------
 
@@ -2272,20 +2257,13 @@ export interface WitnessSummary {
   hasSignature?: boolean;
 }
 
-export const SAPS271_OPT_KEY = 'fill_saps271';
-export const SAPS271_FILL = 'Fill it in for me';
-
 export function visibleFields(
   fields: MotivationField[],
   answers: Record<string, string>,
 ): MotivationField[] {
-  // Mirrors isVisible() on the backend, including the 271 gate: form-only
-  // fields exist only for the SAPS 271, so on the dealer path they are not
-  // shown at all. Both halves must agree or the wizard asks questions the
-  // server does not require â€” or hides ones it insists on.
-  const wantsForm = (answers[SAPS271_OPT_KEY] ?? '').trim() === SAPS271_FILL;
+  // Mirrors isVisible() on the backend. The form gate that used to live here is
+  // gone with the SAPS 271: no field is hidden behind a form opt-in any more.
   return fields.filter((f) => {
-    if (f.formOnly && f.key !== SAPS271_OPT_KEY && !wantsForm) return false;
     if (!f.showIf) return true;
     // ?? A MULTI ANSWER IS A LIST â€” see isVisible() on the backend, which this
     // mirrors. `discipline` stores "vlakteskiet-chasa, other", and a gate

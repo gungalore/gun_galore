@@ -76,7 +76,7 @@ export default function ApplicationRow({
             </span>
             <span className="mt-[2px] block font-mono text-[12px] text-[var(--text-tertiary)]">
               {row.referenceNumber}
-              {row.outputMode === 'MOTIVATION_ONLY' ? ' · Motivation only' : ''}
+              {row.outputMode === 'PRINT_READY' ? ' · Print-ready' : ''}
             </span>
           </span>
           <span className="flex-shrink-0 text-[12px] text-[var(--text-tertiary)]">

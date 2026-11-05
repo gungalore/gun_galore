@@ -171,7 +171,7 @@ describe('the four item states', () => {
     // press_clippings and competency_renews_with_licence used to be hidden by
     // a formOnly/showIf contradiction; `internal` replaced it, and the sheet
     // is now the only thing that honours it.
-    const { svc } = build({ fill_saps271: 'My dealer will fill it in' });
+    const { svc } = build({});
     const sheet = await svc.sheetFor('c1', 'mo-1');
     for (const key of ['police_station_province', 'press_clippings']) {
       expect(itemFor(sheet.items, key).state).toBe('na');
@@ -411,53 +411,7 @@ describe('ownedRowsFor', () => {
 });
 
 
-// ────────────────────────────────────────────────────────────────────
-// SECTION F — THE SELLER'S HALF.
-//
-// ⚠️ THE SHEET SHIPPED WITHOUT IT ENTIRELY. saps271Coverage only pushes F when
-// it is TOLD where the seller stands, and this service passed no context — so
-// there was no F row in the coverage at all, the pack meter showed no "Current
-// owner" line, and `sellerSigned` in the page (which reads F.done) was false
-// however signed the consent was. A seller signed at 12:02 and the line under
-// the panel still read "When they sign, Part F … fills in from what they give
-// us", directly under a panel already saying "The owner has signed".
-// ────────────────────────────────────────────────────────────────────
 
-describe('the seller half reaches the sheet', () => {
-  const sections = (c: unknown) =>
-    (c as { sections: { id: string; status?: string; note?: string }[] }).sections;
-
-  it('⚠️ CARRIES AN F ROW ONCE THE SELLER HAS SIGNED', async () => {
-    const { svc } = build(
-      { firearm_source: 'From a private owner' },
-      { seller: { status: 'COMPLETED', invitedName: 'Pieter Botha' } },
-    );
-    const sheet = await svc.sheetFor('user_1', 'mo-1');
-    const f = sections(sheet.coverage).find((x) => x.id === 'F');
-    expect(f).toBeDefined();
-    expect(f!.status).toBe('complete');
-    expect(f!.note).toContain('Pieter Botha');
-  });
-
-  it('says who it is waiting on while the invite is out', async () => {
-    const { svc } = build(
-      { firearm_source: 'From a private owner' },
-      { seller: { status: 'INVITED', invitedName: 'Pieter Botha' } },
-    );
-    const sheet = await svc.sheetFor('user_1', 'mo-1');
-    const f = sections(sheet.coverage).find((x) => x.id === 'F');
-    expect(f!.status).toBe('theirs');
-    expect(f!.note).toContain('Nothing for you to do');
-  });
-
-  it('⚠️ SHOWS NO F ROW WHEN NOBODY HAS BEEN ASKED', async () => {
-    // Part F is not the applicant's work. A row scoring them 0% on somebody
-    // else's half reads as their failure.
-    const { svc } = build({ firearm_source: 'From a dealer' });
-    const sheet = await svc.sheetFor('user_1', 'mo-1');
-    expect(sections(sheet.coverage).find((x) => x.id === 'F')).toBeUndefined();
-  });
-});
 
 // ────────────────────────────────────────────────────────────────────
 // THE COMPETENCY/PROFICIENCY PAIR.

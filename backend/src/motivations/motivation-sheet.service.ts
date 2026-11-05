@@ -31,7 +31,6 @@ import {
 } from './motivation-credential-slots';
 import { overlapFromAnswers } from './motivation-overlap';
 import { motivationTitle } from './motivation-title';
-import { saps271Coverage } from './saps271-coverage';
 import { previewFor, type PreviewSection } from './motivation-preview';
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
@@ -53,9 +52,9 @@ import { MemberProfileAnswersService } from './member-profile-answers.service';
 //
 // ⚠️ IT COMPOSES; IT DOES NOT DECIDE. Visibility comes from isVisible(),
 // completeness from missingRequired(), documents from documentStatus(),
-// coverage from saps271Coverage(), the overlap from overlapFromAnswers(), the
-// prose from previewFor(). A rule implemented HERE would be a second copy of
-// one that already exists somewhere better tested.
+// the overlap from overlapFromAnswers(), the prose from previewFor(). A rule
+// implemented HERE would be a second copy of one that already exists somewhere
+// better tested.
 //
 // ⚠️ NOTHING IS MASKED. `sensitive` drives masking in logs, in admin views and
 // in anything another person can see — never on the applicant's own screen.
@@ -216,7 +215,6 @@ export interface SheetResponse {
    * competency from the same catogory. One can't be without the other."
    */
   credentials: SheetCredentials;
-  coverage: ReturnType<typeof saps271Coverage>;
   overlap: ReturnType<typeof overlapFromAnswers>;
   preview: PreviewSection[];
   /**
@@ -649,9 +647,7 @@ export class MotivationSheetService {
       return item;
     });
 
-    const missing = missingRequired(row.licenceType, answers, {
-      motivationOnly,
-    });
+    const missing = missingRequired(row.licenceType, answers);
     const missingSet = new Set(missing);
     const sectionOfKey = new Map(items.map((i) => [i.key, i.section]));
 
@@ -808,15 +804,6 @@ export class MotivationSheetService {
         ),
       ),
       credentials,
-      // ⚠️ WITH THE SELLER, WHICH THIS SHIPPED WITHOUT. saps271Coverage only
-      // pushes section F when it is TOLD where the seller's half stands, so
-      // with no context the sheet had no F row at all: the pack meter showed
-      // no "Current owner" line, and `sellerSigned` in the page — which reads
-      // F.done — was false however signed the consent was. A seller signed at
-      // 12:02 and the line under the panel still read "When they sign…".
-      coverage: saps271Coverage(row.licenceType, answers, {
-        seller: { status: seller.status, name: seller.name },
-      }),
       overlap,
       preview: previewFor(row.licenceType, answers).sections,
       missing: [...missingSet],
