@@ -7,6 +7,52 @@ overwritten.
 
 Last updated: **2026-11-05**.
 
+## 2026-11-05 EVENING - THE SAPS 271 IS GONE, TWO PRODUCTS, GROUPED INTERVIEW
+
+Deployed `2fc7f010` (full; rollback `alloutdoor-20261105-205152.dump`,
+33,479,584 bytes). One new migration, `20261105201500_output_mode_print_ready`.
+Backend 402 suites / 5,989 tests, frontend 161 files / 1,840 tests, production
+build OK, both health checks twice, public 200 twice, all three pm2 services
+online.
+
+**The generated SAPS 271 is retired.** Its service, map, coords, coverage, the
+route, the render call, the pack download, the coverage meter and the dead form
+tooling are deleted. The seller consent SURVIVES as an annexure plus the signed
+page. Reading an uploaded dealer-prefilled 271 is kept — `looksLikeSaps271`
+still stops one being annexed as a licence.
+
+**Two products.** `MOTIVATION_ONLY` is the default and needs no documents;
+`PRINT_READY` adds the lettered annexures and the document checks and is gated
+on those documents. `FULL_PACK` is retired but still normalises to
+`PRINT_READY`, and the migration backfilled any row holding it.
+
+**The form-only questions are never asked again.** The 38 `formOnly` fields and
+the six `history_*` declarations are out of the interview in both modes, and
+`requiredKeys`/`missingRequired` follow so nothing unaskable can block a pack.
+Declarations surface only when a document raises one — an operator decision, so
+heading 10 now appears only on paper's evidence.
+
+**The interview asks one category at a time.** The topic layer moved to
+`intake-topics.ts`; `planGroup()` returns one topic, six questions maximum,
+phrased concurrently, and `POST /motivations/:id/intake/answers` validates the
+whole card then writes once.
+
+**Parity is a test now.** `motivation-section-parity.spec.ts` walks six licence
+types × two seeds × sixteen option combinations. It found and we fixed two real
+gaps: S13/S14 section 7 was running the section-13 risk brief under a
+"competency and training" heading, and `marital_status` plus `residence_type`
+were required but never asked.
+
+**Also in this release:** 12, 20 and .410 gauge shot shells drawn from their
+C.I.P. Tab VII sheets (brass head, red plastic hull), the three sheets copied to
+the box's `CIP_SHEETS_DIR`, a typed answer now adds to the ticked chips instead
+of replacing them, no invented hunting geography, exact make/model strings, and
+stock cover photos of people or events refused.
+
+**Known trade:** a member with a record and no uploaded paper has nowhere in the
+motivation to declare it. The optional single "anything on your record" prompt
+is the one-question fix if that ever bites.
+
 ## 2026-11-05 - RELEASE: PEACH DUAL RAIL, LEGAL CORPUS + OCR, MOTIVATION INTAKE
 
 Deployed `03a0a43b` (full; rollback `alloutdoor-20261105-130100.dump`,
