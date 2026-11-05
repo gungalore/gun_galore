@@ -3,6 +3,7 @@
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../auth/session.service';
@@ -17,6 +18,7 @@ import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-
 import { KycService } from '../kyc/kyc.service';
 import { AccountClosureService } from './account-closure.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
+import { BanvService } from '../payments/banv.service';
 
 /**
  * The profile address (User.addr*) joins GET /users/me/addresses as a
@@ -185,15 +187,20 @@ export class UsersService {
     // /users/me, so the channel-prefs sheet can grey the WhatsApp switch out
     // without a frontend deploy when the flag flips.
     private readonly settings: SettingsService,
+    // @Global PeachModule. Optional for positional test harnesses; production
+    // always resolves it.
+    @Optional()
+    private readonly banv?: BanvService,
   ) {}
 
   // ── Bank-account verification ──────────────────────────────────────
-  // Ozow has no automated AVS/BANV product — the destination account is
-  // validated during the payout itself (an invalid account fails the payout
-  // with subStatus 405). This hook is therefore a documented no-op; the
-  // manual admin review of the seller's bank details remains the payout gate.
-  async requestBankVerification(_userId: string): Promise<void> {
-    return;
+  // Every bank-details save (profile completion and /profile/edit) requests
+  // Peach BANV when the user has an SA ID on file. The result arrives on
+  // /payments/webhook/peach-banv and stamps User.bankVerifiedAt on a pass.
+  // A user with no ID yet (buyer refund details before seller KYC) is skipped
+  // until their profile supplies one.
+  async requestBankVerification(userId: string): Promise<void> {
+    await this.banv?.request(userId);
   }
 
   /**

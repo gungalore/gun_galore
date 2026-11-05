@@ -30,6 +30,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { MotivationReasonService } from './motivation-reason.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
@@ -104,6 +105,7 @@ export class MotivationsController {
      * would add a delegate that does nothing but forward.
      */
     private readonly reasonService: MotivationReasonService,
+    private readonly engine: DocumentEngineService,
   ) {}
 
   /**
@@ -114,6 +116,38 @@ export class MotivationsController {
   @Get('status')
   status() {
     return this.quota.status();
+  }
+
+  /** Whether document generation/uploads may run. Read by the maintenance UI. */
+  @Get('system/engine-status')
+  engineStatus() {
+    return this.engine.status();
+  }
+
+  /**
+   * The member tried to generate or upload while the document engine was down.
+   * Recorded so one email can reach them when Jev returns.
+   */
+  @Post('system/engine-interest')
+  async engineInterest(
+    @CurrentUser() userId: string,
+    @Body()
+    body: { motivationId?: string; action?: string },
+  ) {
+    const action = (body.action ?? '').trim();
+    if (
+      action !== 'GENERATE' &&
+      action !== 'MOTIVATION_UPLOAD' &&
+      action !== 'VAULT_UPLOAD'
+    ) {
+      throw new BadRequestException('Unknown document-engine action.');
+    }
+    await this.engine.record({
+      userId,
+      motivationId: body.motivationId,
+      action,
+    });
+    return this.engine.status();
   }
 
   /**
@@ -163,6 +197,23 @@ export class MotivationsController {
   @Get('templates')
   templates() {
     return templateCatalogue();
+  }
+
+  /**
+   * The member's remembered profile. Declared before :id for the same reason
+   * as `fields` and `templates`.
+   */
+  @Get('profile')
+  profile(@CurrentUser() userId: string) {
+    return this.motivations.getProfile(userId);
+  }
+
+  @Patch('profile')
+  saveProfile(
+    @CurrentUser() userId: string,
+    @Body() body: { answers?: Record<string, unknown> },
+  ) {
+    return this.motivations.saveProfile(userId, body.answers ?? {});
   }
 
   @Get()

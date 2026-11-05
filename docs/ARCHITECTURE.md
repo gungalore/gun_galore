@@ -536,9 +536,11 @@ drifted before.
 ## 5. Money flow
 
 **Payments are live for money-in** (2026-10-10): `PAYMENTS_LIVE=true` and
-`PAYMENT_MODE=paygate`, so checkout is open and the Ozow One API rail is attached.
-Money-*out* (seller disbursement) is armed but gated on the float balance and
-Ozow's payout-verification token.
+`PAYMENT_MODE=paygate`, so checkout is open. Two pay-in rails are supported:
+Ozow One API (instant EFT, the default) and Peach Checkout V2 (card). The
+buyer's choice is locked onto `Transaction.paymentProvider`; refunds and seller
+payouts use that same provider. Money-*out* runs through Ozow Payouts and, when
+the admin enables it, Peach Payouts. There is no cross-rail payout fallback.
 
 ### Two gates, in `backend/src/payments/payment-mode.ts`
 
@@ -616,9 +618,10 @@ amount charged. The seller's ask is the listed price and they receive it in full
 Auctions: flat 10% split 5% buyer / 5% seller. Private arrangement: delivery is
 zero, so the fee is on the item only. There is **no Top Seller fee discount**.
 
-All money is stored as **integer ZAR cents**. (Ozow's One API pay-in takes
-decimal ZAR while the Payouts API hash takes integer cents; the adapter handles
-the conversion. Do not let decimals leak into the database.)
+All money is stored as **integer ZAR cents**. (Ozow's One API pay-in and Peach
+Checkout take decimal ZAR; Ozow's Payouts hash and Peach Payouts take integer
+cents. The adapters handle the conversion. Do not let decimals leak into the
+database.)
 
 ### Never write "escrow"
 
@@ -735,7 +738,8 @@ a loud error for each missing integration secret.
 | Service | Used for | Key env | Behaviour when missing |
 |---|---|---|---|
 | **Didit** | Seller identity verification (hosted session) **only** — ⚠️ the e-mail and phone one-time codes moved back in-house 2026-09-11 (Resend / SMSPortal) | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL` | **In production, a missing key or a non-`live` mode HARD-THROWS at boot.** Elsewhere: codes and KYC sessions report "not configured". See §8.1. |
-| **Ozow** | The payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. No automated bank-verification product. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs **live** for money-in; payouts gated on the float + verification token. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
+| **Ozow** | Payment gateway: One API pay-in (Pay by Bank / instant EFT) + refunds, Payouts API seller disbursement. | `OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`, `OZOW_WEBHOOK_SECRET`, `OZOW_ENV` (+ the `OZOW_PAYOUT_*` set) | Runs **live** for money-in; payouts gated on the float + verification token. Webhooks are rejected (fail-closed) without `OZOW_WEBHOOK_SECRET`. |
+| **Peach** | Optional card pay-in (Checkout V2) + Peach Payouts + BANV. | `PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`, `PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV` (+ the `PEACH_PAYOUT_*` set) | Admin-flagged: `peach_payin_enabled` / `peach_payouts_enabled`. Webhooks are rejected (fail-closed) without the relevant secret. A Peach-paid sale is always paid out via Peach. |
 | **Cloudinary** | All user-uploaded images (listing photos, KYC documents, complaint photos) | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads fail. |
 | **Meilisearch** | Listing / cartridge search | `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY` | Search disabled, app still boots. |
 | **AI (via `LlmService`)** | Listing moderation, Q&A moderation, firearm-licence and dealer-document verification, document transcription and filing, listing-quality scoring, weekly insights digest | provider keys + model config | **Everything AI degrades to manual-review or blocked.** |

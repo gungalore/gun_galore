@@ -712,6 +712,7 @@ export class OffersService {
             // confirm they were. Town/province only; never the street.
             province: true,
             publicLocality: true,
+            plannedDealerName: true,
             plannedDealerLocation: true,
             // Seller email retained — only seller themselves sees
             // their own email via this endpoint (gated by isSeller

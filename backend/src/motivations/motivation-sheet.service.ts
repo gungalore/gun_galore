@@ -152,6 +152,7 @@ export interface SheetResponse {
     id: string;
     referenceNumber: string;
     licenceType: MotivationLicenceType;
+    outputMode: string;
     licenceTypeLabel: string;
     label: string | null;
     /**
@@ -519,6 +520,7 @@ export class MotivationSheetService {
         id: true,
         referenceNumber: true,
         licenceType: true,
+        outputMode: true,
         label: true,
         status: true,
         declarationAcceptedAt: true,
@@ -566,6 +568,7 @@ export class MotivationSheetService {
       ...profile.answers,
       ...this.shared.readAnswers(row.answersEncrypted),
     };
+    const motivationOnly = row.outputMode === 'MOTIVATION_ONLY';
     const provenance: ProvenanceMap = {
       ...profile.provenance,
       ...parseProvenance(row.answerProvenance),
@@ -646,7 +649,9 @@ export class MotivationSheetService {
       return item;
     });
 
-    const missing = missingRequired(row.licenceType, answers);
+    const missing = missingRequired(row.licenceType, answers, {
+      motivationOnly,
+    });
     const missingSet = new Set(missing);
     const sectionOfKey = new Map(items.map((i) => [i.key, i.section]));
 
@@ -694,6 +699,7 @@ export class MotivationSheetService {
         id: row.id,
         referenceNumber: row.referenceNumber,
         licenceType: row.licenceType,
+        outputMode: row.outputMode,
         licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
         label: row.label,
         // ⚠️ THE NAME THE HEADING AND THE VAULT SHOW. See motivation-title.ts.
@@ -757,8 +763,22 @@ export class MotivationSheetService {
               }
             : null,
       })),
-      needs: documentStatus(
-        row.licenceType,
+      needs: ((status) =>
+        motivationOnly
+          ? {
+              ...status,
+              missingRequired: [],
+              needs: status.needs.map((need) => ({
+                ...need,
+                tier:
+                  need.tier === 'required'
+                    ? ('extra' as const)
+                    : need.tier,
+              })),
+            }
+          : status)(
+        documentStatus(
+          row.licenceType,
         /**
          * ⚠️ kind AND coversKinds, WHICH THIS ONE CALLER WAS DROPPING. One
          * membership certificate is both the association card and the letter
@@ -780,8 +800,12 @@ export class MotivationSheetService {
          * ⚠️ buildAnnexures STILL SEES `kind` ALONE, deliberately: the
          * document gets ONE annexure letter, because it is one page.
          */
-        (row.uploads ?? []).flatMap((u) => [u.kind, ...(u.coversKinds ?? [])]),
-        answers,
+          (row.uploads ?? []).flatMap((u) => [
+            u.kind,
+            ...(u.coversKinds ?? []),
+          ]),
+          answers,
+        ),
       ),
       credentials,
       // ⚠️ WITH THE SELLER, WHICH THIS SHIPPED WITHOUT. saps271Coverage only

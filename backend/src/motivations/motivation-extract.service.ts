@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { DocumentReadCacheService } from './document-read-cache.service';
+import { DocumentPageRasterService } from './document-page-raster.service';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
@@ -7,18 +9,25 @@ import {
   OCR_MAX_TOKENS,
   OCR_THINKING,
 } from '../common/llm/llm.service';
-import { LlmError, type LlmPart } from '../common/llm/llm.types';
+import {
+  LlmError,
+  type JevImageAsset,
+  type JevQuestion,
+  type LlmPart,
+} from '../common/llm/llm.types';
 import {
   DocumentFilingService,
   type FilingOption,
 } from '../common/document-filing/document-filing.service';
 import { MOTIVATION_KIND_OPTIONS } from '../common/document-filing/motivation-kind-options';
+import { toJevImage } from '../common/llm/jev-image';
 import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
 import type { DocumentCapture } from '../common/document-capture/document-capture';
 import { fieldByKey, fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
+import { LocalOcrService } from '../common/local-ocr/local-ocr.service';
 import { readMarkers, looksLikeSaps271 } from '../common/document-markers';
 import {
   FIREARM_READING_SCHEMA,
@@ -203,7 +212,6 @@ function parseFaceAnswer(
 const FIREARM_READABLE = new Set<string>([
   'FIREARM_SOURCE_PROOF',
   'SELLER_LICENCE',
-  'CURRENT_LICENCE',
   'OTHER',
   // ⚠️ ASSOCIATION_ENDORSEMENT IS DELIBERATELY ABSENT (2026-10-15). An
   // endorsement names the applied-for firearm, but the operator's instruction
@@ -289,11 +297,12 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
    * extraction runs), and the vault route reads the credential's parsed
    * `unit_standard` — neither goes through this map.
    *
-   * ⚠️ EMPTY RATHER THAN OMITTED, because canExtract() reads `.length`: an
-   * omitted key would read the same, but this one is a decision and belongs
-   * where the next reader will see it.
+   * ⚠️ IDENTITY ONLY. The certificate prints the learner's name and ID,
+   * which are safe to show and correct; it still must never write
+   * `competency_for`, for the reason above. Unit standards remain read from
+   * the OCR text by proficiencyPackGap, not from this map.
    */
-  PROFICIENCY_CERTIFICATE: [],
+  PROFICIENCY_CERTIFICATE: ['full_name', 'id_number'],
   ADDRESS_CONFIRMATION: ['residential_address', 'residential_postal_code'],
   ASSOCIATION_CARD: [
     'association_name',
@@ -303,6 +312,12 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     // association_joined in the registry.
     'association_joined',
     'dedicated_since',
+    // ⚠️ THE STATUS CERTIFICATE CAN CARRY THE VALIDITY WINDOW TOO. It is not
+    // always printed — some associations issue a status with no end date — but
+    // when the page prints "valid until", "valid to" or "expires", that date is
+    // SAPS 271 item 60 and must not be discarded just because the document was
+    // filed as the status certificate rather than the good-standing letter.
+    'association_expiry',
   ],
   // The sworn letter carries the same association and dedicated number as the
   // certificate, plus the two dates that make it expire — which is the whole
@@ -409,6 +424,7 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   // withdrawn.
   CURRENT_LICENCE: [
     'existing_firearm_1_type',
+    'existing_firearm_1_section_held',
     'existing_firearm_1_calibre',
     'existing_firearm_1_make',
     'existing_firearm_1_model',
@@ -525,6 +541,12 @@ export class MotivationExtractService {
     @Optional() private readonly filing?: DocumentFilingService,
     /** One pass: page text + every printed fact. See DocumentCaptureService. */
     @Optional() private readonly capture?: DocumentCaptureService,
+    @Optional() private readonly pageRaster?: DocumentPageRasterService,
+    /**
+     * The fast path. Optional so a unit test without a Tesseract worker still
+     * exercises the full-page vision read exactly as before.
+     */
+    @Optional() private readonly localOcr?: LocalOcrService,
   ) {}
 
   /** What a failure looked like, for a log line. Codes, never a provider class. */
@@ -616,6 +638,229 @@ export class MotivationExtractService {
     }
   }
 
+  /**
+   * The page image Jev can see, and the bytes we crop from.
+   *
+   * A PDF has no pixels until the rasteriser runs, so the first page is
+   * rendered at print scale. Failing to produce a page is not a failed
+   * extraction — the full-page path still works.
+   */
+  private async pageForBoxes(
+    bytes: Buffer,
+    mimeType: string,
+    fileSha256: string,
+  ): Promise<BoxPage | null> {
+    let pageBytes = bytes;
+    let pageMime = mimeType;
+    if (mimeType === 'application/pdf') {
+      if (!this.pageRaster) return null;
+      const pages = await this.pageRaster.pagesFor({
+        bytes,
+        sha256: fileSha256,
+        render: 'print',
+      });
+      if (!pages.length) return null;
+      pageBytes = pages[0].bytes;
+      pageMime = 'image/jpeg';
+    }
+
+    try {
+      const asset = await toJevImage(pageBytes, pageMime);
+      const converted = Buffer.from(asset.data_base64, 'base64');
+      const meta = await sharp(converted).metadata();
+      if (!meta.width || !meta.height) return null;
+      return {
+        bytes: converted,
+        asset,
+        width: meta.width,
+        height: meta.height,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Region locator could not prepare the page: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Ask Jev WHERE each field is before asking Gemini WHAT it says.
+   *
+   * ⚠️ ONE BOX REQUEST FOR THE WHOLE PAGE, not one per field. Jev evaluates a
+   * question map in parallel, and a fifteen-field licence card would otherwise
+   * be fifteen calls. The coordinates are normalized, so they survive the
+   * transport resize in `toJevImage`.
+   */
+  private async locateRegions(args: {
+    bytes: Buffer;
+    mimeType: string;
+    sha256: string;
+    kind: MotivationUploadKind;
+    asked: AskedField[];
+  }): Promise<{ page: BoxPage; regions: LocatedRegion[] } | null> {
+    if (!args.asked.length || !this.llm.isConfigured()) return null;
+    const page = await this.pageForBoxes(
+      args.bytes,
+      args.mimeType,
+      args.sha256,
+    );
+    if (!page) return null;
+
+    const questions: Record<string, JevQuestion> = {};
+    for (const field of args.asked.slice(0, 24)) {
+      questions[`box_${field.key}`] = {
+        type: 'box',
+        instructions: regionInstruction(field),
+      };
+    }
+
+    try {
+      const res = await this.llm.decide({
+        state: 'document',
+        questions,
+        assets: { document: page.asset },
+        purpose: `motivation.locate.${args.kind.toLowerCase()}`,
+        timeoutMs: 25_000,
+      });
+      const floor = Number(process.env.JEV_BOX_MIN_CONFIDENCE ?? 0.45);
+      const regions: LocatedRegion[] = [];
+      for (const field of args.asked.slice(0, 24)) {
+        const answer = res.answers[`box_${field.key}`];
+        if (!answer || answer.type !== 'box') continue;
+        const { top, bottom, left, right } = answer.box;
+        const width = right - left;
+        const height = bottom - top;
+        const area = width * height;
+        if (width < 0.02 || height < 0.012 || area < 0.0005 || area > 0.9) {
+          continue;
+        }
+        if (
+          answer.confidence !== null &&
+          (!Number.isFinite(answer.confidence) ||
+            answer.confidence < (Number.isFinite(floor) ? floor : 0.45))
+        ) {
+          continue;
+        }
+        regions.push({
+          key: field.key,
+          label: field.label,
+          top,
+          bottom,
+          left,
+          right,
+          confidence: answer.confidence,
+        });
+      }
+      return { page, regions };
+    } catch (err) {
+      // Boxes are an aid, not a gate. A locator outage must not cost a read.
+      this.logger.warn(
+        `Jev region location failed for ${args.kind}: ${
+          (err as Error).message
+        }`,
+      );
+      return { page, regions: [] };
+    }
+  }
+
+  /** Cut every located region once. Both the local reader and Gemini use it. */
+  private async cropsFor(
+    page: BoxPage,
+    regions: LocatedRegion[],
+  ): Promise<Map<string, Buffer>> {
+    const crops = new Map<string, Buffer>();
+    for (const region of regions) {
+      const crop = await cropRegion(page, region);
+      if (crop) crops.set(region.key, crop);
+    }
+    return crops;
+  }
+
+  /**
+   * The fast path: read the crops locally and keep only validated, confident
+   * values. Everything else stays unresolved for Gemini.
+   */
+  private async localReads(
+    asked: AskedField[],
+    regions: LocatedRegion[],
+    crops: Map<string, Buffer>,
+    kind: MotivationUploadKind,
+  ): Promise<ExtractedField[]> {
+    if (!this.localOcr?.isEnabled()) return [];
+    const boxFloor = Number(
+      process.env.LOCAL_OCR_BOX_MIN_CONFIDENCE ?? 0.6,
+    );
+    const byKey = new Map(asked.map((field) => [field.key, field]));
+    const rows: { key: string; value: string; confidence: string }[] = [];
+    const pending: { field: AskedField; crop: Buffer }[] = [];
+
+    for (const region of regions) {
+      const field = byKey.get(region.key);
+      const crop = crops.get(region.key);
+      if (!field || !crop || !isLocalSafeField(field)) continue;
+      if (
+        region.confidence !== null &&
+        (!Number.isFinite(region.confidence) ||
+          region.confidence < (Number.isFinite(boxFloor) ? boxFloor : 0.6))
+      ) {
+        continue;
+      }
+      pending.push({ field, crop });
+    }
+
+    if (!pending.length) return [];
+    const reads = await this.localOcr.readMany(
+      pending.map((item) => item.crop),
+    );
+    for (let index = 0; index < pending.length; index++) {
+      const read = reads[index];
+      if (!read) continue;
+      const value = localValueFor(pending[index].field, read.text);
+      if (!value) continue;
+      rows.push({
+        key: pending[index].field.key,
+        value,
+        confidence: 'high',
+      });
+    }
+
+    if (!rows.length) return [];
+    try {
+      return this.parse(
+        JSON.stringify({ fields: rows }),
+        asked,
+        kind,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /** Crop every unresolved region into its own image part for the OCR call. */
+  private regionParts(
+    regions: LocatedRegion[],
+    crops: Map<string, Buffer>,
+  ): LlmPart[] {
+    const parts: LlmPart[] = [];
+    for (const region of regions) {
+      const crop = crops.get(region.key);
+      if (!crop) continue;
+      parts.push({
+        type: 'text',
+        text:
+          `The next image is the region Jev located for ${region.key} ` +
+          `(${region.label}). Read this crop for that field. If it does not ` +
+          'show the value, ignore it and use the full page.',
+      });
+      parts.push({
+        type: 'image',
+        mimeType: 'image/jpeg',
+        data: crop.toString('base64'),
+      });
+    }
+    return parts;
+  }
+
   async extract(args: {
     kind: MotivationUploadKind;
     licenceType: MotivationLicenceType;
@@ -674,9 +919,10 @@ export class MotivationExtractService {
      * reads of documents we had already read — which is the case this exists
      * for.
      */
+    const fileSha = sha256(args.bytes);
     const canonical = asked.map((f) => f.key.replace(SLOT_RE, OWNED_ROW_1));
     const cacheKey = this.cache.key({
-      fileSha256: sha256(args.bytes),
+      fileSha256: fileSha,
       kind: args.kind,
       licenceType: args.licenceType,
       askedKeys: canonical,
@@ -708,31 +954,82 @@ export class MotivationExtractService {
     // above only produces an image type for image mime types.
     // undefined means the caller has not read these bytes; null means it
     // read them and Vision had nothing. Only the first re-reads.
-    const ocrText =
+    const [ocrText, located] = await Promise.all([
       args.ocrText !== undefined
         ? args.ocrText
-        : await this.ocr(args.bytes, args.mimeType);
+        : this.ocr(args.bytes, args.mimeType),
+      this.locateRegions({
+        bytes: args.bytes,
+        mimeType: args.mimeType,
+        sha256: fileSha,
+        kind: args.kind,
+        asked,
+      }),
+    ]);
+    const cropMap =
+      located && located.regions.length
+        ? await this.cropsFor(located.page, located.regions)
+        : new Map<string, Buffer>();
+
+    /**
+     * ⚠️ LOCAL FIRST, VISION ONLY FOR WHAT IT COULD NOT SETTLE.
+     *
+     * The point of the boxes is speed: a clean printed field read by Tesseract
+     * costs milliseconds where a full Gemini vision read costs seconds. A local
+     * read is only kept when the box, the OCR confidence and the field's own
+     * validator all agree; every other field goes to Gemini exactly as before.
+     */
+    const localFields = located
+      ? (await this.localReads(asked, located.regions, cropMap, args.kind)).filter(
+          (field) => field.trusted,
+        )
+      : [];
+    const localKeys = new Set(localFields.map((field) => field.key));
+    const unresolved = asked.filter((field) => !localKeys.has(field.key));
+
+    if (!unresolved.length) {
+      void this.cache.put({
+        cacheKey,
+        fileSha256: fileSha,
+        fields: slot === null ? localFields : remapFields(localFields, 1),
+      });
+      return localFields;
+    }
+
+    const unresolvedRegions =
+      located?.regions.filter((region) => unresolved.some(
+        (field) => field.key === region.key,
+      )) ?? [];
+    const regionParts = this.regionParts(unresolvedRegions, cropMap);
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const found = await this.attemptRead(block, asked, args.kind, ocrText);
+      const found = await this.attemptRead(
+        block,
+        unresolved,
+        args.kind,
+        ocrText,
+        regionParts,
+      );
       if (found.length) {
+        const merged = [...localFields, ...found];
         /**
-         * ⚠️ STORED AT ROW 1, WHATEVER ROW IT WAS READ INTO, so the next pack
+         * �s��,? STORED AT ROW 1, WHATEVER ROW IT WAS READ INTO, so the next pack
          * that wants this card in a different row still gets it free. Nothing
-         * is stored for an empty result — see the cache service: we cannot
+         * is stored for an empty result �?" see the cache service: we cannot
          * tell a blank document from a failed call here, and remembering the
          * second as the first would make a marginal document permanently
          * unreadable.
          */
         void this.cache.put({
           cacheKey,
-          fileSha256: sha256(args.bytes),
-          fields: slot === null ? found : remapFields(found, 1),
+          fileSha256: fileSha,
+          fields: slot === null ? merged : remapFields(merged, 1),
         });
-        return found;
+        return merged;
       }
     }
-    return [];
+    // A vision miss must not throw away values the local reader did settle.
+    return localFields;
   }
 
   /** One read. Returns [] on any failure — the caller decides about retrying. */
@@ -758,6 +1055,14 @@ export class MotivationExtractService {
      * IP-restricted.
      */
     ocrText: string | null,
+    /**
+     * Cropped regions Jev located, in the order they should be shown.
+     *
+     * ⚠️ THESE ARE HINTS, NOT THE WHOLE PAGE. The full document is still the
+     * first image part, so a misplaced box cannot hide a field; it only gives
+     * the reader a second, magnified look at where the value should be.
+     */
+    regionParts: LlmPart[] = [],
   ): Promise<ExtractedField[]> {
     if (!this.llm.isConfigured()) return [];
     let text = '';
@@ -792,6 +1097,7 @@ export class MotivationExtractService {
             role: 'user',
             content: [
               block,
+              ...regionParts,
               ...(ocrText
                 ? [
                     {
@@ -861,8 +1167,23 @@ export class MotivationExtractService {
    * as "something else" is visibly unsorted, where a confident wrong guess
    * looks like a satisfied requirement.
    */
-  /** Is a second, firearm-only read worth making on this kind? */
-  static readsFirearm(kind: MotivationUploadKind): boolean {
+  /**
+   * Is a second, firearm-only read worth making on this kind?
+   *
+   * ⚠️ AN EXISTING LICENCE DESCRIBES A FIREARM THE APPLICANT ALREADY HOLDS.
+   * Reading it into the applied-for firearm's boxes made the interview believe
+   * a Howa 6.5 Creedmoor already held under section 15 was the Howa 1500
+   * 7mm magnum being applied for, so it never asked for the new firearm's
+   * make, model, calibre or serial. The one exception is a section 24 renewal,
+   * where the existing licence IS the firearm under renewal.
+   */
+  static readsFirearm(
+    kind: MotivationUploadKind,
+    licenceType?: MotivationLicenceType,
+  ): boolean {
+    if (kind === MotivationUploadKind.CURRENT_LICENCE) {
+      return licenceType === MotivationLicenceType.S24_RENEWAL;
+    }
     return FIREARM_READABLE.has(kind);
   }
 
@@ -1005,6 +1326,63 @@ export class MotivationExtractService {
     /** Text already read off these bytes. See ocr() — undefined ≠ null. */
     ocrText?: string | null;
   }): Promise<MotivationClassifyAnswer | null> {
+    // ── JEV IMAGE FIRST ─────────────────────────────────────────────────
+    //
+    // Jev sees the document itself. It decides the role and folder before any
+    // OCR is spent, and says whether the page has printed text at all. A
+    // photograph of a safe or a hunt therefore never reaches Gemini OCR.
+    if (
+      this.filing?.isConfigured() &&
+      typeof this.filing.fileImage === 'function'
+    ) {
+      let imageReady = false;
+      try {
+        let imageBytes = args.bytes;
+        let imageMime = args.mimeType;
+        if (args.mimeType === 'application/pdf') {
+          const pages = await this.pageRaster?.pagesFor({
+            bytes: args.bytes,
+            sha256: sha256(args.bytes),
+          });
+          if (!pages?.length) return null;
+          imageBytes = pages[0].bytes;
+          imageMime = 'image/jpeg';
+        }
+        const image = await toJevImage(imageBytes, imageMime);
+        imageReady = true;
+        const filed = await this.filing.fileImage({
+          image,
+          kindOptions: MOTIVATION_KIND_OPTIONS,
+          evidenceOptions: EVIDENCE_FILING_OPTIONS,
+          purpose: 'motivation.classify.image',
+        });
+        if (filed) {
+          if (filed.role === 'evidence') {
+            return {
+              role: 'evidence',
+              confident: filed.confident,
+              hasPrintedText: filed.hasPrintedText,
+              evidenceContainer: filed.evidenceFolder,
+            };
+          }
+          if (CLASSIFIABLE.includes(filed.folder as MotivationUploadKind)) {
+            return {
+              role: 'document',
+              kind: filed.folder as MotivationUploadKind,
+              confident: filed.confident,
+              hasPrintedText: filed.hasPrintedText,
+            };
+          }
+        }
+        if (imageReady) return null;
+      } catch (err) {
+        this.logger.warn(
+          `Jev image classification failed: ${(err as Error).message}`,
+        );
+        if (imageReady) return null;
+      }
+    }
+
     // ── MARKERS FIRST, THE MODEL FOR WHAT NEEDS JUDGEMENT ──────────
     //
     // ⚠️ THE MODEL WAS CLASSIFYING DOCUMENTS THAT SAY WHAT THEY ARE. A PFTC
@@ -1323,6 +1701,32 @@ export class MotivationExtractService {
     const cached = await this.cache.getEvidence(cacheKey);
     if (cached) return cached;
 
+    if (
+      this.filing?.isConfigured() &&
+      args.mimeType !== 'application/pdf' &&
+      typeof this.filing.fileImage === 'function'
+    ) {
+      try {
+        const image = await toJevImage(args.bytes, args.mimeType);
+        const filed = await this.filing.fileImage({
+          image,
+          kindOptions: MOTIVATION_KIND_OPTIONS,
+          evidenceOptions: EVIDENCE_FILING_OPTIONS,
+          purpose: 'motivation.evidence.image',
+        });
+        if (filed?.role === 'evidence' && filed.evidenceFolder) {
+          return {
+            container: filed.evidenceFolder,
+            confident: filed.confident,
+          };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Jev image evidence classification failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
     // ⚠️ THE OCR IS READ ONLY IF THE CALLER DID NOT. `undefined` means it has
     // not been read; `null` means it was read and Vision found nothing. Only
     // the first spends the call. Same contract as classify().
@@ -1531,6 +1935,16 @@ than a confident wrong one.`.trim();
     // generic "must be exactly one of", which rule 5 of the system prompt
     // ("return every field as null rather than reading a different document")
     // would otherwise talk the model out of.
+    const fullNameNote = asked.some((f) => f.key === 'full_name')
+      ? [
+          '',
+          'full_name is the COMPLETE name printed on the page: every given',
+          'name plus the surname, in the order the document prints them. A',
+          'South African ID card prints "Names" separately from "Surname"',
+          '— include both. Do NOT return only the surname, and do not drop',
+          'middle names because they look like initials.',
+        ]
+      : [];
     const routeNote = asked.some((f) => f.key === 'firearm_source')
       ? [
           '',
@@ -1557,6 +1971,7 @@ than a confident wrong one.`.trim();
     return [
       'Read the attached document and transcribe these fields:',
       ...lines,
+      ...fullNameNote,
       ...routeNote,
       ...licenceDateNote,
       '',
@@ -1655,6 +2070,10 @@ than a confident wrong one.`.trim();
       // before it was used. Parts are validated individually now, and a reject
       // says so instead of vanishing.
       if (field.choices) {
+        if (/^(?:existing_firearm_\d+_type|firearm_type)$/.test(row.key)) {
+          const canonical = canonicalFirearmType(value);
+          if (canonical) value = canonical;
+        }
         const parts =
           field.kind === 'multi'
             ? value.split(',').map((p) => p.trim()).filter(Boolean)
@@ -1761,9 +2180,16 @@ export type MotivationClassifyAnswer =
       role: 'document';
       kind: MotivationUploadKind;
       confident: boolean;
+      hasPrintedText?: boolean;
       capture?: DocumentCapture;
     }
-  | { role: 'evidence'; confident: boolean; capture?: DocumentCapture };
+  | {
+      role: 'evidence';
+      confident: boolean;
+      hasPrintedText?: boolean;
+      evidenceContainer?: string;
+      capture?: DocumentCapture;
+    };
 
 /**
  * yyyy-mm-dd, and a day that actually exists.
@@ -1846,6 +2272,252 @@ function contentBlock(bytes: Buffer, mimeType: string): LlmPart {
           : 'image/jpeg',
     data: bytes.toString('base64'),
   };
+}
+
+/** One registry field the extractor is asking for. */
+interface AskedField {
+  key: string;
+  label: string;
+  help?: string;
+  kind?: string;
+  choices?: readonly string[];
+}
+
+/** A field region Jev found on the page, in normalized page coordinates. */
+interface LocatedRegion {
+  key: string;
+  label: string;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  confidence: number | null;
+}
+
+/** The one page image Jev can see, plus the bytes crops are cut from. */
+interface BoxPage {
+  bytes: Buffer;
+  asset: JevImageAsset;
+  width: number;
+  height: number;
+}
+
+/**
+ * What to ask Jev to locate for one registry field.
+ *
+ * ⚠️ THE LABEL ALONE IS NOT ENOUGH. "Full name, as it appears on your ID" is
+ * ambiguous on a card that prints NAMES and SURNAME as separate boxes, and a
+ * locator that returns the surname box reproduces the exact bug this exists to
+ * fix. Each high-value key gets a plain-language target instead.
+ */
+function regionInstruction(input: {
+  key: string;
+  label: string;
+  help?: string;
+}): string {
+  const key = input.key;
+  if (key === 'full_name') {
+    return 'Locate the complete printed name of the person: every given or first name together with the surname. On a South African ID card these may be separate boxes labelled Names and Surname; include both.';
+  }
+  if (key === 'id_number') {
+    return 'Locate the 13-digit South African identity number printed on the document.';
+  }
+  if (key === 'residential_address') {
+    return 'Locate the block containing the residential or home address.';
+  }
+  if (key === 'residential_postal_code' || key === 'postal_code') {
+    return 'Locate the postal code printed for the address.';
+  }
+  if (key.includes('serial')) {
+    return 'Locate the serial number of the firearm (or the named barrel, frame or receiver component).';
+  }
+  if (key.includes('expiry')) {
+    return 'Locate the expiry date. On a South African licence this is the second date in the printed issue-to-expiry range.';
+  }
+  if (key.includes('issued') || key.includes('joined') || key.includes('since')) {
+    return 'Locate the issue or commencement date printed on the document.';
+  }
+  if (key.includes('make')) return 'Locate the make or manufacturer value.';
+  if (key.includes('model')) return 'Locate the model value.';
+  if (key.includes('calibre')) return 'Locate the calibre value.';
+  if (key.includes('licence_number') || key.includes('competency_number')) {
+    return 'Locate the licence or competency number printed on the document.';
+  }
+  if (key.includes('association_number') || key.includes('membership')) {
+    return 'Locate the association membership number.';
+  }
+  if (key.includes('firearm_type')) {
+    return 'Locate the printed firearm type or class.';
+  }
+  if (key.includes('action')) {
+    return 'Locate the printed action type (for example bolt action, semi-automatic).';
+  }
+  if (key.includes('signature')) return 'Locate the signature.';
+  return `Locate the value for "${input.label}"${
+    input.help ? ` (${input.help})` : ''
+  } on the document.`;
+}
+
+/** Crop one normalized region, with a little margin so digits are not clipped. */
+function cropRegion(
+  page: BoxPage,
+  region: LocatedRegion,
+): Promise<Buffer | null> {
+  const width = page.width;
+  const height = page.height;
+  const x0 = Math.max(0, Math.floor((region.left - 0.012) * width));
+  const y0 = Math.max(0, Math.floor((region.top - 0.012) * height));
+  const x1 = Math.min(width, Math.ceil((region.right + 0.012) * width));
+  const y1 = Math.min(height, Math.ceil((region.bottom + 0.012) * height));
+  const cropWidth = x1 - x0;
+  const cropHeight = y1 - y0;
+  if (cropWidth < 12 || cropHeight < 12) return Promise.resolve(null);
+
+  return sharp(page.bytes)
+    .extract({ left: x0, top: y0, width: cropWidth, height: cropHeight })
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toBuffer()
+    .catch(() => null);
+}
+
+/**
+ * Turn the local reader's crop text into the value a field expects.
+ *
+ * ⚠️ LABELS ARE THE ENEMY OF A CROP. Jev is asked for the VALUE, but a box can
+ * include the printed label beside it. These helpers strip the common ones and
+ * apply the same deterministic checks the vision path uses (13-digit ID, real
+ * ISO day, offered choice), so a confident-but-wrong local read falls back
+ * instead of being stored.
+ */
+/**
+ * ⚠️ ONLY FIELDS A WRONG CHARACTER CANNOT SILENTLY RUIN.
+ *
+ * A clean synthetic "FOURIE" can come back as "FOL" from a small local model.
+ * A high OCR score is not a correctness check. Local reads are therefore kept
+ * for values with a deterministic validator — a 13-digit ID, an ISO date, an
+ * exact offered choice, a printed number — and names, addresses, makes,
+ * models and serials still go to the vision reader with the crop beside them.
+ */
+/**
+ * A licence card does not print our choices. It prints "MANUALLY OPERATED
+ * RIFLE", "S/L: RIFLE CAL — RIFLE/CARBINE", "De HANDGUN"; the sheet offers
+ * Rifle / Shotgun / Handgun / Combination. Exact matching dropped every one.
+ */
+function canonicalFirearmType(value: string): string | null {
+  if (/handgun|pistol|revolver/i.test(value)) return 'Handgun';
+  if (/shotgun/i.test(value)) return 'Shotgun';
+  if (/rifle|carbine/i.test(value)) return 'Rifle';
+  if (/combination/i.test(value)) return 'Combination';
+  return null;
+}
+
+function isLocalSafeField(field: AskedField): boolean {
+  if (field.choices?.length) return true;
+  if (field.key === 'id_number') return true;
+  if (field.kind === 'date') return true;
+  if (/(?:postal_code|number|_no$)/i.test(field.key)) return true;
+  if (/(?:expiry|expires|issued|joined|since|valid)/i.test(field.key)) {
+    return true;
+  }
+  return false;
+}
+
+function localValueFor(field: AskedField, raw: string): string | null {
+  if (!isLocalSafeField(field)) return null;
+  let text = raw.replace(/\r/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  if (!text) return null;
+
+  if (field.key === 'full_name') {
+    const surname = text.match(
+      /\bSURNAME\b\s*[:\-]?\s*(.+?)(?=\b(?:NAMES?|FIRST|GIVEN|IDENTITY|ID)\b|$)/i,
+    );
+    const given = text.match(
+      /\b(?:NAMES?|FIRST NAMES?|GIVEN NAMES?)\b\s*[:\-]?\s*(.+?)(?=\bSURNAME\b|$)/i,
+    );
+    if (surname?.[1] && given?.[1]) {
+      text = `${given[1]} ${surname[1]}`;
+    }
+    text = text
+      .replace(/\b(?:SURNAME|NAMES?|FULL NAMES?|IDENTITY NUMBER|ID NUMBER)\b/gi, ' ')
+      .replace(/[^A-Za-z\u00C0-\u024F' -]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text.split(' ').filter((part) => part.length > 1).length >= 2
+      ? text
+      : null;
+  }
+
+  if (field.key === 'id_number') {
+    const digits = text.replace(/\D/g, '');
+    return digits.length === 13 ? digits : null;
+  }
+
+  if (field.key === 'firearm_source') {
+    if (/dealer|invoice|stock|quote/i.test(text)) return 'From a dealer';
+    if (/private|seller|owner|consent/i.test(text)) return 'From a private owner';
+  }
+
+  const dateLike =
+    field.kind === 'date' ||
+    /(?:expiry|expires|issued|joined|since|valid)/i.test(field.key);
+  if (dateLike) {
+    const found = localDates(text);
+    if (!found.length) return null;
+    return /expiry|expires|valid/i.test(field.key)
+      ? found[found.length - 1]
+      : found[0];
+  }
+
+  const label = field.label.split(/[,.(]/)[0]?.trim();
+  if (label && text.toLowerCase().startsWith(label.toLowerCase())) {
+    text = text.slice(label.length).replace(/^[\s:\-]+/, '');
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  return text.length >= 2 ? text : null;
+}
+
+/** Every real ISO date in a crop, in reading order. */
+function localDates(text: string): string[] {
+  const out: string[] = [];
+  const push = (y: number, m: number, d: number) => {
+    const value = `${String(y).padStart(4, '0')}-${String(m).padStart(
+      2,
+      '0',
+    )}-${String(d).padStart(2, '0')}`;
+    if (isIsoDay(value)) out.push(value);
+  };
+  for (const m of text.matchAll(/\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/g)) {
+    push(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  for (const m of text.matchAll(/\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b/g)) {
+    push(Number(m[3]), Number(m[2]), Number(m[1]));
+  }
+  const months = new Map(
+    [
+      'january',
+      'february',
+      'march',
+      'april',
+      'may',
+      'june',
+      'july',
+      'august',
+      'september',
+      'october',
+      'november',
+      'december',
+    ].flatMap((name, index) => [
+      [name, index + 1] as const,
+      [name.slice(0, 3), index + 1] as const,
+    ]),
+  );
+  for (const m of text.matchAll(
+    /\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/g,
+  )) {
+    const month = months.get(m[2].toLowerCase());
+    if (month) push(Number(m[3]), month, Number(m[1]));
+  }
+  return out;
 }
 
 /**

@@ -640,12 +640,23 @@ export interface PayoutsDue {
     sellerId?: string;
     username?: string;
     amountCents?: number;
+    paymentProvider?: 'OZOW' | 'PEACH';
     [key: string]: unknown;
   }>;
   refunds?: unknown[];
   skipped?: Array<Record<string, unknown>>;
   totalCents?: number;
   autoPayoutsEnabled?: boolean;
+  peachPayinEnabled?: boolean;
+  peachPayoutsEnabled?: boolean;
+  byProvider?: Record<
+    'OZOW' | 'PEACH',
+    { count: number; amountCents: number }
+  >;
+  inFlight?: Record<
+    'OZOW' | 'PEACH',
+    { count: number; amountCents: number }
+  >;
   [key: string]: unknown;
 }
 

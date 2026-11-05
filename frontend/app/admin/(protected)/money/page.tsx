@@ -161,8 +161,18 @@ export default function MoneyPage() {
   const total = (txns.data?.total as number | undefined) ?? rows.length;
 
   async function runPayouts() {
-    await adminFetch('/admin/manual-payments/run-payouts', { method: 'POST' });
-    toast('Payout batch submitted to Ozow. Rows update as the webhook settles.');
+    const result = await adminFetch<{
+      byProvider?: Record<
+        'OZOW' | 'PEACH',
+        { attempted: number; accepted: number; failed: number; totalCents: number }
+      >;
+      accepted?: number;
+    }>('/admin/manual-payments/run-payouts', { method: 'POST' });
+    const ozow = result.byProvider?.OZOW?.accepted ?? 0;
+    const peach = result.byProvider?.PEACH?.accepted ?? 0;
+    toast(
+      `Payout batch submitted — Ozow: ${ozow}, Peach: ${peach}. Rows update as each webhook settles.`,
+    );
     due.refresh();
     txns.refresh();
   }
@@ -317,9 +327,23 @@ export default function MoneyPage() {
             <div className="adm-sub">
               {payouts.length} {payouts.length === 1 ? 'seller' : 'sellers'} waiting
               {(due.data?.skipped?.length ?? 0) > 0
-                ? ` · ${due.data?.skipped?.length} skipped by the KYC gate`
+                ? ` — ${due.data?.skipped?.length} skipped (KYC/BANV/bank/rail)`
                 : ''}
             </div>
+            {due.data?.byProvider ? (
+              <div className="adm-sub">
+                Ozow {formatRand(due.data.byProvider.OZOW.amountCents)} · Peach{' '}
+                {formatRand(due.data.byProvider.PEACH.amountCents)}
+                {due.data.inFlight &&
+                (due.data.inFlight.OZOW.count > 0 ||
+                  due.data.inFlight.PEACH.count > 0)
+                  ? ` · in flight ${formatRand(
+                      due.data.inFlight.OZOW.amountCents +
+                        due.data.inFlight.PEACH.amountCents,
+                    )}`
+                  : ''}
+              </div>
+            ) : null}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div className="adm-kpi-label">Client money held</div>

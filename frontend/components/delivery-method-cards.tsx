@@ -50,11 +50,15 @@ export function DeliveryMethodCards({
   selected,
   onSelect,
   isFirearm,
+  dealerName,
+  dealerLocation,
 }: {
   methods: ShippingMethod[];
   selected: ShippingMethod | null;
   onSelect: (m: ShippingMethod) => void;
   isFirearm: boolean;
+  dealerName?: string | null;
+  dealerLocation?: string | null;
 }) {
   return (
     <div>
@@ -66,10 +70,22 @@ export function DeliveryMethodCards({
           const meta = META[m] ?? { title: m, subtitle: '', icon: null };
           const title =
             m === 'PRIVATE_ARRANGE' && !isFirearm ? 'Meet in person' : meta.title;
+          const dealerLine = (() => {
+            if (m !== 'DEALER_TRANSFER') return null;
+            const name = dealerName?.trim();
+            const location = dealerLocation?.trim();
+            if (name && location) {
+              // plannedDealerLocation is already "Name - Area, Province".
+              return location.toLowerCase().startsWith(name.toLowerCase())
+                ? location
+                : `${name} - ${location}`;
+            }
+            return name || location || null;
+          })();
           const subtitle =
             m === 'PRIVATE_ARRANGE' && !isFirearm
               ? 'Meet the seller in person. Payment is held until you confirm; the Platform Fee is non-refundable.'
-              : meta.subtitle;
+              : (dealerLine ?? meta.subtitle);
           const active = selected === m;
           return (
             <button

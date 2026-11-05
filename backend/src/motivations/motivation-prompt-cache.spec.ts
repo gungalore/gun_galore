@@ -7,7 +7,7 @@ import {
 } from './motivation-prompts';
 import { planFor } from './motivation-structure';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // THE GENERATION PROMPT MUST STAY CACHEABLE — AND MUST STILL SAY THE SAME
 // THING.
 //
@@ -28,11 +28,11 @@ import { planFor } from './motivation-structure';
 //     identical to what the builder produced before it. The hashes below were
 //     taken from the pre-reorder builder.
 //
-// ⚠️ IF A HASH FAILS, ASK WHICH CHANGE YOU MADE. Reordering blocks cannot move
+// âš ï¸ IF A HASH FAILS, ASK WHICH CHANGE YOU MADE. Reordering blocks cannot move
 // it; rewording, adding or dropping a line can and should. A deliberate wording
 // change updates the hash in the same commit. A hash updated to make a red test
 // green is how a rule quietly leaves the prompt.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The estimate the operator's cache arithmetic is done in. */
 const tokens = (chars: number) => Math.round(chars / 4);
@@ -116,8 +116,8 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * Taken from the builder as it stood BEFORE the blocks were reordered, over
  * `packFor(type, 'a')` and `planFor(type, 7)`.
  *
- * ⚠️ RE-BASELINED ONCE, DELIBERATELY, ON 2026-09-07. The conclusion brief
- * carried a worked example reading "a licence under section 16 … for dedicated
+ * âš ï¸ RE-BASELINED ONCE, DELIBERATELY, ON 2026-09-07. The conclusion brief
+ * carried a worked example reading "a licence under section 16 â€¦ for dedicated
  * sport shooting" — correct for one licence type and wrong for the other four,
  * in the one paragraph whose job is to say what is being applied for. Fixing it
  * is a content change, which is exactly what these hashes exist to catch, so
@@ -128,11 +128,11 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * same numbers this table has always held. If you find yourself editing these
  * hashes again, edit the counts only when you meant to add or remove a line.
  *
- * ⚠️ RE-BASELINED AGAIN, TWICE, ON 2026-09-08 — the Motivation Centre rebuild.
+ * âš ï¸ RE-BASELINED AGAIN, TWICE, ON 2026-09-08 — the Motivation Centre rebuild.
  * Phase 1 renamed the two self-defence long boxes (they stopped being the
  * primary input; the applicant taps s13_reasons and s13_movements instead), so
  * S13 alone moved. Phase 2 then halved the word bands on every type — S13
- * 1200-2500 → 900-1400, S15/S16 → 1200-1800, S24 → 600-900 — because roughly
+ * 1200-2500 â†’ 900-1400, S15/S16 â†’ 1200-1800, S24 â†’ 600-900 — because roughly
  * 60% of the approved corpus's page count is manufacturer copy and quoted
  * regulation that rule 7 already forbids, and the renderer now prints the
  * particulars and the battery as tables rather than prose. See PROSE_TARGET.
@@ -141,7 +141,7 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * the assertion. All five line counts held at 106/106/102/102/94 through both.
  */
 /**
- * ⚠️ RE-BASELINED A THIRD TIME ON 2026-09-09 — the fixed skeleton.
+ * âš ï¸ RE-BASELINED A THIRD TIME ON 2026-09-09 — the fixed skeleton.
  *
  * MOTIVATION-GUIDE-BOOK Part 4.2 replaced the seeded heading alternates with
  * twelve numbered headings that never vary, Part 5 said which of them each
@@ -150,16 +150,16 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * record, competency), two were added (association, the renewal's record of
  * use), and the opening / closing / cadence draws collapsed to one value each.
  *
- * ⚠️ AND THE COUNTS MOVED IN BOTH DIRECTIONS, which is the check that this was
- * a restructure and not a loss. The section 13 gained four lines (98 → 102):
+ * âš ï¸ AND THE COUNTS MOVED IN BOTH DIRECTIONS, which is the check that this was
+ * a restructure and not a loss. The section 13 gained four lines (98 â†’ 102):
  * it got `personal_circumstances` back — the book keeps it and bans the form
  * data that made it read as padding — while losing the calibre section. The
- * section 15 lost five (106 → 101) because the calibre went and nothing
- * replaced it. The two section 16 routes went 102 → 101 for the same reason.
+ * section 15 lost five (106 â†’ 101) because the calibre went and nothing
+ * replaced it. The two section 16 routes went 102 â†’ 101 for the same reason.
  * Edit these counts only when a line was meant to be added or removed.
  */
 /**
- * ⚠️ RE-BASELINED A FIFTH TIME ON 2026-09-09 — the card, and nothing else.
+ * âš ï¸ RE-BASELINED A FIFTH TIME ON 2026-09-09 — the card, and nothing else.
  *
  * MO000075 failed on one word. The `the_firearm` brief asked for "the action,
  * the barrel, the capacity, the mass" and the writer answered with "built on
@@ -173,14 +173,14 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * the type, make, model and calibre a licence card carries, and the section
  * spends itself on the USE instead of on the object.
  *
- * ⚠️ FOUR TYPES MOVED BY ONE LINE AND TWO DID NOT, which is the check. S13 and
+ * âš ï¸ FOUR TYPES MOVED BY ONE LINE AND TWO DID NOT, which is the check. S13 and
  * S14 carry their own `the_firearm` override — the S14 one already banned
  * product copy in as many words — so they use none of this and are unchanged
  * at 110 and 109. The three sporting types and the renewal use the general
  * brief and each gained the one paragraph.
  */
 /**
- * ⚠️ RE-BASELINED A FOURTH TIME ON 2026-09-09 — the capability carve-out.
+ * âš ï¸ RE-BASELINED A FOURTH TIME ON 2026-09-09 — the capability carve-out.
  *
  * `renderOverlap` gained eight lines telling the writer that terminal
  * ballistics, muzzle energy and velocity, penetration, expansion and bullet
@@ -189,8 +189,8 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * Operator's decision after being told the words were on the refuse list; see
  * COMPARISON_TERMS in motivation-scope.ts, which enforces the same boundary.
  *
- * ⚠️ AND EVERY TYPE MOVED BY EXACTLY EIGHT, which is the check that this was
- * an addition and not a loss: 101 → 109 on five of them and 102 → 110 on the
+ * âš ï¸ AND EVERY TYPE MOVED BY EXACTLY EIGHT, which is the check that this was
+ * an addition and not a loss: 101 â†’ 109 on five of them and 102 â†’ 110 on the
  * section 13, whose skeleton is one line longer. The overlap block renders on
  * every type here because every fixture pack carries an overlap note. Edit
  * these counts only when a line was meant to be added or removed.
@@ -216,7 +216,7 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * wants its own note.
  */
 /**
- * ⚠️ RE-BASELINED ON 2026-09-20 — the prompts stopped being a changelog.
+ * âš ï¸ RE-BASELINED ON 2026-09-20 — the prompts stopped being a changelog.
  *
  * Every decision-history fragment was removed from the prompt STRINGS (they
  * remain, correctly, in the JSDoc comments): rule 4's "this rule said the
@@ -227,13 +227,13 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * reading two competing versions of a rule follows the last concrete one, which
  * is the accuracy fault this addresses.
  *
- * ⚠️ EVERY LINE COUNT IS UNCHANGED (110 / 109 / 110 / 110 / 110 / 104), the
+ * âš ï¸ EVERY LINE COUNT IS UNCHANGED (110 / 109 / 110 / 110 / 110 / 104), the
  * signature of a rewording rather than an addition or a loss. The
  * system-prompt edits do not appear here at all: this identity is the USER
  * message, and the system prompt is sent separately.
  */
 /**
- * ⚠️ RE-BASELINED AGAIN ON 2026-09-20 — the recency footer.
+ * âš ï¸ RE-BASELINED AGAIN ON 2026-09-20 — the recency footer.
  *
  * The user prompt now ENDS with a short grounding + output-shape instruction
  * (`FINAL_INSTRUCTION`), because a constraint stated once at the top of a long
@@ -242,12 +242,12 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * per-applicant (it sits after the facts), so it never enters the cached
  * prefix; the cache-floor test still passes because the prefix is unchanged.
  *
- * ⚠️ EVERY TYPE GAINED EXACTLY EIGHT LINES (110/109/110/110/110/104 →
+ * âš ï¸ EVERY TYPE GAINED EXACTLY EIGHT LINES (110/109/110/110/110/104 â†’
  * 118/117/118/118/118/112), which is the signature of one shared block added
  * to all six, not a per-type change.
  */
 /**
- * ⚠️ RE-BASELINED ON 2026-09-20 — the wrong-copy pass on a real pack.
+ * âš ï¸ RE-BASELINED ON 2026-09-20 — the wrong-copy pass on a real pack.
  *
  * Three briefs were tightened after reviewing a rendered MO000002: the
  * `held_firearms` brief now forbids restating the section twice and repeating an
@@ -256,13 +256,13 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * measurements in figures and names "manoeuvrability" and "diameter". Only the
  * first two reach the USER message, so only its hashes move.
  *
- * ⚠️ EVERY LINE COUNT IS UNCHANGED (118/117/118/118/118/112) — the signature of
+ * âš ï¸ EVERY LINE COUNT IS UNCHANGED (118/117/118/118/118/112) — the signature of
  * a rewording inside existing lines, not an added block. The system-prompt edit
  * does not appear here at all: this identity is the user message, and the system
  * prompt is sent separately.
  */
 /**
- * ⚠️ RE-BASELINED ON 2026-10-08 — the content-quality pass.
+ * âš ï¸ RE-BASELINED ON 2026-10-08 — the content-quality pass.
  *
  * Three user-message briefs changed and every line count held
  * (117/118/118/118/118/112), the signature of a rewording inside existing
@@ -278,7 +278,7 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * here at all: this identity is the user message.
  */
 /**
- * ⚠️ RE-BASELINED ON 2026-10-26 — the MO000100 pack review. Two content
+ * âš ï¸ RE-BASELINED ON 2026-10-26 — the MO000100 pack review. Two content
  * changes, both deliberate and both recorded here rather than quietly:
  *   - `the_firearm`'s section 13 override lost the "common service calibre /
  *     readily available ammunition" allowance. It was conditional on a derived
@@ -301,7 +301,7 @@ const BEFORE_THE_REORDER: Record<
   { lines: number; sha: string }
 > = {
   /**
-   * ⚠️ RE-BASELINED TWICE ON 2026-09-09. First the S13 skeleton lost three
+   * âš ï¸ RE-BASELINED TWICE ON 2026-09-09. First the S13 skeleton lost three
    * sections and gained one (below). Then the guide book landed and moved
    * EVERY type: system rule 4 gained the "not every subsection is a test"
    * paragraph naming ss 13(4), 14(6), 15(4) and 16(3); rule 10 gained the
@@ -309,43 +309,43 @@ const BEFORE_THE_REORDER: Record<
    * the CFR checks them); and the conclusion brief was rewritten to the book's
    * Part 8.5 order. All content changes, all baselined rather than weakened.
    *
-   * ⚠️ AND THE LINE COUNT MOVED — 106 → 98 on the S13 — WHICH
+   * âš ï¸ AND THE LINE COUNT MOVED — 106 â†’ 98 on the S13 — WHICH
    * EVERY EARLIER RE-BASELINE DELIBERATELY DID NOT. MOTIVATION-S13-OUTPUT-
-   * REVIEW.md §1.5: the S13 skeleton lost `personal_circumstances`,
+   * REVIEW.md Â§1.5: the S13 skeleton lost `personal_circumstances`,
    * `the_calibre` and `compliance_history` and gained `existing_measures`, so
    * the STRUCTURE block genuinely carries two fewer sections and their briefs.
    * The note above says to edit the counts only when a line was meant to be
    * added or removed; eight were, on purpose.
    */
   /**
-   * ⚠️ 99 LINES, ONE MORE THAN THE SECTION 13. Section 14's skeleton keeps
+   * âš ï¸ 99 LINES, ONE MORE THAN THE SECTION 13. Section 14's skeleton keeps
    * `personal_circumstances` — the section 13 dropped it — because SAPS 271
    * section K is completed for this section and no other, and the DFO
    * transcribes the premises facts out of the document.
    */
   S14_RESTRICTED_SELF_DEFENCE: {
-    lines: 117,
-    sha: 'b96a67342cd68a6f6928eeeee690b18796848653ea3d014b7dc19bc6245e437b',
+    lines: 120,
+    sha: '85e03a0784cb8bc6b450ab82040480884f46bb1bba41c4a293709248bc37d5fd',
   },
   S13_SELF_DEFENCE: {
-    lines: 118,
-    sha: '5900e592c92bd5d9afc19ea18a591abae09fafcb0720881258d8b81435e232b7',
+    lines: 121,
+    sha: '5df2e9b04e10708a51cdecce5d16d2f5fd1f70a7cf8de86861ae742b68cf9cb5',
   },
   S15_OCCASIONAL_HUNTER: {
-    lines: 118,
-    sha: 'cfd99b57e97103a9d98fc17147861f85db168a4612bdf482b7643acd14cd30ee',
+    lines: 121,
+    sha: 'f518d20b72857e345420b20b4f0aa7bed2adf9b16067de8169d8080d9f500a97',
   },
   S16_DEDICATED_HUNTER: {
-    lines: 118,
-    sha: '586f8aee809f73c07e2809fb44b669482831add7fb29e8d25beeaae8ae13ca1d',
+    lines: 121,
+    sha: '08cc894fa3fdc81858b6274fa4554625bddcec8eb3d1c1d6c4a9431ec00f1467',
   },
   S16_DEDICATED_SPORT: {
-    lines: 118,
-    sha: '30b3f672fd17ba2524ed9ff9cde2f3bbddcdebb004f89ff30869a7fdc83514c9',
+    lines: 121,
+    sha: '8d17cf25ebb7193842c9a958ff6d216d9c130c49a942bd719bb468ac28d7eace',
   },
   S24_RENEWAL: {
-    lines: 112,
-    sha: '5d0697411695a935e9ab48a506bab58516a44643a79f27b02cc90a8caefc15ef',
+    lines: 115,
+    sha: '9cdf0a882d41ba64ca15552ec40fcc1846e9b2fb98863dbb210b3e0cc425e747',
   },
 };
 
@@ -428,3 +428,5 @@ describe('generation prompt — the reorder changed no content', () => {
     }
   });
 });
+
+

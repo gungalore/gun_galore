@@ -25,14 +25,6 @@ interface OrderCue {
   hint?: string;
 }
 
-/** Short date for cue copy, matching the en-ZA formatting used on this page. */
-function cueDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
-}
-
 /** The one thing that happens next on this order, from the BUYER's side.
  *
  * The status pill answers "where is my money"; it never answered "what do I
@@ -99,10 +91,10 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
   // backed out of Ozow). This is not a paid order yet.
   if (!tx.paidAt) {
     return {
-      text: 'Payment not completed - finish checkout',
+      text: 'Payment not confirmed yet - resume checkout',
       tone: 'error',
       action: true,
-      hint: 'No money was taken. Your item is held while you finish or restart payment.',
+      hint: 'If you completed payment, do not pay again. Open the order and resume the existing attempt.',
     };
   }
 
@@ -509,7 +501,7 @@ export default async function MyOrdersPage() {
                   ? 'var(--red)'
                   : toneColor(status.tone);
                 const statusLabel = needsPayment
-                  ? 'Payment not completed'
+                  ? 'Payment not confirmed'
                   : status.label;
                 const cue = nextActionCue(tx, now);
                 const cueColor = cue ? toneColor(cue.tone) : undefined;
@@ -673,7 +665,7 @@ export default async function MyOrdersPage() {
                       <Link
                         href={
                           needsPayment
-                            ? `/checkout/${tx.listing.id}`
+                            ? `/checkout/resume/${tx.id}`
                             : `/transactions/${tx.id}`
                         }
                         className="text-xs px-3 py-1.5 rounded-[6px]"

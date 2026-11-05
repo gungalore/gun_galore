@@ -99,6 +99,12 @@ const isPublicRoute = createRouteMatcher([
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
+  // Auth completion pages. A member who has not finished signing in is by
+  // definition signed out here, and the code/link in the page is the
+  // credential. Bouncing these to /sign-in dead-ends the flow.
+  '/verify-email(.*)',
+  '/forgot-password(.*)',
+  '/reset-password(.*)',
   '/marketplace(.*)',
   '/listings(.*)',
   '/auctions(.*)',
@@ -306,8 +312,19 @@ export default async function middleware(request: NextRequest) {
     // sign-in bounce into an off-site (open) redirect. request.url reflects
     // the localhost socket Next.js listens on, not the public hostname, so we
     // can't use it either.
-    const publicBase =
+    const configuredBase =
       process.env.NEXT_PUBLIC_APP_URL || 'https://alloutdoor.co.za';
+    // Local development: NEXT_PUBLIC_APP_URL is often a stale tunnel
+    // hostname. Only for localhost in non-production, bounce back to the
+    // host the browser actually used. Production keeps the configured base
+    // so a spoofed Host header cannot turn this into an open redirect.
+    const host = request.headers.get('host') ?? '';
+    const isLocalHost =
+      /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+    const publicBase =
+      process.env.NODE_ENV !== 'production' && isLocalHost
+        ? `http://${host}`
+        : configuredBase;
     const currentPath =
       request.nextUrl.pathname + request.nextUrl.search;
 

@@ -79,6 +79,71 @@ describe('JevClient', () => {
     expect(a.type === 'choice' && a.choice).toBe('description');
   });
 
+  it('maps a box answer with normalized coordinates', async () => {
+    process.env.JEV_API_KEY = 'test';
+    mockFetch({
+      ok: true,
+      json: async () => ({
+        model: 'jev-1.14.0',
+        answers: {
+          name: {
+            type: 'box',
+            box: { top: 0.1, bottom: 0.2, left: 0.3, right: 0.6 },
+            confidence: 0.82,
+          },
+        },
+      }),
+    });
+    const res = await new JevClient().decide({
+      state: 'document',
+      questions: {
+        name: { type: 'box', instructions: 'Locate the name.' },
+      },
+      assets: {
+        document: { type: 'image', format: 'jpg', data_base64: 'AAAA' },
+      },
+      purpose: 'test',
+    });
+    const answer = res.answers.name;
+    expect(answer.type).toBe('box');
+    if (answer.type === 'box') {
+      expect(answer.box).toEqual({
+        top: 0.1,
+        bottom: 0.2,
+        left: 0.3,
+        right: 0.6,
+      });
+      expect(answer.confidence).toBe(0.82);
+    }
+  });
+
+  it('fails a box with edges outside the page', async () => {
+    process.env.JEV_API_KEY = 'test';
+    mockFetch({
+      ok: true,
+      json: async () => ({
+        model: 'jev-1.14.0',
+        answers: {
+          name: {
+            type: 'box',
+            box: { top: 0.4, bottom: 0.2, left: 0.1, right: 0.8 },
+            confidence: 0.9,
+          },
+        },
+      }),
+    });
+    await expect(
+      new JevClient().decide({
+        state: 'document',
+        questions: { name: { type: 'box' } },
+        assets: {
+          document: { type: 'image', format: 'jpg', data_base64: 'AAAA' },
+        },
+        purpose: 'test',
+      }),
+    ).rejects.toMatchObject({ code: 'bad_request' });
+  });
+
   it('fails a call with a malformed answer rather than passing it', async () => {
     process.env.JEV_API_KEY = 'test';
     mockFetch({

@@ -95,8 +95,8 @@ export default function FeesPage() {
           </li>
           <li>
             <strong>On an auction the Platform Fee is a flat 10%</strong> —
-            the buyer pays 5% of the hammer plus delivery, and you pay 5% of
-            the hammer, deducted from your payout.
+            the buyer pays 5% of the combined hammer price and delivery, and you
+            pay 5% of the hammer, deducted from your payout.
           </li>
           <li>
             <strong>A buyer who cancels before dispatch</strong> is refunded
@@ -192,7 +192,7 @@ export default function FeesPage() {
       <h2>3. Auctions — a flat 10%, split 5% / 5%</h2>
       <p>
         An auction has one flat 10% Platform Fee. The <strong>buyer pays 5%</strong>{' '}
-        of the hammer price plus delivery at checkout, and the{' '}
+        of the combined hammer price and delivery at checkout, and the{' '}
         <strong>seller pays 5%</strong> of the hammer price, deducted from the
         payout. An offer accepted on an auction follows the same split. The
         buyer&apos;s 5% has a R10 minimum.
@@ -246,7 +246,9 @@ export default function FeesPage() {
         <li>
           <strong>Seller fault:</strong> where the seller declines the sale,
           fails to dispatch, or never delivers, the buyer receives a{' '}
-          <strong>100% refund</strong> with no 4% deduction.
+          <strong>100% refund</strong> with no 4% deduction, except where the
+          in-person handover rules in section 7 of the Terms of Service provide
+          otherwise.
         </li>
         <li>
           <strong>Death or hospitalisation:</strong> no cancellation fee is
@@ -257,10 +259,11 @@ export default function FeesPage() {
 
       <h2>6. When the seller is paid</h2>
       <p>
-        ALL Outdoor holds the buyer&apos;s payment until the sale has safely
-        completed, then releases the seller&apos;s proceeds to the seller&apos;s
-        bank account — the full asking price on a marketplace sale, or the
-        hammer less the 5% seller share on an auction. Payout is released:
+        The payment service provider holds the buyer&apos;s payment until the
+        sale has safely completed; we then instruct it to release the
+        seller&apos;s proceeds to the seller&apos;s bank account - the full
+        asking price on a marketplace sale, or the hammer less the 5% seller
+        share on an auction. Payout is released:
       </p>
       <ul>
         <li>after <strong>delivery is confirmed</strong> for a couriered item; or</li>

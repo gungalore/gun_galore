@@ -1189,6 +1189,7 @@ function AddPanel({
   const [progress, setProgress] = useState<{
     done: number;
     total: number;
+    phase: 'reading' | 'preparing' | 'filing';
   } | null>(null);
 
   // ── ONE UPLOADER, ONE AI SORT ───────────────────────────────────────
@@ -1439,29 +1440,40 @@ function AddPanel({
     }
     setBusy(true);
     setErr(null);
-    setProgress({ done: 0, total: ready.length });
+    setProgress({ done: 0, total: ready.length, phase: 'filing' });
     try {
-      const results = await licenceCentreApi.commit(
-        token,
-        ready.map((c) => ({
-          file: c.prepared as File,
-          identifyId: c.id,
-          description: c.description.trim(),
-        })),
-      );
-      let done = 0;
-      for (const [i, card] of ready.entries()) {
-        const r = results[i];
-        if (r?.ok) {
-          // Filed: drop it, releasing the object URLs it was drawn from.
-          dropCard(card.id);
-        } else {
+      for (const [index, card] of ready.entries()) {
+        try {
+          const [r] = await licenceCentreApi.commit(token, [
+            {
+              file: card.prepared as File,
+              identifyId: card.id,
+              description: card.description.trim(),
+            },
+          ]);
+          if (r?.ok) {
+            // Filed: drop it, releasing the object URLs it was drawn from.
+            dropCard(card.id);
+          } else {
+            patchCard(card.id, {
+              state: 'failed',
+              err: r?.error ?? 'We could not file that one.',
+            });
+          }
+        } catch (err) {
           patchCard(card.id, {
             state: 'failed',
-            err: r?.error ?? 'We could not file that one.',
+            err:
+              err instanceof LicenceApiError
+                ? err.message
+                : 'We could not file that one.',
           });
         }
-        setProgress({ done: ++done, total: ready.length });
+        setProgress({
+          done: index + 1,
+          total: ready.length,
+          phase: 'filing',
+        });
       }
       await onAdded().catch(() => undefined);
     } catch (ex) {
@@ -1623,17 +1635,22 @@ function AddPanel({
     setBusy(true);
     setErr(null);
     if (failed.length) setRejected((prev) => [...prev, ...failed]);
-    setProgress({ done: 0, total: files.length });
+    setProgress({ done: 0, total: files.length, phase: 'reading' });
 
     // ── 1. THE SERVER LOOKS AT THEM FIRST, AND MINTS AN ID PER FILE ─────
     //
-    // ⚠️ THE FILES GO UP RAW, ALL OF THEM, IN ONE CALL. Nothing is cropped
-    // yet: the role is not known until the model has answered and a hunting
-    // photograph must not be polished. The server hands back one verdict —
-    // and one id — per file, in the order we sent them.
-    let verdicts: IdentifyVerdict[];
+    // ⚠️ ONE FILE AT A TIME, FOR A COUNT THE MEMBER CAN SEE. The first
+    // version sent all sixteen in one request: Next truncated the proxied body
+    // at 10MB, multer saw an incomplete stream, and the spinner sat at zero.
+    // Small requests also let the progress bar advance per document instead of
+    // waiting for the whole batch.
+    let verdicts: IdentifyVerdict[] = [];
     try {
-      verdicts = await licenceCentreApi.identify(token, files);
+      for (let index = 0; index < files.length; index++) {
+        const part = await licenceCentreApi.identify(token, [files[index]]);
+        verdicts.push(...part);
+        setProgress({ done: index + 1, total: files.length, phase: 'reading' });
+      }
     } catch (ex) {
       setBusy(false);
       setProgress(null);
@@ -1694,9 +1711,12 @@ function AddPanel({
     // sort and press "File these" before anything reaches the vault — that is
     // the whole point of the preview. An evidence file or a PDF is not
     // polished and goes straight to ready with its original bytes.
+    if (cards.length) {
+      setProgress({ done: 0, total: cards.length, phase: 'preparing' });
+    }
     for (const [i, card] of cards.entries()) {
       await prepareCard(card, declared);
-      setProgress({ done: i + 1, total: files.length });
+      setProgress({ done: i + 1, total: cards.length, phase: 'preparing' });
     }
 
     setBusy(false);
@@ -1868,8 +1888,22 @@ function AddPanel({
         >
           <div className="flex items-baseline justify-between">
             <span className="text-[13px] text-[var(--text-primary)]">
-              {progress && progress.total > 1
-                ? `Reading document ${Math.min(progress.done + 1, progress.total)} of ${progress.total}`
+              {progress
+                ? progress.total > 1
+                  ? `${
+                      progress.phase === 'filing'
+                        ? 'Filing'
+                        : progress.phase === 'preparing'
+                          ? 'Preparing'
+                          : 'Reading'
+                    } document ${Math.min(progress.done + 1, progress.total)} of ${progress.total}`
+                  : `${
+                      progress.phase === 'filing'
+                        ? 'Filing'
+                        : progress.phase === 'preparing'
+                          ? 'Preparing'
+                          : 'Reading'
+                    } your document`
                 : 'Reading your document'}
             </span>
             <span className="gg-nums text-[11.5px] text-[var(--text-tertiary-on-card)]">

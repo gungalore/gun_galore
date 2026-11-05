@@ -176,6 +176,12 @@ describe('finding the cartridge a member typed', () => {
     expect(found('357 Mag')).toBe('357 Mag.');
   });
 
+  it('does not match 7mm magnum to the .357 Magnum sheet', () => {
+    // "7mm magnum" contracts to 7MAGNUM, which sits inside 357MAGNUM. A
+    // 7mm application must not print .357 dimensions.
+    expect(found('7mm magnum')).toBeNull();
+  });
+
   it('⚠️ KNOWS PARABELLUM IS LUGER, which is a standards fact and not a guess', () => {
     // One round, two published names, and a member writes whichever is on the
     // box. Nothing in that list narrows an ambiguous name to a likely one.

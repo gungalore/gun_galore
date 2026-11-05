@@ -1,4 +1,4 @@
-import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+﻿import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   isSelfDefence,
   allowedValues,
@@ -33,7 +33,7 @@ import { SHOOTING_DISCIPLINES } from './shooting-disciplines';
 
 // The registry is the contract between the wizard, the SAPS 271, the prompt and
 // the quality gate. Everything here guards a way that contract can be broken
-// silently — a value that ends up in a box on a form the applicant signs, or a
+// silently â€” a value that ends up in a box on a form the applicant signs, or a
 // value that reaches a model when it should never have left our database.
 
 const ALL = Object.values(MotivationLicenceType);
@@ -104,15 +104,15 @@ describe('field registry integrity', () => {
     // applicant reached the station with a blank box.
     for (const t of ALL) {
       const fields = fieldsFor(t);
-      // ⚠️ PARENTS ARE LOOKED UP IN THE UNFILTERED SET, and the difference is
+      // âš ï¸ PARENTS ARE LOOKED UP IN THE UNFILTERED SET, and the difference is
       // deliberate. NOT_ASKED_BY_TYPE removes fill_saps271 from a renewal, and
-      // competency_renews_with_licence is gated on it — by a showIf that
+      // competency_renews_with_licence is gated on it â€” by a showIf that
       // CONTRADICTS its own formOnly, so that the field is never asked on
       // either path. That clause is still well-formed: it names a real field
       // and a value that field can really hold, which is exactly what this
       // test is for. Checking it against the SERVED list instead would report
       // a deliberate, robust construction as the typo it was written to avoid
-      // being mistaken for — and would push somebody to delete a gate.
+      // being mistaken for â€” and would push somebody to delete a gate.
       const byKey = new Map(
         allFieldsFor(t).map((f) => [f.key, f]),
       );
@@ -121,7 +121,7 @@ describe('field registry integrity', () => {
         const parent = byKey.get(f.showIf.key);
         expect(parent).toBeDefined();
         // A parent whose options are served rather than inline is checked
-        // against the SERVED list — which is where 'other' comes from.
+        // against the SERVED list â€” which is where 'other' comes from.
         const allowed = parent!.optionSource
           ? expandFields([parent!])[0].optionGroups!.flatMap((g) =>
               g.options.map((o) => o.value),
@@ -173,11 +173,11 @@ describe('the firearm in its own boxes', () => {
     }
   });
 
-  it('does not force a serial number', () => {
-    // On a new application the dealer holds the firearm; demanding a serial
-    // would block anyone who has not chosen the exact one yet.
+  it('requires the serial of the firearm being applied for', () => {
+    // The writer must never borrow a serial from an existing firearm when the
+    // applied-for serial is blank. Asking for it is the guard.
     const serial = fieldsFor(T).find((f) => f.key === 'firearm_serial')!;
-    expect(serial.required).toBeUndefined();
+    expect(serial.required).toBe(true);
   });
 });
 
@@ -198,7 +198,7 @@ describe('the six history questions', () => {
     }
   });
 
-  it('never defaults to "No" — each is required and unanswered until asked', () => {
+  it('never defaults to "No" â€” each is required and unanswered until asked', () => {
     // We do not answer a question about someone's criminal record on their
     // behalf, on a form they sign.
     const fields = fieldsFor(T);
@@ -210,7 +210,7 @@ describe('the six history questions', () => {
     // All but the negligence question, which is chained to the loss question
     // and so does not apply until something has been lost.
     //
-    // ⚠️ NO OPT-IN, SINCE 2026-09-08 — AND THE ASSERTION BELOW IS INVERTED
+    // âš ï¸ NO OPT-IN, SINCE 2026-09-08 â€” AND THE ASSERTION BELOW IS INVERTED
     // FROM WHAT IT USED TO SAY. This case used to end with "and on the dealer
     // path NONE of them are asked at all", which was the harm: a dealer-path
     // applicant was never asked about a conviction, so it never reached the
@@ -221,7 +221,7 @@ describe('the six history questions', () => {
     expect(missingRequired(T, {})).toEqual(expect.arrayContaining(asked));
     expect(missingRequired(T, {})).not.toContain('history_negligence');
 
-    // …and a stale opt-in answer from an older draft changes nothing.
+    // â€¦and a stale opt-in answer from an older draft changes nothing.
     expect(missingRequired(T, { [SAPS271_OPT_KEY]: SAPS271_DEALER })).toEqual(
       expect.arrayContaining(asked),
     );
@@ -248,11 +248,11 @@ describe('the six history questions', () => {
 
 describe('what reaches the writer', () => {
   it('withholds contact details and a spouse ID from the fact pack', () => {
-    // ⚠️ firearm_serial USED TO BE ON THIS LIST and its removal reverses a
+    // âš ï¸ firearm_serial USED TO BE ON THIS LIST and its removal reverses a
     // deliberate decision. The serial identifies a FIREARM, not a person, it
     // is the subject of the application, every professional motivation
     // introduces the firearm with it, and the mechanical verifier requires an
-    // answered serial to appear in the document — withholding it handed the
+    // answered serial to appear in the document â€” withholding it handed the
     // writer an impossible instruction that blocked four live generations.
     const packKeys = factPackFields(T).map((f) => f.key);
     for (const pii of [
@@ -268,7 +268,7 @@ describe('what reaches the writer', () => {
 
   it('withholds a clean history but not a disclosure', () => {
     // Six "No" answers in the pack is an invitation to pad the document with
-    // "the applicant has no convictions, no pending cases…". The DETAIL of a
+    // "the applicant has no convictions, no pending casesâ€¦". The DETAIL of a
     // disclosure is the opposite: it is the thing that must be met head-on.
     const packKeys = factPackFields(T).map((f) => f.key);
     expect(packKeys).not.toContain('history_conviction');
@@ -336,10 +336,10 @@ describe('isVisible', () => {
 
   it('matches on the exact value, not merely on being answered', () => {
     const spouse = fieldsFor(T).find((x) => x.key === 'spouse_name')!;
-    // ⚠️ THE OPT-IN CLAUSES ARE GONE FROM THIS CASE, NOT THE CASE ITSELF. It
+    // âš ï¸ THE OPT-IN CLAUSES ARE GONE FROM THIS CASE, NOT THE CASE ITSELF. It
     // used to assert three things: the marital condition, AND that the field
     // stayed hidden until the SAPS 271 was opted into. The second is retired
-    // with the opt-in (2026-09-08) — spouse_name is asked of every married
+    // with the opt-in (2026-09-08) â€” spouse_name is asked of every married
     // applicant now. The first is what this test is named for and is unchanged.
     expect(isVisible(spouse, { marital_status: 'Single' })).toBe(false);
     expect(isVisible(spouse, { marital_status: 'Married' })).toBe(true);
@@ -347,9 +347,9 @@ describe('isVisible', () => {
   });
 
   it('hides an internal field whatever anybody answers', () => {
-    // ⚠️ THE REPLACEMENT FOR A CONTRADICTION, AND THE CASE THAT GUARDS IT.
-    // These three are filled in by us — from the precinct lookup, the
-    // clippings picker and the member's own licences — and were hidden by
+    // âš ï¸ THE REPLACEMENT FOR A CONTRADICTION, AND THE CASE THAT GUARDS IT.
+    // These three are filled in by us â€” from the precinct lookup, the
+    // clippings picker and the member's own licences â€” and were hidden by
     // setting formOnly against a showIf so that no answer satisfied both. That
     // trick broke the moment formOnly stopped gating, and a draft carrying the
     // retired opt-in answer would have opened all three.
@@ -362,19 +362,19 @@ describe('isVisible', () => {
     }
   });
 
-  // ⚠️ REQUIRED AND UNASKABLE AT THE SAME TIME.
+  // âš ï¸ REQUIRED AND UNASKABLE AT THE SAME TIME.
   //
   // A `multi` answer is stored comma-joined in the registry's own order, and a
-  // field gated on `equals: 'other'` used to test the WHOLE string — so
+  // field gated on `equals: 'other'` used to test the WHOLE string â€” so
   // "vlakteskiet-chasa, other" did not match and the box behind it could never
   // be shown, while the field stayed required and quietly dropped out of
   // requiredKeys.
   //
-  // ⚠️ THE FIELDS THIS WAS FOUND ON ARE RETIRED. `discipline` and
-  // `discipline_other` went on 2026-09-09 — see RETIRED_FIELDS — so the rule
+  // âš ï¸ THE FIELDS THIS WAS FOUND ON ARE RETIRED. `discipline` and
+  // `discipline_other` went on 2026-09-09 â€” see RETIRED_FIELDS â€” so the rule
   // is pinned against a synthetic field instead of a live pair. The rule is
   // isVisible's, not theirs, and it outlives whichever field exposed it.
-  it('⚠️ sees a value inside a multi answer, not only a multi answer of one', () => {
+  it('âš ï¸ sees a value inside a multi answer, not only a multi answer of one', () => {
     const other = {
       key: 'named_other',
       label: 'Name it',
@@ -405,7 +405,7 @@ describe('requiredKeys', () => {
     const single = requiredKeys(T, { ...WITH_FORM, marital_status: 'Single' });
     const married = requiredKeys(T, { ...WITH_FORM, marital_status: 'Married' });
     // Married adds the spouse's name and the ID-TYPE question. The SA ID
-    // number itself only becomes required once the type says SA ID — a spouse
+    // number itself only becomes required once the type says SA ID â€” a spouse
     // with a passport must not be asked for an ID that does not exist.
     expect(married.length).toBe(single.length + 2);
     expect(married).toEqual(expect.arrayContaining(['spouse_name', 'spouse_id_type']));
@@ -427,33 +427,33 @@ describe('requiredKeys', () => {
 });
 
 
-// ── the SAPS 271 opt-in is RETIRED (2026-09-08) ────────────────────
+// â”€â”€ the SAPS 271 opt-in is RETIRED (2026-09-08) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// ⚠️ FIVE CASES STOOD HERE AND THEIR SUBJECT IS GONE, NOT MERELY CHANGED. The
+// âš ï¸ FIVE CASES STOOD HERE AND THEIR SUBJECT IS GONE, NOT MERELY CHANGED. The
 // operator's 2026-08-19 rule was "the user must have the option not to have
-// the 271 filled in — most of the time the dealer will fill in the form for
+// the 271 filled in â€” most of the time the dealer will fill in the form for
 // them already", and this block locked the effort collapse that came with it:
 // say the dealer does the form, and phones, postal codes, marital status, the
 // spouse, the owned table and the six history questions never appeared.
 //
 // It was the wrong question, for a structural reason rather than a matter of
-// taste — the form is split by PARTY, not by who fills it in. D, G and H are
+// taste â€” the form is split by PARTY, not by who fills it in. D, G and H are
 // the applicant's half in every case; a dealer completes E, F and their own
 // 350(a) and never G or H. So the opt-in asked somebody on screen one to
 // decide something the dealer does not decide for them, and a "my dealer will
-// do it" answer silently withheld the six history questions — the one thing a
-// motivation must meet head-on. See MOTIVATION-INTAKE-PLAN.md §1.
+// do it" answer silently withheld the six history questions â€” the one thing a
+// motivation must meet head-on. See MOTIVATION-INTAKE-PLAN.md Â§1.
 //
 // What replaced each case, so nothing is merely deleted:
 //
-//   "asks the question first"           — the field is retired. Covered below
+//   "asks the question first"           â€” the field is retired. Covered below
 //                                         by 'still accepts a retired field'.
-//   "hides EVERY form-only field"       — that is no longer true and must not
+//   "hides EVERY form-only field"       â€” that is no longer true and must not
 //                                         be. Covered by 'asks every form-only
 //                                         field of everybody'.
-//   "keeps the motivation path down"    — the path is not shortened any more.
-//   "restores the full set"             — there is no set to restore.
-//   "never deletes form answers"        — STILL TRUE and still tested, below.
+//   "keeps the motivation path down"    â€” the path is not shortened any more.
+//   "restores the full set"             â€” there is no set to restore.
+//   "never deletes form answers"        â€” STILL TRUE and still tested, below.
 
 describe('the retired SAPS 271 opt-in', () => {
   it('is no longer asked of anybody', () => {
@@ -461,10 +461,10 @@ describe('the retired SAPS 271 opt-in', () => {
   });
 
   it('still accepts a retired field, so an old draft still saves', () => {
-    // ⚠️ THE WHOLE REASON RETIRED_FIELDS EXISTS. The wizard resends the WHOLE
+    // âš ï¸ THE WHOLE REASON RETIRED_FIELDS EXISTS. The wizard resends the WHOLE
     // answers blob on every autosave, so a key that simply vanished from the
     // registry would fail sanitiseAnswers on every keystroke anywhere in the
-    // form — for ever — for anybody whose draft already holds it.
+    // form â€” for ever â€” for anybody whose draft already holds it.
     const { answers, rejected } = sanitiseAnswers(T, {
       [SAPS271_OPT_KEY]: SAPS271_FILL,
     });
@@ -473,12 +473,12 @@ describe('the retired SAPS 271 opt-in', () => {
   });
 
   it('changes nothing about what is asked, whatever the old answer was', () => {
-    // ⚠️ THE EXACT INVERSE OF THE CASE THIS REPLACED, AND THAT IS THE POINT.
-    // A stored 'My dealer will fill it in' — and there are drafts carrying one
-    // — must no longer hide anything. The dealer path was where a conviction
+    // âš ï¸ THE EXACT INVERSE OF THE CASE THIS REPLACED, AND THAT IS THE POINT.
+    // A stored 'My dealer will fill it in' â€” and there are drafts carrying one
+    // â€” must no longer hide anything. The dealer path was where a conviction
     // never reached the writer.
     //
-    // ⚠️ COMPARED AGAINST THE SAME ANSWERS WITHOUT THE KEY, not against "every
+    // âš ï¸ COMPARED AGAINST THE SAME ANSWERS WITHOUT THE KEY, not against "every
     // form-only field is visible". Fields behind an unmet showIf (a spouse's
     // ID number on an unmarried applicant) are legitimately hidden, and
     // asserting they are not would be asserting a bug.
@@ -538,10 +538,10 @@ describe('the nearest SAPS station', () => {
     expect(requiredKeys(T, {})).not.toContain('police_station');
   });
 
-  it('⚠️ the province companion is NEVER asked, on either SAPS 271 path', () => {
+  it('âš ï¸ the province companion is NEVER asked, on either SAPS 271 path', () => {
     // Same contradiction as COMPETENCY_RENEWS_KEY: formOnly hides it unless
     // the applicant opted into the form, and showIf then asks for the DEALER
-    // answer — which is never true once they have opted in. No answer
+    // answer â€” which is never true once they have opted in. No answer
     // satisfies both, so isVisible is false whichever way fill_saps271 goes.
     const f = fieldsFor(T).find((x) => x.key === 'police_station_province')!;
     expect(f).toBeDefined();
@@ -549,7 +549,7 @@ describe('the nearest SAPS station', () => {
     expect(isVisible(f, WITH_FORM)).toBe(false);
   });
 
-  it('never reaches the model — it exists only to disambiguate the station name', () => {
+  it('never reaches the model â€” it exists only to disambiguate the station name', () => {
     const keys = factPackFields(T).map((f) => f.key);
     expect(keys).not.toContain('police_station_province');
     // The station itself DOES reach the writer, same as any other short answer.
@@ -562,7 +562,7 @@ describe('press clippings the applicant chose', () => {
     const f = fieldsFor(T).find((x) => x.key === PRESS_CLIPPINGS_KEY);
     expect(f).toBeDefined();
 
-    // ⚠️ SELF-DEFENCE MEANS BOTH SECTIONS SINCE 2026-09-09. A section 14
+    // âš ï¸ SELF-DEFENCE MEANS BOTH SECTIONS SINCE 2026-09-09. A section 14
     // applicant needs the cuttings MORE than a section 13 one: s14(4) asks
     // them to show a handgun is not enough where they live.
     for (const type of ALL) {
@@ -578,7 +578,7 @@ describe('press clippings the applicant chose', () => {
     }
   });
 
-  it('⚠️ is never asked, on either SAPS 271 path — the wizard writes it', () => {
+  it('âš ï¸ is never asked, on either SAPS 271 path â€” the wizard writes it', () => {
     // Same two-gate trick as police_station_province: formOnly hides it
     // unless the applicant opted into the form, and showIf then asks for the
     // DEALER answer, which is never true once they have. No answer satisfies
@@ -588,7 +588,7 @@ describe('press clippings the applicant chose', () => {
     expect(isVisible(f, WITH_FORM)).toBe(false);
   });
 
-  it('never reaches the model raw — the writer sees clippingFactLines instead', () => {
+  it('never reaches the model raw â€” the writer sees clippingFactLines instead', () => {
     const keys = factPackFields(T).map((f) => f.key);
     expect(keys).not.toContain(PRESS_CLIPPINGS_KEY);
   });
@@ -608,7 +608,7 @@ describe('press clippings the applicant chose', () => {
     });
 
     it('refuses more than the cap, rather than truncating it', () => {
-      // ⚠️ TRUNCATING JSON DOES NOT PRODUCE A SHORTER VALID ANSWER. The
+      // âš ï¸ TRUNCATING JSON DOES NOT PRODUCE A SHORTER VALID ANSWER. The
       // generic maxLength cap elsewhere in this function is a plain
       // `.slice()`, which on a JSON array is corruption, not trimming.
       const ids = Array.from(
@@ -653,7 +653,7 @@ describe('press clippings the applicant chose', () => {
       expect(parsePressClippingIds('{"a":1}')).toEqual([]);
     });
 
-    it('is empty for an oversized array too — sanitiseAnswers should already have refused it, but this never trusts that', () => {
+    it('is empty for an oversized array too â€” sanitiseAnswers should already have refused it, but this never trusts that', () => {
       const ids = Array.from(
         { length: PRESS_CLIPPINGS_MAX + 1 },
         (_, i) => `n${i}`,
@@ -678,7 +678,7 @@ describe('ID numbers typed like a human types them', () => {
     expect(answers.spouse_id_number).toBe('8203020082088');
   });
 
-  it('leaves the passport field alone — passports are alphanumeric', () => {
+  it('leaves the passport field alone â€” passports are alphanumeric', () => {
     const { answers } = sanitiseAnswers(T, {
       spouse_passport_number: 'A1234 567',
     });
@@ -686,12 +686,12 @@ describe('ID numbers typed like a human types them', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // THE REQUIRED SET GROWS AS THE FORM IS ANSWERED.
 //
 // This is the property that broke a live application. The wizard used to
 // compute "what is still outstanding" by crossing filled answers off the list
-// the server sent when the page loaded — a set that can only ever shrink. But
+// the server sent when the page loaded â€” a set that can only ever shrink. But
 // requiredKeys() filters the registry through isVisible(), so answering a
 // question can ADD requirements that were neither required nor visible at
 // load. The wizard then showed nothing outstanding, enabled Generate, and the
@@ -701,7 +701,7 @@ describe('ID numbers typed like a human types them', () => {
 // Anything that makes the wizard's view of "required" static again puts that
 // dead end back, so the growth is pinned here rather than left as a property
 // the registry happens to have today.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('requirements that appear only once something is answered', () => {
   const married = (extra: Record<string, string> = {}) => ({
     [SAPS271_OPT_KEY]: SAPS271_FILL,
@@ -752,10 +752,10 @@ describe('requirements that appear only once something is answered', () => {
   });
 
   it('asks the spouse questions of a married applicant, and of nobody else', () => {
-    // ⚠️ INVERTED FROM WHAT IT SAID, 2026-09-08. This used to assert that on
+    // âš ï¸ INVERTED FROM WHAT IT SAID, 2026-09-08. This used to assert that on
     // the dealer path the whole form-only block was out of scope, so marital
     // status could not drag the spouse fields in behind it. There is no dealer
-    // path now: the SAPS 271 is always produced, so both are asked — and the
+    // path now: the SAPS 271 is always produced, so both are asked â€” and the
     // gate that matters is the one this test is really about, which is that
     // they hang off being married rather than off a form choice.
     const married = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
@@ -772,11 +772,11 @@ describe('requirements that appear only once something is answered', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // EVERY OPTION THE FORM OFFERS MUST SURVIVE THE SAVE.
 //
 // `discipline` draws its fifty-nine options from an optionSource, so it
-// carries no `choices` — and the sanitiser's `field.choices ?? YES_NO`
+// carries no `choices` â€” and the sanitiser's `field.choices ?? YES_NO`
 // fallback therefore accepted exactly two values, "Yes" and "No", for a
 // shooting-discipline dropdown. Every real answer was discarded.
 //
@@ -786,10 +786,10 @@ describe('requirements that appear only once something is answered', () => {
 // not stay filled in, and a Generate that refused over a question they had
 // answered. Live report: "the Experience keeps resetting".
 //
-// The general property — the offered set and the accepted set are the same
-// set — is what is pinned here. A second optionSource added later inherits
+// The general property â€” the offered set and the accepted set are the same
+// set â€” is what is pinned here. A second optionSource added later inherits
 // this test rather than the bug.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('the form and the validator agree on what a choice may be', () => {
   it('accepts EVERY option offered, for every option-sourced field', () => {
     for (const t of ALL) {
@@ -812,14 +812,14 @@ describe('the form and the validator agree on what a choice may be', () => {
     }
   });
 
-  // ⚠️ THE MULTI BRANCH OF THE VALIDATOR, PINNED ON WHATEVER MULTI FIELD IS
+  // âš ï¸ THE MULTI BRANCH OF THE VALIDATOR, PINNED ON WHATEVER MULTI FIELD IS
   // LIVE. The single-select failure was `field.choices ?? YES_NO`; the multi
   // branch had `field.choices ?? []`, the identical mistake with an identical
-  // symptom — every value silently discarded.
+  // symptom â€” every value silently discarded.
   //
-  // ⚠️ IT USED TO BE PINNED ON `discipline`, WHICH IS RETIRED (2026-09-09; see
+  // âš ï¸ IT USED TO BE PINNED ON `discipline`, WHICH IS RETIRED (2026-09-09; see
   // RETIRED_FIELDS). The rule belongs to sanitiseAnswers, not to that field,
-  // so it moved to `competency_for` — multi, five choices, and asked on every
+  // so it moved to `competency_for` â€” multi, five choices, and asked on every
   // section 16.
   const MULTI_KEY = 'competency_for';
   const multiChoices = (t: MotivationLicenceType) =>
@@ -841,7 +841,7 @@ describe('the form and the validator agree on what a choice may be', () => {
 
   it('normalises the order, so the same three compare equal either way', () => {
     // Two applicants who picked the same values in a different order have
-    // given the same answer, and the stored value has to say so — otherwise
+    // given the same answer, and the stored value has to say so â€” otherwise
     // the sameness detector reads them as different documents.
     const t = MotivationLicenceType.S16_DEDICATED_SPORT;
     const three = multiChoices(t).slice(0, 3);
@@ -875,17 +875,17 @@ describe('the form and the validator agree on what a choice may be', () => {
   });
 
   /**
-   * ⚠️ THE "SOMETHING ELSE" SENTINEL HAD ONE FIELD AND IT IS RETIRED.
+   * âš ï¸ THE "SOMETHING ELSE" SENTINEL HAD ONE FIELD AND IT IS RETIRED.
    *
    * `discipline` was the only live `multi` carrying `allowOther`, and this
-   * pinned that `sanitiseAnswers` accepts the bare `other` token — refusing it
+   * pinned that `sanitiseAnswers` accepts the bare `other` token â€” refusing it
    * would have made the box behind its `showIf` permanently unreachable. The
    * three discipline questions went on 2026-09-09 (RETIRED_FIELDS), so there
    * is no live field left to exercise it against and a synthetic one would
    * only test the test.
    *
    * The rule itself is unchanged in sanitiseAnswers. Restore this the moment a
-   * multi field carries `allowOther` again — the showIf half is still pinned,
+   * multi field carries `allowOther` again â€” the showIf half is still pinned,
    * in the isVisible suite above.
    */
 
@@ -924,17 +924,17 @@ describe('the form and the validator agree on what a choice may be', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // WHAT THE APPLICANT ALREADY OWNS IS ASKED ON BOTH PATHS.
 //
 // These six columns look like SAPS 271 boxes and were marked formOnly, so on
-// the dealer path — where the dealer completes the form — the whole section
+// the dealer path â€” where the dealer completes the form â€” the whole section
 // disappeared. But motivation-overlap.ts reads the calibre, make and type off
 // them, and its verdict goes into the writer's prompt: "does this applicant
 // already hold something that does this job" is the objection the Registrar
 // raises whether or not we filled in the form. Hidden, the overlap note came
 // out empty and the document could not answer it.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('firearms the applicant already owns', () => {
   const dealerPath = { [SAPS271_OPT_KEY]: 'My dealer will fill it in' };
   const owned = (t: MotivationLicenceType) =>
@@ -968,7 +968,7 @@ describe('firearms the applicant already owns', () => {
     }
   });
 
-  it('is never REQUIRED — plenty of applicants own nothing yet', () => {
+  it('is never REQUIRED â€” plenty of applicants own nothing yet', () => {
     // A first-time applicant must not be blocked by a table of firearms they
     // do not have.
     for (const t of ALL) {
@@ -983,8 +983,8 @@ describe('firearms the applicant already owns', () => {
 });
 
 describe('what never reaches a model', () => {
-  // ⚠️ THE OWNED-FIREARMS TABLE STOPPED BEING formOnly so it could be asked on
-  // the dealer path — and formOnly was ALSO the only thing keeping it out of
+  // âš ï¸ THE OWNED-FIREARMS TABLE STOPPED BEING formOnly so it could be asked on
+  // the dealer path â€” and formOnly was ALSO the only thing keeping it out of
   // the prompt. Serial numbers and licence numbers are registry identifiers
   // with no narrative use; they must not travel to Anthropic because a field
   // changed visibility.
@@ -999,7 +999,7 @@ describe('what never reaches a model', () => {
     }
   });
 
-  it('DOES send type, calibre and make — the overlap argument needs them', () => {
+  it('DOES send type, calibre and make â€” the overlap argument needs them', () => {
     const keys = factPackFields(
       MotivationLicenceType.S16_DEDICATED_SPORT,
     ).map((f) => f.key);
@@ -1010,9 +1010,9 @@ describe('what never reaches a model', () => {
 });
 
 describe('what the writer must see despite formOnly', () => {
-  // ⚠️ THE SERIAL IS THE SUBJECT OF THE APPLICATION. It is formOnly for
+  // âš ï¸ THE SERIAL IS THE SUBJECT OF THE APPLICATION. It is formOnly for
   // wizard visibility, but the mechanical verifier requires an answered
-  // serial to appear in the document — so withholding it from the prompt
+  // serial to appear in the document â€” so withholding it from the prompt
   // hands the writer an impossible instruction. Four consecutive live
   // generations were blocked exactly that way.
   it('gives the writer firearm_serial', () => {
@@ -1035,21 +1035,21 @@ describe('what the writer must see despite formOnly', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // THE ACQUISITION ROUTE IS ASKED OF EVERYONE, AND TOLD TO NOBODY.
 //
-// ⚠️ TWO OPPOSITE MISTAKES ARE BOTH EASY HERE, and formOnly makes exactly one
-// of them. It hides a field from anyone whose dealer fills the SAPS 271 — who
-// are precisely the people buying from a dealer — so marking this field
+// âš ï¸ TWO OPPOSITE MISTAKES ARE BOTH EASY HERE, and formOnly makes exactly one
+// of them. It hides a field from anyone whose dealer fills the SAPS 271 â€” who
+// are precisely the people buying from a dealer â€” so marking this field
 // formOnly would silence the question for the group it most concerns. But it
 // still must not reach the writer: "the applicant is buying from a dealer" is
 // padding fuel, not an argument for needing a firearm.
 describe('where the firearm is coming from', () => {
-  it('⚠️ is NOT asked on any path, on any licence type', () => {
-    // ⚠️ THE PICKER IS GONE (2026-10-13). Operator: "remove the dealer/private
+  it('âš ï¸ is NOT asked on any path, on any licence type', () => {
+    // âš ï¸ THE PICKER IS GONE (2026-10-13). Operator: "remove the dealer/private
     // picker. Let Jev make the call what it is and how it should be processed."
     // The route is read off the uploaded paperwork, so the field is `internal`
-    // and never on screen — including on the SAPS 271 paths, where it used to
+    // and never on screen â€” including on the SAPS 271 paths, where it used to
     // be asked on purpose ("marking this formOnly would silence the question
     // for the group it most concerns"). The reader answers it now, so nobody is
     // asked to choose.
@@ -1063,22 +1063,22 @@ describe('where the firearm is coming from', () => {
     }
   });
 
-  // ⚠️ AND THE RENEWAL IS ASKED NEITHER THE SOURCE NOR THE FORM.
+  // âš ï¸ AND THE RENEWAL IS ASKED NEITHER THE SOURCE NOR THE FORM.
   //
   // The SAPS 271 is an application for a NEW licence under sections 13 to 20;
   // a renewal is lodged on the SAPS 518(a). Answering "fill it in for me"
-  // un-hid roughly forty-eight formOnly questions — postal address, both
+  // un-hid roughly forty-eight formOnly questions â€” postal address, both
   // telephones, marital status, spouse name and identity number, the six
-  // history questions, the fourteen-row owned table — and the render then
+  // history questions, the fourteen-row owned table â€” and the render then
   // threw, surfacing as a 409, once every one of them had been answered.
-  it('⚠️ asks a renewal neither the source nor the SAPS 271', () => {
+  it('âš ï¸ asks a renewal neither the source nor the SAPS 271', () => {
     const keys = fieldsFor(MotivationLicenceType.S24_RENEWAL).map((f) => f.key);
     expect(keys).not.toContain(FIREARM_SOURCE_KEY);
     expect(keys).not.toContain(SAPS271_OPT_KEY);
   });
 
-  // ⚠️ ASKED IS NOT ACCEPTED. A draft saved before this still holds those keys,
-  // and the wizard's next autosave resends the whole blob — so a key that has
+  // âš ï¸ ASKED IS NOT ACCEPTED. A draft saved before this still holds those keys,
+  // and the wizard's next autosave resends the whole blob â€” so a key that has
   // stopped being asked must still be findable, or the member's own answer is
   // dropped and they are shown an error about it.
   it('still finds a question it has stopped asking, so old drafts survive', () => {
@@ -1098,7 +1098,7 @@ describe('where the firearm is coming from', () => {
   });
 
   it('still accepts two live routes and the retired ones, but no longer asks', () => {
-    // ⚠️ PINNED ON PURPOSE. Each route drives a different required document
+    // âš ï¸ PINNED ON PURPOSE. Each route drives a different required document
     // and a different custody statement, so a route added without its routing
     // is a dead option and a route removed silently strands whoever picked it.
     // The estate route joined on 2026-08-24 and brought EXECUTOR_APPOINTMENT
@@ -1106,9 +1106,9 @@ describe('where the firearm is coming from', () => {
     const f = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE).find(
       (x) => x.key === FIREARM_SOURCE_KEY,
     )!;
-    // ⚠️ TWO OFFERED, FOUR ACCEPTED. Operator, 2026-08-29: "The form must
+    // âš ï¸ TWO OFFERED, FOUR ACCEPTED. Operator, 2026-08-29: "The form must
     // only give two options, Private seller or Dealer." Both the estate route
-    // and "Not decided yet" are RETIRED, not deleted — the field is required,
+    // and "Not decided yet" are RETIRED, not deleted â€” the field is required,
     // so refusing a stored value would be a wizard its owner cannot get past.
     expect(f.choices).toEqual([SOURCE_DEALER, SOURCE_PRIVATE]);
     expect(f.choices).not.toContain(SOURCE_ESTATE);
@@ -1116,18 +1116,18 @@ describe('where the firearm is coming from', () => {
     expect(f.retiredChoices).toEqual([SOURCE_ESTATE, SOURCE_UNDECIDED]);
     expect(allowedValues(f)).toContain(SOURCE_ESTATE);
     expect(allowedValues(f)).toContain(SOURCE_UNDECIDED);
-    // ⚠️ NO LONGER REQUIRED, AND NO LONGER ON SCREEN (2026-10-13). The route is
-    // read off the uploaded paperwork now, so the field is `internal` —
-    // hidden from the wizard and out of requiredKeys — while still accepting
+    // âš ï¸ NO LONGER REQUIRED, AND NO LONGER ON SCREEN (2026-10-13). The route is
+    // read off the uploaded paperwork now, so the field is `internal` â€”
+    // hidden from the wizard and out of requiredKeys â€” while still accepting
     // every value a document read can return.
     expect(f.required).toBeUndefined();
     expect(f.internal).toBe(true);
     expect(isVisible(f, {})).toBe(false);
   });
 
-  it('⚠️ NEVER ASKS A RENEWAL WHERE THE FIREARM IS COMING FROM', () => {
+  it('âš ï¸ NEVER ASKS A RENEWAL WHERE THE FIREARM IS COMING FROM', () => {
     // Which is why requiring it is safe. A section 24 is a licence already
-    // held — there is no dealer and no seller — so a required question with no
+    // held â€” there is no dealer and no seller â€” so a required question with no
     // answer would be a pack nobody could finish.
     expect(
       fieldsFor(MotivationLicenceType.S24_RENEWAL).find(
@@ -1137,19 +1137,19 @@ describe('where the firearm is coming from', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A MULTI CHOICE MAY NOT CONTAIN A COMMA.
 //
-// ⚠️ THIS IS NOT STYLE. A `multi` answer is STORED COMMA-JOINED, and both
+// âš ï¸ THIS IS NOT STYLE. A `multi` answer is STORED COMMA-JOINED, and both
 // sanitiseAnswers and the extraction guard split on that comma to validate the
 // parts. A choice carrying its own comma therefore cannot round-trip: it
 // splits into fragments, none of which is an offered choice, and the whole
-// answer is REFUSED on save — silently, from the applicant's side.
+// answer is REFUSED on save â€” silently, from the applicant's side.
 //
 // Found the hard way. The competency endorsement labels were first written as
-// "Rifle or carbine — manually operated (bolt, lever, pump, single shot)" and
+// "Rifle or carbine â€” manually operated (bolt, lever, pump, single shot)" and
 // every one of them was rejected the moment it was read off a certificate.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('multi fields and the comma-joined storage format', () => {
   const TYPES: MotivationLicenceType[] = [
     MotivationLicenceType.S13_SELF_DEFENCE,
@@ -1159,7 +1159,7 @@ describe('multi fields and the comma-joined storage format', () => {
     MotivationLicenceType.S24_RENEWAL,
   ];
 
-  it('⚠️ no multi choice anywhere contains a comma', () => {
+  it('âš ï¸ no multi choice anywhere contains a comma', () => {
     const offenders: string[] = [];
     for (const type of TYPES) {
       for (const f of expandFields(fieldsFor(type))) {
@@ -1179,7 +1179,7 @@ describe('multi fields and the comma-joined storage format', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // EVIDENCE ATTACHED TO THE QUESTION IT SUPPORTS.
 //
 // Operator, items 8 and 10 of twelve, 2026-08-24: the hunting record and the
@@ -1187,10 +1187,10 @@ describe('multi fields and the comma-joined storage format', () => {
 // of attachments as the applicant gives them", and for association activities
 // "there might be targets that's uploaded".
 //
-// ⚠️ THE CLUTTER COMPLAINT THAT REMOVED THE LAST PER-FIELD PICKERS WAS FAIR,
+// âš ï¸ THE CLUTTER COMPLAINT THAT REMOVED THE LAST PER-FIELD PICKERS WAS FAIR,
 // and this must not undo it. A camera, a file picker and a dropdown under all
 // 199 fields is noise. These belong only where the evidence IS the argument.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('which fields accept attachments', () => {
   const TYPES: MotivationLicenceType[] = [
     MotivationLicenceType.S13_SELF_DEFENCE,
@@ -1203,7 +1203,7 @@ describe('which fields accept attachments', () => {
   const attaching = (t: MotivationLicenceType) =>
     fieldsFor(t).filter((f) => f.attachKind);
 
-  it('⚠️ STAYS RARE — at most one field per licence type', () => {
+  it('âš ï¸ STAYS RARE â€” at most one field per licence type', () => {
     for (const t of TYPES) {
       expect(attaching(t).length).toBeLessThanOrEqual(1);
     }
@@ -1226,9 +1226,9 @@ describe('which fields accept attachments', () => {
     expect(attaching(MotivationLicenceType.S24_RENEWAL)).toEqual([]);
   });
 
-  it('⚠️ names a REAL upload kind, so the file joins the one document list', () => {
+  it('âš ï¸ names a REAL upload kind, so the file joins the one document list', () => {
     // A private kind would produce two lists of the same documents that could
-    // disagree — and a pack listing an annexure twice.
+    // disagree â€” and a pack listing an annexure twice.
     const kinds = new Set<string>(Object.keys(MotivationUploadKind));
     for (const t of TYPES) {
       for (const f of attaching(t)) {
@@ -1237,7 +1237,7 @@ describe('which fields accept attachments', () => {
     }
   });
 
-  it('⚠️ never marks a field BOTH doc-sourced and attachable', () => {
+  it('âš ï¸ never marks a field BOTH doc-sourced and attachable', () => {
     // They mean opposite things: docSourced is "a document answers this, stop
     // asking"; attachKind is "a document supports this, keep asking". A field
     // claiming both would be prefilled and asked for evidence at once.
@@ -1249,19 +1249,19 @@ describe('which fields accept attachments', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // THE FIREARMS THE APPLICANT ALREADY OWNS.
 //
 // Operator, 2026-09-07, on their own Section 13: "all fire arms the applicant
 // owns must be in that list", and "when listing the fire arms I already own it
 // should only be the make, model, serial number and expiry date listed,
 // nothing else."
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('the owned-firearms table', () => {
   const owned = (t: MotivationLicenceType) =>
     fieldsFor(t).filter((f) => f.key.startsWith('existing_firearm_'));
 
-  it('⚠️ CARRIES FOURTEEN ROWS, WHICH IS WHAT THE FORM CARRIES', () => {
+  it('âš ï¸ CARRIES FOURTEEN ROWS, WHICH IS WHAT THE FORM CARRIES', () => {
     // It carried six, and the note explaining why said an applicant with more
     // "can write the remainder in by hand". Nobody wrote anything in by hand:
     // the offer reported each leftover licence as not fitting. Item 2.1 on
@@ -1273,8 +1273,8 @@ describe('the owned-firearms table', () => {
   });
 
   it('gives every row the identical set of columns', () => {
-    // ⚠️ THE REASON THEY ARE GENERATED. Six hand-written rows had already
-    // drifted — row 1 carried help text rows 2 to 6 did not, so five sixths of
+    // âš ï¸ THE REASON THEY ARE GENERATED. Six hand-written rows had already
+    // drifted â€” row 1 carried help text rows 2 to 6 did not, so five sixths of
     // applicants never saw the guidance.
     const columnsOf = (n: number) =>
       owned(T)
@@ -1283,7 +1283,7 @@ describe('the owned-firearms table', () => {
         .sort();
     const first = columnsOf(1);
     expect(first).toEqual(
-      // ⚠️ `primary_use` JOINED THE ROW ON 2026-09-08 AND `use` STAYED. They
+      // âš ï¸ `primary_use` JOINED THE ROW ON 2026-09-08 AND `use` STAYED. They
       // are not duplicates: `use` is free text somebody may already have
       // typed, `primary_use` is the tapped card that replaced it as the
       // question, and motivation-overlap.ts reads the second. Nothing this
@@ -1295,7 +1295,7 @@ describe('the owned-firearms table', () => {
         'make',
         'model',
         'primary_use',
-        // ⚠️ ADDED 2026-09-09 AFTER THE WRITER INVENTED ONE. The rows carried
+        // âš ï¸ ADDED 2026-09-09 AFTER THE WRITER INVENTED ONE. The rows carried
         // no section, the prompt asked for one per held firearm, and MO000071
         // put a section 16 Marlin under section 15.
         'section_held',
@@ -1321,7 +1321,7 @@ describe('the owned-firearms table', () => {
     }
   });
 
-  it('⚠️ KEEPS type, calibre AND use, though they are not in the listing', () => {
+  it('âš ï¸ KEEPS type, calibre AND use, though they are not in the listing', () => {
     // A request about a SUMMARY ROW must not delete the fields the argument
     // is made of: motivation-overlap.ts classifies the calibre to raise the
     // duplicate-calibre refusal ground before the Registrar does, the 271
@@ -1333,7 +1333,7 @@ describe('the owned-firearms table', () => {
 
   it('asks for ONE serial, and never reaches the writer with it', () => {
     // A licence prints the same number against the barrel, the receiver and
-    // the frame — the operator's Glock card reads ZABA01892 three times — so
+    // the frame â€” the operator's Glock card reads ZABA01892 three times â€” so
     // two boxes asked two questions with one answer. And a serial, a licence
     // number and another licence's expiry date are registry identifiers with
     // no narrative use whatever.
@@ -1346,10 +1346,10 @@ describe('the owned-firearms table', () => {
   });
 
   describe('the two serial keys that were collapsed into one', () => {
-    it('⚠️ IS STILL ACCEPTED, SO A SAVED DRAFT STILL LOADS', () => {
+    it('âš ï¸ IS STILL ACCEPTED, SO A SAVED DRAFT STILL LOADS', () => {
       // The wizard resends the WHOLE answers blob on every autosave, so a key
       // that stopped being registered fails sanitiseAnswers on every keystroke
-      // anywhere in the form — the member sees "we could not store your
+      // anywhere in the form â€” the member sees "we could not store your
       // answer" for ever and the value they typed is dropped.
       const { answers, rejected } = sanitiseAnswers(T, {
         existing_firearm_1_barrel_serial: 'B67890',
@@ -1376,8 +1376,8 @@ describe('the owned-firearms table', () => {
       expect(
         ownedFirearmSerial({ existing_firearm_1_barrel_serial: 'B-1' }, 1),
       ).toBe('B-1');
-      // ⚠️ A PLACEHOLDER FALLS THROUGH TO THE NEXT KEY. "NONE" on a card is
-      // the card saying there is nothing there, not a serial — and plenty of
+      // âš ï¸ A PLACEHOLDER FALLS THROUGH TO THE NEXT KEY. "NONE" on a card is
+      // the card saying there is nothing there, not a serial â€” and plenty of
       // rifles genuinely have no frame number.
       expect(
         ownedFirearmSerial(
@@ -1395,16 +1395,16 @@ describe('the owned-firearms table', () => {
     });
   });
 
-  // ────────────────────────────────────────────────────────────────
-  // WHAT MARKS A ROW TAKEN — ONE RULE, BECAUSE THREE READERS DISAGREEING
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // WHAT MARKS A ROW TAKEN â€” ONE RULE, BECAUSE THREE READERS DISAGREEING
   // ABOUT IT OVERWRITES A FIREARM.
   //
   // nextOwnedSlot decided it on the CALIBRE alone; credentialOffer tested ten
   // columns. Calibre is the one column where absence has a second meaning, and
   // it became droppable the day placeholders stopped crossing the answer
-  // boundary — so a row carrying a make, a model and a serial could report
+  // boundary â€” so a row carrying a make, a model and a serial could report
   // itself free and the next licence would be written over the top of it.
-  // ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('which owned-firearm rows are in use', () => {
     it('counts a row taken by ANY of its columns, not just the calibre', () => {
       expect(ownedRowTaken({ existing_firearm_1_make: 'Marlin' }, 1)).toBe(true);
@@ -1420,7 +1420,7 @@ describe('the owned-firearms table', () => {
       );
     });
 
-    it('⚠️ counts the RETIRED serial keys, so an old draft is not written over', () => {
+    it('âš ï¸ counts the RETIRED serial keys, so an old draft is not written over', () => {
       // A row saved before the two serial boxes collapsed holds these and no
       // `_serial`. A row that looks empty because we asked about the wrong key
       // is a row somebody will put a different firearm into.
@@ -1432,7 +1432,7 @@ describe('the owned-firearms table', () => {
       );
     });
 
-    it('⚠️ does NOT run the placeholder rule — a card word is still somebody having been here', () => {
+    it('âš ï¸ does NOT run the placeholder rule â€” a card word is still somebody having been here', () => {
       // Everywhere else in this file a placeholder is nothing. Here the
       // question is not "is this value true" but "is this row free", and the
       // conservative answer is safe in both directions: at worst the member
@@ -1462,3 +1462,22 @@ describe('the owned-firearms table', () => {
     });
   });
 });
+
+describe('missingRequired for the motivation-only letter', () => {
+  it('does not block on a SAPS 271 form-only answer', () => {
+    const type = MotivationLicenceType.S16_DEDICATED_HUNTER;
+    const answers = {
+      marital_status: 'Married',
+      spouse_id_type: 'SA ID',
+    };
+    expect(missingRequired(type, answers)).toContain('spouse_id_number');
+    expect(
+      missingRequired(type, answers, { motivationOnly: true }),
+    ).not.toContain('spouse_id_number');
+    expect(missingRequired(type, answers)).toContain('history_conviction');
+    expect(
+      missingRequired(type, answers, { motivationOnly: true }),
+    ).not.toContain('history_conviction');
+  });
+});
+

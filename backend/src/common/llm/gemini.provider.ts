@@ -94,6 +94,7 @@ import {
   type Content,
   type GenerateContentConfig,
   type GenerateContentResponse,
+  type Interactions,
   type Part,
   type SafetySetting,
 } from '@google/genai';
@@ -101,6 +102,8 @@ import { toGeminiSchema } from './gemini-schema';
 import type { LlmProviderClient } from './provider.interface';
 import {
   LlmError,
+  type LlmAgentRequest,
+  type LlmAgentResponse,
   type LlmBlob,
   type LlmImageRequest,
   type LlmImageResponse,
@@ -211,6 +214,76 @@ const BLOCKING_FINISH_REASONS = new Set([
   'SPII',
   'IMAGE_SAFETY',
 ]);
+
+/** The parts of an Interaction this adapter reads. */
+interface AgentInteraction {
+  output_text?: string;
+  steps?: unknown[];
+  usage?: {
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+    total_cached_tokens?: number;
+    total_thought_tokens?: number;
+  };
+}
+
+function safeJson(value: unknown): string {
+  if (value === undefined) return 'null';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return JSON.stringify({ error: 'Tool result was not serialisable' });
+  }
+}
+
+function interactionText(interaction: AgentInteraction): string {
+  if (
+    typeof interaction.output_text === 'string' &&
+    interaction.output_text.trim()
+  ) {
+    return interaction.output_text.trim();
+  }
+  const chunks: string[] = [];
+  for (const raw of interaction.steps ?? []) {
+    const step = raw as {
+      type?: string;
+      content?: Array<{ type?: string; text?: string }>;
+    };
+    if (step.type !== 'model_output') continue;
+    for (const part of step.content ?? []) {
+      if (part.type === 'text' && part.text) chunks.push(part.text);
+    }
+  }
+  return chunks.join('\n').trim();
+}
+
+function functionCalls(interaction: AgentInteraction): LlmToolCall[] {
+  const out: LlmToolCall[] = [];
+  for (const raw of interaction.steps ?? []) {
+    const step = raw as {
+      type?: string;
+      id?: string;
+      name?: string;
+      arguments?: Record<string, unknown>;
+    };
+    if (step.type !== 'function_call' || !step.id || !step.name) continue;
+    out.push({
+      id: step.id,
+      name: step.name,
+      input: step.arguments ?? {},
+    });
+  }
+  return out;
+}
+
+function interactionUsage(usage: AgentInteraction['usage']): LlmUsage {
+  return {
+    inputTokens: usage?.total_input_tokens ?? 0,
+    outputTokens: usage?.total_output_tokens ?? 0,
+    cachedInputTokens: usage?.total_cached_tokens ?? 0,
+    thinkingTokens: usage?.total_thought_tokens ?? 0,
+  };
+}
 
 export class GeminiProvider implements LlmProviderClient {
   readonly name = 'gemini' as const;
@@ -342,6 +415,127 @@ export class GeminiProvider implements LlmProviderClient {
 
   defaultImageModel(): string {
     return DEFAULT_IMAGE_MODEL;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // AGENT
+  // ══════════════════════════════════════════════════════════════════
+  /**
+   * Run one tool-using agent turn through the Interactions API.
+   *
+   * ⚠️ THE LOOP IS THE POINT. A function call comes back as a `step`, we run
+   * the real function through `executeTool`, then send a `function_result`
+   * back with `previous_interaction_id`. The model keeps the tool context
+   * (and Gemini 3's signature) across that hop; the caller only sees the final
+   * prose and the diagnostics.
+   *
+   * ⚠️ STORED ONLY WHILE THE LOOP RUNS, THEN DELETED. `previous_interaction_id`
+   * requires a stored interaction, but the canonical transcript is Postgres.
+   * Every interaction this method creates is deleted in the `finally` block, so
+   * the interview history is not left in Gemini's 55-day store.
+   */
+  async agent(req: LlmAgentRequest): Promise<LlmAgentResponse> {
+    const model = req.model ?? DEFAULT_MODEL;
+    const tools = req.tools.map((tool) => ({
+      type: 'function' as const,
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    }));
+    const responseFormat = req.json?.schema
+      ? {
+          type: 'text' as const,
+          mime_type: 'application/json',
+          schema: req.json.schema,
+        }
+      : undefined;
+    const generationConfig = {
+      max_output_tokens: req.maxTokens,
+      thinking_level: 'low' as const,
+    };
+
+    const interactionIds: string[] = [];
+    const toolCalls: LlmToolCall[] = [];
+    const maxRounds = Math.max(1, req.maxToolRounds ?? 3);
+
+    const create = (input: string | Interactions.Step[], previous?: string) =>
+      this.withRetry(req, (signal) =>
+        this.sdk().interactions.create(
+          {
+            model,
+            input,
+            tools,
+            system_instruction: req.system,
+            generation_config: generationConfig,
+            ...(responseFormat ? { response_format: responseFormat } : {}),
+            ...(previous ? { previous_interaction_id: previous } : {}),
+            store: true,
+          },
+          { fetchOptions: { signal } },
+        ),
+      );
+
+    try {
+      let interaction = await create(req.input);
+      interactionIds.push(interaction.id);
+      let rounds = 1;
+      let text = interactionText(interaction);
+
+      while (rounds <= maxRounds) {
+        const calls = functionCalls(interaction);
+        if (!calls.length) break;
+        toolCalls.push(...calls);
+
+        const results: Interactions.Step[] = [];
+        for (const call of calls) {
+          let result: unknown;
+          let isError = false;
+          try {
+            result = await req.executeTool(call);
+          } catch (err) {
+            result = { error: (err as Error).message };
+            isError = true;
+          }
+          results.push({
+            type: 'function_result' as const,
+            name: call.name,
+            call_id: call.id,
+            result: [
+              {
+                type: 'text' as const,
+                text: safeJson(result),
+              },
+            ],
+            ...(isError ? { is_error: true } : {}),
+          });
+        }
+
+        interaction = await create(results, interaction.id);
+        interactionIds.push(interaction.id);
+        rounds += 1;
+        const next = interactionText(interaction);
+        if (next) text = next;
+      }
+
+      return {
+        text,
+        toolCalls,
+        usage: interactionUsage(interaction.usage),
+        model,
+        provider: 'gemini',
+        interactionId: interaction.id,
+        rounds,
+      };
+    } finally {
+      // Best-effort: a failed delete must not turn a good answer into an error.
+      for (const id of [...interactionIds].reverse()) {
+        try {
+          await this.sdk().interactions.delete(id);
+        } catch {
+          // Retention cleanup is not allowed to break an interview.
+        }
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════

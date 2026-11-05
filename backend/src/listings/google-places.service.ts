@@ -96,7 +96,7 @@ export class GooglePlacesService {
     const q = (input ?? '').trim();
     if (q.length < 2) return [];
 
-    const key = process.env.GOOGLE_MAPS_API_KEY;
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (!key) {
       this.logger.warn('GOOGLE_MAPS_API_KEY is not set — autocomplete unavailable.');
       return [];
@@ -122,7 +122,10 @@ export class GooglePlacesService {
         },
       );
       if (!res.ok) {
-        this.logger.warn(`Places autocomplete ${res.status}.`);
+        const detail = await res.text().catch(() => '');
+        this.logger.warn(
+          `Places autocomplete ${res.status}: ${detail.slice(0, 300)}`,
+        );
         return [];
       }
       const body = (await res.json()) as {
@@ -160,7 +163,7 @@ export class GooglePlacesService {
     const hit = this.addressCache.get(id);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
-    const key = process.env.GOOGLE_MAPS_API_KEY;
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (!key) return null;
 
     try {
@@ -234,7 +237,7 @@ export class GooglePlacesService {
     const hit = this.cache.get(id);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
 
-    const key = process.env.GOOGLE_MAPS_API_KEY;
+    const key = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (!key) {
       this.logger.warn('GOOGLE_MAPS_API_KEY is not set — dealer lookup unavailable.');
       return null;

@@ -98,18 +98,9 @@ export class CreateOrderDto {
   @Type(() => CreateOrderLineDto)
   lines: CreateOrderLineDto[];
 
-  // On the ORDER, not on each line: one tick covers the whole cart, and the
-  // cart screen lists every item's town above it. Putting it per-line would
-  // ask the buyer to agree to the same sentence N times.
-  //
-  // MUST be mirrored into the per-line CreateTransactionDto that
-  // transactions.service builds for each line — that mapping is an explicit
-  // field list with an `as CreateTransactionDto` cast, so a field missed there
-  // compiles cleanly and fails at runtime on every single order.
+  // Location / no-refund terms are accepted in the Terms of Service at
+  // registration, so cart checkout no longer carries a separate tick.
+  @IsOptional()
   @IsBoolean()
-  @Equals(true, {
-    message:
-      'You must confirm you have seen where these items are and that location is not a refund ground.',
-  })
-  buyerTermsAccepted!: boolean;
+  buyerTermsAccepted?: boolean;
 }

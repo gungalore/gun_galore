@@ -181,7 +181,7 @@ describe('section E — the three serials and their makes', () => {
       },
     });
 
-    expect(out.text.e_make).toBe('MARLIN');
+    expect(out.text.e_make).toBe('Marlin');
     expect(out.text.e_barrel_serial).toBe('NONE');
     expect(out.text.e_barrel_make).toBe('NONE');
     expect(out.text.e_frame_make).toBe('NONE');

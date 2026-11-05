@@ -172,7 +172,17 @@ export class MotivationSharedService {
     userId: string,
     answersEncrypted: string | null,
   ): Promise<Record<string, string>> {
-    const profile = await this.profileAnswers.readFor(userId);
+    // A member who applied before the profile store carried the safe and the
+    // association still gets those answers: an empty store is filled from
+    // their own history here, fail-soft, so the read cannot block the pack.
+    let profile = await this.profileAnswers.readFor(userId);
+    if (!Object.keys(profile.answers).length) {
+      try {
+        profile = await this.profileAnswers.backfillFromHistory(userId);
+      } catch {
+        // Keep the empty profile; the application's own blob still wins.
+      }
+    }
     return { ...profile.answers, ...this.readAnswers(answersEncrypted) };
   }
 

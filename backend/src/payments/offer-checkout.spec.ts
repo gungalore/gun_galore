@@ -56,6 +56,7 @@ function offer(over: Record<string, unknown> = {}) {
     status: 'ACCEPTED',
     offerAmount: 400_000,
     counterAmount: null,
+    expiresAt: EXPIRES,
     ...over,
   };
 }
@@ -77,7 +78,9 @@ function makeService(listingRow: Record<string, unknown>, offerRow: Record<strin
     },
     offer: {
       findUnique: jest.fn().mockResolvedValue(offerRow),
+      findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     transaction: {
       create: jest
@@ -162,8 +165,8 @@ describe('accepted-offer checkout', () => {
         buyerId: 'B1',
       }),
     });
-    expect(prisma.offer.update).toHaveBeenCalledWith({
-      where: { id: 'O1' },
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 'O1', status: 'ACCEPTED', transactionId: null },
       data: { status: 'CONVERTED', transactionId: 'TX1' },
     });
   });

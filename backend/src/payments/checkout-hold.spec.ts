@@ -53,6 +53,7 @@ function makeService(listing: Record<string, unknown>) {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     checkoutHold: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    offer: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     listing: {
       findUnique: jest.fn().mockResolvedValue({ trackInventory: false }),
       update: jest.fn().mockResolvedValue({}),
@@ -75,6 +76,7 @@ function makeService(listing: Record<string, unknown>) {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    offer: { findFirst: jest.fn().mockResolvedValue(null) },
     checkoutHold: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((args: { data: Record<string, unknown> }) =>
@@ -227,15 +229,17 @@ describe('checkout holds (15-minute BUY_NOW reservation)', () => {
     const res = await service.releaseExpiredCheckoutHolds();
 
     expect(res).toEqual({ released: 1 });
-    expect(txClient.listing.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'ACTIVE',
-          quantityAvailable: { increment: 1 },
-          quantityReserved: { decrement: 1 },
-        }),
-      }),
-    );
+    expect(txClient.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', quantityReserved: { gte: 1 } },
+      data: {
+        quantityAvailable: { increment: 1 },
+        quantityReserved: { decrement: 1 },
+      },
+    });
+    expect(txClient.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', status: 'PAYMENT_PENDING' },
+      data: { status: 'ACTIVE' },
+    });
   });
 
   it('Pay claims the hold and deletes it with the sale row, without reserving again', async () => {
@@ -283,7 +287,7 @@ describe('checkout holds (15-minute BUY_NOW reservation)', () => {
     });
     ozow.getPaymentStatus.mockResolvedValue({
       isSuccess: false,
-      status: 'Incomplete',
+      status: 'Cancelled',
     });
 
     const hold = await service.createCheckoutHold('B1', 'L1');
@@ -301,6 +305,27 @@ describe('checkout holds (15-minute BUY_NOW reservation)', () => {
       data: { status: 'PAYMENT_PENDING' },
     });
     expect(hold.holdId).toBe('H1');
+  });
+
+  it('does not reclaim an Ozow payment that is still Incomplete', async () => {
+    const { service, prisma, txClient, ozow } = makeService(
+      makeHeldListing(),
+    );
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TXOLD',
+      gatewayCheckoutId: 'PAY1',
+      quantity: 1,
+      listing: { trackInventory: false },
+    });
+    ozow.getPaymentStatus.mockResolvedValue({
+      isSuccess: false,
+      status: 'Incomplete',
+    });
+
+    await expect(service.createCheckoutHold('B1', 'L1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(txClient.transaction.deleteMany).not.toHaveBeenCalled();
   });
 
   it('never releases an unpaid-looking checkout Ozow says is paid', async () => {

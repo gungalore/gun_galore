@@ -17,8 +17,8 @@ These were removed from the product. Do not reintroduce them, document them as l
 
 - **Selling modes:** `SWOP` / Swop-Trade; `TAKE_A_SHOT` as a listing type (offers remain a feature on `BUY_NOW` / `AUCTION` listings); Hunting Packages / Experiences.
 - **Modules:** swaps / swap proposals, featured homepage slots, Daily Deals / suppliers, AO PRO membership purchase, the prize draw / raffle, Ask Boet / Ask GG chat assistant, Load Lab (internal-ballistics calculator), hunt-ballistics, Wanted, Competitions, manual EFT.
-- **Vendors:** Clerk (identity), Stitch, Peach, KoraPay, Ivori (payments), The Courier Guy (TCG), Pudo, lockers (shipping).
-- **Rails today:** Ozow (payments), Bob Go door-to-door only (delivery), in-house session auth (identity), Didit (the one KYC session adapter).
+- **Vendors:** Clerk (identity), Stitch, KoraPay, Ivori (payments), The Courier Guy (TCG), Pudo, lockers (shipping).
+- **Rails today:** Ozow + Peach (payments), Bob Go door-to-door only (delivery), in-house session auth (identity), Didit (the one KYC session adapter).
 
 ## Product And Privacy
 
@@ -48,6 +48,7 @@ These were removed from the product. Do not reintroduce them, document them as l
 - Every module mounting a guarded controller must provide that guard's dependencies locally and have a boot spec.
 - Route all model calls through `LlmService`; callers must not create provider clients, choose models, or parse provider responses themselves.
 - Do not trust empty image-model output; treat it as a refusal and do not store zero-byte images.
+- The payment rail is LOCKED at checkout. `Transaction.paymentProvider` is set once and never changed; refunds and seller payouts must use the same provider. Never add a cross-rail fallback (an Ozow-paid sale is never paid out via Peach, and vice versa).
 - Preserve `prisma-client-js` and the Prisma 7 driver adapter configuration.
 - For viewer-varying data, never add `revalidate` or `force-cache`.
 

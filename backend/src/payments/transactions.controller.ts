@@ -13,6 +13,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { UseInterceptors } from '@nestjs/common';
@@ -34,6 +35,8 @@ import { Res } from '@nestjs/common';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { BANDS, MIN_COMMISSION_CENTS } from './fee.calculator';
+import { PaymentRailsService } from './payment-rails.service';
+import { PaymentProvider } from '@prisma/client';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -46,6 +49,9 @@ export class TransactionsController {
     private readonly receipts: ReceiptService,
     private readonly remittances: RemittanceService,
     private readonly tokens: ActionTokensService,
+    // @Global provider router. Optional for positional controller specs.
+    @Optional()
+    private readonly rails?: PaymentRailsService,
   ) {}
 
   // Public — exposes the platform fee schedule for the Sell form
@@ -62,6 +68,25 @@ export class TransactionsController {
         label: b.label,
       })),
       minimumCommissionCents: MIN_COMMISSION_CENTS,
+    };
+  }
+
+  // Public — the enabled pay-in rails, for the checkout picker. Ozow is
+  // always offered; Peach appears once configured AND the admin flag is on.
+  // Declared before `@Get(':id')` so the static path is not captured as an id.
+  @Get('payment-methods')
+  async paymentMethods() {
+    if (this.rails) {
+      return { methods: await this.rails.enabledPayInMethods() };
+    }
+    return {
+      methods: [
+        {
+          provider: PaymentProvider.OZOW,
+          label: 'Instant EFT',
+          description: 'Pay securely from your bank account via Ozow.',
+        },
+      ],
     };
   }
 
@@ -191,6 +216,22 @@ export class TransactionsController {
     @Body('resourcePath') resourcePath: string,
   ) {
     return this.txService.verifyResult(id, resourcePath);
+  }
+
+  // Resume an interrupted checkout on the SAME transaction. Safe: a pending
+  // gateway payment is never discarded, and a paid one is reported as paid.
+  @Post(':id/resume')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  resume(
+    @Param('id') id: string,
+    @CurrentUser() userId: string,
+    @Req() req: Request,
+  ) {
+    const frontendUrl =
+      process.env.FRONTEND_URL ??
+      `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
+    return this.txService.resumeCheckout(id, userId, frontendUrl);
   }
 
   // ---------------------------------------------------------------
@@ -713,6 +754,191 @@ export class PaymentsWebhookController {
         `Ozow payout notification handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
+    }
+    return { received: true };
+  }
+
+  // ─── Peach webhooks ───────────────────────────────────────────────
+  // Peach signs with Svix-style headers (or a `signature` field on the
+  // classic result POST). The exact base string is pinned in sandbox; the
+  // verifier accepts the documented variants. A bad signature returns 200
+  // (retrying a forged delivery is pointless); a handler failure returns
+  // 500 so Peach's 30-day retry schedule re-delivers.
+  /** The exact public URL the provider called. This is what it signed, so it
+   *  must not be rebuilt from a potentially different PUBLIC_API_URL. */
+  private webhookUrl(req: Request): string {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const proto =
+      (typeof forwardedProto === 'string'
+        ? forwardedProto.split(',')[0].trim()
+        : '') ||
+      req.protocol ||
+      'https';
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host =
+      (typeof forwardedHost === 'string'
+        ? forwardedHost.split(',')[0].trim()
+        : '') ||
+      req.headers.host ||
+      '';
+    return `${proto}://${host}${req.originalUrl}`;
+  }
+
+  /** Peach/Svix header names vary by product (`webhook-*`, `svix-*`,
+   *  or legacy `x-webhook-*`). Normalise them before verification. */
+  private peachHeaders(req: Request): {
+    id?: string;
+    timestamp?: string;
+    signature?: string;
+  } {
+    const h = req.headers;
+    const pick = (...keys: string[]): string | undefined => {
+      for (const k of keys) {
+        const v = h[k];
+        if (typeof v === 'string' && v) return v;
+        if (Array.isArray(v) && v[0]) return v[0];
+      }
+      return undefined;
+    };
+    return {
+      id: pick('webhook-id', 'svix-id', 'x-webhook-id'),
+      timestamp: pick('webhook-timestamp', 'svix-timestamp', 'x-webhook-timestamp'),
+      signature: pick(
+        'webhook-signature',
+        'svix-signature',
+        'x-webhook-signature',
+      ),
+    };
+  }
+
+  @Post('webhook/peach')
+  @HttpCode(200)
+  async peachWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach checkout webhook received');
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      this.peachHeaders(req),
+      this.webhookUrl(req),
+    );
+    if (!valid) {
+      this.logger.warn('Peach webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-payment');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw new InternalServerErrorException('Webhook processing failed');
+    }
+    return { received: true };
+  }
+
+  @Post('webhook/peach-payout')
+  @HttpCode(200)
+  async peachPayoutWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach payout webhook received');
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachPayoutWebhook(
+      rawBody,
+      body,
+      this.peachHeaders(req),
+      this.webhookUrl(req),
+    );
+    if (!valid) {
+      this.logger.warn('Peach payout webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-payout');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachPayoutWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach payout webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw new InternalServerErrorException('Webhook processing failed');
+    }
+    return { received: true };
+  }
+
+  @Post('webhook/peach-banv')
+  @HttpCode(200)
+  async peachBanvWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach BANV webhook received');
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachPayoutWebhook(
+      rawBody,
+      body,
+      this.peachHeaders(req),
+      this.webhookUrl(req),
+    );
+    if (!valid) {
+      this.logger.warn('Peach BANV webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-banv');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachBanvWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach BANV webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw new InternalServerErrorException('Webhook processing failed');
+    }
+    return { received: true };
+  }
+
+  @Post('webhook/peach-dispute')
+  @HttpCode(200)
+  async peachDisputeWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach dispute webhook received');
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      this.peachHeaders(req),
+      this.webhookUrl(req),
+    );
+    if (!valid) {
+      this.logger.warn('Peach dispute webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-dispute');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachDispute(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach dispute handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw new InternalServerErrorException('Webhook processing failed');
     }
     return { received: true };
   }

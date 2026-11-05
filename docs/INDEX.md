@@ -36,7 +36,7 @@ The live product is **Marketplace** (Buy Now listings with offers), **Auctions**
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | You want how the pieces fit: the request path, the money state machine, the listing types and offers end to end, background jobs and third-party integrations. |
 | [`docs/ENVIRONMENT.md`](ENVIRONMENT.md) | You are configuring a deploy or debugging a missing variable: every environment variable, what breaks when it is absent, and which are required in production. |
 | [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) | You are deploying or operating the box. |
-| [`PAYMENTS-GO-LIVE.md`](../PAYMENTS-GO-LIVE.md) | You are enabling or auditing real payments (Ozow pay-in + pay-out). The operator runbook: the production dashboard state, the exact `.env` flips, the float and live tests, and the open Ozow items. |
+| [`PAYMENTS-GO-LIVE.md`](../PAYMENTS-GO-LIVE.md) | You are enabling or auditing real payments (Ozow default + optional Peach pay-in/pay-out). The operator runbook: dashboard state, `.env` flips, floats, sandbox/live tests, and rollback. |
 | [`COMPLIANCE-RULES.md`](../COMPLIANCE-RULES.md) | You need the regulated-goods and platform rules as enforced in code. |
 | [`LICENCE-SERVICES-AND-FEED.md`](../LICENCE-SERVICES-AND-FEED.md) | You are touching the licence stack or the community feed and want the plan they came from. |
 | [`DOCUMENT-CENTRE.md`](../DOCUMENT-CENTRE.md) | You are working on the Paper Work Vault (Document Centre) storage, retention or purge flow. |

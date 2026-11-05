@@ -129,6 +129,48 @@ export function displayAction(raw: string | undefined | null): string {
 }
 
 /**
+ * The make and model as a document prints them.
+ *
+ * ⚠️ A LICENCE CARD IS A SOURCE, NOT A HOUSE STYLE. It often arrives in
+ * lowercase ("mauser", "m96 straight pull") because that is how the reader
+ * captured it, and printing that on the cover and the SAPS 271 makes a
+ * professional pack look like a database export. This normalises case only; it
+ * never renames a firearm.
+ *
+ * The small heuristics matter: "CZ", "HK", "S&W" and "AK-47" must keep their
+ * capitals, while "GLOCK" and "SAUER" should read as "Glock" and "Sauer".
+ * A placeholder such as "NONE" is preserved verbatim, because SAPS expects it.
+ */
+function displayProperName(raw: string | undefined | null): string {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  if (/^(none|n\/?a|-+)$/i.test(v)) return v;
+  return v
+    .split(/\s+/)
+    .map((token) => {
+      if (!token) return token;
+      if (/^[A-Z0-9&.+-]{1,3}$/.test(token)) return token;
+      if (/\d/.test(token)) {
+        return token.charAt(0).toUpperCase() + token.slice(1);
+      }
+      if (token === token.toUpperCase() && /[A-Z]/.test(token)) {
+        return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+      }
+      if (/^[A-Z]/.test(token)) return token;
+      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+export function displayMake(raw: string | undefined | null): string {
+  return displayProperName(raw);
+}
+
+export function displayModel(raw: string | undefined | null): string {
+  return displayProperName(raw);
+}
+
+/**
  * Every way the SAME calibre may honestly be written in the document.
  *
  * ⚠️ MO000074 FAILED THE WHOLE PACK OVER THIS, AND THE WRITER WAS RIGHT.

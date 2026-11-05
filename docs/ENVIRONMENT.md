@@ -49,6 +49,7 @@ it is actually "the integration is protecting you". The fail-closed set:
 | `DIDIT_WEBHOOK_SECRET`| Inbound verification outcomes are dropped unverified → a seller who finished on Didit's page stays `PENDING` forever |
 | `BOBGO_WEBHOOK_SECRET`| Inbound Bob Go tracking events rejected in production               |
 | `OZOW_WEBHOOK_SECRET` | Inbound Ozow webhooks rejected → orders never confirm as paid     |
+| `PEACH_WEBHOOK_SECRET` / `PEACH_PAYOUT_WEBHOOK_SECRET` | Inbound Peach checkout/payout/BANV webhooks rejected while Peach is enabled |
 | `HEALTH_PING_SECRET`  | `/api/health/crons` returns 503 rather than 200                    |
 
 `ANTHROPIC_API_KEY` is a special case: it fails *safe* rather than closed.
@@ -125,6 +126,11 @@ the wrong host. Defaults vary by call site (`http://localhost:3000` in most,
 inconsistency you should not rely on — set it.
 
 Local: `http://localhost:3000`.
+
+### `APP_URL_OVERRIDE`
+**Local/dev only.** When set, `main.ts` copies it over `FRONTEND_URL` after
+loading `.env`. Use it when `.env` still carries a dead tunnel hostname and you
+do not want to edit the file. Production leaves it unset.
 
 ### `PUBLIC_API_URL`
 **Optional.** Public origin of the API itself, used as the base for Ozow's
@@ -592,6 +598,37 @@ current production state.
 | `OZOW_TEST_ACCOUNT_NUMBER` | Optional | Harness destination, default `4050338500` (Ozow's staging Absa test account). |
 | `OZOW_TEST_BRANCH_CODE` / `_ACCOUNT_HOLDER` | Optional | Defaults for the `scripts/ozow-payout-test.mjs` harness; branch code overrides the bank name (staging only). |
 
+### Peach (optional second rail)
+
+Peach is off until the admin flags are enabled. Pay-in and payouts are separate
+Peach products; use the Payouts credentials from Dashboard → Payouts → Settings
+when they differ from Checkout.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `PEACH_ENV` | Optional | Literal `live` selects production hosts; anything else selects Peach sandbox hosts. |
+| `PEACH_CLIENT_ID` / `PEACH_CLIENT_SECRET` / `PEACH_MERCHANT_ID` | For Peach pay-in | Checkout V2 OAuth credentials. |
+| `PEACH_ENTITY_ID` | For Peach pay-in | Checkout channel/entity id. |
+| `PEACH_SECRET` | For refunds | Classic Hosted Checkout secret token used to sign refunds. |
+| `PEACH_WEBHOOK_SECRET` | **FAILS CLOSED** | Checkout V2 webhook signing secret from Dashboard -> Checkout -> Enable webhook signing. |
+| `PEACH_PAYOUT_CLIENT_ID` / `PEACH_PAYOUT_CLIENT_SECRET` / `PEACH_PAYOUT_MERCHANT_ID` | For Peach payouts | Payouts product credentials; fall back to the checkout pair when blank. |
+| `PEACH_PAYOUT_WEBHOOK_SECRET` | **FAILS CLOSED** | Payout/BANV signing secret; falls back to `PEACH_SECRET`. |
+
+Runtime flags (admin settings, not env):
+`peach_payin_enabled` controls whether buyers see Peach; `peach_payouts_enabled`
+controls whether the payout runner sends Peach-paid rows to Peach Payouts. Both
+default OFF. **Never route a Peach-paid sale to Ozow or an Ozow-paid sale to
+Peach.** Keep Peach payouts enabled until every Peach-paid transaction settles.
+
+Peach webhook URLs to register:
+
+```
+/api/payments/webhook/peach          checkout result/lifecycle
+/api/payments/webhook/peach-payout   payout status
+/api/payments/webhook/peach-banv     bank account verification result
+/api/payments/webhook/peach-dispute  chargebacks/disputes
+```
+
 ### `OZOW_WEBHOOK_SECRET`
 The Svix signing secret for One API webhooks. One API signs each delivery with
 HMAC-SHA256 over `${svix-id}.${svix-timestamp}.${rawBody}`, keyed by the Base64
@@ -630,7 +667,9 @@ yet**. `src/payments/payment-mode.ts` is the seam.
 
 Going live is therefore: fill the Ozow credentials, `OZOW_ENV=live`,
 `PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`. All four, or the behaviour is
-inconsistent.
+inconsistent. Peach is a second, separately staged rail: fill its credentials,
+verify in sandbox, then turn on `peach_payin_enabled`; fund the Peach float
+before turning on `peach_payouts_enabled`.
 
 Keep the frontend's `NEXT_PUBLIC_PAYMENT_MODE` in step — the backend is the
 authority, the frontend flag only decides what the buyer is shown.
@@ -773,6 +812,13 @@ Read at `backend/src/crime-stats/crime-stats.service.ts` (Places nearby +
 Geocode), `backend/src/news/news-geo.ts` (Geocode) and
 `backend/src/motivations/motivation-generation.service.ts` (Routes
 `computeRoutes`).
+
+`GOOGLE_PLACES_API_KEY` is the preferred server key for the listing address
+fields and dealer lookup (Places API New) and falls back to
+`GOOGLE_MAPS_API_KEY`. **Local development:** the production server key is
+IP-restricted, so calls from a home IP return `403 API_KEY_IP_ADDRESS_BLOCKED`.
+Either add the local public IP to that key in Google Cloud, or use a separate
+local key in `GOOGLE_PLACES_API_KEY`.
 
 **2026-09-30 migration:** the site previously ran on a key from
 `gun-galore-dealer-scans` — a *different* Google account — whose billing Google

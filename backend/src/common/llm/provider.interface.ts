@@ -1,4 +1,6 @@
 import type {
+  LlmAgentRequest,
+  LlmAgentResponse,
   LlmImageRequest,
   LlmImageResponse,
   LlmProvider,
@@ -59,6 +61,16 @@ export interface LlmProviderClient {
    * `unsupported` with the provider named.
    */
   generateImage?(req: LlmImageRequest): Promise<LlmImageResponse>;
+
+  /**
+   * Run a tool-using agent turn.
+   *
+   * ⚠️ OPTIONAL FOR THE SAME REASON AS `generateImage`. Only Gemini exposes
+   * the Interactions API on this platform. A provider that cannot run one is
+   * absent, and LlmService raises `unsupported` with the provider named
+   * rather than teaching every provider a method that throws.
+   */
+  agent?(req: LlmAgentRequest): Promise<LlmAgentResponse>;
 
   /** The image model used when a request does not name one. */
   defaultImageModel?(): string;

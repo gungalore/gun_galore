@@ -82,12 +82,18 @@ export class JevClient {
       state: req.state,
       model,
       questions: req.questions,
+      ...(req.assets ? { assets: req.assets } : {}),
     });
 
     let lastErr: unknown;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        return await this.call(body, model, req.timeoutMs ?? 10_000);
+        return await this.call(
+          body,
+          model,
+          req.timeoutMs ?? 10_000,
+          Boolean(req.assets),
+        );
       } catch (err) {
         lastErr = err;
         const retryable =
@@ -107,6 +113,7 @@ export class JevClient {
     body: string,
     model: string,
     timeoutMs: number,
+    hasAssets = false,
   ): Promise<JevDecideResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -117,6 +124,7 @@ export class JevClient {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.JEV_API_KEY}`,
+          ...(hasAssets ? { 'TypeSafe-Danger-Zone-Images': 'true' } : {}),
         },
         body,
         signal: controller.signal,
@@ -208,6 +216,7 @@ export class JevClient {
       choice?: unknown;
       score?: unknown;
       legend?: unknown;
+      box?: unknown;
       probabilities?: unknown;
       confidence?: unknown;
     };
@@ -244,10 +253,48 @@ export class JevClient {
         confidence,
       };
     }
+    if (a.type === 'box') {
+      const box = this.box(a.box);
+      if (!box) {
+        throw new LlmError('bad_request', `typesafe box '${key}' is malformed`);
+      }
+      const confidence =
+        a.confidence === null || a.confidence === undefined
+          ? null
+          : Number(a.confidence);
+      if (confidence !== null && !Number.isFinite(confidence)) {
+        throw new LlmError('bad_request', `typesafe box '${key}' has bad confidence`);
+      }
+      return {
+        type: 'box',
+        box,
+        confidence:
+          confidence === null ? null : Math.max(0, Math.min(1, confidence)),
+      };
+    }
     throw new LlmError(
       'bad_request',
       `typesafe answer '${key}' has unknown type '${String(a.type)}'`,
     );
+  }
+
+  /** Normalized edges, or null when the box is not a usable rectangle. */
+  private box(value: unknown): {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } | null {
+    if (!value || typeof value !== 'object') return null;
+    const raw = value as Record<string, unknown>;
+    const top = Number(raw.top);
+    const bottom = Number(raw.bottom);
+    const left = Number(raw.left);
+    const right = Number(raw.right);
+    if (![top, bottom, left, right].every(Number.isFinite)) return null;
+    if (top < 0 || left < 0 || bottom > 1 || right > 1) return null;
+    if (bottom <= top || right <= left) return null;
+    return { top, bottom, left, right };
   }
 
   private numberMap(value: unknown): Record<string, number> {

@@ -6,6 +6,7 @@ import {
   MotivationPdfService,
   asFormat,
   asScheme,
+  bannerTitleFor,
   gapNumbers,
   isQuotedSubsection,
   runInOf,
@@ -227,6 +228,17 @@ describe('the running head', () => {
     );
     expect(runningLabelFor('5.1 The cartridge — 6.35mm Browning — dimensions')).toBe(
       'The cartridge',
+    );
+  });
+
+  it('⚠️ does not clip the licence label in the top banner', () => {
+    expect(
+      bannerTitleFor(
+        'Section 16 — Dedicated hunting or sport-shooting',
+      ),
+    ).toBe('Motivation · Section 16');
+    expect(bannerTitleFor('Section 13 — Self-defence')).toBe(
+      'Motivation · Section 13',
     );
   });
 });
@@ -523,6 +535,27 @@ describe('the annexure index', () => {
     expect(flat((await readPdfAsync(pdf)).text)).not.toContain('ANNEXURES');
   });
 
+  it('prints one lettered divider page per mandatory annexure for the motivation-only pack', async () => {
+    const annexures = buildAnnexures([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+    ]);
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures,
+      annexurePlaceholders: annexures.map((entry) => ({
+        letter: entry.letter,
+        label: entry.label,
+      })),
+    });
+    const text = flat((await readPdfAsync(pdf)).text);
+    expect(text).toContain('ANNEXURES');
+    expect(text).toMatch(/Annexure A\s*-\s*Copy of the applicant/i);
+    expect(text).toMatch(/Annexure B\s*-\s*Photographs of the safe/i);
+    // A divider, not a form: no attach instruction and no placeholder box.
+    expect(text).not.toContain('Place the copy here.');
+    expect(text).not.toContain('Attach your');
+  });
   it('points the contents at the FIRST sheet of a multi-copy annexure', async () => {
     // ⚠️ EVERY COPY USED TO RE-ASSIGN ITS LETTER'S CONTENTS ENTRY, so the last
     // one won. With the divider gone, the cited sheet is the content page that

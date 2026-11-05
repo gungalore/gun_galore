@@ -1,4 +1,4 @@
-# Payments go-live runbook (Ozow pay-in + pay-out)
+# Payments go-live runbook (Ozow default; Peach dual-rail)
 
 **Status:** LIVE for money-in as of 2026-10-10 (checkout open). Money-out
 **verified end-to-end on 2026-10-28**: a real R10 Investec payout completed and
@@ -45,7 +45,9 @@ the funds landed.
 - Boot verified: no `Ozow One API not configured` / `OZOW_WEBHOOK_SECRET is not set` warnings.
 - `npm run seed:help` run on the box (54 rows refreshed).
 **Owner:** operator (Gerhard Fourie). Executor: agent, except the banking steps.
-**Rail:** Ozow One API (pay-in + refunds) and Ozow Payouts API (seller disbursement).
+**Rails:** Ozow One API (pay-in + refunds) and Ozow Payouts API; optional Peach
+Checkout V2 (card pay-in), Peach Payouts and BANV. The rail is locked per
+transaction — see the Peach dual-rail section below.
 
 This is the operator runbook for taking the marketplace from "payments inert" to "accepting
 real money and paying sellers out". It supersedes the flip paragraph in
@@ -157,6 +159,74 @@ on 2026-10-28 debited it).
   → **Open an Ozow support ticket** to rotate the credentials exposed on 2026-10-10, or approve
     the client-replacement path. Note the keys are visible read-only in the portal, so treat them
     as account-level identifiers rather than typeable secrets.
+
+---
+
+## Peach dual-rail go-live (staged, 2026-11)
+
+Peach is a second rail, **not a replacement**. The buyer chooses Ozow or Peach;
+`Transaction.paymentProvider` is locked at checkout and the refund + seller
+payout use that same provider. There is no cross-rail fallback.
+
+Peach checkout creation validates the storefront `Origin` / `Referer` against
+its allowlisted domains. The backend forwards the origin of the shopper result
+URL, so the frontend hostname must be allowlisted in Peach. Production uses
+`alloutdoor.co.za`. For local card testing, allowlist the local host you use
+(for example `localhost` or `lvh.me`) or the create call returns
+`Merchant domain is not allowlisted`; without the origin header it returns
+`Missing referer or origin header`.
+
+### Before enabling
+
+1. Peach Dashboard → Payouts → Settings: confirm the Payouts product is
+   enabled and copy its API client id/secret/merchant id (these may differ from
+   Checkout's pair).
+2. Request the Payouts webhook signing secret from Peach support and register
+   the production URLs:
+   - `/api/payments/webhook/peach`
+   - `/api/payments/webhook/peach-payout`
+   - `/api/payments/webhook/peach-banv`
+   - `/api/payments/webhook/peach-dispute`
+3. Fund the Peach payout float separately from Ozow. Do not commingle floats.
+4. Set `PEACH_ENV=live` plus the checkout and payout credentials / secrets on
+   the box, and reload.
+5. Verify boot has no Peach "incomplete credentials" or "secret not set"
+   warnings.
+
+### Sandbox acceptance (must pass before live)
+
+- Peach pay-in: success, decline, cancel, status query, webhook, refund.
+- BANV: pass, mismatch, failure; confirm the webhook stamps/clears
+  `User.bankVerifiedAt`.
+- Peach Payouts: pending, processing, successful, failed, reversed; confirm
+  `paidOutAt` is set only on success and failures hold the row.
+- Routing: one Ozow-paid and one Peach-paid transaction, released together.
+  One payout run must call each provider only for its own rows; assert no
+  cross-rail call in the logs.
+- Pin the Peach webhook signature base in sandbox. The verifier accepts the
+  legacy `${timestamp}.${id}.${url}.${body}` and Svix `${id}.${timestamp}.${body}`
+  forms; keep the confirmed one documented.
+
+### Enable order
+
+1. Deploy schema + backend + frontend with `peach_payin_enabled=false` and
+   `peach_payouts_enabled=false`. Confirm Ozow checkout/refund/payout is
+   unchanged.
+2. Turn on `peach_payin_enabled`. Run one small live Peach payment + refund.
+   Confirm the transaction row says `PEACH` and the payout-due preview shows it
+   under the Peach bucket.
+3. Turn on `peach_payouts_enabled`. Run a small payout batch and confirm the
+   Peach webhook settles it.
+4. Leave auto payouts OFF until both rails have completed a full settlement
+   cycle.
+
+### Rollback
+
+- Disabling `peach_payin_enabled` is safe: new buyers see Ozow only.
+- **Do not disable `peach_payouts_enabled` while any Peach-paid transaction is
+  unsettled.** Those rows must be paid via Peach; they must never be routed to
+  Ozow. If Peach is hard-down, keep the rows held and handle manually.
+- `PAYMENTS_LIVE=false` still closes checkout entirely.
 
 ---
 

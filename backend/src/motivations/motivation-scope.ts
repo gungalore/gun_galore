@@ -505,6 +505,32 @@ function batteryNames(arsenal: readonly ArsenalRow[]): string[] {
 export interface ScopeContext {
   licenceType: MotivationLicenceType;
   arsenal: readonly ArsenalRow[];
+  /**
+   * The firearm under application.
+   *
+   * ⚠️ A HELD FIREARM FROM THE SAME MAKE IS NOT THE SAME FIREARM. The applicant
+   * held a Howa 6.5 Creedmoor under section 15 and was applying for a Howa
+   * 1500 7mm magnum under section 16. `bestFirearmMatch` saw "Howa" in the
+   * application sentence and attributed section 16 to the held 6.5, failing
+   * MO000046 three times on a draft that correctly said section 15. The applied
+   * firearm's own model/calibre/serial tell the two apart.
+   */
+  applied?: {
+    make?: string;
+    model?: string;
+    calibre?: string;
+    serial?: string;
+  };
+}
+
+/** Does this sentence describe the firearm being applied for? */
+function namesAppliedFirearm(sentence: string, applied?: ScopeContext['applied']): boolean {
+  if (!applied) return false;
+  const text = sentence.toLowerCase();
+  return [applied.model, applied.calibre, applied.serial]
+    .map((v) => (v ?? '').trim().toLowerCase())
+    .filter((v) => v.length > 2)
+    .some((v) => text.includes(v));
 }
 
 /**
@@ -908,7 +934,7 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
        */
       for (const m of s.matchAll(/\bsection\s+(\d{1,2}[A-Z]?)\b/gi)) {
         const said = `section ${m[1].toLowerCase()}`;
-        if (!row) continue;
+        if (!row || namesAppliedFirearm(s, ctx.applied)) continue;
         if (!row.section) {
           flag(
             `the document puts the applicant's ${match} under ${said}, and no licence card established a section for it`,
@@ -1026,8 +1052,28 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
         heldInParagraph &&
         (COMPARING.some((w) => contains(s, w) || lc(s).includes(w)) ||
           COMPARING_PATTERN.test(s));
+      /**
+       * ⚠️ DANGEROUS GAME IS THE ONE PLACE PENETRATION IS THE REASON. MO000056
+       * was a .458 application for buffalo/elephant; the writer wrote "designed
+       * for deep penetration of dense anatomy" and the strict comparison-only
+       * rule binned it three times. That sentence names the applied firearm and
+       * the thick-skinned quarry — it is not a product page. Permit those two
+       * capability words only in a sentence about the applied firearm and
+       * dangerous game.
+       */
+      const dangerousGameReason =
+        namesAppliedFirearm(s, ctx.applied) &&
+        /dangerous game|thick-skinned|thick skinned|dense anatomy|buffalo|elephant|lion|hippopotamus/i.test(
+          s,
+        );
+      const dangerousGameTerm =
+        dangerousGameReason &&
+        (contains(s, 'penetration') || contains(s, 'expansion'));
       if (!comparing) {
         for (const w of COMPARISON_TERMS) {
+          if (dangerousGameTerm && (w === 'penetration' || w === 'expansion')) {
+            continue;
+          }
           if (contains(s, w)) {
             flag(
               `the document says "${w}" outside any sentence comparing this firearm with one already held, which is catalogue copy rather than a reason`,
@@ -1278,7 +1324,7 @@ export function repairUnstatedPurpose(
     for (const s of sentences(para)) {
       const match = bestFirearmMatch(s, names);
       const row = match ? byName.get(match) : undefined;
-      if (!row) continue;
+      if (!row || namesAppliedFirearm(s, ctx.applied)) continue;
       // A stated purpose, or a candidate the writer may argue from: nothing to do.
       if (row.licensedFor) continue;
       if (row.candidateUses?.some((g) => g.uses.length)) continue;

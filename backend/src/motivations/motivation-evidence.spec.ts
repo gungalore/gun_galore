@@ -387,14 +387,14 @@ describe('the evidence caps are separate from the document cap', () => {
       ],
     });
     await svc.addFromLibrary('user-1', 'mo-1', 'credential', 'c-doc', true);
-    // 14 documents + 1 = 15 of 16; the six evidence items cost nothing.
+    // 14 documents + 1 = 15 of 20; the six evidence items cost nothing.
     expect(created).toHaveLength(1);
     expect(created[0].kind).toBe(K.COMPETENCY_CERTIFICATE);
   });
 
   it('⚠️ AND THE DOCUMENT CEILING STILL APPLIES TO DOCUMENTS', async () => {
     const { svc } = build({
-      uploads: Array.from({ length: 16 }, (_, i) =>
+      uploads: Array.from({ length: 20 }, (_, i) =>
         filed({ id: `d${i}`, kind: K.IDENTITY_DOCUMENT }),
       ),
       creds: [
@@ -406,7 +406,7 @@ describe('the evidence caps are separate from the document cap', () => {
     });
     await expect(
       svc.addFromLibrary('user-1', 'mo-1', 'credential', 'c-doc', true),
-    ).rejects.toThrow(/16 documents/);
+    ).rejects.toThrow(/20 documents/);
   });
 });
 

@@ -46,6 +46,10 @@ export interface SheetFooterProps {
   /** Ticked, then Write. Sends the testimonial consent with it. */
   onWrite: (declaration: { testimonialConsent: boolean }) => void;
   busy?: boolean;
+  /** True while the Jev-backed document engine is down. */
+  maintenance?: boolean;
+  maintenanceMessage?: string;
+  onNotify?: () => void;
 }
 
 export default function SheetFooter({
@@ -53,6 +57,9 @@ export default function SheetFooter({
   declared = false,
   onWrite,
   busy = false,
+  maintenance = false,
+  maintenanceMessage,
+  onNotify,
 }: SheetFooterProps) {
   const [agreed, setAgreed] = useState(declared);
   const [testimonial, setTestimonial] = useState(false);
@@ -62,7 +69,7 @@ export default function SheetFooter({
   useEffect(() => {
     if (declared) setAgreed(true);
   }, [declared]);
-  const blocked = missingCount > 0 || !agreed;
+  const blocked = missingCount > 0 || !agreed || maintenance;
 
   return (
     <div className="sticky bottom-0 z-[3] border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3">
@@ -118,8 +125,29 @@ export default function SheetFooter({
           blocked || busy ? 'opacity-50' : 'hover:bg-[#C7050F]'
         }`}
       >
-        {busy ? 'Writing your motivation…' : 'Write my motivation'}
+        {maintenance
+          ? 'Preparation paused'
+          : busy
+            ? 'Writing your motivation…'
+            : 'Write my motivation'}
       </button>
+      {maintenance ? (
+        <div className="mt-2 text-center text-[12px] leading-5 text-[var(--text-secondary)]">
+          <p className="m-0">
+            {maintenanceMessage ??
+              'Document preparation is paused while the document engine is under maintenance.'}
+          </p>
+          {onNotify ? (
+            <button
+              type="button"
+              onClick={onNotify}
+              className="mt-1 text-[12px] font-medium text-[var(--red)] underline"
+            >
+              Email me when it is available
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {/*
         ⚠️ THE LINE APPEARS ONLY WHILE SOMETHING IS OUTSTANDING. A count of
         zero renders nothing rather than "0 things still needed" — a footer

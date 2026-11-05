@@ -46,7 +46,7 @@ function build(
     /**
      * The documents attached to the application under test.
      *
-     * ⚠️ DEFAULT EMPTY, WHICH IS NOW A REFUSAL. H13 — generation checks the
+     * âš ï¸ DEFAULT EMPTY, WHICH IS NOW A REFUSAL. H13 â€” generation checks the
      * required-document list, so a pack with no documents cannot be generated
      * at all. Every generation test therefore has to say what is attached, and
      * `buildReady` below is the one place that says it.
@@ -69,8 +69,8 @@ function build(
       })),
     },
     // Answers that belong to the PERSON rather than to one application.
-    // ⚠️ EVERY saveAnswers AND findOne NOW READS THIS, so it has to exist on
-    // the double even for a test that never writes a profile-scoped answer —
+    // âš ï¸ EVERY saveAnswers AND findOne NOW READS THIS, so it has to exist on
+    // the double even for a test that never writes a profile-scoped answer â€”
     // an absent model reads as `undefined.findUnique` and fails the whole
     // suite in a way that looks nothing like a missing mock.
     memberProfileAnswers: {
@@ -95,7 +95,7 @@ function build(
       // No uploads by default: the annexure list is empty and the writer is
       // simply not asked to cite.
       findMany: jest.fn(async (_a?: any): Promise<any[]> => opts.uploads ?? []),
-      // For the library-pick tests below. Additive — nothing else in this file
+      // For the library-pick tests below. Additive â€” nothing else in this file
       // reaches them, so the defaults cannot move an existing expectation.
       count: jest.fn(async (_a?: any): Promise<number> => 0),
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
@@ -111,9 +111,9 @@ function build(
     },
     credential: {
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
-      // ⚠️ ADDED WITH THE CREATE-TIME VAULT PREFILL. Without it every create()
+      // âš ï¸ ADDED WITH THE CREATE-TIME VAULT PREFILL. Without it every create()
       // threw inside credentialsFor and landed in the fail-soft catch, so the
-      // suite passed while the prefill did nothing — a broken vault read and
+      // suite passed while the prefill did nothing â€” a broken vault read and
       // an empty vault are indistinguishable from the outside, which is
       // exactly why the test below asserts values arriving rather than absence
       // of an error.
@@ -140,7 +140,7 @@ function build(
     motivationSellerConsent: {
       findUnique: jest.fn(async (_a?: any): Promise<any> => null),
     },
-    // Additive, for answerFollowUp — the only path under test that pairs a
+    // Additive, for answerFollowUp â€” the only path under test that pairs a
     // message insert with the answers write. Runs the operations rather than
     // simulating a transaction; each is already a jest.fn.
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
@@ -164,7 +164,7 @@ function build(
   const files = {
     remove: jest.fn(async (_a?: any): Promise<any> => undefined),
     // For the library-pick tests: a pick reads the source bytes and writes a
-    // copy into the motivations bucket. Additive — nothing else here reaches
+    // copy into the motivations bucket. Additive â€” nothing else here reaches
     // them.
     read: jest.fn(async (_k?: any): Promise<Buffer> => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1])),
     write: jest.fn(async (): Promise<any> => ({
@@ -185,7 +185,7 @@ function build(
     verifyDocument: jest.fn(async (): Promise<any> => null),
     // A COMPLIANT model: it writes the headings it was told to, in order.
     // The first draft of this mock used generic headings and the pipeline
-    // correctly regenerated (structureOk=false) — proving followsPlan() works,
+    // correctly regenerated (structureOk=false) â€” proving followsPlan() works,
     // but making the default path cost two generations.
     generate: jest.fn(async (p?: any, plan?: any): Promise<any> => ({
       // The identity line matters: packConsistency requires the serial and
@@ -243,18 +243,18 @@ function build(
     ),
   };
 
-  // ⚠️ THE SERVICE WAS SPLIT, THE MOCKS DID NOT CHANGE. MotivationsService is
+  // âš ï¸ THE SERVICE WAS SPLIT, THE MOCKS DID NOT CHANGE. MotivationsService is
   // now a facade over five services and one shared helper, so the wiring below
-  // hands the SAME mock objects to whichever of them uses each one — that is
+  // hands the SAME mock objects to whichever of them uses each one â€” that is
   // what keeps every assertion in this file (which counts calls on `prisma`,
-  // `quota`, `claude`, `files`…) meaning exactly what it meant before.
+  // `quota`, `claude`, `files`â€¦) meaning exactly what it meant before.
   const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
 
   // The C.I.P. datasheet. Returns nothing, so no test in this file depends
-  // on 40MB of sheets being on the disk running it — the pack renders one
+  // on 40MB of sheets being on the disk running it â€” the pack renders one
   // page shorter and every assertion here is about the body.
   const cip = { sheetFor: jest.fn(async () => null) };
-  // The 271 renderer — nothing in these tests opts into the form.
+  // The 271 renderer â€” nothing in these tests opts into the form.
   const saps271 = {
     build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })),
   };
@@ -264,14 +264,14 @@ function build(
   const sellerConsent = { sectionF: jest.fn(async () => null) };
   // Cover photographs. `find` returns null so no test depends on a file
   // being on disk, and `fetchAndStore` is stubbed so no test reaches
-  // Wikimedia — a unit suite that makes an outbound request is a unit
+  // Wikimedia â€” a unit suite that makes an outbound request is a unit
   // suite that fails on an aeroplane.
   const firearmImages = {
     find: jest.fn(() => null),
     fetchAndStore: jest.fn(async () => null),
   };
   // The SAPS precinct lookup. Stubbed to "found nothing" so no test in this
-  // file depends on it — the whole point of stationOffer()/precinctFor()
+  // file depends on it â€” the whole point of stationOffer()/precinctFor()
   // being fail-soft is that a motivation still works when this returns
   // nothing, and a suite that made a real lookup would need the workbook.
   const crimeStats = {
@@ -285,7 +285,7 @@ function build(
     precinct: jest.fn(async (): Promise<any> => null),
   };
   // Local crime reporting behind a press-clippings annexure. Stubbed to
-  // "nothing found" so no test in this file depends on it — the whole point
+  // "nothing found" so no test in this file depends on it â€” the whole point
   // of the press-clippings feature being fail-soft is that a motivation
   // still works, with no PRESS_CLIPPINGS annexure at all, when this returns
   // nothing.
@@ -295,7 +295,7 @@ function build(
     clippingImage: jest.fn(async (): Promise<any> => null),
   };
   // Character witnesses. Stubbed to an empty list so no test in this file
-  // reaches the SMS rail — an invite spends a real message, and a unit
+  // reaches the SMS rail â€” an invite spends a real message, and a unit
   // suite that sends one is a unit suite with a bill.
   const witnesses = {
     list: jest.fn(async () => []),
@@ -304,14 +304,14 @@ function build(
     signature: jest.fn(async () => null),
   };
   // Keeping a copy of an attachment in the member's Document Centre.
-  // ⚠️ Returns false, so no test in this file depends on a consent record
-  // existing — adoption is a fail-soft tail on addUpload and must never
+  // âš ï¸ Returns false, so no test in this file depends on a consent record
+  // existing â€” adoption is a fail-soft tail on addUpload and must never
   // change what the upload itself returns.
   const vaultAdoption = { adoptUpload: jest.fn(async () => false) };
   // Whether their documents may be offered across applications. TRUE is
   // the pre-consent default: reuse is what the product already does, and
   // it only stops for somebody who has actually said no.
-  // ⚠️ AND mayKeepFor, WHICH AUTO-LINK ASKS FIRST. Reusing vault documents
+  // âš ï¸ AND mayKeepFor, WHICH AUTO-LINK ASKS FIRST. Reusing vault documents
   // unasked is new automatic processing and needs a yes; without this stub
   // every auto-link test dies before it reaches a rule.
   const vaultConsent = {
@@ -331,7 +331,7 @@ function build(
     files as never,
     // Extraction proposes values off an uploaded document. Hoisted to a
     // const and returned from build() so the library-pick tests can assert
-    // WHETHER it was called — that call is a Claude vision request, and
+    // WHETHER it was called â€” that call is a Claude vision request, and
     // making one per pick when the answer is already in hand is a bill.
     extract as never,
     vaultAdoption as never,
@@ -354,7 +354,7 @@ function build(
       purgeExpired: async () => 0,
     } as never,
     // The identify store. Every lookup misses and take() returns null, so the
-    // upload path falls through to classifying the bytes it was handed — the
+    // upload path falls through to classifying the bytes it was handed â€” the
     // behaviour these tests were written against.
     {
       findBySha: async () => null,
@@ -380,29 +380,29 @@ function build(
     shared,
     crimeStats as never,
     news as never,
-    // ⚠️ REAL, NOT A STUB, AGAINST THE SAME `prisma` DOUBLE. Generation now
+    // âš ï¸ REAL, NOT A STUB, AGAINST THE SAME `prisma` DOUBLE. Generation now
     // reads the shared research cache, and a stub would let a change that
     // stopped calling it pass unnoticed. Its findUnique returns null, so every
     // test here takes the miss path and the llm double decides what comes
-    // back — which is what the generation tests were already asserting on.
+    // back â€” which is what the generation tests were already asserting on.
     new MotivationResearchService(prisma as never, claude as never),
-    // ⚠️ A STUB, UNLIKE THE RESEARCH SERVICE ABOVE, AND FOR THE OPPOSITE
+    // âš ï¸ A STUB, UNLIKE THE RESEARCH SERVICE ABOVE, AND FOR THE OPPOSITE
     // REASON. Candidate uses are a SECOND model call per firearm class, and
-    // `claude` here is a scripted queue of responses — a real one would eat
+    // `claude` here is a scripted queue of responses â€” a real one would eat
     // the drafts these tests assert on. Returning nothing is also the state
     // every assertion in this file was written against.
     { forClass: async () => [] } as never,
-    // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
+    // âš ï¸ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
     // on every generation; these tests assert on documents, not photographs.
     { makeFor: async () => undefined } as never,
-    // ⚠️ SAME POSTURE FOR THE PURPOSE EXHIBITS — one to two pages of pictures
+    // âš ï¸ SAME POSTURE FOR THE PURPOSE EXHIBITS â€” one to two pages of pictures
     // under heading 3. A stub that draws nothing.
     { makeFor: async () => undefined } as never,
-    // ⚠️ A VAULT WITH NOTHING IN IT. The owned-firearm top-up runs before
+    // âš ï¸ A VAULT WITH NOTHING IN IT. The owned-firearm top-up runs before
     // every generation; these tests assert on drafts, and an empty vault is
     // the state every one of them was written against.
     { credentialsFor: async () => [] } as never,
-    // ⚠️ A REASON THAT WRITES NOTHING. The automatic reason runs before the
+    // âš ï¸ A REASON THAT WRITES NOTHING. The automatic reason runs before the
     // pack is built when `firearm_fit_reason` is empty; a stub returning
     // not-written keeps these tests on the writer path they were written for.
     { writeFor: async () => ({ written: false }) } as never,
@@ -422,13 +422,13 @@ function build(
     news as never,
       // The precinct tables that head the press-clippings annexure.
     { precinct: async () => null } as never,
-    // ⚠️ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
+    // âš ï¸ A STUB THAT DRAWS NOTHING. A real one would reach the picture model
     // once per species; these tests assert on documents, not photographs, and
     // returning undefined is the state every one of them was written against.
     { plateFor: async () => undefined } as never,
-    // ⚠️ THE PURPOSE EXHIBITS — a read on the render path. Nothing stored.
+    // âš ï¸ THE PURPOSE EXHIBITS â€” a read on the render path. Nothing stored.
     { storedFor: async () => [] } as never,
-    // ⚠️ NOTHING IS RASTERISED HERE. Only a PDF annexure reaches this, and no
+    // âš ï¸ NOTHING IS RASTERISED HERE. Only a PDF annexure reaches this, and no
     // test in this file carries one.
     { pagesFor: async () => [] } as never,
 );
@@ -461,8 +461,8 @@ function build(
   );
   return {
     svc,
-    // ⚠️ EXPOSED SINCE 2026-09-08. The four prefill methods used to be reached
-    // through the facade, and their four endpoints were deleted in Phase 4 —
+    // âš ï¸ EXPOSED SINCE 2026-09-08. The four prefill methods used to be reached
+    // through the facade, and their four endpoints were deleted in Phase 4 â€”
     // but the RULE they carry (a vault value is stamped VAULT with the
     // credential's id; a profile value is stamped PROFILE with none) is
     // unchanged and still enforced. The cases below were re-pointed at the
@@ -552,7 +552,7 @@ describe('MotivationsService', () => {
     });
 
     it('starts the application even when the vault cannot be read', async () => {
-      // ⚠️ THE HEAVIER FAILURE IS NOT STARTING. A member whose vault read
+      // âš ï¸ THE HEAVIER FAILURE IS NOT STARTING. A member whose vault read
       // fails must still be able to open an application and type the rows in
       // by hand; losing the prefill is the cheap half.
       const { svc, prisma } = build();
@@ -641,7 +641,15 @@ describe('MotivationsService', () => {
       const stored = prisma.motivation.update.mock.calls[0][0].data.answersEncrypted;
       // It is genuinely ciphertext, not JSON.
       expect(stored).not.toContain('Farm manager');
-      expect(decryptJson(stored)).toEqual({ occupation: 'Farm manager' });
+      // Occupation is a profile field now, so the APPLICATION blob stays empty
+      // and the value goes to the member's profile store.
+      expect(decryptJson(stored)).toEqual({});
+      expect(prisma.memberProfileAnswers.upsert).toHaveBeenCalled();
+      const profileWrite = prisma.memberProfileAnswers.upsert.mock.calls.at(-1)?.[0]
+        ?.create as { answersEncrypted?: string };
+      expect(decryptJson(profileWrite.answersEncrypted!)).toEqual({
+        occupation: 'Farm manager',
+      });
     });
 
     it('merges rather than replaces', async () => {
@@ -656,20 +664,38 @@ describe('MotivationsService', () => {
       });
       // association_name belongs to DEDICATED_HUNTER. Using a sport-shooter
       // field here would be correctly REJECTED as unregistered for this
-      // licence type — which is what the first draft of this test did, and the
+      // licence type â€” which is what the first draft of this test did, and the
       // registry caught it.
       await svc.saveAnswers('c1', 'mo-1', { association_name: 'SAHGCA' });
       const second = prisma.motivation.update.mock.calls[1][0].data.answersEncrypted;
 
-      expect(decryptJson(second)).toEqual({
-        occupation: 'Farmer',
-        association_name: 'SAHGCA',
-      });
+      // Both are profile-scoped, so neither belongs in the application blob.
+      expect(decryptJson(second)).toEqual({});
     });
 
+    it('records MEMBER when a prefilled router or quarry is confirmed unchanged', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce({
+        ...row,
+        answersEncrypted: encryptJson({ intended_quarry: 'Kudu' }),
+        answerProvenance: {
+          intended_quarry: {
+            source: 'PROFILE',
+            from: 'Your profile',
+            at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      });
+
+      await svc.confirmAnswer('c1', 'mo-1', 'intended_quarry');
+
+      const provenance = prisma.motivation.update.mock.calls[0][0].data
+        .answerProvenance as Record<string, { source: string }>;
+      expect(provenance.intended_quarry.source).toBe('MEMBER');
+    });
     it('rejects a field that belongs to a DIFFERENT licence type', async () => {
       // The registry is per-type, so a sport-shooter field on a hunter
-      // motivation is not a valid answer — it would sit in the blob forever
+      // motivation is not a valid answer â€” it would sit in the blob forever
       // with nothing knowing what to do with it.
       const { svc, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(row);
@@ -809,11 +835,11 @@ describe('motivation field registry', () => {
 /**
  * Every document a section 16 dedicated-hunter pack is REQUIRED to carry.
  *
- * ⚠️ H13. Generation now refuses on a missing document as well as a missing
+ * âš ï¸ H13. Generation now refuses on a missing document as well as a missing
  * answer, so a generation test that attaches nothing is testing the document
  * refusal rather than whatever it meant to test. Built from documentStatus
  * itself rather than typed out, so adding a required kind cannot silently leave
- * this list — and every generation test — asserting the wrong thing.
+ * this list â€” and every generation test â€” asserting the wrong thing.
  *
  * `minFiles` is honoured: the safe wants three photographs and one does not
  * satisfy it.
@@ -862,9 +888,9 @@ describe('MotivationsService.generate', () => {
   /**
    * A service whose application already carries every required document.
    *
-   * ⚠️ USED BY EVERY TEST IN HERE THAT EXPECTS GENERATION TO PROCEED. H13
+   * âš ï¸ USED BY EVERY TEST IN HERE THAT EXPECTS GENERATION TO PROCEED. H13
    * put a document check between the answer check and the CAS, so `build()` on
-   * its own — no uploads — now refuses before Claude is ever called. The two
+   * its own â€” no uploads â€” now refuses before Claude is ever called. The two
    * refusal tests below deliberately keep the bare `build()`.
    */
   const buildReady = (o: Parameters<typeof build>[0] = {}) =>
@@ -873,7 +899,7 @@ describe('MotivationsService.generate', () => {
       ...o,
     });
 
-  it('refuses without the declaration — they are signing this', async () => {
+  it('refuses without the declaration â€” they are signing this', async () => {
     const { svc, prisma, claude } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(
       readyRow({ declarationAcceptedAt: null }),
@@ -899,8 +925,8 @@ describe('MotivationsService.generate', () => {
   it('\u26a0\ufe0f refuses a proficiency short of the Act or its certificate', async () => {
     // Operator, 2026-10-13: the submitted pack needs the statement showing
     // 117705 AND the firearm's statement with its certificate. Here the only
-    // proficiency page is the rifle statement of results — no 117705, no
-    // certificate — so generation must stop before Claude is spent.
+    // proficiency page is the rifle statement of results â€” no 117705, no
+    // certificate â€” so generation must stop before Claude is spent.
     const uploads = [
       ...requiredDocs(MotivationLicenceType.S16_DEDICATED_HUNTER),
       {
@@ -925,7 +951,7 @@ describe('MotivationsService.generate', () => {
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 }); // lost the race
     // A lost race means the OTHER click is mid-generation, so the applicant
-    // must get the "give it a moment" wording — not the dead-end message a
+    // must get the "give it a moment" wording â€” not the dead-end message a
     // COMPLETED row now gets.
     prisma.motivation.findUnique.mockResolvedValueOnce({
       status: MotivationStatus.GENERATING,
@@ -970,18 +996,18 @@ describe('MotivationsService.generate', () => {
     // Token spend is accumulated across every pass, not just the last one. The
     // mock draft is a single short line per heading, so it trips the
     // thin-section top-up (motivation-fill.ts) and the writer is called on all
-    // three attempts — hence 3 x 900 rather than one.
+    // three attempts â€” hence 3 x 900 rather than one.
     expect(data.promptTokens).toBe(900 * 3 + 400);
   });
 
   describe('press clippings, self-defence only', () => {
-    // ────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The fact pack the writer sees must cite each chosen clipping by paper,
-    // date and the SAME annexure letter the printed pack will carry — see
+    // date and the SAME annexure letter the printed pack will carry â€” see
     // the ordering note in MotivationGenerationService.runGeneration(). This
     // is the pack-building half; the printed page itself is covered in
     // motivation-pdf.service.spec.ts.
-    // ────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     const T13 = MotivationLicenceType.S13_SELF_DEFENCE;
     const INCIDENT = {
@@ -1020,13 +1046,13 @@ describe('MotivationsService.generate', () => {
       };
     }
 
-    it('⚠️ CITES A CLIPPING BY PAPER AND DATE, NEVER BY AN ANNEXURE LETTER', async () => {
+    it('âš ï¸ CITES A CLIPPING BY PAPER AND DATE, NEVER BY AN ANNEXURE LETTER', async () => {
       // Operator, 2026-09-09: "only paperwork required by the dfo are attached
       // as annexures. all other things like the cartridge specs and clippings
       // and those things must be in the body of the document itself and form
       // part of the flow." The applicant holds no original of a newspaper page,
-      // so a cutting is cited the way a person cites a newspaper in a letter —
-      // in the sentence that relies on it — and it prints in the exposure
+      // so a cutting is cited the way a person cites a newspaper in a letter â€”
+      // in the sentence that relies on it â€” and it prints in the exposure
       // section beside that sentence.
       const { svc, prisma, claude, news } = build({
         uploads: requiredDocs(T13),
@@ -1073,7 +1099,7 @@ describe('MotivationsService.generate', () => {
       );
     });
 
-    it('generates cleanly when the lookup fails — a supplied fact costs the pack a paragraph, never the document', async () => {
+    it('generates cleanly when the lookup fails â€” a supplied fact costs the pack a paragraph, never the document', async () => {
       const { svc, prisma, news } = build({ uploads: requiredDocs(T13) });
       prisma.motivation.findFirst.mockResolvedValueOnce(
         s13Ready({ press_clippings: JSON.stringify(['inc-1']) }),
@@ -1087,8 +1113,8 @@ describe('MotivationsService.generate', () => {
   });
 
   describe('telling the applicant it finished', () => {
-    // The run is DETACHED — startGeneration returns at once and the wizard
-    // settles on "Writing it — about a minute…". Nothing else ever tells them
+    // The run is DETACHED â€” startGeneration returns at once and the wizard
+    // settles on "Writing it â€” about a minuteâ€¦". Nothing else ever tells them
     // the outcome, so a branch that returns without notifying is a branch that
     // strands somebody on a spinner.
 
@@ -1146,7 +1172,7 @@ describe('MotivationsService.generate', () => {
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.grade.mockResolvedValueOnce(heldBack());
       prisma.motivation.update.mockImplementation(async ({ data }: any) => {
-        // Seat-number writes carry no status — only transitions count.
+        // Seat-number writes carry no status â€” only transitions count.
         if (data?.status) order.push(`status:${data.status}`);
         return {};
       });
@@ -1164,7 +1190,7 @@ describe('MotivationsService.generate', () => {
     });
 
     it('does not lose the document when the message cannot be sent', async () => {
-      // Resend down, SMSPortal down, a hard-bouncing address — the row is
+      // Resend down, SMSPortal down, a hard-bouncing address â€” the row is
       // already terminal and the document is already written and paid for.
       const { svc, prisma, notifications } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
@@ -1191,10 +1217,10 @@ describe('MotivationsService.generate', () => {
     });
   });
 
-  it('⚠️ NEVER RE-ASKS A QUESTION ALREADY OPEN ON SCREEN', async () => {
+  it('âš ï¸ NEVER RE-ASKS A QUESTION ALREADY OPEN ON SCREEN', async () => {
     // Every gate cycle used to queue its follow-ups blind, so three attempts
     // put THREE copies of the same three questions in front of the applicant
-    // — who read it, reasonably, as the system falling apart. Live report,
+    // â€” who read it, reasonably, as the system falling apart. Live report,
     // verbatim: "why the fuck are there so many questions from Boet?"
     const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
@@ -1210,7 +1236,7 @@ describe('MotivationsService.generate', () => {
     // Round one already asked about everything this fixture can ask about.
     // An assistant message with NO later user reply is an open question.
     // The exact three this fixture asks about first, established by running
-    // it once with an empty history — not guessed.
+    // it once with an empty history â€” not guessed.
     const alreadyOpen = [
       'residential_address',
       'firearm_fit_reason',
@@ -1221,7 +1247,7 @@ describe('MotivationsService.generate', () => {
       alreadyOpen.map((fieldKey) => ({ role: 'assistant', fieldKey })),
     );
     await svc.generate('c1', 'mo-1');
-    // Backfilling with the NEXT gaps in priority order is right — the batch
+    // Backfilling with the NEXT gaps in priority order is right â€” the batch
     // still asks three things. What must never happen is the same question
     // landing twice.
     for (const call of prisma.motivationMessage.create.mock.calls) {
@@ -1232,7 +1258,7 @@ describe('MotivationsService.generate', () => {
   it('DOES re-ask a still-missing answer once the applicant has replied', async () => {
     // A user message with the same fieldKey CLOSES the question. If the
     // required answer is STILL empty after their reply, asking again is
-    // right — the reply evidently did not land in the field.
+    // right â€” the reply evidently did not land in the field.
     const { svc, prisma, claude } = buildReady();
     const row = readyRow();
     const answers = decryptJson<Record<string, string>>(row.answersEncrypted!);
@@ -1241,9 +1267,9 @@ describe('MotivationsService.generate', () => {
       ...row,
       answersEncrypted: encryptJson(answers),
     });
-    // The generate preflight refuses on a missing required answer — this test
+    // The generate preflight refuses on a missing required answer â€” this test
     // exercises queueFollowUps, so let the gate fail instead by restoring the
-    // answer for missingRequired but marking the flow through grade… simpler:
+    // answer for missingRequired but marking the flow through gradeâ€¦ simpler:
     // call the private path via a gate failure is impossible with a missing
     // required answer, so assert the DEDUPE fold directly instead.
     prisma.motivation.findFirst.mockReset();
@@ -1257,7 +1283,7 @@ describe('MotivationsService.generate', () => {
       parsed: true,
     });
     // History says overlap was asked and answered; nothing required is
-    // missing on this fixture, so no questions at all — the writer carries
+    // missing on this fixture, so no questions at all â€” the writer carries
     // thin answers now.
     prisma.motivationMessage.findMany.mockResolvedValueOnce([
       { role: 'assistant', fieldKey: 'overlap_justification' },
@@ -1282,9 +1308,9 @@ describe('MotivationsService.generate', () => {
     const res = await svc.generate('c1', 'mo-1');
     expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
 
-    // ⚠️ AND ASKS NOTHING. Every required field on this fixture is answered,
+    // âš ï¸ AND ASKS NOTHING. Every required field on this fixture is answered,
     // and a thin answer is the writer's craft to carry, not the applicant's
-    // homework — the interrogation about employers and barrel lengths is the
+    // homework â€” the interrogation about employers and barrel lengths is the
     // exact behaviour the operator killed. No batch call, no messages.
     expect(claude.askFollowUpBatch).not.toHaveBeenCalled();
     expect(claude.askFollowUp).not.toHaveBeenCalled();
@@ -1307,15 +1333,15 @@ describe('MotivationsService.generate', () => {
     expect(prisma.adminAlert.create).toHaveBeenCalled();
   });
 
-  // ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // A DOCUMENT HELD BACK IS STILL A DOCUMENT THE APPLICANT PAID FOR.
   //
   // The text used to be written only on a pass, so somebody whose draft was
   // sent back for more detail got a score and a list of questions and could
-  // never read the thing itself — which makes the gate impossible to argue
+  // never read the thing itself â€” which makes the gate impossible to argue
   // with, and impossible for the operator to tell a fair knock-back from an
   // over-strict one.
-  // ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('KEEPS the draft when the gate sends it back', async () => {
     const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
@@ -1359,9 +1385,9 @@ describe('MotivationsService.generate', () => {
     expect(data.documentTextEncrypted).toBeTruthy();
   });
 
-  it('⚠️ NEVER FILES A DOCUMENT THAT FAILS MECHANICAL VERIFICATION TWICE', async () => {
+  it('âš ï¸ NEVER FILES A DOCUMENT THAT FAILS MECHANICAL VERIFICATION TWICE', async () => {
     // A writer that drops the serial number is corrupting identity data on a
-    // legal submission. That is our defect, not the applicant's — so it goes
+    // legal submission. That is our defect, not the applicant's â€” so it goes
     // to FAILED with an urgent admin alert, never to COMPLETED and never
     // round the ask-the-applicant loop.
     const { svc, prisma, claude } = buildReady();
@@ -1416,9 +1442,9 @@ describe('MotivationsService.generate', () => {
       });
     await svc.generate('c1', 'mo-1');
     /**
-     * ⚠️ THREE NOW, NOT TWO, AND THE CHANGE IS THE POINT. This asserted 2
+     * âš ï¸ THREE NOW, NOT TWO, AND THE CHANGE IS THE POINT. This asserted 2
      * because the loop broke as soon as an attempt was no better than the one
-     * before — sound while the failures were systematic, and wrong once they
+     * before â€” sound while the failures were systematic, and wrong once they
      * were variance: MO000075 never reached attempt three once in five days of
      * failing. What this test is actually about is the fresh seed and the
      * different plan, and that is unchanged.
@@ -1430,7 +1456,7 @@ describe('MotivationsService.generate', () => {
     expect(secondPlan.seed).not.toBe(firstPlan.seed);
   });
 
-  it('releases the row when generation throws — never stranded in GENERATING', async () => {
+  it('releases the row when generation throws â€” never stranded in GENERATING', async () => {
     // Without this a failed generation leaves the motivation uneditable AND
     // un-regenerable, which is the worst possible end state.
     const { svc, prisma, claude } = buildReady();
@@ -1450,10 +1476,10 @@ describe('MotivationsService.generate', () => {
     expect(quota.claimBetaSeat).not.toHaveBeenCalled();
   });
 
-  // ────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // STARTING A GENERATION WITHOUT HOLDING THE REQUEST OPEN.
   //
-  // A real section 16 run measured 88 seconds — two flagship calls and a
+  // A real section 16 run measured 88 seconds â€” two flagship calls and a
   // grading pass, 14k prompt and 12k completion tokens over two gate cycles.
   // nginx allows an upstream 60 seconds and Cloudflare cuts the origin at 100
   // whatever nginx is told, so the applicant received a 504 for a document that
@@ -1463,7 +1489,7 @@ describe('MotivationsService.generate', () => {
   // move is the refusals: an applicant who has not accepted the declaration, or
   // still has an answer missing, has to be told NOW, not left watching a
   // spinner for a run that was never going to happen.
-  // ────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('startGeneration', () => {
     const flush = () => new Promise((r) => setImmediate(r));
 
@@ -1472,7 +1498,7 @@ describe('MotivationsService.generate', () => {
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
 
       // A generation that never settles. If startGeneration awaited the
-      // pipeline, this test would time out — which is precisely the production
+      // pipeline, this test would time out â€” which is precisely the production
       // failure, expressed as a test.
       claude.generate.mockImplementation(() => new Promise(() => {}));
 
@@ -1486,12 +1512,12 @@ describe('MotivationsService.generate', () => {
       claude.generate.mockImplementation(() => new Promise(() => {}));
       await svc.startGeneration('c1', 'mo-1');
       // The compare-and-swap is what stops two runs, and it has to have
-      // happened by the time the caller gets its 202 — otherwise two clicks a
+      // happened by the time the caller gets its 202 â€” otherwise two clicks a
       // moment apart both pass the check and both spend money.
       expect(prisma.motivation.updateMany).toHaveBeenCalled();
     });
 
-    it('REFUSES SYNCHRONOUSLY when answers are missing — no false start', async () => {
+    it('REFUSES SYNCHRONOUSLY when answers are missing â€” no false start', async () => {
       const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce({
         ...READY,
@@ -1517,7 +1543,7 @@ describe('MotivationsService.generate', () => {
     it('does not reject the caller when the background run fails', async () => {
       // The applicant already has their 202. A rejection with nobody left to
       // catch it is an unhandled rejection, which on some Node configurations
-      // takes the whole process down — every other user's request with it.
+      // takes the whole process down â€” every other user's request with it.
       const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.generate.mockRejectedValue(new Error('overloaded'));
@@ -1603,8 +1629,8 @@ describe('MotivationsService.renderPdf', () => {
   // The mark is decided here, not in the renderer, so this is where the rule
   // is pinned. See isPaidFor.
   //
-  // ⚠️ A FUNCTION, NOT A CONST. encryptText reads ID_HASH_SECRET, and a const
-  // in the describe body is evaluated while jest is collecting tests — before
+  // âš ï¸ A FUNCTION, NOT A CONST. encryptText reads ID_HASH_SECRET, and a const
+  // in the describe body is evaluated while jest is collecting tests â€” before
   // the beforeAll at the top of this file has set it. The whole suite fails to
   // load, and the message points at blob-crypto rather than at here.
   const readyToRender = () => ({
@@ -1618,7 +1644,7 @@ describe('MotivationsService.renderPdf', () => {
     uploads: [{ kind: 'IDENTITY_DOCUMENT' }],
   });
 
-  // ⚠️ THE MARK IS GONE ENTIRELY. Operator, 2026-10-15: "remove the
+  // âš ï¸ THE MARK IS GONE ENTIRELY. Operator, 2026-10-15: "remove the
   // watermark." The renderer is asked for no mark whether or not the pack was
   // billed; this reversed the 2026-08-22 rule that a free seat is not a
   // payment.
@@ -1645,7 +1671,7 @@ describe('MotivationsService.renderPdf', () => {
   });
 });
 
-describe('MotivationsService — beta seat accounting and cost', () => {
+describe('MotivationsService â€” beta seat accounting and cost', () => {
   const READY2 = {
     id: 'mo-1',
     userId: 'user-1',
@@ -1661,7 +1687,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
     completionTokens: null as number | null,
   };
 
-  /** The same document-complete service the generation suite uses — see H13. */
+  /** The same document-complete service the generation suite uses â€” see H13. */
   const buildReady = (o: Parameters<typeof build>[0] = {}) =>
     build({
       uploads: requiredDocs(MotivationLicenceType.S16_DEDICATED_HUNTER),
@@ -1679,7 +1705,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
   it('GIVES THE SEAT BACK when generation fails', async () => {
     // The seat is claimed before the first Claude call so we never spend money
     // unaccounted for. That means an outage would otherwise consume a free-beta
-    // seat and produce nothing — the applicant loses their place because WE
+    // seat and produce nothing â€” the applicant loses their place because WE
     // failed. This test is the whole reason releaseBetaSeat exists.
     const { svc, prisma, claude, quota } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
@@ -1705,7 +1731,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
     expect(quota.releaseBetaSeat).not.toHaveBeenCalled();
   });
 
-  it('records a cost — the only per-document spend signal we have', async () => {
+  it('records a cost â€” the only per-document spend signal we have', async () => {
     // Org-level spend alerting does not work on this box (the admin key is a
     // regular key), so this column is it.
     const { svc, prisma } = buildReady();
@@ -1742,20 +1768,20 @@ describe('estimateCostUsd', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // PICKING A DOCUMENT OUT OF THE DOCUMENT CENTRE.
 //
 // Operator, 2026-08-23: "Just use claude vision to extract the information
 // when preparing the motivation to insert the information into the document."
 //
-// ⚠️ WHY IT READS RATHER THAN TRANSLATES. The vault and the motivation
-// registry name the same values differently — a licence is stored as
+// âš ï¸ WHY IT READS RATHER THAN TRANSLATES. The vault and the motivation
+// registry name the same values differently â€” a licence is stored as
 // {licence_number, make, calibre} and the form wants
-// {existing_firearm_1_licence_no, _make, _calibre} — and four separate bugs
+// {existing_firearm_1_licence_no, _make, _calibre} â€” and four separate bugs
 // came out of trying to carry a reading across that gap. Reading the bytes
 // produces registry keys by construction.
 //
-// ⚠️ AND WHY IT DOES NOT ALWAYS READ. Every call here is a Claude vision
+// âš ï¸ AND WHY IT DOES NOT ALWAYS READ. Every call here is a Claude vision
 // request. Where the vault reading already lands on registry keys, paying to
 // re-read is a bill for something already in hand.
 describe('a document picked from the Document Centre', () => {
@@ -1798,7 +1824,7 @@ describe('a document picked from the Document Centre', () => {
     const res = await svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-1');
 
     expect(extract.extract).toHaveBeenCalledTimes(1);
-    // It must be given the licence type and the current answers — the second
+    // It must be given the licence type and the current answers â€” the second
     // decides WHICH owned-firearm row a licence fills, and without it every
     // licence lands on row 1 and the second overwrites the first.
     const args = extract.extract.mock.calls[0][0];
@@ -1821,7 +1847,7 @@ describe('a document picked from the Document Centre', () => {
 
   it('does NOT spend a vision call when the vault reading already fits', async () => {
     const { svc, extract, prisma } = libraryCase();
-    // Pretend the exact-name filter found something — the competency case.
+    // Pretend the exact-name filter found something â€” the competency case.
     prisma.credential.findFirst = jest.fn(async (): Promise<any> => ({
       kind: 'COMPETENCY_CERTIFICATE',
       storageKey: 'credentials/2026/08/b.enc',
@@ -1852,24 +1878,24 @@ describe('a document picked from the Document Centre', () => {
     ).resolves.toMatchObject({ id: 'up-1' });
 
     const row = prisma.motivationUpload.create.mock.calls[0][0].data;
-    // ⚠️ STILL NOT AMBER. The vault said it had read this document, and a
+    // âš ï¸ STILL NOT AMBER. The vault said it had read this document, and a
     // failure of OUR call does not unsay that.
     expect(row.extractionOk).toBe(true);
     expect(row.extractedFields).toEqual([]);
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A DEDICATED CERTIFICATE UPLOADED STRAIGHT TO AN APPLICATION.
 //
 // Operator, 2026-09-14: a dedicated certificate is also the section 16 letter
 // of good standing while its validity is unexpired. The vault-attach path
-// applies that when it files a credential — but a member who photographed the
+// applies that when it files a credential â€” but a member who photographed the
 // SAME certificate directly was still told the good-standing row was empty with
 // the paper already in the pack. A direct upload carries no sourceCredentialId
 // and its own read is the motivation registry, which never asks an
 // ASSOCIATION_CARD for an expiry, so the vault row is found by content.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 describe('a dedicated certificate uploaded straight to an application', () => {
   function uploadCase(
     vaultRow: Record<string, unknown> | null,
@@ -1976,8 +2002,8 @@ describe('a dedicated certificate uploaded straight to an application', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
-// PROVENANCE — WHERE EACH PREFILLED ANSWER CAME FROM.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PROVENANCE â€” WHERE EACH PREFILLED ANSWER CAME FROM.
 //
 // The pure rules are covered in common/answer-provenance.spec.ts. What is
 // tested HERE is the wiring, because the two ways this feature fails are both
@@ -1985,15 +2011,15 @@ describe('a dedicated certificate uploaded straight to an application', () => {
 //
 //  1. A write path forgets `answerProvenance: true` in its select. The read
 //     comes back undefined, parseProvenance turns it into {} by design, the
-//     write looks perfectly correct — and every earlier entry, MEMBER ones
+//     write looks perfectly correct â€” and every earlier entry, MEMBER ones
 //     included, is discarded.
 //  2. saveAnswers stamps MEMBER on the payload's keys instead of the keys
 //     whose value actually changed. The wizard resends a whole step on every
-//     save, so the first bare Continue would flip that step to MEMBER — and
+//     save, so the first bare Continue would flip that step to MEMBER â€” and
 //     MEMBER is absorbing, so nothing could ever prefill those fields again.
 //
 // Both compile. Both pass a suite that does not look for them.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('provenance', () => {
   /** A vault licence the offer can actually take values off. */
@@ -2028,7 +2054,7 @@ describe('provenance', () => {
       expect(entries.length).toBeGreaterThan(0);
       for (const e of entries) {
         expect(e.source).toBe('PROFILE');
-        // Not a placeholder — the offer's own sentence, which is what the
+        // Not a placeholder â€” the offer's own sentence, which is what the
         // chip shows the member.
         expect(typeof e.from).toBe('string');
         expect(e.from.length).toBeGreaterThan(0);
@@ -2069,7 +2095,7 @@ describe('provenance', () => {
     it('records nothing from the vault when the vault cannot be read', async () => {
       // The fail-soft catch has hidden an untested feature in this file once
       // already. A vault failure must cost the vault's provenance and nothing
-      // else — the profile's entries still stand, and create() still returns.
+      // else â€” the profile's entries still stand, and create() still returns.
       const { svc, prisma } = build();
       prisma.credential.findMany.mockRejectedValueOnce(new Error('vault down'));
       await expect(
@@ -2170,7 +2196,7 @@ describe('provenance', () => {
       // THE BUG THIS FEATURE WOULD OTHERWISE SHIP WITH. The wizard resends
       // the whole step on every save. If MEMBER were stamped on the payload's
       // keys, one bare Continue would claim the member typed values we filled
-      // in for them — and MEMBER is absorbing, so no later vault sync could
+      // in for them â€” and MEMBER is absorbing, so no later vault sync could
       // ever fill those fields again.
       const { svc, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(
@@ -2268,7 +2294,7 @@ describe('provenance', () => {
 
         const map = updated(prisma) as any;
         expect(map.police_station.source).toBe('DERIVED');
-        // The member's own edit is still stamped MEMBER — the derivation is
+        // The member's own edit is still stamped MEMBER â€” the derivation is
         // additive, not a replacement for the normal changed-key logic.
         expect(map.residential_address.source).toBe('MEMBER');
       });
@@ -2378,20 +2404,20 @@ describe('provenance', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // EVERY READ-THEN-WRITE PATH MUST SELECT THE COLUMN IT IS ABOUT TO WRITE.
 //
-// ⚠️ THIS IS A SHAPE ASSERTION ON PURPOSE, and it is the only kind that can
+// âš ï¸ THIS IS A SHAPE ASSERTION ON PURPOSE, and it is the only kind that can
 // catch this. Omitting `answerProvenance` from a select is a data-destroying
 // bug that is invisible everywhere else: the read comes back undefined,
 // parseProvenance turns undefined into {} by design, the write succeeds, and
-// every earlier entry — MEMBER stamps included — is silently discarded. It
+// every earlier entry â€” MEMBER stamps included â€” is silently discarded. It
 // cannot be caught behaviourally here because the Prisma mock returns whatever
 // the test hands it regardless of the select, so a mutation removing the line
 // leaves every other test in this file green. Verified by doing exactly that.
 //
 // If a seventh writer of answersEncrypted is added, add it here too.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('provenance is read before it is written', () => {
   const row = (over: Record<string, unknown> = {}) => ({
@@ -2434,15 +2460,15 @@ describe('provenance is read before it is written', () => {
     expect(selectOf(prisma).answerProvenance).toBe(true);
   });
 
-  // ⚠️ TWO answerFollowUp CASES STOOD HERE AND THEIR SUBJECT IS GONE
-  // (2026-09-08 — no model asks the applicant a question any more). They were
+  // âš ï¸ TWO answerFollowUp CASES STOOD HERE AND THEIR SUBJECT IS GONE
+  // (2026-09-08 â€” no model asks the applicant a question any more). They were
   // asserting two things, and only one of them died with the feature:
   //
-  //   "selects answerProvenance"  — the suite-wide rule that EVERY path
+  //   "selects answerProvenance"  â€” the suite-wide rule that EVERY path
   //     reading answers must also read the provenance map, or a later write
   //     silently drops everyone's chips. Still enforced, by the eleven other
   //     cases in this describe block.
-  //   "marks the field the applicant wrote into as theirs" — this one really
+  //   "marks the field the applicant wrote into as theirs" â€” this one really
   //     is gone, because there is no longer a path where an applicant's answer
   //     arrives as a chat message. saveAnswers covers the same rule for the
   //     path that remains.
@@ -2455,14 +2481,14 @@ describe('provenance is read before it is written', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
-// B5 — GET :id/pack, and the one place that decides who we are waiting on.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// B5 â€” GET :id/pack, and the one place that decides who we are waiting on.
 //
 // The failure this suite exists to prevent is divergence. checklist() and
 // pack() render the same rows on the same screen; if they compute
 // "waiting on someone" separately, one says "waiting on Piet" and the other
 // says "not started" about the same line, and both look correct in isolation.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('the pack payload', () => {
   const S16 = MotivationLicenceType.S16_DEDICATED_SPORT;
@@ -2565,8 +2591,8 @@ describe('the pack payload', () => {
     });
 
     it('only ever names rows that actually exist on the checklist', async () => {
-      // ⚠️ THE GUARD. A sentence keyed to a row the checklist does not build
-      // attaches to nothing and looks alive while doing nothing — which is
+      // âš ï¸ THE GUARD. A sentence keyed to a row the checklist does not build
+      // attaches to nothing and looks alive while doing nothing â€” which is
       // exactly what a character-reference entry did before it was removed
       // (CHARACTER_REFERENCE is in no RECOMMENDED list, so there is no row).
       // Every key waitingOn can emit must match a real one.
@@ -2587,9 +2613,9 @@ describe('the pack payload', () => {
       for (const item of waiting) expect(keys.has(item.key)).toBe(true);
     });
 
-    it('⚠️ SAYS SO WHEN THE SELLER HAS SIGNED', async () => {
+    it('âš ï¸ SAYS SO WHEN THE SELLER HAS SIGNED', async () => {
       // COMPLETED had no branch at all, so the one outcome the applicant is
-      // hoping for fell through to the generic "we hold this" copy — a row
+      // hoping for fell through to the generic "we hold this" copy â€” a row
       // indistinguishable from one nobody had answered. The seller had
       // signed; the screen would not say so.
       const { svc, prisma } = build();
@@ -2604,13 +2630,13 @@ describe('the pack payload', () => {
       const row = items(out.checklist).find(
         (i: any) => i.key === 'upload_firearm_source_proof',
       );
-      // ⚠️ `closer`, NOT `note`. waitingOn text replaces the row's closing
-      // sentence — the one that otherwise reads "Scan it with your phone".
+      // âš ï¸ `closer`, NOT `note`. waitingOn text replaces the row's closing
+      // sentence â€” the one that otherwise reads "Scan it with your phone".
       expect(row?.closer ?? '').toMatch(/completed and signed/i);
       expect(row?.closer ?? '').toContain('Piet Malan');
     });
 
-    it('⚠️ AND DOES NOT CALL A FINISHED THING "WAITING"', async () => {
+    it('âš ï¸ AND DOES NOT CALL A FINISHED THING "WAITING"', async () => {
       // Every other entry here reports something outstanding. This one
       // reports something done, and must not be phrased or coloured as a
       // thing the applicant is still waiting on.
@@ -2684,7 +2710,7 @@ describe('the pack payload', () => {
       expect(out.prefill).toEqual({ filled: 0, sources: [] });
     });
 
-    it('refuses somebody else’s application', async () => {
+    it('refuses somebody elseâ€™s application', async () => {
       const { svc, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(null);
       await expect(svc.pack('c1', 'mo-1')).rejects.toBeInstanceOf(NotFoundException);
@@ -2692,7 +2718,7 @@ describe('the pack payload', () => {
   });
 
   it('agrees with GET :id/checklist about the same row', async () => {
-    // ⚠️ THE DIVERGENCE TEST. These two render the same rows on the same
+    // âš ï¸ THE DIVERGENCE TEST. These two render the same rows on the same
     // screen. If they ever compute "waiting on someone" separately, one says
     // "waiting on Piet" and the other says "not started" about the same line,
     // and both look correct on their own.
@@ -2744,7 +2770,7 @@ describe('the pack payload carries the section meter', () => {
   });
 
   it('reads the seller once and tells the checklist and the meter the same thing', async () => {
-    // ⚠️ ONE READ, TWO CONSUMERS. If the row and the section panel decided
+    // âš ï¸ ONE READ, TWO CONSUMERS. If the row and the section panel decided
     // separately, one could say "waiting on Piet" while the other scored him.
     const { svc, prisma } = build();
     prisma.motivation.findFirst.mockResolvedValue(row());
@@ -2764,12 +2790,12 @@ describe('the pack payload carries the section meter', () => {
     expect(item.closer).toContain('Piet Malan');
     expect(f.status).toBe('theirs');
     expect(f.note).toContain('Piet Malan');
-    // ⚠️ AND HIS SECTION IS NOT SCORED AGAINST THE APPLICANT.
+    // âš ï¸ AND HIS SECTION IS NOT SCORED AGAINST THE APPLICANT.
     expect(f.percent).toBeNull();
     expect(prisma.motivationSellerConsent.findUnique).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the meter out of nobody’s reach when there is no seller', async () => {
+  it('leaves the meter out of nobodyâ€™s reach when there is no seller', async () => {
     const { svc, prisma } = build();
     prisma.motivation.findFirst.mockResolvedValue(row());
     prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
@@ -2779,9 +2805,9 @@ describe('the pack payload carries the section meter', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
-// C2 / M5 / M6 / M17 — AUTO-LINK, AFTER THE VAULT STARTED DATING ITSELF.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// C2 / M5 / M6 / M17 â€” AUTO-LINK, AFTER THE VAULT STARTED DATING ITSELF.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('auto-linking the Document Centre', () => {
   const DRAFT = {
@@ -2800,7 +2826,7 @@ describe('auto-linking the Document Centre', () => {
   ) {
     const b = build();
     b.prisma.motivation.findFirst = jest.fn(async (a: any): Promise<any> =>
-      // openForAttach asks a SECOND time, for a narrower row — both are the
+      // openForAttach asks a SECOND time, for a narrower row â€” both are the
       // same application.
       a?.select?.autolinkedAt !== undefined
         ? { ...DRAFT, ...over }
@@ -2830,8 +2856,8 @@ describe('auto-linking the Document Centre', () => {
     ...over,
   });
 
-  it('takes unconfirmed documents too — the settled-date filter is gone', async () => {
-    // ⚠️ 2026-09-14: the confirmed/dateSource predicate is gone entirely.
+  it('takes unconfirmed documents too â€” the settled-date filter is gone', async () => {
+    // âš ï¸ 2026-09-14: the confirmed/dateSource predicate is gone entirely.
     // Operator: "the current licenses, the ID, the proof of address ... can be
     // auto pulled when the motivation is open." An ID or an address
     // confirmation carries no date at all, so "settled" never applied to it,
@@ -2846,24 +2872,24 @@ describe('auto-linking the Document Centre', () => {
     expect(where.storageKey).toEqual({ not: null });
   });
 
-  it('C2 — ⚠️ DOES NOT BURN THE RUN WHEN THERE WAS NOTHING TO DECIDE', async () => {
+  it('C2 â€” âš ï¸ DOES NOT BURN THE RUN WHEN THERE WAS NOTHING TO DECIDE', async () => {
     // The stamp used to go on unconditionally. While the query was returning
     // nothing, the FIRST load of the documents step spent the one run the
     // application ever gets against an empty list, and the member could never
-    // get it back — not by uploading, not by confirming, not by reloading.
+    // get it back â€” not by uploading, not by confirming, not by reloading.
     const { svc, prisma } = autolinkCase({}, []);
     const out = await svc.autolink('c1', 'mo-1');
     expect(out.attached).toEqual([]);
     expect(prisma.motivation.update).not.toHaveBeenCalled();
   });
 
-  it('C2 — stamps the run once a candidate has actually been decided', async () => {
+  it('C2 â€” stamps the run once a candidate has actually been decided', async () => {
     // Skipped counts: "we looked at this and deliberately did not attach it" is
     // a decision, and re-running it would undo the member's deletions.
     const { svc, prisma } = autolinkCase(
       {},
       [cred()],
-      // Already on the pack, from somewhere else — so it is looked at and
+      // Already on the pack, from somewhere else â€” so it is looked at and
       // deliberately not attached.
       [{ kind: 'IDENTITY_DOCUMENT', sha256: 'x', sourceCredentialId: null }],
     );
@@ -2873,7 +2899,7 @@ describe('auto-linking the Document Centre', () => {
     );
   });
 
-  it('C2 — ⚠️ A DELETE STAYS DELETED, EVEN AFTER A RE-ARM', async () => {
+  it('C2 â€” âš ï¸ A DELETE STAYS DELETED, EVEN AFTER A RE-ARM', async () => {
     // This is the operator's "why can't I delete the proof of address?", and
     // the re-arm below re-opens it unless something outlives the removed row.
     // The removed upload is hard-deleted, so the refusal lives on the
@@ -2884,7 +2910,7 @@ describe('auto-linking the Document Centre', () => {
     expect(out.skipped).toEqual([]);
   });
 
-  it('C2 — never offers a credential this pack already carries', async () => {
+  it('C2 â€” never offers a credential this pack already carries', async () => {
     const { svc } = autolinkCase({}, [cred()], [
       { kind: 'ADDRESS_CONFIRMATION', sha256: 'x', sourceCredentialId: 'cred-id' },
     ]);
@@ -2892,7 +2918,7 @@ describe('auto-linking the Document Centre', () => {
     expect(out.attached).toEqual([]);
   });
 
-  it('C2 — rearmAutolinkFor clears the stamp on OPEN DRAFTS only', async () => {
+  it('C2 â€” rearmAutolinkFor clears the stamp on OPEN DRAFTS only', async () => {
     const { svc, prisma } = build();
     prisma.motivation.updateMany.mockResolvedValueOnce({ count: 2 });
     expect(await svc.rearmAutolinkFor('user-1')).toBe(2);
@@ -2904,14 +2930,14 @@ describe('auto-linking the Document Centre', () => {
     expect(call.where.status.in).not.toContain(MotivationStatus.COMPLETED);
   });
 
-  it('C2 — rearmAutolinkFor never throws: the caller is an upload path', async () => {
+  it('C2 â€” rearmAutolinkFor never throws: the caller is an upload path', async () => {
     const { svc, prisma } = build();
     prisma.motivation.updateMany.mockRejectedValueOnce(new Error('db down'));
     await expect(svc.rearmAutolinkFor('user-1')).resolves.toBe(0);
   });
 
   it('attaches the safe photographs unasked now', async () => {
-    // ⚠️ 2026-09-14: the safe moved onto the standard auto-attach list, so the
+    // âš ï¸ 2026-09-14: the safe moved onto the standard auto-attach list, so the
     // open-time run no longer holds it back and no longer asks for a place
     // confirmation. Operator: "safe photographs can be auto pulled when the
     // motivation is open."
@@ -2923,11 +2949,11 @@ describe('auto-linking the Document Centre', () => {
     expect(out.skipped).toEqual([]);
   });
 
-  it('⚠️ M6 — THE TICK WORKS ON THE SECOND RUN, WHICH IT NEVER DID', async () => {
+  it('âš ï¸ M6 â€” THE TICK WORKS ON THE SECOND RUN, WHICH IT NEVER DID', async () => {
     // The whole M6 design is: run once, hold the safe photographs back, report
     // needsPlaceConfirm, let the member tick, run AGAIN with placeConfirmed.
-    // The first run stamps `autolinkedAt` — the held-back photographs land in
-    // `skipped`, so `considered > 0` — and the second run then hit the
+    // The first run stamps `autolinkedAt` â€” the held-back photographs land in
+    // `skipped`, so `considered > 0` â€” and the second run then hit the
     // once-per-application guard and returned `already-done` with nothing
     // attached. The tick could never do anything, on any application, since the
     // day it shipped.
@@ -2936,9 +2962,9 @@ describe('auto-linking the Document Centre', () => {
     );
     const { svc } = autolinkCase({ autolinkedAt: new Date('2026-09-01') }, photos);
     const out = await svc.autolink('c1', 'mo-1', true);
-    // ⚠️ THE GUARD IS WHAT THIS PINS, NOT THE FILE WRITE. `attached` is empty
+    // âš ï¸ THE GUARD IS WHAT THIS PINS, NOT THE FILE WRITE. `attached` is empty
     // here because this harness mocks Prisma and not the storage layer, so no
-    // candidate can actually be copied — every test in this describe is in the
+    // candidate can actually be copied â€” every test in this describe is in the
     // same position. What IS observable is the decision: the run was not
     // refused, all three photographs were allowed through (nothing skipped),
     // and the question has been answered. The attach SET is pinned where it
@@ -2948,9 +2974,9 @@ describe('auto-linking the Document Centre', () => {
     expect(out.needsPlaceConfirm).toBe(false);
   });
 
-  it('⚠️ AND A SECOND RUN MAY TOUCH NOTHING BUT THE SAFE', async () => {
+  it('âš ï¸ AND A SECOND RUN MAY TOUCH NOTHING BUT THE SAFE', async () => {
     // The guard's whole purpose is the operator's "why can't I delete the
-    // proof of address?" — a run nobody asked for putting a deleted document
+    // proof of address?" â€” a run nobody asked for putting a deleted document
     // back. A place re-run is asked for, but it is asked for about a SAFE, so
     // `wanted` is narrowed to that one kind before any rule runs.
     const { svc, prisma } = autolinkCase(
@@ -2962,7 +2988,7 @@ describe('auto-linking the Document Centre', () => {
     );
     const out = await svc.autolink('c1', 'mo-1', true);
     expect(out.attached).toEqual([]);
-    // ⚠️ AND NOT MERELY UNATTACHED — NEVER CONSIDERED. Narrowing `wanted`
+    // âš ï¸ AND NOT MERELY UNATTACHED â€” NEVER CONSIDERED. Narrowing `wanted`
     // drops them before any rule runs, so nothing is decided about them and
     // the run stamps nothing. Left un-narrowed they would have been decided
     // and stamped, which is the member's deleted proof of address coming back.
@@ -3001,10 +3027,10 @@ describe('a library copy remembers where it came from', () => {
     return b;
   }
 
-  it('M5 — records the Credential the copy was taken from', async () => {
+  it('M5 â€” records the Credential the copy was taken from', async () => {
     // addFromLibrary always knew this and threw it away at the create, so
     // nothing downstream could answer "is the document behind this page still
-    // in my Centre" — nor, for auto-link, "have we offered this row before".
+    // in my Centre" â€” nor, for auto-link, "have we offered this row before".
     const { svc, prisma } = pickCase();
     await svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-7');
     expect(
@@ -3012,9 +3038,9 @@ describe('a library copy remembers where it came from', () => {
     ).toBe('cred-7');
   });
 
-  it('M17 — ⚠️ THE BYTES DO NOT OUTLIVE A FAILED ROW', async () => {
+  it('M17 â€” âš ï¸ THE BYTES DO NOT OUTLIVE A FAILED ROW', async () => {
     // addUpload has had this compensating delete since it was written and this
-    // path never did — so a create that lost the unique race, or hit a dead
+    // path never did â€” so a create that lost the unique race, or hit a dead
     // connection, left an encrypted file on disk with nothing pointing at it.
     // Undeletable except by hand, invisible to the retention sweep (which walks
     // rows), counted against the member's storage for ever.
@@ -3029,13 +3055,13 @@ describe('a library copy remembers where it came from', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
-// H13 — a pack is not ready because the ANSWERS are done.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// H13 â€” a pack is not ready because the ANSWERS are done.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('generation refuses on a missing document', () => {
-  // ⚠️ BUILT INSIDE A FUNCTION, NOT AT MODULE LOAD. encryptJson needs
-  // ID_HASH_SECRET, which the suite's own beforeAll sets — a top-level call
+  // âš ï¸ BUILT INSIDE A FUNCTION, NOT AT MODULE LOAD. encryptJson needs
+  // ID_HASH_SECRET, which the suite's own beforeAll sets â€” a top-level call
   // runs first and takes the whole file down with it.
   const readyAnswers = () => {
     const a: Record<string, string> = {};
@@ -3060,10 +3086,10 @@ describe('generation refuses on a missing document', () => {
     completionTokens: null,
   });
 
-  it('⚠️ NAMES THE DOCUMENTS AND NEVER CALLS CLAUDE', async () => {
+  it('âš ï¸ NAMES THE DOCUMENTS AND NEVER CALLS CLAUDE', async () => {
     // Before this, an applicant with every box filled and no identity document,
     // no proof of address and no competency certificate got a finished,
-    // watermarked, PAID-FOR pack that a DFO cannot accept. The checklist knew —
+    // watermarked, PAID-FOR pack that a DFO cannot accept. The checklist knew â€”
     // documentStatus().missingRequired is computed on every load of the
     // documents step and was read by nothing that could stop this.
     const { svc, claude, prisma } = build();
@@ -3077,12 +3103,12 @@ describe('generation refuses on a missing document', () => {
       },
     });
     expect(claude.generate).not.toHaveBeenCalled();
-    // ⚠️ AND THE ROW IS NEVER CLAIMED. A refusal that moved the status to
+    // âš ï¸ AND THE ROW IS NEVER CLAIMED. A refusal that moved the status to
     // GENERATING would strand a draft nobody could edit.
     expect(prisma.motivation.updateMany).not.toHaveBeenCalled();
   });
 
-  it('⚠️ AFTER THE ANSWER CHECK, because the list DEPENDS on the answers', async () => {
+  it('âš ï¸ AFTER THE ANSWER CHECK, because the list DEPENDS on the answers', async () => {
     // The required-document list is conditional: owning a firearm adds the
     // current licence, a private transfer adds the seller's licence and a
     // consent. Run against a half-filled form it would demand documents for a
@@ -3099,9 +3125,9 @@ describe('generation refuses on a missing document', () => {
   });
 });
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The contract every document row now carries about its own validity.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('what a listed document says about its own validity', () => {
   const day = (n: number) =>
@@ -3136,7 +3162,7 @@ describe('what a listed document says about its own validity', () => {
     ...over,
   });
 
-  it('⚠️ PREFERS THE VAULT’S CURATED DATE over the raw reading', async () => {
+  it('âš ï¸ PREFERS THE VAULTâ€™S CURATED DATE over the raw reading', async () => {
     // A Credential's expiresOn has been through the Document Centre: read,
     // arithmetic-checked, possibly corrected by the member, re-derived when a
     // renewal moves it. The reading on the upload row is one vision call's raw
@@ -3162,7 +3188,7 @@ describe('what a listed document says about its own validity', () => {
     expect(out.files[0].caution.tone).toBe('red');
   });
 
-  it('is amber inside three months — SAPS takes longer than that', async () => {
+  it('is amber inside three months â€” SAPS takes longer than that', async () => {
     const { svc } = listCase([
       upload({ sourceCredential: { expiresOn: day(30) } }),
     ]);
@@ -3188,7 +3214,7 @@ describe('what a listed document says about its own validity', () => {
     expect(out.files[0].sourceRemovedAt).toBe(removed.toISOString());
   });
 
-  it('⚠️ NEVER PUTS THE RAW READING ON THE WIRE', async () => {
+  it('âš ï¸ NEVER PUTS THE RAW READING ON THE WIRE', async () => {
     // It is the decrypted-at-rest reading of an identity document. The row
     // carries the one fact the client needs and nothing else.
     const { svc } = listCase([
@@ -3200,7 +3226,7 @@ describe('what a listed document says about its own validity', () => {
 });
 
 describe('removing a document the Document Centre supplied', () => {
-  it('C2 — ⚠️ REMEMBERS THE REFUSAL, BECAUSE THE ROW IS ABOUT TO BE GONE', async () => {
+  it('C2 â€” âš ï¸ REMEMBERS THE REFUSAL, BECAUSE THE ROW IS ABOUT TO BE GONE', async () => {
     const { svc, prisma } = build();
     prisma.motivationUpload.findFirst = jest.fn(async (): Promise<any> => ({
       id: 'up-1',
@@ -3235,7 +3261,7 @@ describe('removing a document the Document Centre supplied', () => {
 });
 
 describe('the stored reading for an attached document', () => {
-  // ⚠️ THE PHONE HAND-OFF READS THIS, NOT rereadUpload. The reading was made
+  // âš ï¸ THE PHONE HAND-OFF READS THIS, NOT rereadUpload. The reading was made
   // once, on upload; the desktop asks for it afterwards without spending a
   // second vision call, and gets it in the shape the review screen expects.
   function readingCase(over: {
@@ -3275,10 +3301,10 @@ describe('the stored reading for an attached document', () => {
     expect(extract.extract).not.toHaveBeenCalled();
   });
 
-  it('⚠️ KEEPS THE CARD’S NONE, dropping only blanks', async () => {
+  it('âš ï¸ KEEPS THE CARDâ€™S NONE, dropping only blanks', async () => {
     // Operator, 2026-10-17: "make sure it never discards the NONE from any
     // field on the motivation or the 271 form." A licence card prints NONE in
-    // a row that does not apply — the applied-for firearm's frame serial, say —
+    // a row that does not apply â€” the applied-for firearm's frame serial, say â€”
     // and this ran answerValue(), so the wizard was offered nothing and the
     // 271 printed a blank box. The value is kept; only whitespace is dropped.
     const { svc } = readingCase({

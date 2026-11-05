@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth';
+import { appRelativeUrl } from '../lib/notifications';
 
 // Nav notification bell — replaces the old always-on sticky "Urgent
 // Notifications" strip. A bell sits in the top nav (desktop + mobile-web;
@@ -54,7 +55,7 @@ export function UrgentBell() {
       }
     }
     load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 15_000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -196,7 +197,7 @@ export function UrgentBell() {
                 return n.href ? (
                   <Link
                     key={n.id}
-                    href={n.href}
+                    href={appRelativeUrl(n.href)}
                     onClick={() => setOpen(false)}
                     className="block transition-opacity hover:opacity-80"
                     style={{ textDecoration: 'none' }}

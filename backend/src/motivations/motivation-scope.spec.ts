@@ -82,6 +82,42 @@ describe('the sections a document may name', () => {
     );
     expect(out).toEqual([]);
   });
+
+  it('does not mistake the applied Howa for the held Howa of the same make', () => {
+    // MO000046: a Howa 6.5 Creedmoor is held under section 15; the applicant is
+    // applying for a Howa 1500 7mm magnum under section 16. Matching only the
+    // make attributed section 16 to the held 6.5 and failed a correct draft.
+    const out = documentScope(
+      'The Howa 6.5mm Creedmoor rifle is licensed under section 15. ' +
+        'I request a licence under section 16 to possess the Howa 1500 ' +
+        '7mm Magnum rifle, serial 12345678.',
+      {
+        licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        arsenal: held,
+        applied: {
+          make: 'Howa',
+          model: '1500',
+          calibre: '7mm magnum',
+          serial: '12345678',
+        },
+      },
+    );
+    expect(out.filter((i) => i.includes('section'))).toEqual([]);
+  });
+
+  it('allows penetration as the reason on a dangerous-game application', () => {
+    // MO000056: .458 for buffalo/elephant. "Deep penetration of dense anatomy"
+    // is the reason, not catalogue copy.
+    const out = documentScope(
+      'The .458 Winchester Magnum is designed for deep penetration of dense anatomy.',
+      {
+        licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        arsenal: [],
+        applied: { calibre: '.458 Winchester Magnum' },
+      },
+    );
+    expect(out.filter((i) => i.includes('penetration'))).toEqual([]);
+  });
 });
 
 describe('the roles a document may state', () => {

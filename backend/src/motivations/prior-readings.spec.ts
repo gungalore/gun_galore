@@ -400,6 +400,14 @@ describe('answers carried forward from a previous application', () => {
     // somebody adds — a failure nobody would ever see, because the member just
     // retypes one more box than last time.
     expect(carriesForwardAsAnswer('history_something_added_later')).toBe(true);
+    expect(carriesForwardAsAnswer('safe_storage_detail')).toBe(true);
+    expect(carriesForwardAsAnswer('association_name')).toBe(true);
+    expect(carriesForwardAsAnswer('association_expiry')).toBe(true);
+    expect(carriesForwardAsAnswer('occupation')).toBe(true);
+    expect(carriesForwardAsAnswer('existing_firearm_2_primary_use')).toBe(
+      true,
+    );
+    // The firearm being applied for is this application's fact.
     expect(carriesForwardAsAnswer('firearm_make')).toBe(false);
   });
 });

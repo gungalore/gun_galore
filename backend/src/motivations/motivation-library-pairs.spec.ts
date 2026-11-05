@@ -686,25 +686,25 @@ describe('picking a folded document attaches both of its pages', () => {
 });
 
 describe('the ceiling, when the document is two pages', () => {
-  /** Sixteen documents is the cap; this fills it to `n`. */
+  /** Twenty documents is the cap; this fills it to `n`. */
   const fill = (n: number) =>
     Array.from({ length: n }, (_, i) =>
       attached({ id: `p${i}`, sha256: `sha-filler-${i}`, kind: MotivationUploadKind.OTHER }),
     );
 
   it('⚠️ REFUSES BOTH PAGES RATHER THAN ATTACHING ONE OF THEM SILENTLY', async () => {
-    // At fifteen of sixteen the member picked a folded proficiency, got the
+    // At nineteen of twenty the member picked a folded proficiency, got the
     // certificate, got no error — and with the picker hiding a folded entry it
     // believes is already attached, no way to add the page that was refused.
-    const { service, created } = build(bothSides(), { pack: fill(15) });
+    const { service, created } = build(bothSides(), { pack: fill(19) });
     await expect(
       service.addFromLibrary('clerk-1', 'mo-1', 'credential', 'back'),
-    ).rejects.toThrow(/16 documents/);
+    ).rejects.toThrow(/20 documents/);
     expect(created).toHaveLength(0);
   });
 
   it('still attaches both pages with exactly enough room', async () => {
-    const { service, created } = build(bothSides(), { pack: fill(14) });
+    const { service, created } = build(bothSides(), { pack: fill(18) });
     await service.addFromLibrary('clerk-1', 'mo-1', 'credential', 'back');
     expect(created).toHaveLength(2);
   });

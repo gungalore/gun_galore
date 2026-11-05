@@ -81,7 +81,7 @@ export const QUARRY: readonly QuarrySpecies[] = [
   { key: 'impala', name: 'Impala', subject: 'an adult impala ram', klass: 'plains_light' },
   { key: 'springbok', name: 'Springbok', subject: 'an adult springbok ram', klass: 'plains_light' },
   { key: 'blesbok', name: 'Blesbok', subject: 'an adult blesbok ram', klass: 'plains_light' },
-  { key: 'warthog', name: 'Warthog', subject: 'an adult warthog boar', klass: 'plains_light' },
+  { key: 'warthog', name: 'Warthog', subject: 'an adult warthog boar', klass: 'plains_light', aliases: ['vlakvark', 'vlakvarke'] },
   { key: 'bushbuck', name: 'Bushbuck', subject: 'an adult bushbuck ram', klass: 'plains_light' },
   { key: 'reedbuck', name: 'Reedbuck', subject: 'an adult reedbuck ram', klass: 'plains_light' },
   { key: 'duiker', name: 'Grey duiker', subject: 'an adult grey (common) duiker', klass: 'plains_light', aliases: ['grey duiker', 'common duiker'] },
@@ -224,20 +224,26 @@ export function quarriesFor(args: {
   const userNamed = userUsable
     ? QUARRY.filter((q) => spellings(q).some((x) => mentions(userUsable, x)))
     : [];
+  /**
+   * ⚠️ THE APPLICANT'S OWN NAMED QUARRY IS THE EXHIBIT SET.
+   *
+   * It used to lead and then be padded from the research. MO000032 is the
+   * failure that exposed: the applicant said "Vlakvark" and the heading-3
+   * pages showed Impala, Blesbok, Kudu and Gemsbok from the cartridge brief,
+   * so the pictures contradicted the paragraph above them. If they named a
+   * species, that is the whole list; research only chooses when they did not.
+   */
+  if (userNamed.length) return userNamed.slice(0, MAX_IN_PLATE);
+
   const researchNamed = researchUsable
     ? QUARRY.filter((q) =>
         spellings(q).some((x) => mentions(researchUsable, x)),
       )
     : [];
 
-  /**
-   * ⚠️ THE APPLICANT'S OWN NAMED QUARRY LEADS. Where the applicant explicitly
-   * named species ("blue wildebeest and red hartebeest"), those stand first
-   * so the purpose exhibits match Section 3 ("My hunting").
-   */
   const combined: QuarrySpecies[] = [];
   const seen = new Set<string>();
-  for (const q of [...userNamed, ...researchNamed]) {
+  for (const q of researchNamed) {
     if (!seen.has(q.key)) {
       seen.add(q.key);
       combined.push(q);

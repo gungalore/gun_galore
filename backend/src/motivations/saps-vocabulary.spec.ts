@@ -1,4 +1,9 @@
-import { displayAction, displayCalibre } from './saps-vocabulary';
+import {
+  displayAction,
+  displayCalibre,
+  displayMake,
+  displayModel,
+} from './saps-vocabulary';
 
 // ────────────────────────────────────────────────────────────────────
 // HOW A CALIBRE IS PRINTED.
@@ -72,5 +77,22 @@ describe('displayAction', () => {
     expect(displayAction('')).toBe('');
     expect(displayAction(undefined)).toBe('');
     expect(displayAction(null)).toBe('');
+  });
+});
+
+describe('displayMake and displayModel', () => {
+  it('prints what a reader expects on the cover and the 271', () => {
+    expect(displayMake('mauser')).toBe('Mauser');
+    expect(displayModel('m96 straight pull')).toBe('M96 Straight Pull');
+    expect(displayMake('GLOCK')).toBe('Glock');
+    expect(displayModel('T3x')).toBe('T3x');
+  });
+
+  it('keeps short marques and placeholders intact', () => {
+    expect(displayMake('CZ')).toBe('CZ');
+    expect(displayMake('S&W')).toBe('S&W');
+    expect(displayModel('AK-47')).toBe('AK-47');
+    expect(displayMake('NONE')).toBe('NONE');
+    expect(displayModel('n/a')).toBe('n/a');
   });
 });

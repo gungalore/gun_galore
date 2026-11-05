@@ -44,7 +44,7 @@ import { CONTAINER_VERSION } from './evidence-taxonomy';
  *
  * Field-list changes need no bump: the asked keys are already in the key.
  */
-export const READER_VERSION = '2026-09-10';
+export const READER_VERSION = '2026-11-01';
 
 /** Thirty days. See the schema note — this holds identity data, not trivia. */
 const TTL_DAYS = 30;

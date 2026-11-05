@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ThemeChoice } from './theme-choice';
@@ -46,6 +47,35 @@ describe('ThemeChoice — the phone/PWA appearance control', () => {
       'aria-checked',
       'true',
     );
+  });
+
+  it('never flashes light on mount when a dark preference is stored', async () => {
+    // StrictMode double-invokes mount effects in development. The old
+    // "skip the first sync" ref then wrote the placeholder light over the
+    // pre-paint dark value, which is the day/night flicker members saw.
+    window.localStorage.setItem(STORAGE_KEY, 'dark');
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => {
+      const value = document.documentElement.dataset.theme;
+      if (value) seen.push(value);
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    render(
+      <StrictMode>
+        <ThemeChoice />
+      </StrictMode>,
+    );
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe('dark'),
+    );
+    observer.disconnect();
+
+    expect(seen).not.toContain('light');
   });
 
   it('reads the STORED preference rather than guessing from the resolved theme', async () => {

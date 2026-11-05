@@ -5,16 +5,22 @@ import {
 } from './shooting-disciplines';
 import {
   FIREARM_USE_KIND,
+  HUNT_GAME_CLASS,
+  HUNT_REASONS,
+  HUNT_TERRAIN,
+  HUNT_WHERE,
   OWNED_SECTION_HELD,
   PRIMARY_USE,
   S13_CARRY_STYLE,
   S13_MOVEMENTS,
   S13_REASONS,
+  SPORT_FORMATS,
+  SPORT_REASONS,
 } from './motivation-cards';
 import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 import { answerValue } from '../common/card-placeholder';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // What we ask an applicant, per licence type.
 //
 // THIS IS THE CONTRACT between the form, the interview, the fact pack and the
@@ -35,7 +41,7 @@ import { answerValue } from '../common/card-placeholder';
 // VERSIONED. answersSchemaVersion is stamped on every motivation so a later
 // change here can be told from an older blob rather than guessed at. Bump
 // FIELD_REGISTRY_VERSION whenever a key is added, removed or re-meant.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Bumped when the SAPS 271 analysis split the firearm into its own boxes and
 // added the personal and history fields. Same day as the previous version, so
@@ -85,15 +91,15 @@ import { answerValue } from '../common/card-placeholder';
 //   MOVED    the four safe fields out of 'Storage and safety' and into
 //            'Your premises', which also gains seven new questions.
 //
-// ⚠️ A BLOB WRITTEN BEFORE THIS VERSION STILL LOADS AND STILL SAVES, which is
+// âš ï¸ A BLOB WRITTEN BEFORE THIS VERSION STILL LOADS AND STILL SAVES, which is
 // the whole reason the version is stamped rather than assumed. Every removal
 // above is a RETIREMENT — fieldByKey still finds the key — and not a deletion,
 // so the wizard's whole-blob autosave cannot drop an answer somebody gave.
-export const FIELD_REGISTRY_VERSION = '2026-09-09b';
+export const FIELD_REGISTRY_VERSION = '2026-10-29a';
 
-// ── THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED ────────────
+// â”€â”€ THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// ⚠️ THIS REPLACED AN OPT-IN, 2026-09-08. It used to be one early question —
+// âš ï¸ THIS REPLACED AN OPT-IN, 2026-09-08. It used to be one early question —
 // "should we fill in your SAPS 271 as well?" — and EVERY formOnly field hung
 // off the answer, so choosing the dealer path made roughly half the registry
 // vanish: phones, postal codes, marital status, the spouse, the firearms-owned
@@ -119,7 +125,7 @@ export const FIELD_REGISTRY_VERSION = '2026-09-09b';
 /**
  * Where the firearm is coming from.
  *
- * ⚠️ THE ANSWER CHANGES WHICH DOCUMENTS THE PACK NEEDS, which is the whole
+ * âš ï¸ THE ANSWER CHANGES WHICH DOCUMENTS THE PACK NEEDS, which is the whole
  * reason it is asked. A club checklist bound into a real submitted Section 16
  * pack comes in two versions, identical except here: the dealer route wants
  * the dealer's paperwork, and the private route wants three more documents —
@@ -141,7 +147,7 @@ export const SOURCE_UNDECIDED = 'Not decided yet';
 /**
  * Inherited from a deceased estate.
  *
- * ⚠️ A ROUTE WITH ITS OWN REQUIRED DOCUMENT, AND IT WAS UNREACHABLE. The
+ * âš ï¸ A ROUTE WITH ITS OWN REQUIRED DOCUMENT, AND IT WAS UNREACHABLE. The
  * EXECUTOR_APPOINTMENT upload kind has carried a label and guidance since the
  * document list was written — "SAPS asks for the letter of appointment as
  * executor by name, and an estate firearm cannot be licensed without it" — and
@@ -155,14 +161,14 @@ export const SOURCE_ESTATE = 'Inherited from a deceased estate';
 /**
  * A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION.
  *
- * ⚠️ NOBODY IS EVER ASKED THIS. The Licence Centre works out, from the
+ * âš ï¸ NOBODY IS EVER ASKED THIS. The Licence Centre works out, from the
  * member's own licences and competency certificates, whether the licence being
  * renewed is the last one in its category — in which case the competency
  * expires with it and a SAPS 517(g) has to be lodged alongside, per s10A(1).
  * See competencyRenewalNote in licence-renewal.ts, which owns the rule. This
  * key is where that answer is PUT so the checklist can read it back.
  *
- * ⚠️ HIDDEN BY `internal`, SINCE 2026-09-08. It used to be hidden by two rules
+ * âš ï¸ HIDDEN BY `internal`, SINCE 2026-09-08. It used to be hidden by two rules
  * that contradicted each other — formOnly (hidden unless fill_saps271 was
  * 'Fill it in for me') set against showIf (shown only when it was 'My dealer
  * will fill it in'), so no answer satisfied both. That was written because
@@ -178,7 +184,7 @@ export const SOURCE_ESTATE = 'Inherited from a deceased estate';
  * motivation-sheet.service.ts. `internal` is honoured in exactly one place,
  * which makes it both simpler and safer than the trick it replaced.
  *
- * ⚠️ AND IT STILL HAS TO STAY OUT OF THE FACT PACK. A model handed
+ * âš ï¸ AND IT STILL HAS TO STAY OUT OF THE FACT PACK. A model handed
  * "competency_renews_with_licence: Yes" would find a way to argue from it. It
  * is an instruction about a second form, not a reason anybody needs a firearm.
  * factPackFields excludes `internal` with no escape hatch for exactly this.
@@ -188,7 +194,7 @@ export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
 /**
  * The retired overlap angle — "this one will be my ___".
  *
- * ⚠️ RETIRED FROM THE WIZARD ON 2026-09-20, AND THE KEY IS KEPT FOR READING, NOT
+ * âš ï¸ RETIRED FROM THE WIZARD ON 2026-09-20, AND THE KEY IS KEPT FOR READING, NOT
  * FOR ASKING. Operator: "this needs to go. the writer must think of reasons
  * itself." The applicant is no longer shown the reason cards: the writer builds
  * the "why this one as well as the ones you hold" argument from the facts
@@ -232,7 +238,7 @@ export const PRESS_CLIPPINGS_MAX = 8;
  * them just tick the ones they travel through with a reason thats optional for
  * the reason being in that area."
  *
- * ⚠️ IT IS THE ANSWER; `press_clippings` IS THE CONSEQUENCE. The member is
+ * âš ï¸ IT IS THE ANSWER; `press_clippings` IS THE CONSEQUENCE. The member is
  * asked a question about their own movements — which they can answer — and the
  * server works out which cuttings that buys. Storing only the article ids would
  * throw away the reason they gave and the areas whose cuttings did not fit
@@ -286,7 +292,7 @@ export type MotivationFieldKind =
    * `multi` — a comma list in the offered order — so `showIf` and
    * sanitiseAnswers need no new storage rule.
    *
-   * ⚠️ SELECTED MEANS TRUE, AND THAT IS WHY IT IS SENTENCES AND NOT LABELS.
+   * âš ï¸ SELECTED MEANS TRUE, AND THAT IS WHY IT IS SENTENCES AND NOT LABELS.
    * The applicant signs their name under the motivation these produce, so
    * every option reads as something they are asserting about themselves and
    * only a tapped one reaches the writer. FCA s120(9)(f) — a false statement
@@ -298,7 +304,7 @@ export type MotivationFieldKind =
 /**
  * One tile in a `cards` field.
  *
- * ⚠️ THE SENTENCE IS THE VALUE THE MEMBER SIGNS UNDER, NOT A LABEL FOR ONE.
+ * âš ï¸ THE SENTENCE IS THE VALUE THE MEMBER SIGNS UNDER, NOT A LABEL FOR ONE.
  * `key` is what is stored and what `showIf` matches; `sentence` is what the
  * applicant reads and what the writer may use verbatim. They are separate so
  * the operator can reword a card (§9.2 review) without invalidating every
@@ -328,7 +334,7 @@ export interface MotivationField {
   /**
    * The tiles, for `kind: 'cards'`.
    *
-   * ⚠️ NOT `choices`. A choice is a word in a dropdown; a card is a claim. They
+   * âš ï¸ NOT `choices`. A choice is a word in a dropdown; a card is a claim. They
    * are separate properties so nothing can quietly render fifty-nine
    * disciplines as tick-boxes, or a card set as a select.
    */
@@ -336,7 +342,7 @@ export interface MotivationField {
   /**
    * WHO THE ANSWER BELONGS TO — this application, or the person.
    *
-   * ⚠️ 'profile' ANSWERS ARE SHARED ACROSS EVERY APPLICATION THE MEMBER EVER
+   * âš ï¸ 'profile' ANSWERS ARE SHARED ACROSS EVERY APPLICATION THE MEMBER EVER
    * MAKES. Marital status, what their premises look like, what each firearm
    * they already own is used for, whether they reload: none of that is a fact
    * about an application, and asking it again on the second one is the single
@@ -350,14 +356,14 @@ export interface MotivationField {
   /**
    * A FINDING WE WRITE, NEVER A QUESTION WE ASK.
    *
-   * ⚠️ ACCEPTED, NEVER ASKED, NEVER SERVED, NEVER IN THE FACT PACK. Three
+   * âš ï¸ ACCEPTED, NEVER ASKED, NEVER SERVED, NEVER IN THE FACT PACK. Three
    * fields are filled in by us from the member's own documents and lookups —
    * the province of their police station, the press clippings they picked, and
    * whether their competency runs to the licence being renewed — and putting
    * any of them on screen as a box would be asking a question we have already
    * answered.
    *
-   * ⚠️ THIS REPLACED A DELIBERATE CONTRADICTION, and the history matters
+   * âš ï¸ THIS REPLACED A DELIBERATE CONTRADICTION, and the history matters
    * because it is the reason this flag is safe now and was not before. Those
    * three used to be hidden by setting `formOnly` (needs fill_saps271 = "Fill
    * it in for me") against `showIf` (needs fill_saps271 = "My dealer will fill
@@ -369,7 +375,7 @@ export interface MotivationField {
    * state on the server and the screen renders what it is told. One
    * implementation, so one flag can be trusted.
    *
-   * ⚠️ AND IT MUST STAY OUT OF factPackFields. "competency_renews_with_licence:
+   * âš ï¸ AND IT MUST STAY OUT OF factPackFields. "competency_renews_with_licence:
    * Yes" is an instruction about a second form, not a reason anybody needs a
    * firearm, and a model handed it will find a way to argue from it.
    */
@@ -380,7 +386,7 @@ export interface MotivationField {
   /**
    * Values that are still ACCEPTED but no longer OFFERED.
    *
-   * ⚠️ DELISTING A CHOICE IS NOT THE SAME AS DELETING IT, AND TREATING IT AS
+   * âš ï¸ DELISTING A CHOICE IS NOT THE SAME AS DELETING IT, AND TREATING IT AS
    * THE SAME BREAKS EVERY APPLICATION THAT ALREADY PICKED IT. The wizard
    * resends the WHOLE answers blob on every autosave — see the note on
    * saveAnswers — so a stored value that is no longer in `choices` fails
@@ -411,7 +417,7 @@ export interface MotivationField {
    * Choosing an option SEEDS this other field with text belonging to that
    * option.
    *
-   * ⚠️ SEEDS, NEVER OVERWRITES. The target is a long-form box the applicant
+   * âš ï¸ SEEDS, NEVER OVERWRITES. The target is a long-form box the applicant
    * signs their name under; a prefill that clobbered what they had written
    * would be the never-move-a-field rule with the stakes raised.
    */
@@ -447,7 +453,7 @@ export interface MotivationField {
     /**
      * Shown when the named `cards` or `multi` field has ANY tap at all.
      *
-     * ⚠️ THE "IN YOUR OWN WORDS" BOXES NEED THIS AND `equals` CANNOT GIVE IT.
+     * âš ï¸ THE "IN YOUR OWN WORDS" BOXES NEED THIS AND `equals` CANNOT GIVE IT.
      * The optional textarea under a card grid is prefilled from whatever was
      * tapped, so it belongs on screen once anything is tapped and nowhere
      * before — a condition about the SHAPE of the answer, not its content.
@@ -502,7 +508,7 @@ export interface MotivationField {
    * document nobody has is never a dead end — it is just typing, exactly as
    * before.
    *
-   * ⚠️ This changes PRESENTATION ONLY. `required`, `requiredKeys` and
+   * âš ï¸ This changes PRESENTATION ONLY. `required`, `requiredKeys` and
    * `missingRequired` are untouched: a required docSourced field with no value
    * still blocks generation, and still gets asked.
    */
@@ -517,13 +523,13 @@ export interface MotivationField {
    * before as cluttered: "Upload and camera button. Make a list of attachments
    * as the applicant gives them."
    *
-   * ⚠️ IT IS THE OPPOSITE OF docSourced, AND THE TWO MUST NOT BE CONFUSED. A
+   * âš ï¸ IT IS THE OPPOSITE OF docSourced, AND THE TWO MUST NOT BE CONFUSED. A
    * docSourced field is one a document ANSWERS, so we stop asking it. This is a
    * field a document SUPPORTS: the applicant still writes their record, and the
    * targets, permits and register pages are what make a DFO believe it. Nothing
    * here is extracted and nothing is prefilled.
    *
-   * ⚠️ AND IT IS DELIBERATELY RARE. The clutter complaint that removed the last
+   * âš ï¸ AND IT IS DELIBERATELY RARE. The clutter complaint that removed the last
    * per-field pickers was fair — a camera, a file picker and a dropdown hanging
    * under all 199 fields is noise. This appears on the three fields where the
    * evidence IS the argument, and nowhere else. Adding it broadly would earn
@@ -537,7 +543,7 @@ export interface MotivationField {
 }
 
 /** Asked for every licence type. */
-// ── FIREARMS ALREADY LICENSED TO THE APPLICANT (SAPS 271 item 2.1) ─
+// â”€â”€ FIREARMS ALREADY LICENSED TO THE APPLICANT (SAPS 271 item 2.1) â”€
 //
 // These are the form's own columns, and they are now the ONLY place the
 // applicant states what they already hold — the prose duplicate that used to
@@ -549,7 +555,7 @@ export interface MotivationField {
 // motivation-overlap.ts. A structured calibre is what lets us raise the
 // objection before the Registrar does.
 //
-// ⚠️ THESE ARE NOT formOnly, THOUGH THEY LOOK LIKE IT — and they were.
+// âš ï¸ THESE ARE NOT formOnly, THOUGH THEY LOOK LIKE IT — and they were.
 // They do fill boxes on the SAPS 271, but motivation-overlap.ts reads the
 // calibre, make and type off them and its verdict is rendered straight into
 // the writer's prompt. "Does this applicant already hold something that
@@ -568,7 +574,7 @@ export const OWNED_SECTION = 'Firearms you already own';
 /**
  * The premises section — the wall, the gate, the alarm, the safe.
  *
- * ⚠️ IT REPLACED 'Storage and safety', WHICH ONLY EVER HELD THE SAFE. Every
+ * âš ï¸ IT REPLACED 'Storage and safety', WHICH ONLY EVER HELD THE SAFE. Every
  * approved motivation carries a security paragraph covering the whole
  * property, and the registry could not write one: it held four questions about
  * the safe and a free-text box asking the applicant to write the rest
@@ -582,7 +588,7 @@ export const PREMISES_SECTION = 'Your premises';
 /**
  * How many owned-firearm rows the registry carries.
  *
- * ⚠️ FOURTEEN, AND IT USED TO BE SIX. The note that stood here read: "Six
+ * âš ï¸ FOURTEEN, AND IT USED TO BE SIX. The note that stood here read: "Six
  * rows. The form has fourteen; almost nobody holds six, and an applicant with
  * more can write the remainder in by hand rather than have us guess at a limit
  * and silently drop the seventh." Both halves were wrong on the operator's own
@@ -599,7 +605,7 @@ export const PREMISES_SECTION = 'Your premises';
  * the blank SAPS 271 is fourteen identical rows — measured, not assumed, by
  * backend/scripts/saps271-measure.mjs.
  *
- * ⚠️ THREE OTHER COPIES OF THIS CONSTANT EXIST AND MUST FOLLOW IT.
+ * âš ï¸ THREE OTHER COPIES OF THIS CONSTANT EXIST AND MUST FOLLOW IT.
  * motivation-overlap.ts, saps271-coverage.ts and motivation-extract.service.ts
  * each declare their own `const OWNED_ROWS = 6`. Until they import this one, a
  * member's seventh firearm is listed on their form and invisible to the
@@ -614,7 +620,7 @@ export const OWNED_ROWS = 14;
  * only be the make, model, serial number and expiry date listed, nothing
  * else."
  *
- * ⚠️ A LISTING, NOT THE FIELD SET, AND THE DIFFERENCE IS LOAD-BEARING. Type,
+ * âš ï¸ A LISTING, NOT THE FIELD SET, AND THE DIFFERENCE IS LOAD-BEARING. Type,
  * calibre and use are still asked and still stored: motivation-overlap.ts
  * classifies the calibre to argue the duplicate-calibre refusal ground, the
  * SAPS 271 prints the type, and `existing_firearm_N_use` carries the fact the
@@ -633,19 +639,19 @@ export const OWNED_LISTING_COLUMNS = [
  * The serial for one owned-firearm row, reading drafts written before the
  * collapse.
  *
- * ⚠️ ONE SERIAL, BECAUSE THE CARD PRINTS ONE NUMBER THREE TIMES. The
+ * âš ï¸ ONE SERIAL, BECAUSE THE CARD PRINTS ONE NUMBER THREE TIMES. The
  * operator's Glock licence reads ZABA01892 against the barrel, the receiver
  * AND the frame. Two boxes therefore asked two questions with one answer, and
  * on the firearms where they genuinely differ the card says NONE for one of
  * them — which is the card saying there is nothing there, not a serial.
  *
- * ⚠️ AND THE OLD KEYS STILL HOLD ANSWERS. `existing_firearm_N_barrel_serial`
+ * âš ï¸ AND THE OLD KEYS STILL HOLD ANSWERS. `existing_firearm_N_barrel_serial`
  * and `_frame_serial` are RETIRED, not deleted — see LEGACY_OWNED_FIELDS — so
  * a draft saved before today still loads and still reads back here. Barrel
  * before frame only because a licence prints the barrel number first; a
  * placeholder in either falls through to the other.
  *
- * ⚠️ EVERY READER OF AN OWNED-FIREARM SERIAL MUST COME THROUGH THIS. At the
+ * âš ï¸ EVERY READER OF AN OWNED-FIREARM SERIAL MUST COME THROUGH THIS. At the
  * time of writing three do not: saps271-map.ts (which prints the two boxes on
  * the form), motivation-verify.ts and motivation-overlap.ts still read the two
  * legacy keys directly.
@@ -665,7 +671,7 @@ export function ownedFirearmSerial(
 /**
  * Every column one owned-firearm row can hold, including the retired ones.
  *
- * ⚠️ THE RETIRED SERIALS ARE ON THIS LIST ON PURPOSE. A draft saved before the
+ * âš ï¸ THE RETIRED SERIALS ARE ON THIS LIST ON PURPOSE. A draft saved before the
  * two serial boxes collapsed into `_serial` holds `_barrel_serial` and
  * `_frame_serial` and nothing else; a row that looks empty because we asked
  * about the wrong key is a row somebody will write a different firearm over.
@@ -689,7 +695,7 @@ export const OWNED_ROW_COLUMNS = [
 /**
  * Is this owned-firearm row in use?
  *
- * ⚠️ ONE RULE, BECAUSE THREE READERS DISAGREEING ABOUT THIS OVERWRITES A
+ * âš ï¸ ONE RULE, BECAUSE THREE READERS DISAGREEING ABOUT THIS OVERWRITES A
  * FIREARM. Until now `nextOwnedSlot` in motivation-extract.service.ts decided a
  * row was taken by its CALIBRE alone ("matching the wizard's own definition of
  * a started row") while credentialOffer tested ten columns. Calibre is the one
@@ -699,7 +705,7 @@ export const OWNED_ROW_COLUMNS = [
  * uploaded would be proposed straight over the top of it, producing a form
  * describing a firearm that does not exist.
  *
- * ⚠️ AND IT DELIBERATELY DOES NOT RUN answerValue. Everywhere else in this file
+ * âš ï¸ AND IT DELIBERATELY DOES NOT RUN answerValue. Everywhere else in this file
  * a placeholder is nothing; here it is EVIDENCE THAT SOMEBODY HAS BEEN IN THIS
  * ROW. The question is not "is this value true" but "is this row free", and the
  * conservative answer is the safe one in both directions: at worst the member
@@ -732,7 +738,7 @@ export function nextOwnedRow(answers: Record<string, string>): number | null {
 /**
  * One row of the owned-firearms table.
  *
- * ⚠️ GENERATED, AND THAT IS THE POINT. Fourteen rows of eight columns is 112
+ * âš ï¸ GENERATED, AND THAT IS THE POINT. Fourteen rows of eight columns is 112
  * literals nobody keeps in step, and the six that were written by hand had
  * already drifted — row 1 carried help text and a comment block that rows 2 to
  * 6 did not, so five sixths of the applicants never saw the guidance.
@@ -753,7 +759,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       maxLength: 60,
     },
     {
-      // ⚠️ TWO READERS FILL THIS BOX AND ONLY ONE OF THEM ASKS FOR IT YET.
+      // âš ï¸ TWO READERS FILL THIS BOX AND ONLY ONE OF THEM ASKS FOR IT YET.
       // `docSourced: 'CURRENT_LICENCE'` is a promise to the member — the wizard
       // files the field under "from your documents" and read-result prints "Not
       // on the document" against an empty one — so a reader that never asks
@@ -799,7 +805,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       // in-wizard licence photograph too (EXTRACTABLE.CURRENT_LICENCE), which
       // is what its `docSourced` has always claimed.
       //
-      // ⚠️ THE ONE COLUMN OF THIS ROW THAT IS NOT `sensitive`, DELIBERATELY.
+      // âš ï¸ THE ONE COLUMN OF THIS ROW THAT IS NOT `sensitive`, DELIBERATELY.
       // `sensitive` drives maskSensitive in the wizard's field grid, and it is
       // there for numbers that identify a firearm or a person — a serial, a
       // licence number, a make and calibre pair. A licence expiry date
@@ -834,11 +840,11 @@ function ownedFirearmRow(n: number): MotivationField[] {
       maxLength: 60,
     },
     {
-      // ⚠️ NOT docSourced, AND IT NEVER CAN BE. A licence copy carries make,
+      // âš ï¸ NOT docSourced, AND IT NEVER CAN BE. A licence copy carries make,
       // calibre and serial; nothing on it says what the firearm is used for.
       // This is the one fact in the block that has to come from the person.
       //
-      // ⚠️ AND IT IS THE FACT THE WHOLE COMPARISON RESTS ON. The writer is
+      // âš ï¸ AND IT IS THE FACT THE WHOLE COMPARISON RESTS ON. The writer is
       // told to argue, per firearm, why the one already held cannot do this
       // job — and until this field existed it saw only type, calibre and make.
       // "A .308 bolt-action" cannot be argued against a purpose; "bushveld
@@ -846,7 +852,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       // this would have aimed pure invention pressure at rule 1, which is the
       // trap this field exists to close.
       //
-      // ⚠️ RULE 8 PUTS IT HERE RATHER THAN IN THE WRITER'S HANDS. What
+      // âš ï¸ RULE 8 PUTS IT HERE RATHER THAN IN THE WRITER'S HANDS. What
       // somebody USES a firearm for is history — verifiable, checkable,
       // theirs. The DISTINCTION between two firearms is rationale and stays
       // the writer's job (see ARGUE_IT). Those are different things and only
@@ -857,7 +863,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       // who has uploaded nothing never sees it. Two words are enough.
       key: `${p}use`,
       /**
-       * ⚠️ NOT ASKED (2026-10-17). A licence card cannot state a purpose, and
+       * âš ï¸ NOT ASKED (2026-10-17). A licence card cannot state a purpose, and
        * the applicant should not be made to retype what an endorsement, the
        * firearm's class or a previous motivation already establishes. Old
        * answers survive and are still read.
@@ -870,19 +876,19 @@ function ownedFirearmRow(n: number): MotivationField[] {
       maxLength: 120,
     },
     {
-      // ⚠️ THE TAPPABLE VERSION OF `_use` ABOVE, AND BOTH SURVIVE ON PURPOSE.
+      // âš ï¸ THE TAPPABLE VERSION OF `_use` ABOVE, AND BOTH SURVIVE ON PURPOSE.
       // `_use` is free text somebody may already have typed, and nothing this
       // module does ever throws that away. This is what is ASKED from
       // 2026-09-08 — one tap against a ranked list rather than a sentence to
       // compose — and it is what motivation-overlap.ts reads.
       //
-      // ⚠️ PROFILE-SCOPED: ASKED ONCE PER FIREARM, EVER. A firearm's purpose
+      // âš ï¸ PROFILE-SCOPED: ASKED ONCE PER FIREARM, EVER. A firearm's purpose
       // does not change because a second application was started, and the
       // Document Centre asks it at the moment a licence is adopted into the
       // vault (vault-adoption.service.ts) so an application usually meets it
       // already answered.
       //
-      // ⚠️ NEVER docSourced, AND IT NEVER CAN BE. A licence copy carries make,
+      // âš ï¸ NEVER docSourced, AND IT NEVER CAN BE. A licence copy carries make,
       // calibre and serial; nothing printed on it says what the firearm is
       // for. This is the one fact in the row that has to come from the person.
       key: `${p}primary_use`,
@@ -895,13 +901,13 @@ function ownedFirearmRow(n: number): MotivationField[] {
     },
     {
       /**
-       * ⚠️ WITHOUT THIS THE WRITER INVENTS ONE. See OWNED_SECTION_HELD: the
+       * âš ï¸ WITHOUT THIS THE WRITER INVENTS ONE. See OWNED_SECTION_HELD: the
        * rows carried make, calibre, serial and expiry and no section, the
        * prompt asked for one per held firearm, and MO000071 shipped a section
        * 16 Marlin described as being under section 15. A DFO holding the
        * licence copies in Annexure G reads the contradiction off the page.
        *
-       * ⚠️ AND IT IS `docSourced`, WHICH IS A PROMISE THIS ONE CAN KEEP. Every
+       * âš ï¸ AND IT IS `docSourced`, WHICH IS A PROMISE THIS ONE CAN KEEP. Every
        * licence card prints the section, `licence-card-ocr.service.ts` has
        * always read it into the vault, and credentialOffer now proposes it —
        * so for a member whose licences are in the Centre this arrives answered
@@ -918,7 +924,7 @@ function ownedFirearmRow(n: number): MotivationField[] {
       scope: 'profile',
     },
     {
-      // ⚠️ THIS IS FOR A STORAGE PERMIT, NOT A FIREARM LICENCE. Operator,
+      // âš ï¸ THIS IS FOR A STORAGE PERMIT, NOT A FIREARM LICENCE. Operator,
       // 2026-09-08: "the License/Permit number is if you have a storage permit
       // for someone elses weapon which is very uncommon, so we can leave that
       // blank." A firearm licence card carries no licence number at all
@@ -944,7 +950,7 @@ const OWNED_FIREARM_FIELDS: readonly MotivationField[] = Array.from(
  * Keys that are still ACCEPTED but are never asked, never served and never
  * offered.
  *
- * ⚠️ THE SAME DISCIPLINE AS retiredChoices, ONE LEVEL UP. The wizard resends
+ * âš ï¸ THE SAME DISCIPLINE AS retiredChoices, ONE LEVEL UP. The wizard resends
  * the WHOLE answers blob on every autosave, so a stored key that stopped being
  * registered fails sanitiseAnswers on every keystroke anywhere in the form —
  * the member gets "we could not store your answer" for ever, and the value
@@ -981,13 +987,13 @@ const LEGACY_OWNED_FIELDS: readonly MotivationField[] = Array.from(
 /**
  * A WHOLE FIELD THAT IS NO LONGER ASKED, AND STILL HAS TO SAVE.
  *
- * ⚠️ RETIRED, NOT DELETED — the same rule as retiredChoices and
+ * âš ï¸ RETIRED, NOT DELETED — the same rule as retiredChoices and
  * LEGACY_OWNED_FIELDS, applied to the field rather than to one of its values.
  * The wizard resends the WHOLE answers blob on every autosave, so a key that
  * simply vanished from the registry would fail sanitiseAnswers on every
  * keystroke anywhere in the form for anybody whose draft already holds it.
  *
- * ⚠️ AND IT IS STILL REACHABLE THROUGH fieldByKey, WHICH IS WHAT MAKES `internal`
+ * âš ï¸ AND IT IS STILL REACHABLE THROUGH fieldByKey, WHICH IS WHAT MAKES `internal`
  * NECESSARY RATHER THAN OPTIONAL. Because an answer to this key can still
  * arrive on the wire and still be stored, any field gated on its value would
  * still be openable — which is precisely why the three never-asked fields
@@ -1015,7 +1021,7 @@ const RETIRED_FIELDS: readonly MotivationField[] = [
    * first of them was REQUIRED, so an application could not be generated until
    * somebody had ticked a list of formats.
    *
-   * ⚠️ THE ANSWER NOW COMES FROM THE FIREARM, NOT FROM THE MEMBER. Operator,
+   * âš ï¸ THE ANSWER NOW COMES FROM THE FIREARM, NOT FROM THE MEMBER. Operator,
    * 2026-09-09: "the gemini research on what this weapon is good for is
    * exactly why I implemented it was to get rid of these questions."
    * firearm-uses.service.ts generates, per firearm CLASS and per kind of
@@ -1024,7 +1030,7 @@ const RETIRED_FIELDS: readonly MotivationField[] = [
    * "It is a standard chambering for F-Class prone shooting at 600 m" is the
    * sentence this box was asking the member to compose.
    *
-   * ⚠️ WHICH IS THE STANDING RULE, NOT A NEW ONE. "Automate it — do not ask":
+   * âš ï¸ WHICH IS THE STANDING RULE, NOT A NEW ONE. "Automate it — do not ask":
    * a confirm step guarding a value we already hold is work we invented for
    * the member, and a required one is a wall.
    *
@@ -1104,7 +1110,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     required: true,
     maxLength: 120,
   },
-  // ── FOR THE SAPS 271 ────────────────────────────────────────────
+  // â”€â”€ FOR THE SAPS 271 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Date of birth, age, gender and citizenship are NOT here on purpose: the ID
   // number already carries all four (see sa-id.ts). Asking twice is not just
   // redundant, it is a chance for two boxes on the same signed form to
@@ -1188,7 +1194,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // back to Other where it cannot be told.
     choices: ['Single', 'Married', 'Life partner', 'Divorced', 'Widowed'],
     required: true,
-    // ⚠️ PROFILE, NOT APPLICATION. Somebody's marital status is a fact about
+    // âš ï¸ PROFILE, NOT APPLICATION. Somebody's marital status is a fact about
     // them, not about this firearm, and asking it again on their second
     // application is the clearest way to say we were not listening on the
     // first. Same for the spouse's name below.
@@ -1237,7 +1243,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Competency certificate number',
     kind: 'short',
     section: 'Your competency',
-    // ⚠’️ THE DEAD END NEEDED AN ONWARD PATH, NOT JUST A GATE. This field is
+    // âš ’ï¸ THE DEAD END NEEDED AN ONWARD PATH, NOT JUST A GATE. This field is
     // required, so an applicant without a certificate hits an unfillable box
     // and stops — and the old help text told them why they were stuck without
     // telling them what to do about it.
@@ -1249,7 +1255,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     //
     // Do not name a waiting period in months as a fact — it varies by
     // province and by year, and a number here would be quoted back to us.
-    // ⚠️ THE HELP IS THE PLACEHOLDER INSIDE A 44px BOX. The five sentences
+    // âš ï¸ THE HELP IS THE PLACEHOLDER INSIDE A 44px BOX. The five sentences
     // this used to carry — training providers, the PFTC, fingerprints, the
     // separate fee, section 6(2) — were all true and all invisible, clipped
     // at the width of the input. Keep the operative warning; the rest of the
@@ -1269,7 +1275,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // are applying for — a handgun application on a rifle-only competency is a
     // refusal waiting to happen, and it is visible on the form.
     //
-    // ⚠️ ACTION AND TYPE, NOT TYPE ALONE. This was ['Handgun','Rifle','Shotgun']
+    // âš ï¸ ACTION AND TYPE, NOT TYPE ALONE. This was ['Handgun','Rifle','Shotgun']
     // and that is not what SAPS endorses: competency is granted per firearm
     // type AND action (SA Firearm Competency Reference §2.1), which is why a
     // certificate reads "S/L-RIFLE/CARB" rather than "Rifle". The distinction
@@ -1279,7 +1285,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // applicant ticking it learned nothing and neither did the writer.
     choices: [...ENDORSEMENT_LABELS],
     help: 'Tick everything your certificate covers. Photograph the certificate and we will read it for you.',
-    // ⚠️ formOnly REMOVED. It meant the writer never saw what the competency
+    // âš ï¸ formOnly REMOVED. It meant the writer never saw what the competency
     // covers — so it could not write "I was declared competent to possess
     // handguns, rifles and shotguns", which is the sentence every example
     // motivation in the corpus carries. We held the fact and hid it.
@@ -1290,13 +1296,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Competency issued on',
     kind: 'date',
     section: 'Your competency',
-    // ⚠️ formOnly REMOVED — see competency_for. The date belongs in the
+    // âš ï¸ formOnly REMOVED — see competency_for. The date belongs in the
     // sentence, not only in a box on the 271.
     focusOffsetYears: -2,
   },
   {
     key: 'competency_expiry',
-    // ⚠️ docSourced REMOVED, AND THIS IS THE IMPORTANT PART: A COMPETENCY
+    // âš ï¸ docSourced REMOVED, AND THIS IS THE IMPORTANT PART: A COMPETENCY
     // CERTIFICATE HAS NO EXPIRY DATE PRINTED ON IT. SA Firearm Competency
     // Reference §5.2 and §8 — the card carries an issue date and the endorsed
     // types, nothing more, and §9 says any guidance telling somebody to "check
@@ -1312,7 +1318,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'date',
     section: 'Your competency',
     help: 'Your certificate does not print this. It follows your longest-running licence in the same firearm type — leave it blank if you are not sure.',
-    // ⚠️ formOnly REMOVED — see competency_for. A competency with years left
+    // âš ï¸ formOnly REMOVED — see competency_for. A competency with years left
     // on it is worth saying; one close to expiry is worth the writer knowing
     // about rather than walking into.
     focusOffsetYears: 2,
@@ -1323,7 +1329,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // makes the comparison argument sharper — "a .308 bolt-action" is a fact the
   // writer can reason against, "Tikka T3x .308" is a string.
   {
-    // ⚠️ FIRST IN THE SECTION, AND REQUIRED. It decides who completes Part F,
+    // âš ï¸ FIRST IN THE SECTION, AND REQUIRED. It decides who completes Part F,
     // which documents the pack demands, and whether the seller-consent card is
     // reachable at all — and it was sitting fifth, marked Optional, between
     // Model and Calibre. The consequence on the live sheet: the card that
@@ -1332,7 +1338,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // serial rows for a firearm whose card they have never held, while the
     // pack meter pleaded "Tell us where the firearm is coming from".
     //
-    // ⚠️ THE THREE COMMENTS BELOW ALREADY ASSUMED IT WAS REQUIRED — "they now
+    // âš ï¸ THE THREE COMMENTS BELOW ALREADY ASSUMED IT WAS REQUIRED — "they now
     // have to say which route they are on", "the field is required, so a
     // rejected value is a wizard they cannot get past". The `required` line
     // went missing; the reasoning against it went with SOURCE_UNDECIDED when
@@ -1342,7 +1348,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Where is this firearm coming from?',
     kind: 'choice',
     section: 'The firearm',
-    // ⚠️ THE ROUTE IS NOW READ OFF THE PAPERWORK, NOT PICKED (2026-10-13).
+    // âš ï¸ THE ROUTE IS NOW READ OFF THE PAPERWORK, NOT PICKED (2026-10-13).
     // Operator: "remove the dealer/private picker. Let Jev make the call what
     // it is and how it should be processed." The member photographs whatever
     // they have — a dealer's invoice, a prefilled SAPS 271, the current owner's
@@ -1357,9 +1363,9 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // answer a question we now answer from their upload would be the picker
     // back by another name.
     internal: true,
-    // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
+    // âš ï¸ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
     // between Individual and dealer for now."
-    // ⚠️ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two
+    // âš ï¸ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two
     // options, Private seller or Dealer. Those are the only two we are going
     // to support, the rest we will build at a later stage."
     choices: [SOURCE_DEALER, SOURCE_PRIVATE],
@@ -1368,7 +1374,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // break every save those members make — the field is required, so a
     // rejected value is a wizard they cannot get past.
     //
-    // ⚠️ "Not decided yet" WENT WITH THE ESTATE ROUTE, and it cost something
+    // âš ï¸ "Not decided yet" WENT WITH THE ESTATE ROUTE, and it cost something
     // real: on a REQUIRED field it was the one answer that satisfied the
     // requirement without answering the question, so somebody who had not yet
     // found a firearm could get to the end of the wizard with a document list
@@ -1376,7 +1382,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // change it whenever the answer changes.
     retiredChoices: [SOURCE_ESTATE, SOURCE_UNDECIDED],
     help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
-    // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
+    // âš ï¸ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
     // a field off the SAPS 271 opt-in, so a member whose dealer fills the form
     // would never be asked — and they are the ones most likely to be buying
     // from that dealer. The document checklist is needed on BOTH paths.
@@ -1424,7 +1430,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     /**
-     * ⚠️ THE ONE FIGURE SECTION 16 TURNS ON FOR A SEMI-AUTOMATIC SHOTGUN.
+     * âš ï¸ THE ONE FIGURE SECTION 16 TURNS ON FOR A SEMI-AUTOMATIC SHOTGUN.
      * s16(1)(c) admits a "semi-automatic shotgun manufactured to fire no more
      * than five shots in succession without having to be reloaded" — the
      * paragraph substituted by Act 43 of 2003, in force, whose deletion in Act
@@ -1432,13 +1438,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
      * an applicant that a six-shot shotgun is outside the section they are
      * applying under. MOTIVATION-GUIDE-BOOK Part 3.2.
      *
-     * ⚠️ ASKED OF EVERY SEMI-AUTOMATIC, NOT ONLY SHOTGUNS, because `showIf`
+     * âš ï¸ ASKED OF EVERY SEMI-AUTOMATIC, NOT ONLY SHOTGUNS, because `showIf`
      * takes ONE key and the condition is really "shotgun AND semi-automatic".
      * The wider question is not wasted: section 14(4) asks an applicant to
      * motivate a restricted firearm and the manufactured capacity is a fact
      * that argument turns on too.
      *
-     * ⚠️ MANUFACTURED CAPACITY, NOT WHAT IS IN IT. The Act's test is what the
+     * âš ï¸ MANUFACTURED CAPACITY, NOT WHAT IS IN IT. The Act's test is what the
      * firearm was built to do. A plugged magazine does not change the answer
      * and a member who gives the plugged number has said something the DFO
      * will read against the serial number's own record.
@@ -1482,7 +1488,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Serial number',
     kind: 'short',
     section: 'The firearm',
-    // ⚠️ THE 271 HAS NO SINGLE "serial number" BOX — THE LICENCE CARD DOES.
+    // âš ï¸ THE 271 HAS NO SINGLE "serial number" BOX — THE LICENCE CARD DOES.
     // Section E has barrel (1.7), frame (1.9) and receiver (1.11) serials, each
     // with its own make, because the frame or receiver IS the firearm in law.
     // A card, by contrast, prints a headline "Serial Number" above those rows,
@@ -1494,14 +1500,14 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // rows below carry what the form needs. They match: on the operator's own
     // card the headline MR90189D IS the receiver row, with barrel and frame
     // reading NONE.
-    help: 'If you already know which firearm it is. Leave blank if not — the dealer fills it in.',
+    help: 'The serial number of the firearm you are applying for — not one you already own.',
     sensitive: true,
-    formOnly: true,
+    required: true,
     maxLength: 60,
   },
-  // ── the three component rows, SAPS 271 section E 1.7–1.12 ────────────
+  // â”€â”€ the three component rows, SAPS 271 section E 1.7–1.12 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
-  // ⚠️ ALL SIX ARE OPTIONAL AND USUALLY BLANK, AND THAT IS CORRECT. A
+  // âš ï¸ ALL SIX ARE OPTIONAL AND USUALLY BLANK, AND THAT IS CORRECT. A
   // firearm carries its number on ONE component; the other two rows read NONE
   // on a real card. Marking any of them required would block an application
   // over a box the card itself leaves empty.
@@ -1568,7 +1574,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
-    // ⚠️ OPTIONAL SINCE 2026-09-08, AND PREFILLED. It was `required` and it was
+    // âš ï¸ OPTIONAL SINCE 2026-09-08, AND PREFILLED. It was `required` and it was
     // the largest single reason an application stalled: it asked the applicant
     // to write the argument the product exists to write for them, about a
     // firearm's calibre and action, which is exactly what
@@ -1577,7 +1583,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // somewhere to say it.
     key: 'firearm_fit_reason',
     /**
-     * ⚠️ WRITTEN FOR THE APPLICANT, NEVER ASKED (2026-10-17). The reason is
+     * âš ï¸ WRITTEN FOR THE APPLICANT, NEVER ASKED (2026-10-17). The reason is
      * generated from the pack during generation (MotivationReasonService) and
      * the sheet must not present it as work the member has to do.
      */
@@ -1588,9 +1594,9 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     help: 'Optional. We write this from the firearm, the calibre and what you told us above.',
     maxLength: 2000,
   },
-  // ── YOUR PREMISES ────────────────────────────────────────────────
+  // â”€â”€ YOUR PREMISES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
-  // ⚠️ A NEW SECTION, AND THE REGISTRY COULD NOT WRITE ITS PARAGRAPH BEFORE IT
+  // âš ï¸ A NEW SECTION, AND THE REGISTRY COULD NOT WRITE ITS PARAGRAPH BEFORE IT
   // EXISTED. Every approved motivation on file carries a "Security and safe
   // storage facility" paragraph — the wall, the gate, the alarm, the armed
   // response, the bars, the safe and who holds its key — and until today the
@@ -1667,7 +1673,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: PREMISES_SECTION,
     scope: 'profile',
   },
-  // ── THE SAFE, AS ITEMS 68 AND 69 ASK IT ─────────────────────────
+  // â”€â”€ THE SAFE, AS ITEMS 68 AND 69 ASK IT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // safe_storage_detail is prose for the motivation. These are the form's own
   // discrete questions, and the mounting answer is the same fact the anchoring
   // photograph shows — the bolts fixing it to the wall or floor. That shot goes
@@ -1701,7 +1707,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     scope: 'profile',
   },
   {
-    // ⚠️ 'Both' TICKS BOTH BOXES ON THE FORM, IT IS NOT A THIRD BOX. Item 69
+    // âš ï¸ 'Both' TICKS BOTH BOXES ON THE FORM, IT IS NOT A THIRD BOX. Item 69
     // of the SAPS 271 has a wall checkbox and a floor checkbox and no third
     // one; a safe bolted through the corner of a room is genuinely fixed to
     // both, and offering only two choices made that person pick one and
@@ -1729,7 +1735,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     scope: 'profile',
   },
   {
-    // ⚠️ OPTIONAL SINCE 2026-09-08, AND PREFILLED FROM THE TAPS ABOVE.
+    // âš ï¸ OPTIONAL SINCE 2026-09-08, AND PREFILLED FROM THE TAPS ABOVE.
     //
     // It was `required` and it was the wrong shape of question: a member who
     // had just told us about their wall, their gate, their alarm, their armed
@@ -1752,7 +1758,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     sensitive: true,
     maxLength: 2000,
   },
-  // ⚠️ `other_licensed_firearms` WAS HERE AND IS DELIBERATELY GONE.
+  // âš ï¸ `other_licensed_firearms` WAS HERE AND IS DELIBERATELY GONE.
   //
   // Operator, item 7 of twelve, 2026-08-24: "Storage and your record —
   // 'Firearms already licensed to you', isn't that the same as 'Firearms you
@@ -1772,7 +1778,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // Removing a key is safe by construction: sanitiseAnswers logs an
   // unregistered key and drops it, which is the documented behaviour for a
   // stale client, and stored text simply stops being prompted.
-  // ── THE SIX HISTORY QUESTIONS, straight off the SAPS 271 ─────────
+  // â”€â”€ THE SIX HISTORY QUESTIONS, straight off the SAPS 271 â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Every one is yes/no with detail if yes, and they are the part of the form
   // applicants most often get wrong. We ask them because a DISCLOSED and
@@ -1780,7 +1786,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // later is fatal — and because it is exactly the kind of thing a motivation
   // should meet head-on rather than leave for the Registrar to discover.
   //
-  // ⚠️ ASKED OF EVERYBODY, SINCE 2026-09-08. These six used to be `formOnly`,
+  // âš ï¸ ASKED OF EVERYBODY, SINCE 2026-09-08. These six used to be `formOnly`,
   // so on the dealer path they were never asked — and a conviction therefore
   // never reached the writer, which is the single thing a motivation has to
   // address head-on. Seen live: a whole Declarations step that ticked itself
@@ -1909,7 +1915,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     sensitive: true,
     maxLength: 2000,
   },
-  // ── THE BOXES BEHIND EACH "YES" (items 62-67) ───────────────────
+  // â”€â”€ THE BOXES BEHIND EACH "YES" (items 62-67) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // The form does not want prose here — it wants a police station, a CAS
   // number and a charge in separate boxes, and it gives room for two incidents
@@ -2150,7 +2156,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   ...OWNED_FIREARM_FIELDS,
 
-  // ── the rest of what the SAPS 271 asks and we did not collect ─────
+  // â”€â”€ the rest of what the SAPS 271 asks and we did not collect â”€â”€â”€â”€â”€
   {
     key: 'residential_postal_code',
     docSourced: 'ADDRESS_CONFIRMATION',
@@ -2211,7 +2217,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     scope: 'profile',
     maxLength: 20,
   },
-  // ── RELOADING, ASKED ONCE, EVER ──────────────────────────────────
+  // â”€â”€ RELOADING, ASKED ONCE, EVER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Intake plan §6.4. Every approved hunting pack carries a reloading
   // paragraph where it applies — a handloader who works up a load for a
@@ -2219,10 +2225,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // section is about — and the registry could not write one because it never
   // asked.
   //
-  // ⚠️ PROFILE-SCOPED. Whether somebody reloads is a fact about them, not
+  // âš ï¸ PROFILE-SCOPED. Whether somebody reloads is a fact about them, not
   // about an application, and it does not change between the two.
   //
-  // ⚠️ AND IT IS NOT A LICENCE QUESTION. Reloading needs no permission; the
+  // âš ï¸ AND IT IS NOT A LICENCE QUESTION. Reloading needs no permission; the
   // COMPONENTS do (see CLAUDE.md absolute rule 4 — live ammunition, primers
   // and propellant are banned platform-wide, which is about what we may SELL,
   // not about what an applicant may lawfully do at home). Nothing here asks
@@ -2258,7 +2264,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'licence_holder_type',
-    // ⚠️ FUTURE TENSE. It asked "Are you the main licence holder, or an
+    // âš ï¸ FUTURE TENSE. It asked "Are you the main licence holder, or an
     // additional one?" of somebody who does not hold the licence yet — they are
     // applying for it. Operator, 2026-09-08: "needs to change to will you be
     // since I am not the owner yet and only applying now."
@@ -2267,7 +2273,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'The firearm',
     choices: ['Main firearm licence holder', 'Additional firearm licence holder'],
     help: 'Additional applies where the firearm is licensed to someone else in the household and you are applying to possess it too.',
-    // ⚠️ REQUIRED, BECAUSE THE FORM ASKS IT AND WE MUST NOT ANSWER IT FOR THEM.
+    // âš ï¸ REQUIRED, BECAUSE THE FORM ASKS IT AND WE MUST NOT ANSWER IT FOR THEM.
     //
     // Section D of the 271 has two boxes — main holder, additional holder —
     // and neither was being ticked on any application, because this question
@@ -2315,10 +2321,82 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
 ];
 
+/**
+ * The purpose cards for the sporting sections, kept for the INTERVIEW only.
+ *
+ * âš ï¸ `internal` HIDES THEM FROM THE SHEET, NOT FROM THE INTERVIEW. The 2026-10-17
+ * automation retired these grids as form questions, but the interview now asks
+ * them because the applicant's own quarry, ground and discipline are what make
+ * the document specific rather than a class-level template. The long fields they
+ * feed (intended_quarry, hunting_locations, hunting_history, competition_record)
+ * are already in PROMPTED_DESPITE_INTERNAL, so the writer receives the result.
+ */
+const SPORTING_PURPOSE_FIELDS: readonly MotivationField[] = [
+  {
+    key: 'hunt_game_class',
+    label: 'What you hunt',
+    kind: 'cards',
+    section: 'Experience',
+    options: HUNT_GAME_CLASS,
+    internal: true,
+    help: 'Tap every class that is true of this firearm.',
+  },
+  {
+    key: 'hunt_terrain',
+    label: 'The ground you hunt',
+    kind: 'cards',
+    section: 'Experience',
+    options: HUNT_TERRAIN,
+    internal: true,
+    help: 'Tap every kind of ground you actually hunt on.',
+  },
+  {
+    key: 'hunt_where',
+    label: 'Where you hunt',
+    kind: 'cards',
+    section: 'Experience',
+    options: HUNT_WHERE,
+    internal: true,
+  },
+  {
+    key: 'hunt_reasons',
+    label: 'Why you hunt',
+    kind: 'cards',
+    section: 'Experience',
+    options: HUNT_REASONS,
+    internal: true,
+  },
+  {
+    key: 'sport_reasons',
+    label: 'Why you shoot competitively',
+    kind: 'cards',
+    section: 'Experience',
+    options: SPORT_REASONS,
+    internal: true,
+  },
+  {
+    key: 'sport_formats',
+    label: 'What you actually shoot',
+    kind: 'cards',
+    section: 'Experience',
+    options: SPORT_FORMATS,
+    internal: true,
+  },
+  {
+    key: 'intended_quarry',
+    internal: true,
+    label: 'Anything specific you intend to hunt',
+    kind: 'short',
+    section: 'Experience',
+    help: 'Name the species or game you intend to hunt.',
+    maxLength: 200,
+  },
+];
+
 /** Extra fields per licence type, appended to the common set. */
 const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   /**
-   * ⚠️ THE SAME QUESTIONS AS SECTION 13, AND THAT IS DELIBERATE RATHER THAN
+   * âš ï¸ THE SAME QUESTIONS AS SECTION 13, AND THAT IS DELIBERATE RATHER THAN
    * LAZY. s14(4) is s13's test plus two more, and both of those are argued
    * from facts the section 13 questions already gather — the risk, the
    * existing measures, the premises. What section 14 needs ON TOP is section
@@ -2330,21 +2408,21 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
    */
   S14_RESTRICTED_SELF_DEFENCE: [],
   S13_SELF_DEFENCE: [
-    // ── THE CASE, AS CARDS ──────────────────────────────────────────
+    // â”€â”€ THE CASE, AS CARDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ THESE THREE REPLACED THREE EMPTY TEXTAREAS AS THE PRIMARY INPUT.
+    // âš ï¸ THESE THREE REPLACED THREE EMPTY TEXTAREAS AS THE PRIMARY INPUT.
     // "The circumstances that make you believe you need it" was `required` and
     // 4000 characters wide, and it asked somebody to compose, unaided, the
     // hardest paragraph in the document. The boxes survive below as optional
     // and prefilled; these are what is actually asked.
     //
-    // ⚠️ ONLY A TAPPED CARD REACHES THE WRITER, and the applicant signs under
+    // âš ï¸ ONLY A TAPPED CARD REACHES THE WRITER, and the applicant signs under
     // it. See motivation-cards.ts for why that is the rule and not a
     // preference.
     {
       key: 's13_reasons',
       /**
-       * ⚠️ RETIRED AS A QUESTION (2026-10-17). The circumstances are argued
+       * âš ï¸ RETIRED AS A QUESTION (2026-10-17). The circumstances are argued
        * from the applicant's own premises, routine, station figures, travelled
        * areas and battery — not from a wall of taps. See motivation-purpose.ts.
        */
@@ -2406,7 +2484,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       help: 'Optional. We already have your alarm, armed response and security from Your premises — add anything else.',
       maxLength: 2000,
     },
-    // ── SAPS PRECINCT CRIME FIGURES ─────────────────────────────────
+    // â”€â”€ SAPS PRECINCT CRIME FIGURES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // Operator, 2026-09-07: "is it possible for us to pull the per police
     // station crime stats from SAPS and keep it updated?" The professional
@@ -2429,7 +2507,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       help: 'The station whose figures will be cited. We fill this in from your address — change it if it is not the one you actually report to.',
       maxLength: 120,
     },
-    // ⚠️ A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION. See
+    // âš ï¸ A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION. See
     // COMPETENCY_RENEWS_KEY for the two-gate trick this reuses: formOnly hides
     // it on the dealer path, and a showIf that can never be true on the fill
     // path hides it there too — no answer satisfies both, so this is never
@@ -2447,13 +2525,13 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Province of your nearest police station',
       kind: 'short',
       section: 'Your circumstances',
-      // ⚠️ WRITTEN BY US, NEVER ASKED — see `internal`. Was hidden by a
-      // formOnly × showIf contradiction against the retired fill_saps271;
+      // âš ï¸ WRITTEN BY US, NEVER ASKED — see `internal`. Was hidden by a
+      // formOnly Ã— showIf contradiction against the retired fill_saps271;
       // that trick stopped working the day formOnly stopped gating.
       internal: true,
       maxLength: 60,
     },
-    // ── PRESS CLIPPINGS ──────────────────────────────────────────────
+    // â”€â”€ PRESS CLIPPINGS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // Operator, 2026-09-07: "pull rss feeds from local papers all over south
     // africa to give full articles regarding crime in that region of the
@@ -2461,7 +2539,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     // picture, standfirst), never the article body, never a link the
     // applicant is expected to type in. See backend/src/news/news.types.ts.
     //
-    // ⚠️ NOBODY TYPES INTO THIS BOX. Same two-gate trick as
+    // âš ï¸ NOBODY TYPES INTO THIS BOX. Same two-gate trick as
     // `police_station_province` immediately above: formOnly hides it on the
     // fill-in-for-me path, and a showIf that can never be true hides it on
     // the dealer path too — no answer satisfies both, so no text field for
@@ -2469,7 +2547,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     // writes the value itself, through the ordinary saveAnswers path, once
     // the member has picked from GET /motivations/:id/incidents.
     /**
-     * ⚠️ WRITTEN BY THE AREA PICKER, NEVER TYPED — the same two-gate trick as
+     * âš ï¸ WRITTEN BY THE AREA PICKER, NEVER TYPED — the same two-gate trick as
      * `police_station_province` and `press_clippings` above it. The member
      * ticks areas on the sheet and `POST :id/areas` stores this; no text box
      * for "paste some area names" ever appears.
@@ -2489,15 +2567,15 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'short',
       section: 'Your circumstances',
       help: `A JSON array of up to ${PRESS_CLIPPINGS_MAX} chosen article ids — written by the picker, not typed.`,
-      // ⚠️ WRITTEN BY THE PICKER, NEVER ASKED — see `internal`. Was hidden by a
-      // formOnly × showIf contradiction against the retired fill_saps271.
+      // âš ï¸ WRITTEN BY THE PICKER, NEVER ASKED — see `internal`. Was hidden by a
+      // formOnly Ã— showIf contradiction against the retired fill_saps271.
       internal: true,
       maxLength: 4000,
     },
   ],
-  // ── SECTION 15 — OCCASIONAL HUNTER *OR OCCASIONAL SPORTS PERSON* ──
+  // â”€â”€ SECTION 15 — OCCASIONAL HUNTER *OR OCCASIONAL SPORTS PERSON* â”€â”€
   //
-  // ⚠️ IT NOW SERVES BOTH, AND UNTIL 2026-09-08 IT SERVED ONLY ONE. Section
+  // âš ï¸ IT NOW SERVES BOTH, AND UNTIL 2026-09-08 IT SERVED ONLY ONE. Section
   // 15(2) of the Act covers "an occasional hunter or an occasional sports
   // person", and the chooser has always sold it as "hunts or shoots" — but
   // every question here was about hunting, and `intended_quarry` ("what you
@@ -2508,11 +2586,12 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   // Reported as HANDOFF.md open item 1 and flagged as an operator decision
   // because it changes what somebody signs. Confirmed to land here.
   S15_OCCASIONAL_HUNTER: [
-    // ⚠️ THE SPORT CARDS, ON THE SECTION 15 PATH. This is the half that was
+    ...SPORTING_PURPOSE_FIELDS,
+    // âš ï¸ THE SPORT CARDS, ON THE SECTION 15 PATH. This is the half that was
     // missing — see the block comment above.
     {
       /**
-       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * âš ï¸ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
        * Operator, 2026-09-09: "we just need to ask if the applicant will be
        * using it for hunting or Sport shooting or both, that the only tick
        * boxes I want to see. and that will decide from which pool of reasons
@@ -2525,7 +2604,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
        * one thing that cannot be generated is which of its two pools this
        * applicant wants drawn from.
        *
-       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * âš ï¸ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
        * value covering the occasional hunter AND the occasional sports
        * shooter, and a dedicated hunter may shoot sport with the same rifle.
        * "Both" is a real answer and it takes both pools.
@@ -2536,7 +2615,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Experience',
       options: FIREARM_USE_KIND,
       /**
-       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * âš ï¸ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
        * decided from the applicant's paperwork, their battery and the firearm
        * itself — see motivation-purpose.ts. The key stays accepted so a draft
        * written before this still loads.
@@ -2554,20 +2633,6 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
-      // ⚠️ NO LONGER REQUIRED, AND THAT IS THE FIX FOR HANDOFF ITEM 1. An
-      // occasional SPORTS shooter hunts nothing, so a required "what you
-      // intend to hunt with it" was a question they could not answer and could
-      // not get past. The quarry now comes from hunt_game_class, which they
-      // are free to leave empty.
-      key: 'intended_quarry',
-      internal: true,
-      label: 'Anything specific you intend to hunt',
-      kind: 'short',
-      section: 'Experience',
-      help: 'Optional — we work this out from what you tapped above.',
-      maxLength: 200,
-    },
-    {
       key: 'hunting_locations',
       internal: true,
       label: 'Anything else about where you hunt or shoot',
@@ -2578,9 +2643,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
   ],
   S16_DEDICATED_HUNTER: [
+    ...SPORTING_PURPOSE_FIELDS,
     {
       /**
-       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * âš ï¸ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
        * Operator, 2026-09-09: "we just need to ask if the applicant will be
        * using it for hunting or Sport shooting or both, that the only tick
        * boxes I want to see. and that will decide from which pool of reasons
@@ -2593,7 +2659,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
        * one thing that cannot be generated is which of its two pools this
        * applicant wants drawn from.
        *
-       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * âš ï¸ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
        * value covering the occasional hunter AND the occasional sports
        * shooter, and a dedicated hunter may shoot sport with the same rifle.
        * "Both" is a real answer and it takes both pools.
@@ -2604,7 +2670,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Experience',
       options: FIREARM_USE_KIND,
       /**
-       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * âš ï¸ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
        * decided from the applicant's paperwork, their battery and the firearm
        * itself — see motivation-purpose.ts. The key stays accepted so a draft
        * written before this still loads.
@@ -2633,7 +2699,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'association_joined',
       docSourced: 'ASSOCIATION_CARD',
-      // ⚠️ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
+      // âš ï¸ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
       // The 271's association block asks when the applicant JOINED the body.
       // Nothing on the form asked that, so saps271-map printed
       // `dedicated_since` — "Dedicated status held since" — into it, and
@@ -2662,7 +2728,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'dedicated_since',
       docSourced: 'ASSOCIATION_CARD',
-      // ⚠️ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
+      // âš ï¸ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
       // `association_joined` immediately above. This is also what
       // deriveFacts counts `years_dedicated` from, so a join date here does
       // not merely mislabel a box — it makes the motivation itself argue
@@ -2675,7 +2741,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
-      // ⚠️ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
+      // âš ï¸ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
       // two are actually the same thing. If the membership expires so does the
       // dedicated status." So this is the START of one validity whose END is
       // `association_expiry` below — not an independent standing. The member
@@ -2685,7 +2751,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'association_expiry',
       docSourced: 'GOOD_STANDING_LETTER',
-      // ⚠️ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
+      // âš ï¸ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
       // Operator, 2026-08-28: "Expiry dat of accredited associasian should
       // also be inserted from the letter of good standing date. that should
       // have a valid until date." The vault already reads and stores it —
@@ -2699,16 +2765,16 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your association membership is valid until',
       kind: 'date',
       section: 'Dedicated status',
-      // ⚠️ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
+      // âš ï¸ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
       // Operator, 2026-10-14: the dedicated status runs with the membership.
       // This is the "valid until" the status shares, so the two rows above and
       // below are one period.
-      help: 'The "valid until" on your letter of good standing. Your dedicated status ends on the same date — if the membership lapses, so does the status. Photograph the letter and we will read it for you.',
+      help: 'The "valid until" on your dedicated-status certificate or letter of good standing, when the document prints one. Your dedicated status ends on the same date — if the membership lapses, so does the status. Upload the certificate or letter and we will read it for you.',
       focusOffsetYears: 1,
     },
-    // ── association 2 ─────────────────────────────────────────────
+    // â”€â”€ association 2 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // âš ï¸ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
     // professional motivations we studied list three, each "a member in good
     // standing with X since DATE, membership number Y", and the trade's own
     // intake questionnaire has columns for five. One association made a
@@ -2741,9 +2807,9 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       focusOffsetYears: -10,
       reach: 'far',
     },
-    // ── association 3 ─────────────────────────────────────────────
+    // â”€â”€ association 3 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // âš ï¸ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
     // professional motivations we studied list three, each "a member in good
     // standing with X since DATE, membership number Y", and the trade's own
     // intake questionnaire has columns for five. One association made a
@@ -2803,9 +2869,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
   ],
   S16_DEDICATED_SPORT: [
+    ...SPORTING_PURPOSE_FIELDS,
     {
       /**
-       * ⚠️ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
+       * âš ï¸ THE ONLY TICK-BOX LEFT IN THIS SECTION, AND IT IS A ROUTER.
        * Operator, 2026-09-09: "we just need to ask if the applicant will be
        * using it for hunting or Sport shooting or both, that the only tick
        * boxes I want to see. and that will decide from which pool of reasons
@@ -2818,7 +2885,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
        * one thing that cannot be generated is which of its two pools this
        * applicant wants drawn from.
        *
-       * ⚠️ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
+       * âš ï¸ THE LICENCE TYPE CANNOT ANSWER IT. S15_OCCASIONAL_HUNTER is one
        * value covering the occasional hunter AND the occasional sports
        * shooter, and a dedicated hunter may shoot sport with the same rifle.
        * "Both" is a real answer and it takes both pools.
@@ -2829,7 +2896,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Experience',
       options: FIREARM_USE_KIND,
       /**
-       * ⚠️ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
+       * âš ï¸ NEVER ASKED, AND NO LONGER REQUIRED (2026-10-17). The route is
        * decided from the applicant's paperwork, their battery and the firearm
        * itself — see motivation-purpose.ts. The key stays accepted so a draft
        * written before this still loads.
@@ -2858,7 +2925,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'association_joined',
       docSourced: 'ASSOCIATION_CARD',
-      // ⚠️ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
+      // âš ï¸ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
       // The 271's association block asks when the applicant JOINED the body.
       // Nothing on the form asked that, so saps271-map printed
       // `dedicated_since` — "Dedicated status held since" — into it, and
@@ -2887,7 +2954,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'dedicated_since',
       docSourced: 'ASSOCIATION_CARD',
-      // ⚠️ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
+      // âš ï¸ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
       // `association_joined` immediately above. This is also what
       // deriveFacts counts `years_dedicated` from, so a join date here does
       // not merely mislabel a box — it makes the motivation itself argue
@@ -2900,7 +2967,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
-      // ⚠️ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
+      // âš ï¸ THE STATUS RUNS WITH THE MEMBERSHIP. Operator, 2026-10-14: "these
       // two are actually the same thing. If the membership expires so does the
       // dedicated status." So this is the START of one validity whose END is
       // `association_expiry` below — not an independent standing. The member
@@ -2910,7 +2977,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     {
       key: 'association_expiry',
       docSourced: 'GOOD_STANDING_LETTER',
-      // ⚠️ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
+      // âš ï¸ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
       // Operator, 2026-08-28: "Expiry dat of accredited associasian should
       // also be inserted from the letter of good standing date. that should
       // have a valid until date." The vault already reads and stores it —
@@ -2924,16 +2991,16 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your association membership is valid until',
       kind: 'date',
       section: 'Dedicated status',
-      // ⚠️ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
+      // âš ï¸ THE OTHER END OF THE DEDICATED STATUS, NOT JUST THE MEMBERSHIP.
       // Operator, 2026-10-14: the dedicated status runs with the membership.
       // This is the "valid until" the status shares, so the two rows above and
       // below are one period.
-      help: 'The "valid until" on your letter of good standing. Your dedicated status ends on the same date — if the membership lapses, so does the status. Photograph the letter and we will read it for you.',
+      help: 'The "valid until" on your dedicated-status certificate or letter of good standing, when the document prints one. Your dedicated status ends on the same date — if the membership lapses, so does the status. Upload the certificate or letter and we will read it for you.',
       focusOffsetYears: 1,
     },
-    // ── association 2 ─────────────────────────────────────────────
+    // â”€â”€ association 2 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // âš ï¸ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
     // professional motivations we studied list three, each "a member in good
     // standing with X since DATE, membership number Y", and the trade's own
     // intake questionnaire has columns for five. One association made a
@@ -2966,9 +3033,9 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       focusOffsetYears: -10,
       reach: 'far',
     },
-    // ── association 3 ─────────────────────────────────────────────
+    // â”€â”€ association 3 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // âš ï¸ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
     // professional motivations we studied list three, each "a member in good
     // standing with X since DATE, membership number Y", and the trade's own
     // intake questionnaire has columns for five. One association made a
@@ -3032,7 +3099,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'date',
       section: 'The existing licence',
       required: true,
-      // ⚠️ THE DEADLINE, ON THE FIELD THAT GOVERNS IT. We ask for this date
+      // âš ï¸ THE DEADLINE, ON THE FIELD THAT GOVERNS IT. We ask for this date
       // and then said nothing about the one rule attached to it — and an
       // applicant who came straight to a renewal without ever opening the
       // Licence Centre had no other surface that would tell them.
@@ -3058,7 +3125,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your competency in this category runs to this licence',
       kind: 'yesno',
       section: 'The existing licence',
-      // ⚠️ ONE FLAG NOW, WHERE TWO CONTRADICTORY ONES USED TO DO THE JOB.
+      // âš ï¸ ONE FLAG NOW, WHERE TWO CONTRADICTORY ONES USED TO DO THE JOB.
       //
       // This was `formOnly` (wants the fill path) set against `showIf` (wants
       // the dealer path), so no answer satisfied both. That was written because
@@ -3092,7 +3159,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
 };
 
 /**
- * ⚠️ SECTION 14 SHARES SECTION 13'S QUESTIONS BY ASSIGNMENT, NOT BY COPY. Two
+ * âš ï¸ SECTION 14 SHARES SECTION 13'S QUESTIONS BY ASSIGNMENT, NOT BY COPY. Two
  * hand-kept lists of the same questions is how one of them ends up a question
  * short, and the member on the short one is asked less about the harder
  * application.
@@ -3103,7 +3170,7 @@ TYPE_FIELDS[MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE] =
 /**
  * The two sections that are about self-defence.
  *
- * ⚠️ ONE PREDICATE, BECAUSE THERE WERE EIGHT `=== S13_SELF_DEFENCE` BRANCHES
+ * âš ï¸ ONE PREDICATE, BECAUSE THERE WERE EIGHT `=== S13_SELF_DEFENCE` BRANCHES
  * AND SECTION 14 HAD TO JOIN EVERY ONE OF THEM. Crime figures, the areas
  * picker, the press cuttings, the overlap wording, the reason angles and the
  * document scope all key off "is this a self-defence application" and all of
@@ -3112,7 +3179,7 @@ TYPE_FIELDS[MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE] =
  * handgun is not enough where they live — and a branch missed here is a
  * section that silently loses its evidence.
  *
- * ⚠️ NOT "is it NOT hunting or sport". A section 24 renewal of a section 13
+ * âš ï¸ NOT "is it NOT hunting or sport". A section 24 renewal of a section 13
  * licence is a self-defence document too, and it is not in this list, because
  * the renewal path reads its own underlying section. Adding it here would give
  * a hunting renewal crime statistics.
@@ -3126,7 +3193,7 @@ export function isSelfDefence(t: MotivationLicenceType): boolean {
   return SELF_DEFENCE_TYPES.includes(t);
 }
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // THE FOUR FACTS THAT DECIDE WHICH HEADINGS A DOCUMENT CARRIES.
 //
 // MOTIVATION-GUIDE-BOOK Part 4.2 fixes twelve headings and Part 5 says which
@@ -3136,7 +3203,7 @@ export function isSelfDefence(t: MotivationLicenceType): boolean {
 // motivation-structure.ts is pure and never sees an answer blob; they are
 // computed here, next to the field keys they read, so a renamed key breaks one
 // place.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Does the applicant hold at least one licensed firearm?
@@ -3164,7 +3231,7 @@ const DECLARATION_KEYS = [
 /**
  * Is any declaration answer a Yes?
  *
- * Drives heading 10, "My record". ⚠️ THE HEADING IS OMITTED ENTIRELY WHEN
+ * Drives heading 10, "My record". âš ï¸ THE HEADING IS OMITTED ENTIRELY WHEN
  * EVERY ANSWER IS NO, and the document says nothing — book Part 5.1 brief 10.
  * A paragraph volunteering "I have no criminal record" is banned twice over:
  * SAPS runs that check themselves, and an unevidenced claim of good character
@@ -3189,7 +3256,7 @@ export function isAssociationMember(answers: Record<string, string>): boolean {
 /**
  * Which variant a section 15 application is.
  *
- * ⚠️ THE ROUTE IS RESOLVED FROM THE PACK NOW, NOT FROM CARD TAPS. See
+ * âš ï¸ THE ROUTE IS RESOLVED FROM THE PACK NOW, NOT FROM CARD TAPS. See
  * motivation-purpose.ts: s15Purpose lives there and reads the battery, the
  * firearm's class and the licence sections already held. The card grid that
  * used to decide this was retired with the other purpose questions on
@@ -3210,7 +3277,7 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
 /**
  * Common questions a given licence type is NOT asked.
  *
- * ⚠️ COMMON_FIELDS IS NOT COMMON TO ALL FIVE, AND TWO OF ITS QUESTIONS WERE
+ * âš ï¸ COMMON_FIELDS IS NOT COMMON TO ALL FIVE, AND TWO OF ITS QUESTIONS WERE
  * BEING PUT TO A RENEWAL THAT CANNOT USE EITHER.
  *
  *   firearm_source   "Where is this firearm coming from?" — of somebody who
@@ -3232,7 +3299,7 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
  *                    518(a), and motivation-render.service.ts refuses a 271
  *                    for an S24 by licence type.
  *
- * ⚠️ THIS FILTERS WHAT IS ASKED, NEVER WHAT IS ACCEPTED. fieldByKey below
+ * âš ï¸ THIS FILTERS WHAT IS ASKED, NEVER WHAT IS ACCEPTED. fieldByKey below
  * deliberately searches the UNFILTERED list, so a draft saved before this — or
  * one carrying either key for any other reason — still loads and still saves.
  * Dropping it there instead would make the wizard's next autosave, which
@@ -3244,14 +3311,14 @@ const NOT_ASKED_BY_TYPE: Partial<
 > = {
   S24_RENEWAL: new Set<string>([FIREARM_SOURCE_KEY]),
   /**
-   * ⚠️ RELOADING IS HUNTING AND SPORT CONTENT, AND IT REACHED AN S13 AS
+   * âš ï¸ RELOADING IS HUNTING AND SPORT CONTENT, AND IT REACHED AN S13 AS
    * "EXPERIENCE". The three questions are profile-scoped and were asked of
    * everybody, so a self-defence applicant answered them once for a hunting
    * application and the writer then had them in the pack — MO000071 argued
    * from handloading in a section 13. A DFO reading a self-defence motivation
    * that discusses working up loads is reading about a hobby, not a threat.
    *
-   * ⚠️ FILTERED, NOT DELETED. NOT_ASKED_BY_TYPE removes what is ASKED and
+   * âš ï¸ FILTERED, NOT DELETED. NOT_ASKED_BY_TYPE removes what is ASKED and
    * never what is ACCEPTED — `fieldByKey` searches the unfiltered list — so a
    * member who answered these on a hunting application keeps the answer, and
    * their S13 draft still saves. `documentScope` is the other half: it refuses
@@ -3267,7 +3334,7 @@ const NOT_ASKED_BY_TYPE: Partial<
 /**
  * Every field this licence type DEFINES, including the ones it is not asked.
  *
- * ⚠️ NOT FOR RENDERING — fieldsFor is. This is for the two callers that must
+ * âš ï¸ NOT FOR RENDERING — fieldsFor is. This is for the two callers that must
  * see a question the type has stopped asking: fieldByKey, so an older draft
  * still saves, and the registry-integrity suite, which checks that a showIf
  * clause is well-formed rather than that it is reachable.
@@ -3289,7 +3356,7 @@ export function fieldsFor(
 /**
  * Fast lookup by key, for merging an interview answer back into the blob.
  *
- * ⚠️ IT ALSO FINDS RETIRED KEYS, AND THAT IS WHAT KEEPS OLD DRAFTS ALIVE.
+ * âš ï¸ IT ALSO FINDS RETIRED KEYS, AND THAT IS WHAT KEEPS OLD DRAFTS ALIVE.
  * sanitiseAnswers decides what it will accept by asking this function, so a
  * key that has stopped being ASKED must still be findable here or the wizard's
  * next autosave — which resends the whole blob — drops the applicant's own
@@ -3299,7 +3366,7 @@ export function fieldByKey(
   type: MotivationLicenceType,
   key: string,
 ): MotivationField | undefined {
-  // ⚠️ THE UNFILTERED LIST, DELIBERATELY — see NOT_ASKED_BY_TYPE. A question
+  // âš ï¸ THE UNFILTERED LIST, DELIBERATELY — see NOT_ASKED_BY_TYPE. A question
   // this type has stopped being ASKED must still be findable here, or the
   // wizard's next autosave drops an answer an older draft already holds.
   return allFieldsFor(type).find((f) => f.key === key) ?? LEGACY_BY_KEY.get(key);
@@ -3316,12 +3383,12 @@ export function isVisible(
   field: MotivationField,
   answers: Record<string, string>,
 ): boolean {
-  // ⚠️ `internal` IS THE ONLY UNCONDITIONAL HIDE LEFT, and it is about fields
+  // âš ï¸ `internal` IS THE ONLY UNCONDITIONAL HIDE LEFT, and it is about fields
   // we FILL IN, never about a form the applicant may or may not want. See the
   // flag itself.
   if (field.internal) return false;
 
-  // ⚠️ formOnly NO LONGER DECIDES WHAT IS ASKED — 2026-09-08, brief §2.6.
+  // âš ï¸ formOnly NO LONGER DECIDES WHAT IS ASKED — 2026-09-08, brief §2.6.
   //
   // It used to hide every SAPS-271-only field behind the fill_saps271 opt-in,
   // and roughly half the registry hung off that one tap: phones, postal codes,
@@ -3329,7 +3396,7 @@ export function isVisible(
   // longer optional (Part F is filled by source route instead — see
   // saps271.service.ts), so there is nothing left for the gate to gate.
   //
-  // ⚠️ AND THE FLAG ITSELF STAYS, DOING ITS OTHER JOB. formOnly is still what
+  // âš ï¸ AND THE FLAG ITSELF STAYS, DOING ITS OTHER JOB. formOnly is still what
   // keeps a value out of the fact pack (factPackFields below): a dialling
   // code, a postal code and a spouse's ID number are PII with no argumentative
   // use, and six "No" answers to the history questions are an invitation to
@@ -3343,7 +3410,7 @@ export function isVisible(
 
   if (field.showIf.equals === undefined) return true;
   if (chosen === field.showIf.equals) return true;
-  // ⚠️ A MULTI ANSWER IS A LIST, AND EQUALITY CANNOT SEE INTO IT.
+  // âš ï¸ A MULTI ANSWER IS A LIST, AND EQUALITY CANNOT SEE INTO IT.
   //
   // `discipline` became kind: 'multi' and is stored comma-joined in the
   // registry's own order — "vlakteskiet-chasa, other". `discipline_other`
@@ -3388,7 +3455,7 @@ export function requiredKeys(
 /**
  * Columns that are pure form transcription and must NEVER reach a model.
  *
- * ⚠️ `formOnly` USED TO DO TWO JOBS AT ONCE — hide a field in the wizard, and
+ * âš ï¸ `formOnly` USED TO DO TWO JOBS AT ONCE — hide a field in the wizard, and
  * withhold it from the prompt — and the owned-firearms table needed those two
  * answers to differ. It has to be ASKED on the dealer path, because
  * motivation-overlap reads it and the writer argues from it; but a serial and
@@ -3402,7 +3469,7 @@ export function requiredKeys(
  * built from the stored answers.
  */
 /**
- * ⚠️ THE SIX HISTORY YES/NOS ARE HERE NOW, AND THIS IS THE ONLY THING KEEPING
+ * âš ï¸ THE SIX HISTORY YES/NOS ARE HERE NOW, AND THIS IS THE ONLY THING KEEPING
  * A CLEAN RECORD OUT OF THE DOCUMENT — 2026-09-08.
  *
  * They used to be `formOnly`, which did the job as a side effect of hiding
@@ -3412,7 +3479,7 @@ export function requiredKeys(
  * asked of everybody (brief §2.5), and the anti-padding half of the old
  * behaviour is stated here, on its own, where it can be read.
  *
- * ⚠️ THE BARE YES/NO ONLY — THE `_detail` BOXES ARE DELIBERATELY NOT LISTED.
+ * âš ï¸ THE BARE YES/NO ONLY — THE `_detail` BOXES ARE DELIBERATELY NOT LISTED.
  * That asymmetry IS the rule the acceptance criterion states: a "No"
  * contributes nothing (the yes/no is never prompted, and its detail box is
  * hidden by showIf so it is empty), while a "Yes" reaches the writer in full
@@ -3423,7 +3490,7 @@ export function requiredKeys(
  * The `$` anchors are load-bearing: `history_conviction` matches,
  * `history_conviction_detail` and `history_conviction_station` do not.
  *
- * ⚠️ THE CONTACT DETAILS AND THE SPOUSE'S NAME ARE HERE FOR THE SAME REASON,
+ * âš ï¸ THE CONTACT DETAILS AND THE SPOUSE'S NAME ARE HERE FOR THE SAME REASON,
  * AND THEY WERE ALMOST LOST IN THE SAME CHANGE. `home_telephone`,
  * `work_telephone`, `cellphone`, `postal_address` and `spouse_name` were kept
  * from the writer by being `formOnly` — which was doing two unrelated jobs at
@@ -3443,7 +3510,7 @@ const NEVER_PROMPTED =
 /**
  * formOnly fields the writer MUST see anyway.
  *
- * ⚠️ firearm_serial IS THE SUBJECT OF THE APPLICATION. It is formOnly for
+ * âš ï¸ firearm_serial IS THE SUBJECT OF THE APPLICATION. It is formOnly for
  * WIZARD visibility — on the dealer path the applicant may not know it yet —
  * but every professional motivation introduces the firearm with its serial,
  * and the mechanical verifier requires an answered serial to appear in the
@@ -3458,7 +3525,7 @@ const PROMPTED_DESPITE_FORM_ONLY = new Set(['firearm_serial']);
 /**
  * Internal fields whose STORED answers still reach the writer.
  *
- * ⚠️ HIDDEN FROM THE SHEET IS NOT THE SAME AS UNTRUE (2026-10-17). The purpose
+ * âš ï¸ HIDDEN FROM THE SHEET IS NOT THE SAME AS UNTRUE (2026-10-17). The purpose
  * questions were retired so nobody is asked them again, but a draft written
  * before that may hold the applicant's own words — and those words are still
  * the best fact the writer has. This is the one-way door `internal` otherwise
@@ -3472,7 +3539,7 @@ export function factPackFields(
 ): readonly MotivationField[] {
   return fieldsFor(type).filter(
     (f) =>
-      // ⚠️ `internal` HAS NO ESCAPE HATCH FOR VALUES WE LOOKED UP, unlike
+      // âš ï¸ `internal` HAS NO ESCAPE HATCH FOR VALUES WE LOOKED UP, unlike
       // formOnly's. A field we filled in from a lookup is never an argument for
       // needing a firearm. The retired PURPOSE questions are the exception:
       // they are hidden from the sheet, not from the pack.
@@ -3498,7 +3565,7 @@ export function sanitiseAnswers(
 ): { answers: Record<string, string>; rejected: string[]; refused: string[] } {
   const answers: Record<string, string> = {};
   const rejected: string[] = [];
-  // ⚠️ A SUBSET OF `rejected`, AND THE HALF THAT MATTERS. Dropping a key we
+  // âš ï¸ A SUBSET OF `rejected`, AND THE HALF THAT MATTERS. Dropping a key we
   // no longer have is housekeeping; dropping a REGISTERED field because its
   // value did not pass is the applicant's answer going in the bin. Both used
   // to land in one list under one "ignored unregistered answer keys" warning,
@@ -3569,7 +3636,7 @@ export function sanitiseAnswers(
     // tidiness: these values are printed into boxes on a form the applicant
     // signs, so an arbitrary string arriving from a hand-rolled request would
     // become a false statement on a firearm licence application.
-    // ⚠️ `cards` IS STORED EXACTLY LIKE `multi`, AND THAT IS THE WHOLE POINT
+    // âš ï¸ `cards` IS STORED EXACTLY LIKE `multi`, AND THAT IS THE WHOLE POINT
     // OF THE DECISION. A comma list in the offered order means showIf,
     // allowedValues, the fact pack and every existing reader work unchanged —
     // the new kind is a rendering and a meaning, never a storage format.
@@ -3577,7 +3644,7 @@ export function sanitiseAnswers(
       // Stored comma-joined. Every part must be a real choice, and the order is
       // normalised to the offered order so two identical answers compare equal.
       //
-      // ⚠️ allowedValues, NOT field.choices — AND THIS EXACT BUG HAS BITTEN
+      // âš ï¸ allowedValues, NOT field.choices — AND THIS EXACT BUG HAS BITTEN
       // ONCE BEFORE. A field whose options come from optionSource has no
       // `choices` array at all, so `field.choices ?? []` rejects every value
       // the applicant picks and the answer is silently dropped. That is what
@@ -3617,7 +3684,7 @@ export function sanitiseAnswers(
 /**
  * What a choice field will actually accept.
  *
- * ⚠️ `field.choices ?? YES_NO` WAS A SILENT DATA-LOSS BUG. A field whose
+ * âš ï¸ `field.choices ?? YES_NO` WAS A SILENT DATA-LOSS BUG. A field whose
  * options come from an optionSource carries no `choices` — the list is
  * attached on the way out to the wizard — so the fallback made the only legal
  * answers "Yes" and "No". `discipline` is such a field, with fifty-nine real
@@ -3635,7 +3702,7 @@ export function sanitiseAnswers(
  * is not will inherit exactly this bug.
  */
 export function allowedValues(field: MotivationField): readonly string[] {
-  // ⚠️ THE CARD KEYS, NOT THE SENTENCES. What is stored, matched by showIf and
+  // âš ï¸ THE CARD KEYS, NOT THE SENTENCES. What is stored, matched by showIf and
   // compared on save is `key`; the sentence is display and is free to be
   // reworded (§9.2 review) without invalidating a stored answer. Reading
   // sentences here would make every rewording a silent data loss on the next
@@ -3648,7 +3715,7 @@ export function allowedValues(field: MotivationField): readonly string[] {
     // hangs off it via showIf — so it has to be accepted, not just offered.
     return field.allowOther ? [...values, DISCIPLINE_OTHER] : values;
   }
-  // ⚠️ RETIRED VALUES ARE ALLOWED, NEVER OFFERED. See retiredChoices.
+  // âš ï¸ RETIRED VALUES ARE ALLOWED, NEVER OFFERED. See retiredChoices.
   const offered = field.choices ?? YES_NO;
   return field.retiredChoices?.length
     ? [...offered, ...field.retiredChoices]
@@ -3662,6 +3729,13 @@ export function allowedValues(field: MotivationField): readonly string[] {
 export function missingRequired(
   type: MotivationLicenceType,
   answers: Record<string, string>,
+  options: { motivationOnly?: boolean } = {},
 ): string[] {
-  return requiredKeys(type, answers).filter((k) => !(answers[k] ?? '').trim());
+  return requiredKeys(type, answers).filter((key) => {
+    if (options.motivationOnly) {
+      const field = fieldByKey(type, key);
+      if (field?.formOnly || key.startsWith('history_')) return false;
+    }
+    return !(answers[key] ?? '').trim();
+  });
 }

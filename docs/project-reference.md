@@ -468,12 +468,14 @@ the Licence Centre / Document Centre, the Motivations builder, The Bench, crime
 stats, news clippings, complaints, the reloading corpus, Warden.
 
 **Built but INERT, behind a switch:**
-- **None right now** — Ozow payments went live for money-in on 2026-10-10
-  (`PAYMENT_MODE=paygate`, `PAYMENTS_LIVE=true`); money-*out* waits on the float.
-- **No automated bank verification.** Ozow has no BANV product, so an admin
-  reviews the bank-holder name against the KYC identity by hand before the first
-  payout (an invalid account then fails the payout itself). **Do not claim
-  automated AVS in user-facing copy.**
+- **Peach pay-in** — hidden until `peach_payin_enabled` is ON and the Peach
+  checkout credentials are configured. Ozow remains the default rail.
+- **Peach payouts** — hidden until `peach_payouts_enabled` is ON and the Peach
+  Payouts product is configured. A Peach-paid sale is never routed to Ozow.
+- **BANV** — runs once Peach Payouts credentials exist. It verifies the
+  destination bank for both rails (account exists/open + SA-ID ownership).
+  Do not claim automated verification in user-facing copy before the product is
+  configured and the first checks pass.
 
 **Gone — do not rebuild.** The retired-feature list lives in one place now:
 `AGENTS.md` → "Retired Features (do not rebuild)". Do not reintroduce them,
@@ -523,9 +525,15 @@ courier's live rate. Never render it as "quote + 10%" or a separate handling
 row. `shippingHandlingCents` remains on historical rows only. The Platform Fee
 is charged on the item plus that rate.
 
-### Payments (Ozow) — live for money-in
+### Payments (Ozow + Peach) — dual rails, locked per transaction
 
-One API (pay-in + refunds) + Payouts API (seller disbursement).
+Two pay-in rails: Ozow's One API (instant EFT) and Peach Checkout V2 (card).
+Each provider also has its own payout product (Ozow Payouts, Peach Payouts).
+⚠️ **The rail is locked at checkout.** `Transaction.paymentProvider` is set
+once (`OZOW` or `PEACH`) and never changed. A refund and a seller payout must
+use the provider that captured the money. There is **no cross-rail fallback**
+— an Ozow-paid sale is never paid out via Peach, and vice versa. The buyer
+picks the rail at checkout; Ozow is the default.
 
 - **15-minute Buy Now hold:** opening `/checkout/[listingId]` for a plain
   `BUY_NOW` listing reserves exactly ONE unit (`CheckoutHold`) and starts a
@@ -533,37 +541,67 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   transaction as the `Transaction` row; extra units selected at Pay are
   reserved atomically then. An unpaid hold is released by the every-minute
   `checkout-hold-expiry` sweep, which restores the unit and relists the item.
-  Auction wins and offer checkouts keep their existing 24h windows. The Ozow
-  pay-in link for a plain `BUY_NOW` is also minted with a 15-minute expiry, and
-  `reconcileStaleGatewayCheckouts()` uses that shorter cutoff for Buy Now.
+  Auction wins and offer checkouts keep their existing 24h windows. Every
+  gateway attempt stores its absolute deadline in `Transaction.manualPayByAt`
+  (reused from the retired manual-EFT column); the Ozow link is minted with the
+  REMAINING time to that deadline. `reconcileStaleGatewayCheckouts()` releases
+  only after that deadline and only when the provider status is terminal:
+  Ozow `Incomplete` after expiry, explicit Peach declines/cancellations, or
+  Peach `NOT_FOUND`. A Peach `pending`/unknown result is never deleted —
+  its checkout may still settle, and deleting it would orphan the money.
 
-- **Pay-in:** `ozow.createPayment()` (`POST https://one.ozow.com/v1/payments`)
-  → hosted page → `/checkout/complete?id=…` → `verifyResult()` re-fetches
-  authoritative status (`GET /payments/{id}/transactions`) and matches the
-  bound transaction + amount → flip `PaymentStatus`. DECIMAL ZAR on pay-in,
-  integer cents everywhere else — do not mix them. Pay by Bank happens on
-  Ozow's page; the buyer is always present.
-- **Webhooks:** three routes on `transactions.controller.ts`
-  (`/webhook/ozow` Svix-signed, `-payout-verify` and `-payout` SHA-512
-  hash-checked). ⚠️ **A bad signature returns 200 `{received: true}`** with the
+- **Interrupted checkout:** `POST /transactions/:id/resume` requires the same
+  buyer and reuses the SAME transaction. If the provider still reports
+  `pending`/`Incomplete` it refuses to mint a second link; if the attempt is
+  already paid it reports `paid`; after a terminal failure it mints one fresh
+  checkout for the same row and amount. My Orders, the order page and the
+  listing page's "Resume payment" CTA all point here. Generic `/checkout/...`
+  is never used to resume an accepted offer (it would charge the listing
+  price instead of the agreed offer).
+
+- **Payment proof:** `paymentStatus: HELD` is the default at row creation, so
+  it is NOT proof of payment. Every money-moving action (confirm-delivery,
+  dealer-verify release, admin release, Private Arrangement release) must also
+  require `paidAt`, and the atomic CAS must carry the same predicate.
+
+- **Pay-in:** the buyer chooses a rail at checkout; `PaymentRailsService`
+  routes to `ozow.createPayment()` (One API) or `peach.createCheckout()`
+  (Checkout V2). Both return a hosted-page redirect. `/checkout/complete`
+  calls `verifyResult()`, which re-fetches authoritative status from the same
+  provider and matches the bound transaction + amount before flipping
+  `PaymentStatus`. ⚠️ Peach pay-in amounts are DECIMAL ZAR; Ozow pay-in is
+  also decimal; PAYOUT amounts are integer cents. Never mix them.
+- **Webhooks:** Ozow routes are `/webhook/ozow` (Svix-signed),
+  `-payout-verify` and `-payout` (SHA-512 hash-checked). Peach routes are
+  `/webhook/peach`, `/webhook/peach-payout`, `/webhook/peach-banv` and
+  `/webhook/peach-dispute` (header or field signature; fail-closed in
+  production). ⚠️ **A bad signature returns 200 `{received: true}`** with the
   handler skipped and `alertWebhookSignatureFailure()` raised — **not** a 401.
-  No DB writes occur. Anyone grepping logs for 401s to diagnose a signature
-  mismatch will find nothing.
+  A handler failure returns 500 so the provider retries.
 - **Idempotency:** `gatewayMerchantRef`, `gatewayPayoutId` and
   `gatewayPaymentId` are `@unique` to block replay. ⚠️ `gatewayCheckoutId` is
-  **not** unique — the pay-in webhook matches on `gatewayMerchantRef` (a `full`
-  subscription carries it; a `thin` one cannot be matched).
-- **Pay-out:** ⚠️ **nothing pays a seller automatically.** Dealer-verification
-  APPROVED (firearms) or buyer Confirm-Delivery (non-firearms) make a payout DUE
-  (they stamp `releasedAt`); an admin then runs the batch —
-  `ManualPaymentsService.runDuePayouts()` → `ozow.createPayout()` (one
-  `requestpayout` per payable transaction, AES-256-CBC account encryption with a
-  unique per-attempt key wrapped at rest, plus SHA-512 `hashCheck`), gated on
-  `PAYMENTS_LIVE`. An accepted request stamps `payoutRequestedAt`; only status 5
-  stamps `paidOutAt`, and Ozow can still later report a return. Notifications and
-  the `getpayout` fallback reconcile the attempt; final failures put the
-  transaction on payout hold for admin review rather than automatically
-  resubmitting it.
+  **not** unique — the Ozow pay-in webhook matches on `gatewayMerchantRef` (a
+  `full` subscription carries it; a `thin` one cannot be matched). Peach
+  matches on `gatewayCheckoutId` first, then its minted ref.
+- **Pay-out:** ⚠️ **nothing pays a seller automatically unless the admin turns
+  on auto payouts.** Dealer-verification APPROVED (firearms) or buyer
+  Confirm-Delivery (non-firearms) make a payout DUE (they stamp `releasedAt`);
+  one admin run (`ManualPaymentsService.runDuePayouts()`) **partitions the due
+  rows by `paymentProvider`**:
+  - Ozow rows → `ozow.createPayout()` (one `requestpayout` per transaction,
+    AES-256-CBC account encryption with a unique per-attempt key wrapped at
+    rest, plus SHA-512 `hashCheck`).
+  - Peach rows → `peach.createPayout()` (batch `payouts[]`, client-minted
+    UUIDv4 per row, Peach bank enum + universal branch code, integer cents,
+    `PeachPayoutAttempt`).
+  Gated on `PAYMENTS_LIVE`. An accepted request stamps `payoutRequestedAt`;
+  `paidOutAt` is set only on confirmed completion (Ozow status 5 / Peach
+  `successful`), and either provider can later report a return. Status
+  webhooks + polling reconcile the attempt; final failures put the transaction
+  on payout hold for admin review rather than automatically resubmitting it.
+  ⚠️ **Peach payouts must stay enabled while any Peach-paid sale is unsettled.**
+  Disabling Peach pay-in is safe; disabling Peach payouts before those rows
+  settle strands them (they must not be routed to Ozow).
 - **Seller failure charges (2026-10-27):** when a PAID sale ends because the
   seller declined it, never dispatched, or never delivered, the platform
   recovers the refund's gateway cost (**4% of the amount refunded**) plus any
@@ -580,14 +618,23 @@ One API (pay-in + refunds) + Payouts API (seller disbursement).
   notice is one email after `DELIVERY_OBLIGATION_AFTER_HOURS` (48h) —
   `deliveryObligationNotifiedAt` makes it fire once. The rule is in Terms §11;
   admin waiver is the credit path when a Bob Go charge is reclaimed by hand.
-- **Refunds:** `ozow.refundPayment(...)` is called BEFORE flipping the row to
-  `REFUNDED`. Money moves first, ledger second — never the other way around.
+- **Refunds:** `PaymentRailsService.refund(provider, …)` calls the rail that
+  captured the payment (`ozow.refundPayment` or `peach.refundPayment`) BEFORE
+  flipping the row to `REFUNDED`. Money moves first, ledger second — never the
+  other way around. Legacy rows with no provider are treated as Ozow.
 - **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,
   `DISPUTED`, `REFUNDED`.
-- **No BANV.** Ozow has no automated bank-account verification product; the
-  destination account is validated by the payout itself (an invalid account
-  fails with payout subStatus 405). The manual admin review of the seller's
-  bank details remains the pre-payout gate.
+- **BANV:** every bank-details save requests Peach BANV when the user has an
+  SA ID on file. The result webhook stamps `User.bankVerifiedAt` on a pass;
+  mismatch/failure clears it, raises an alert and notifies the seller. Seller
+  payouts on **both** rails are gated on `bankVerifiedAt` once BANV is
+  configured. Buyer refunds are not gated. Users without an SA ID (buyer-only
+  banking) are skipped until their profile supplies one. `POST
+  /admin/users/:id/verify-bank` re-runs the check from the dossier.
+- **Peach bank vocabulary:** `peach-banks.ts` maps free-text bank names to
+  Peach's strict enum and universal branch codes. An unmappable bank skips the
+  Peach payout with a "re-pick your bank" reason; it is never guessed and never
+  routed to Ozow.
 - `OZOW_PAYOUT_ENCRYPTION_KEY` is the stable, 32+-character master secret used
   to wrap each payout's generated account-decryption key at rest. Rotating it
   while payout attempts are outstanding prevents verification from recovering

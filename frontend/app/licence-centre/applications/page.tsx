@@ -75,7 +75,7 @@ export default function ApplicationsPage() {
       setStarting(licenceType);
       try {
         const created = await motivationsApi.create(getToken, licenceType);
-        router.push(`/licence-centre/${created.id}`);
+        router.push(`/licence-centre/${created.id}/start`);
       } catch (err) {
         setError((err as Error).message);
         setStarting(null);
@@ -89,6 +89,13 @@ export default function ApplicationsPage() {
       <h1 className="m-0 font-[family-name:var(--font-head)] text-[24px] font-medium leading-[1.15] tracking-[-0.01em] text-[var(--text-primary)]">
         Licence applications
       </h1>
+      <a
+        href="/licence-centre/profile"
+        className="mt-2 inline-block text-[12.5px] font-medium"
+        style={{ color: 'var(--red)' }}
+      >
+        Review your remembered licence profile →
+      </a>
 
       {error ? (
         <p className="mt-3 text-[13.5px] text-[var(--red)]">{error}</p>

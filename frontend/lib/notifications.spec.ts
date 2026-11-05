@@ -51,6 +51,42 @@ describe('notificationHref', () => {
     );
     expect(notificationHref(item({ url: null }))).toBe('#');
   });
+
+  it('resolves a dead legacy tunnel link against the current app host', () => {
+    expect(
+      notificationHref(
+        item({
+          linkedType: 'offer',
+          linkedId: 'offer1',
+          url: 'https://gathered-uncle-refrigerator-comparisons.trycloudflare.com/a/x5-token',
+        }),
+      ),
+    ).toBe('/a/x5-token');
+  });
+
+  it('resolves an absolute production link to its path', () => {
+    expect(
+      notificationHref(
+        item({
+          linkedType: 'offer',
+          linkedId: 'offer1',
+          url: 'https://alloutdoor.co.za/offers/received?tab=seller',
+        }),
+      ),
+    ).toBe('/offers/received?tab=seller');
+  });
+
+  it('leaves a genuinely external link untouched', () => {
+    expect(
+      notificationHref(
+        item({
+          linkedType: 'post',
+          linkedId: '1',
+          url: 'https://example.com/help',
+        }),
+      ),
+    ).toBe('https://example.com/help');
+  });
 });
 
 describe('notificationActionLabel', () => {

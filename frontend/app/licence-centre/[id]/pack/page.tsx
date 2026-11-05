@@ -4,10 +4,14 @@ import { useAuth } from '../../../../lib/auth';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { motivationsApi } from '@/lib/motivations-api';
+import {
+  motivationsApi,
+  type DocumentEngineStatus,
+} from '@/lib/motivations-api';
 import type { SheetResponse } from '@/components/licence-centre/contract';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreparingMotivation from '@/components/licence-centre/preparing-motivation';
+import SheetFooter from '@/components/licence-centre/sheet-footer';
 
 // ────────────────────────────────────────────────────────────────────
 // YOUR PACK — after the motivation is written.
@@ -103,8 +107,28 @@ export default function PackPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [engine, setEngine] = useState<DocumentEngineStatus | null>(null);
   /** The poll gave up waiting; the run may still be going. */
   const [takingLonger, setTakingLonger] = useState(false);
+
+  /**
+   * ⚠️ CLEAR THE PREVIOUS APPLICATION BEFORE LOADING THIS ONE.
+   *
+   * MO000030's blob survived a client-side move to MO000032, so Download saved
+   * the old motivation under the new reference while the 271 (fetched fresh)
+   * carried MO000032. Two reference numbers on one pack. The blob belongs to
+   * the id that produced it, so changing id drops it first.
+   */
+  useEffect(() => {
+    setPdfUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    setSheet(null);
+    setStatus(null);
+    setError(null);
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -122,6 +146,22 @@ export default function PackPage() {
         if (live) setError((err as Error).message);
       }
     })();
+    return () => {
+      live = false;
+    };
+  }, [getToken, id]);
+
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    void motivationsApi
+      .engineStatus(getToken)
+      .then((next) => {
+        if (live) setEngine(next);
+      })
+      .catch(() => {
+        if (live) setEngine(null);
+      });
     return () => {
       live = false;
     };
@@ -269,6 +309,27 @@ export default function PackPage() {
     if (tab) tab.opener = null;
   }, [pdfUrl]);
 
+  const write = useCallback(
+    async ({ testimonialConsent }: { testimonialConsent: boolean }) => {
+      setWriting(true);
+      setError(null);
+      try {
+        await motivationsApi.acceptDeclaration(
+          getToken,
+          id,
+          testimonialConsent,
+        );
+        await motivationsApi.generate(getToken, id);
+        setStatus('GENERATING');
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setWriting(false);
+      }
+    },
+    [getToken, id],
+  );
+
   if (error && !sheet) {
     return (
       <main className="px-4 py-10 text-[14px] text-[var(--text-secondary)]">
@@ -288,6 +349,10 @@ export default function PackPage() {
     sheet.items.find((i) => i.key === 'firearm_source')?.value ?? '';
   // A renewal has no 271: it is lodged on the SAPS 518(a), which we do not fill.
   const isRenewal = sheet.application.licenceType === 'S24_RENEWAL';
+  const missingDocuments = sheet.needs.needs.filter(
+    (need) => need.tier === 'required' && !need.have,
+  ).length;
+  const missingCount = sheet.missing.length + missingDocuments;
 
   return (
     <main className="mx-auto w-full max-w-[760px] px-4 pb-10 pt-5">
@@ -299,10 +364,10 @@ export default function PackPage() {
         information."
       */}
       <Link
-        href={`/licence-centre/${id}`}
+        href="/licence-centre/applications"
         className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] no-underline"
       >
-        <span aria-hidden="true">&#8592;</span> Edit your answers
+        <span aria-hidden="true">&#8592;</span> Back to your applications
       </Link>
 
       <h1 className="m-0 font-[family-name:var(--font-head)] text-[24px] font-medium leading-[1.15] tracking-[-0.01em] text-[var(--text-primary)]">
@@ -387,17 +452,67 @@ export default function PackPage() {
           </section>
         </>
       ) : (
-        <section className="mt-5 rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-6">
-          <p className="m-0 text-[14px] leading-[1.5] text-[var(--text-primary)]">
-            {status === 'DRAFT' || status === 'INTERVIEW'
-              ? 'Your motivation has not been written yet.'
-              : status === 'NEEDS_MORE_INFO'
-                ? 'We need a little more from you before this can be written.'
-                : 'We could not write this one.'}
+        <section className="mt-5">
+          <h2 className="m-0 font-[family-name:var(--font-head)] text-[20px] font-medium leading-[1.2] text-[var(--text-primary)]">
+            {status === 'FAILED'
+              ? 'Try writing it again'
+              : 'Ready to write your motivation'}
+          </h2>
+          <p className="m-0 mt-2 text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
+            {status === 'FAILED'
+              ? 'The previous attempt did not pass our checks. Nothing you entered was lost. Check the answers below and write it again.'
+              : 'Everything the interview needs is saved. Confirm the declaration and we will write the document.'}
           </p>
-          <p className="m-0 mt-2 text-[13px] leading-[1.5] text-[var(--text-secondary)]">
-            Open your answers, check them, and write it again.
-          </p>
+
+          {missingCount > 0 ? (
+            <div
+              className="mt-4 rounded-lg border px-4 py-4"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-inset)',
+              }}
+            >
+              <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
+                {missingCount} thing{missingCount === 1 ? '' : 's'} still needed
+              </p>
+              <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                Finish the outstanding answers or documents before writing.
+              </p>
+              <Link
+                href={`/licence-centre/${id}`}
+                className="mt-3 inline-flex rounded-lg px-3 py-2 text-[13px] font-medium text-white"
+                style={{ background: 'var(--red)' }}
+              >
+                Fix missing details
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <SheetFooter
+                missingCount={0}
+                declared={!!sheet.application.declarationAcceptedAt}
+                onWrite={write}
+                busy={writing}
+                maintenance={engine ? !engine.available : false}
+                maintenanceMessage={engine?.message}
+                onNotify={() => {
+                  void motivationsApi
+                    .engineInterest(getToken, 'GENERATE', id)
+                    .then(() =>
+                      setError('We will email you as soon as it is back.'),
+                    )
+                    .catch(() =>
+                      setError(
+                        'We could not save that request. Please try again.',
+                      ),
+                    );
+                }}
+              />
+              {error ? (
+                <p className="mt-3 text-[12.5px] text-[var(--red)]">{error}</p>
+              ) : null}
+            </div>
+          )}
         </section>
       )}
 

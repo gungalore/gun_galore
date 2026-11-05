@@ -44,6 +44,10 @@ export default function ApplicationRow({
   token: () => Promise<string | null>;
   onChanged: () => void;
 }) {
+  const resumeInterview =
+    row.status === 'DRAFT' &&
+    row.intakeMode === 'INTERVIEW' &&
+    !row.intakeCompletedAt;
   return (
     <li className="gg-tile mb-2 overflow-hidden rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)]">
       {/*
@@ -60,7 +64,9 @@ export default function ApplicationRow({
           href={
             row.status === 'COMPLETED'
               ? `/licence-centre/${row.id}/pack`
-              : `/licence-centre/${row.id}`
+              : resumeInterview
+                ? `/licence-centre/${row.id}/interview`
+                : `/licence-centre/${row.id}`
           }
           className="flex min-w-0 flex-1 items-center justify-between gap-3 px-[14px] py-3 no-underline"
         >
@@ -70,6 +76,7 @@ export default function ApplicationRow({
             </span>
             <span className="mt-[2px] block font-mono text-[12px] text-[var(--text-tertiary)]">
               {row.referenceNumber}
+              {row.outputMode === 'MOTIVATION_ONLY' ? ' · Motivation only' : ''}
             </span>
           </span>
           <span className="flex-shrink-0 text-[12px] text-[var(--text-tertiary)]">

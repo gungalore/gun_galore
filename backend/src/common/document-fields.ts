@@ -122,6 +122,12 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     { vault: 'section', motivation: null },
     // The form asks the applicant's name once, in its own field.
     { vault: 'holder_name', motivation: null },
+    /**
+     * ⚠️ THE HOLDER ID FILLS THE APPLICANT'S ID. It also lets the attach path
+     * check that a licence in the vault is actually the applicant's before it
+     * is treated as one of their owned firearms.
+     */
+    { vault: 'holder_id_number', motivation: 'id_number' },
   ],
 
   COMPETENCY_CERTIFICATE: [

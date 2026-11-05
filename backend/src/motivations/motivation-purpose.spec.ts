@@ -22,6 +22,28 @@ const MANUAL_RIFLE = {
 };
 
 describe('the firearm decides a handgun or a self-loader', () => {
+  it('⚠️ HONOURS THE INTERVIEW ROUTER FOR A MANUAL RIFLE', () => {
+    expect(
+      resolveSportingPurpose({ ...MANUAL_RIFLE, firearm_use_kind: 'hunting' }),
+    ).toBe('hunting');
+    expect(
+      resolveSportingPurpose({ ...MANUAL_RIFLE, firearm_use_kind: 'sport' }),
+    ).toBe('sport');
+    expect(
+      resolveSportingPurpose({ ...MANUAL_RIFLE, firearm_use_kind: 'both' }),
+    ).toBe('both');
+  });
+
+  it('⚠️ NEVER TURNS A HANDGUN INTO A HUNTING APPLICATION', () => {
+    expect(
+      resolveSportingPurpose({
+        firearm_type: 'Handgun',
+        firearm_calibre: '9mm Parabellum',
+        firearm_use_kind: 'hunting',
+      }),
+    ).toBe('sport');
+  });
+
   it('argues a handgun in sport, whatever the licence type', () => {
     expect(resolveSportingPurpose({ firearm_type: 'Handgun' })).toBe('sport');
     expect(

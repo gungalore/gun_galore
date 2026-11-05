@@ -1,5 +1,8 @@
 import 'reflect-metadata';
 import { MotivationsModule } from './motivations.module';
+import { MotivationsIntakeController } from './intake/intake.controller';
+import { MotivationIntakeService } from './intake/intake.service';
+import { MotivationIntakeAgentService } from './intake/intake-agent.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { UsersModule } from '../users/users.module';
@@ -41,6 +44,20 @@ describe('module wiring', () => {
     // Exporting something a module does not provide is a boot-time failure.
     expect(meta(MotivationsModule, 'providers')).toContain(
       MotivationRetentionService,
+    );
+  });
+
+  it('mounts the guarded intake controller and provides its service', () => {
+    // The controller carries the same AuthGuard as the parent motivations
+    // controller. A missing provider here is a boot-time failure, not a tsc one.
+    expect(meta(MotivationsModule, 'controllers')).toContain(
+      MotivationsIntakeController,
+    );
+    expect(meta(MotivationsModule, 'providers')).toContain(
+      MotivationIntakeService,
+    );
+    expect(meta(MotivationsModule, 'providers')).toContain(
+      MotivationIntakeAgentService,
     );
   });
 

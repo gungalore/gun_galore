@@ -67,6 +67,14 @@ enum PaymentStatus {
   REFUNDED
 }
 
+// Which gateway received the buyer's money. LOCKED AT CHECKOUT: the same
+// provider must be used for the refund and the seller payout. There is no
+// cross-rail failover.
+enum PaymentProvider {
+  OZOW
+  PEACH
+}
+
 // Which direction our fees ran on a sale. See Transaction.feeModel for the
 // full note; the short version is that BUYNOW_MARKUP builds the fee INTO the
 // price the buyer sees, and SELLER_DEDUCT takes it OUT of what the seller gets.
@@ -1720,6 +1728,7 @@ model Transaction {
   refundOf       Transaction?  @relation("RefundChildren", fields: [refundOfId], references: [id])
   refundChildren Transaction[] @relation("RefundChildren")
   ozowPayoutAttempts OzowPayoutAttempt[]
+  peachPayoutAttempts PeachPayoutAttempt[]
 
   // Buyer-initiated cancellation (Phase 4 P4.2). Set when the buyer
   // cancels a paid-but-undispatched courier order; the cancel path
@@ -1750,7 +1759,14 @@ model Transaction {
 
   // Payment
   paymentStatus     PaymentStatus @default(HELD)
+  // Which rail captured the payment. Set once at checkout and never changed:
+  // refunds and seller payouts MUST use this same provider.
+  paymentProvider   PaymentProvider @default(OZOW)
   gatewayCheckoutId String?
+  // The hosted checkout URL returned at create. Stored so an interrupted
+  // checkout can resume THE SAME provider session instead of minting a second
+  // payable link. Exposed only to the owning buyer through /transactions/:id/resume.
+  gatewayRedirectUrl String?
   // The gateway's own merchant reference, minted at checkout create and
   // matched against webhook deliveries as a fallback to gatewayCheckoutId.
   gatewayMerchantRef String?       @unique
@@ -2194,11 +2210,10 @@ model Transaction {
   // statement confirmed it (authoritative → markPaid runs).
   manualDetectedAt  DateTime?
   manualVerifiedAt  DateTime?
-  // 24-hour pay-by deadline shown to the buyer. The item stays reserved
-  // for the committed buyer for the full window (long enough that the
-  // daily statement reconciliation runs at least once while it's still
-  // theirs); the freeze-expiry cron only releases the listing back to
-  // ACTIVE if NOTHING has been detected/paid by then.
+  // Absolute pay-by deadline for the payment attempt. Originally the 24h
+  // manual-EFT window; the card gateways reuse it as their absolute deadline
+  // (15m for a plain Buy Now, the offer/auction expiry otherwise), so the
+  // reconciler never has to infer a window from the listing type.
   manualPayByAt     DateTime?
   // Set when the freeze-expiry cron soft-cancels an un-paid manual order
   // (releases the listing but KEEPS this row so a LATE statement payment
@@ -2233,6 +2248,8 @@ model Transaction {
   // Payout due-queue: RELEASED/REFUNDED rows not yet paid out.
   @@index([paymentStatus, paidOutAt])
   @@index([paymentStatus, paidOutAt, payoutRequestedAt, payoutHeldAt])
+  // The payout runner partitions due rows by the rail that captured the sale.
+  @@index([paymentProvider, paymentStatus, paidOutAt])
   // P0.3 — refund children lookup (parent → its synthetic refund slices).
   @@index([refundOfId])
   // P6.2 — consolidated-shipment group lookup (carrier → its sibling lines).
@@ -2925,6 +2942,27 @@ model ReferenceCounter {
   updatedAt DateTime @updatedAt
 }
 
+// A user who tried to generate or upload while the document engine was down.
+// One row per outage, action and document. When the circuit closes, the
+// notifier groups these by user and sends one "you can continue" email, then
+// stamps notifiedAt. No email address is copied here; it is read from User at
+// send time.
+model DocumentEngineNotice {
+  id           String    @id @default(cuid())
+  userId       String
+  /// Empty for a vault upload, the motivation id otherwise.
+  motivationId String    @default("")
+  /// GENERATE | MOTIVATION_UPLOAD | VAULT_UPLOAD
+  action       String    @db.VarChar(32)
+  /// Identifies one outage so the next outage may notify the same user again.
+  outageId     String    @db.VarChar(64)
+  createdAt    DateTime  @default(now())
+  notifiedAt   DateTime?
+
+  @@unique([userId, motivationId, action, outageId])
+  @@index([notifiedAt])
+}
+
 // Failed notification emails awaiting retry. A Resend outage previously
 // LOST the email (logged only); now send() enqueues here and a 10-min cron
 // re-attempts with backoff (max 5 tries, then an AdminAlert + drop). Rows
@@ -3397,6 +3435,51 @@ model AskGgKbEntry {
 
   @@index([status, verifiedAt(sort: Desc)])
   @@index([category])
+}
+
+// ── LEGAL CORPUS ───────────────────────────────────────────────────────
+// The South African firearms statutes and regulations, stored as one source
+// row plus one row per section. `searchTsv` on LegalProvision is a generated
+// tsvector column created in migration 20261030130000_legal_corpus; it is not
+// declared here because Prisma cannot express tsvector.
+model LegalSource {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  title         String
+  shortTitle    String
+  citation      String
+  documentType  String
+  version       String
+  effectiveDate DateTime?
+  licence       String?
+  sourceUrl     String?
+  sourcePath    String
+  fullText      String           @db.Text
+  contentHash   String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  provisions    LegalProvision[]
+
+  @@index([documentType])
+}
+
+model LegalProvision {
+  id            String      @id @default(cuid())
+  sourceId      String
+  source        LegalSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  documentType  String
+  chapter       String?
+  part          String?
+  sectionNumber String
+  heading       String?
+  citation      String
+  ordinal       Int
+  text          String      @db.Text
+  createdAt     DateTime    @default(now())
+
+  @@unique([sourceId, sectionNumber, ordinal])
+  @@index([sourceId, sectionNumber])
+  @@index([sourceId, ordinal])
 }
 
 // GG site-guide (G5) — admin-editable OVERRIDE of a curated page-guide
@@ -4833,6 +4916,27 @@ model Motivation {
   applicationRef String @default("")
 
   status MotivationStatus @default(DRAFT)
+
+  // ── INTAKE: HOW THE APPLICANT BUILT THIS APPLICATION ─────────────────
+  // DOCUMENTS means the member ticked their vault documents and completed
+  // the review sheet themselves. INTERVIEW means the guided conversation
+  // collected the same registry answers. The distinction never reaches the
+  // writer; it only decides which front door the member used.
+  intakeMode          String?   @db.VarChar(16)
+  /// What the member asked us to produce: FULL_PACK (motivation, SAPS 271 and
+  /// annexures) or MOTIVATION_ONLY (the legal motivation on its own). Stored
+  /// as a plain string so a new mode is a deploy, not a migration. The
+  /// default keeps every row created before this column on the complete pack.
+  outputMode          String    @default("FULL_PACK") @db.VarChar(24)
+  intakeStartedAt     DateTime?
+  /// When the member confirmed the document/evidence selection. The interview
+  /// does not begin until this is set.
+  intakeDocumentsAt   DateTime?
+  intakeCompletedAt   DateTime?
+  /// Encrypted JSON transcript for the guided interview. Bounded to the
+  /// last few turns by InterviewService; it is deleted with the row.
+  interviewEncrypted  String?   @db.Text
+  interviewVersion    String?   @db.VarChar(24)
 
   // ── POPIA: encrypted at rest (AES-256-GCM, common/blob-crypto.ts) ──
   // The structured answers as ONE encrypted JSON blob. Deliberately not a Json
@@ -7280,6 +7384,34 @@ model OzowPayoutTestAttempt {
   updatedAt                DateTime     @updatedAt
 
   @@index([merchantReference])
+  @@index([terminalAt, lastStatusCheckedAt, createdAt])
+}
+
+// Durable record of each Peach Payouts request. Peach uses a client-minted
+// UUIDv4 as the payout id and has no account-decryption handshake, so this is
+// deliberately separate from OzowPayoutAttempt (which stores Ozow's wrapped
+// per-request encryption key).
+model PeachPayoutAttempt {
+  id                 String      @id @default(cuid())
+  transactionId      String
+  transaction        Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  payoutId           String      @unique
+  requestId          String?
+  amountCents        Int
+  bankName           String
+  branchCode         String
+  accountHolder      String
+  reference          String
+  status             String      @default("REQUESTED")
+  resultCode         String?
+  errorMessage       String?
+  lastStatusCheckedAt DateTime?
+  completedAt        DateTime?
+  terminalAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@index([transactionId, createdAt])
   @@index([terminalAt, lastStatusCheckedAt, createdAt])
 }
 

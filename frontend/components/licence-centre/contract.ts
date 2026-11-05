@@ -263,6 +263,7 @@ export interface SheetResponse {
     id: string;
     referenceNumber: string;
     licenceType: string;
+    outputMode?: 'FULL_PACK' | 'MOTIVATION_ONLY';
     licenceTypeLabel: string;
     label: string | null;
     /**

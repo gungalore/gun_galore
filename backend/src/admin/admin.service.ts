@@ -95,7 +95,43 @@ export class AdminService {
   ) {}
 
   // ---------------------------------------------------------------
-  // Alerts inbox — list + resolve AdminAlert rows. The command-center
+  // Re-run Peach bank-account verification (BANV) for a user, from the
+  // dossier — e.g. after a BANK_VERIFY_FAILED/MISMATCH alert or when the
+  // seller says they fixed their details bank-side. The ID number is
+  // decrypted inside BanvService and never logged.
+  // ---------------------------------------------------------------
+  async rerunBankVerification(userId: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        bankAccountNumber: true,
+        bankBranchCode: true,
+        idNumberEncrypted: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.bankAccountNumber || !user.bankBranchCode) {
+      throw new BadRequestException('User has no banking details on file.');
+    }
+    if (!user.idNumberEncrypted) {
+      throw new BadRequestException(
+        'User has no SA ID on file — bank ownership cannot be verified until their seller profile is completed.',
+      );
+    }
+    await this.usersService.requestBankVerification(userId);
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'BANK_VERIFY_RERUN',
+      resourceType: 'User',
+      resourceId: userId,
+      reason: 'Admin re-ran Peach bank-account verification',
+    });
+    return { requested: true };
+  }
+
+  // ---------------------------------------------------------------
+  // Alerts inbox - list + resolve AdminAlert rows. The command-center
   // card counts them; this is where the admin actually works them.
   // ---------------------------------------------------------------
   // Filters exist because triage after a noisy sweep is otherwise unworkable:
@@ -2436,6 +2472,7 @@ export class AdminService {
         paidAt: true,
         releasedAt: true,
         paymentStatus: true,
+        paymentProvider: true,
         listingPrice: true,
         commissionZar: true,
         processingFee: true,
@@ -2462,7 +2499,7 @@ export class AdminService {
     const r = (c: number) => (c / 100).toFixed(2);
     const d = (v: Date | null) => (v ? v.toISOString().slice(0, 10) : '');
     const header = [
-      'Order ref', 'Created', 'Paid', 'Released', 'Status', 'Item',
+      'Order ref', 'Created', 'Paid', 'Released', 'Status', 'Payment provider', 'Item',
       'Buyer', 'Buyer email', 'Seller', 'Seller email',
       'Item price', 'Gross (buyer paid)', 'Commission', 'Processing fee',
       'Shipping', 'Shipping handling (GG)', 'Net payout', 'Refunded',
@@ -2481,6 +2518,7 @@ export class AdminService {
       d(t.paidAt),
       d(t.releasedAt),
       t.paymentStatus,
+      t.paymentProvider,
       t.listing?.title ?? '',
       t.buyer?.username ?? '',
       t.buyer?.email ?? '',
@@ -2538,6 +2576,11 @@ export class AdminService {
       throw new BadRequestException(
         `Transaction is not releasable (current: ${tx.paymentStatus}).`,
       );
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'The buyer has requested a cancellation — resolve that request before releasing the payout.',
+      );
+    }
 
     // Courier payouts become admin-eligible only after the buyer's review
     // clock has expired (door: delivered+24h; Store Pickup: collection/pickup
@@ -2614,6 +2657,7 @@ export class AdminService {
           // an unpaid HELD row can never be flipped to RELEASED even if the
           // pre-check above is ever bypassed.
           paidAt: { not: null },
+          cancellationRequestedAt: null,
         },
         data: {
           paymentStatus: 'RELEASED',
@@ -2727,6 +2771,11 @@ export class AdminService {
         `Transaction is not in a refundable state (current: ${tx.paymentStatus}). Only HELD or DISPUTED orders can be refunded.`,
       );
     }
+    if (tx.rejectedAt && tx.paymentStatus === 'HELD') {
+      throw new BadRequestException(
+        'A seller rejection/refund is already being processed for this order.',
+      );
+    }
 
     // ─── Resolve + validate the refund amount ────────────────────────
     // IN-PERSON HANDOVER (PRIVATE_ARRANGE): the Platform Fee is NEVER
@@ -2811,6 +2860,7 @@ export class AdminService {
           where: {
             id: txId,
             paymentStatus: { in: ['HELD', 'DISPUTED'] },
+            rejectedAt: null,
             refundedAmount: { lte: refundCap - amount },
           },
           data: {
@@ -2864,6 +2914,7 @@ export class AdminService {
         where: {
           id: txId,
           paymentStatus: { in: ['HELD', 'DISPUTED'] },
+          rejectedAt: null,
           refundedAmount: { lte: refundCap - amount },
         },
         data: {
@@ -2895,7 +2946,13 @@ export class AdminService {
       PAYMENT_MODE === 'manual'
         ? { success: true as const, resultCode: 'MANUAL_EFT_BATCH' }
         : tx.gatewayPaymentId
-          ? await this.ozow.refundPayment(tx.gatewayPaymentId, amount)
+          ? await this.transactions.refundOnRail(
+              {
+                paymentProvider: tx.paymentProvider,
+                gatewayPaymentId: tx.gatewayPaymentId!,
+              },
+              amount,
+            )
           : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
@@ -2995,16 +3052,27 @@ export class AdminService {
       // admin returns the money. reversalListingData: ended auctions → EXPIRED
       // (never resurrected to ACTIVE), tracked listings → restock units,
       // single items → plain ACTIVE reactivation.
-      void this.prisma.listing
-        .update({
+      try {
+        await this.prisma.listing.update({
           where: { id: tx.listingId },
           data: reversalListingData(
             tx.listing.trackInventory ?? false,
             tx.quantity ?? 1,
             tx.listing.listingType,
           ),
-        })
-        .catch(() => undefined);
+        });
+      } catch (err) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'REFUND_LISTING_REVERSAL_FAILED',
+              referenceId: txId,
+              urgent: true,
+              context: `Refund of ${amount}c succeeded for ${txId}, but the listing ${tx.listingId} could not be restocked/relisted: ${(err as Error).message}`,
+            },
+          })
+          .catch(() => undefined);
+      }
 
       // M3 — notify the seller their item was refunded + relisted, mirroring
       // the buyer notification above and the buyer-cancel seller email. The
@@ -3098,6 +3166,11 @@ export class AdminService {
       throw new BadRequestException(
         'Force-release is only available for DISPUTED transactions. ' +
           `Current state: ${tx.paymentStatus}.`,
+      );
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'Cannot release payout — this order has no confirmed payment.',
       );
     }
 

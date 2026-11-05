@@ -1,4 +1,5 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+import sharp from 'sharp';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { OCR_MAX_TOKENS, OCR_THINKING } from '../common/llm/llm.service';
@@ -205,28 +206,47 @@ describe('which documents are worth reading', () => {
     }
   });
 
-  it('⚠️ DOES NOT READ A PROFICIENCY INTO THE COMPETENCY DECLARATION', () => {
+  it('⚠️ READS IDENTITY FROM A PROFICIENCY, NEVER THE COMPETENCY DECLARATION', () => {
     // Training proves what somebody was taught; item 1.4 of the SAPS 271
     // declares what SAPS has declared them competent in, and only the 524 says
     // that. The handgun statement of results carries 117705, so it is on EVERY
     // firearm application — and it used to caption a rifle application
     // "Handgun", a fact nothing later would correct (2026-10-27).
+    //
+    // The learner's name and ID are ordinary identity facts and are safe to
+    // show in the review pane; `competency_for` is not.
     expect(
       MotivationExtractService.wantedFor(
         MotivationUploadKind.PROFICIENCY_CERTIFICATE,
       ),
-    ).toEqual([]);
+    ).toEqual(['full_name', 'id_number']);
     expect(
       MotivationExtractService.canExtract(
         MotivationUploadKind.PROFICIENCY_CERTIFICATE,
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      MotivationExtractService.wantedFor(
+        MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+      ),
+    ).not.toContain('competency_for');
     // The certificate still declares it, and must keep doing so.
     expect(
       MotivationExtractService.wantedFor(
         MotivationUploadKind.COMPETENCY_CERTIFICATE,
       ),
     ).toContain('competency_for');
+  });
+
+  it('reads the section printed on an existing licence card', () => {
+    // MO000039 failed because the card said SECTION 16 but the extractor never
+    // asked for `section_held`; the scope guard then refused an unsupported
+    // claim in the draft.
+    expect(
+      MotivationExtractService.wantedFor(
+        MotivationUploadKind.CURRENT_LICENCE,
+      ),
+    ).toContain('existing_firearm_1_section_held');
   });
 });
 
@@ -251,6 +271,202 @@ describe('what it accepts', () => {
     const [f] = await run(svc);
     expect(f.trusted).toBe(false);
     expect(f.note).toMatch(/not certain/i);
+  });
+
+  it('turns a licence card type into the offered choice', async () => {
+    const { svc } = build({
+      fields: [
+        {
+          key: 'existing_firearm_1_type',
+          value: 'e MANUALLY OPERATED RIFLE',
+          confidence: 'high',
+        },
+      ],
+    });
+    const [field] = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(field?.key).toBe('existing_firearm_1_type');
+    expect(field?.value).toBe('Rifle');
+  });
+
+  it('asks for every printed given name, not just the surname', async () => {
+    // An ID card prints "Names" and "Surname" in separate boxes. The reader
+    // returned only the surname, so the application got "FOURIE" instead of
+    // "GERHARD JOHAN PETRUS FOURIE".
+    const { svc, complete } = build({
+      fields: [
+        {
+          key: 'full_name',
+          value: 'Gerhard Johan Petrus Fourie',
+          confidence: 'high',
+        },
+      ],
+    });
+    await run(svc);
+    const request = complete.mock.calls[0][0] as {
+      messages: { content: { type: string; text?: string }[] }[];
+    };
+    const prompt = request.messages[0].content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text ?? '')
+      .join('\n');
+    expect(prompt).toContain('Do NOT return only the surname');
+  });
+
+  it('gives the OCR a cropped, magnified region for every field Jev locates', async () => {
+    const image = await sharp({
+      create: {
+        width: 900,
+        height: 600,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .jpeg()
+      .toBuffer();
+    const complete = jest.fn(async (_req?: any): Promise<LlmResponse> =>
+      llmReply(
+        JSON.stringify({
+          fields: [
+            {
+              key: 'full_name',
+              value: 'Gerhard Johan Petrus Fourie',
+              confidence: 'high',
+            },
+          ],
+        }),
+      ),
+    );
+    const decide = jest.fn(async () => ({
+      model: 'jev-1.14.0',
+      answers: {
+        box_full_name: {
+          type: 'box' as const,
+          box: { top: 0.1, bottom: 0.25, left: 0.2, right: 0.8 },
+          confidence: 0.92,
+        },
+      },
+      usage: { inputTokens: 10, outputTokens: 2 },
+      provider: 'typesafe' as const,
+    }));
+    const svc = new MotivationExtractService(
+      {
+        complete,
+        decide,
+        isConfigured: () => true,
+        model: MODEL,
+        provider: 'gemini' as const,
+      } as never,
+      noReadCache(),
+    );
+    (svc as unknown as { logger: unknown }).logger = {
+      warn: jest.fn(),
+      error: jest.fn(),
+      log: jest.fn(),
+    };
+
+    const out = await svc.extract({
+      kind: MotivationUploadKind.IDENTITY_DOCUMENT,
+      licenceType: T,
+      bytes: image,
+      mimeType: 'image/jpeg',
+    });
+
+    expect(out.map((field) => field.key)).toEqual(['full_name']);
+    expect(decide).toHaveBeenCalledTimes(1);
+    const request = complete.mock.calls[0][0] as {
+      messages: { content: { type: string; text?: string }[] }[];
+    };
+    expect(
+      request.messages[0].content.some(
+        (part) =>
+          part.type === 'text' &&
+          part.text?.includes('region Jev located for full_name'),
+      ),
+    ).toBe(true);
+    expect(
+      request.messages[0].content.some((part) => part.type === 'image'),
+    ).toBe(true);
+  });
+
+  it('skips Gemini when local OCR settles every located field', async () => {
+    const image = await sharp({
+      create: {
+        width: 900,
+        height: 600,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .jpeg()
+      .toBuffer();
+    const complete = jest.fn();
+    const decide = jest.fn(async () => ({
+      model: 'jev-1.14.0',
+      answers: {
+        box_competency_number: {
+          type: 'box' as const,
+          box: { top: 0.1, bottom: 0.2, left: 0.2, right: 0.8 },
+          confidence: 0.92,
+        },
+        box_competency_issued: {
+          type: 'box' as const,
+          box: { top: 0.3, bottom: 0.4, left: 0.2, right: 0.8 },
+          confidence: 0.92,
+        },
+        box_competency_for: {
+          type: 'box' as const,
+          box: { top: 0.5, bottom: 0.6, left: 0.2, right: 0.8 },
+          confidence: 0.92,
+        },
+      },
+      usage: { inputTokens: 10, outputTokens: 2 },
+      provider: 'typesafe' as const,
+    }));
+    const reads = ['C7276902', '2016-10-28', 'Handgun'];
+    const localOcr = {
+      isEnabled: () => true,
+      readMany: jest.fn(async () =>
+        reads.map((text) => ({ text, confidence: 1 })),
+      ),
+    };
+    const svc = new MotivationExtractService(
+      {
+        complete,
+        decide,
+        isConfigured: () => true,
+        model: MODEL,
+        provider: 'gemini' as const,
+      } as never,
+      noReadCache(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      localOcr as never,
+    );
+    (svc as unknown as { logger: unknown }).logger = {
+      warn: jest.fn(),
+      error: jest.fn(),
+      log: jest.fn(),
+    };
+
+    const out = await svc.extract({
+      kind: MotivationUploadKind.COMPETENCY_CERTIFICATE,
+      licenceType: T,
+      bytes: image,
+      mimeType: 'image/jpeg',
+    });
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(out.find((field) => field.key === 'competency_number')?.value).toBe(
+      'C7276902',
+    );
+    expect(out.find((field) => field.key === 'competency_issued')?.value).toBe(
+      '2016-10-28',
+    );
+    expect(out.find((field) => field.key === 'competency_for')?.value).toBe(
+      'Handgun',
+    );
   });
 });
 

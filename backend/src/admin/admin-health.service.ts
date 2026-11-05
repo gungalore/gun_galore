@@ -114,6 +114,16 @@ export class AdminHealthService {
         method: 'HEAD',
       },
       {
+        name: 'Peach Payments',
+        url:
+          process.env.PEACH_ENV === 'live'
+            ? 'https://secure.peachpayments.com'
+            : 'https://testsecure.peachpayments.com',
+        category: 'payment',
+        method: 'HEAD',
+        requiresEnv: ['PEACH_CLIENT_ID', 'PEACH_ENTITY_ID'],
+      },
+      {
         name: 'Bob Go (courier)',
         url: process.env.BOBGO_BASE_URL ?? 'https://api.sandbox.bobgo.co.za/v2',
         category: 'shipping',

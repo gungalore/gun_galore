@@ -138,6 +138,38 @@ export async function dismissNotifications(
 }
 
 /**
+ * Strip the origin from an absolute link that points at this app.
+ *
+ * Notifications are written with an absolute URL because email needs one.
+ * That URL is baked at send time, so a tunnel or deploy hostname that later
+ * dies leaves the in-app row pointing at a dead origin. Notification rows
+ * belong to the app, so resolve them against the host the member is already
+ * on. Genuinely external links are left untouched.
+ */
+export function appRelativeUrl(url: string): string {
+  if (!url || url.startsWith('/') || url.startsWith('#')) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url;
+    const host = parsed.hostname.toLowerCase();
+    const local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    const appHost =
+      host === 'alloutdoor.co.za' ||
+      host.endsWith('.alloutdoor.co.za') ||
+      host === 'gungalore.co.za' ||
+      host.endsWith('.gungalore.co.za') ||
+      host === 'trycloudflare.com' ||
+      host.endsWith('.trycloudflare.com');
+    const sameOrigin =
+      typeof window !== 'undefined' && parsed.origin === window.location.origin;
+    if (!local && !appHost && !sameOrigin) return url;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
  * The page an inbox row opens.
  *
  * ⚠️ A CREDENTIAL REMINDER MUST OPEN THE CREDENTIAL, NOT THE ROOT OF THE CENTRE.
@@ -149,7 +181,7 @@ export async function dismissNotifications(
  * `linkedId` they already carry.
  */
 export function notificationHref(item: NotificationItem): string {
-  const url = item.url ?? '#';
+  const url = appRelativeUrl(item.url ?? '#');
   if (item.linkedType !== 'credential' || !item.linkedId) return url;
 
   const [path, query = ''] = url.split('?');

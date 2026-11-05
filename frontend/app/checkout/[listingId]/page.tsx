@@ -138,8 +138,8 @@ export default async function CheckoutPage({
               </p>
               {isAuctionWin && (
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  🏆 You won this auction — complete payment within 24 hours of
-                  the auction ending or the sale is cancelled.
+                  Auction payment — the winning bidder must complete payment
+                  within the auction’s payment window.
                 </p>
               )}
             </div>

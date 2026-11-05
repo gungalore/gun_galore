@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { LlmService } from '../llm/llm.service';
-import type { JevQuestion } from '../llm/llm.types';
+import { DocumentEngineService } from './document-engine.service';
+import type { JevImageAsset, JevQuestion } from '../llm/llm.types';
 
 // ────────────────────────────────────────────────────────────────────
 // JEV FILES A DOCUMENT INTO A FOLDER.
@@ -45,6 +46,13 @@ export interface FilingResult {
   confidence: number;
 }
 
+export interface ImageFilingResult extends VaultFilingResult {
+  /** Jev's view of whether the page carries printed text worth OCR. */
+  hasPrintedText: boolean;
+  /** Evidence container when role is evidence. */
+  evidenceFolder?: string;
+}
+
 export interface VaultFilingResult {
   role: 'document' | 'evidence';
   /** The folder when role is 'document'; undefined for evidence. */
@@ -74,7 +82,10 @@ function filingConfidenceFloor(): number {
 export class DocumentFilingService {
   private readonly logger = new Logger(DocumentFilingService.name);
 
-  constructor(private readonly llm: LlmService) {}
+  constructor(
+    private readonly llm: LlmService,
+    @Optional() private readonly engine?: DocumentEngineService,
+  ) {}
 
   /** A Jev key is present. A caller gates on this before spending a read. */
   isConfigured(): boolean {
@@ -141,6 +152,7 @@ export class DocumentFilingService {
         purpose: args.purpose ?? 'vault.file',
         timeoutMs: 15_000,
       });
+      this.engine?.reportSuccess();
       const floor = filingConfidenceFloor();
 
       const role = res.answers.role;
@@ -176,7 +188,128 @@ export class DocumentFilingService {
         confidence: kind.confidence,
       };
     } catch (err) {
+      this.engine?.reportFailure();
       this.logger.warn(`Jev vault filing failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Decide what an IMAGE is, without OCR.
+   *
+   * This is the Jev-image door: the original (already transport-normalised)
+   * picture goes to Jev with the same folder vocabulary as the text route. It
+   * also asks whether the page has printed text, so the caller can skip Gemini
+   * OCR entirely for a photograph of a safe, a hunt or a scene.
+   */
+  async fileImage(args: {
+    image: JevImageAsset;
+    kindOptions: readonly FilingOption[];
+    evidenceOptions?: readonly FilingOption[];
+    coverOptions?: readonly FilingOption[];
+    purpose?: string;
+  }): Promise<ImageFilingResult | null> {
+    if (!this.isConfigured() || !args.kindOptions.length) return null;
+    const key = 'upload';
+    const covers = (args.coverOptions ?? []).filter((o) => o.id !== 'OTHER');
+    const questions: Record<string, JevQuestion> = {
+      role: {
+        type: 'choice',
+        instructions:
+          'Look at the image in `upload`. Is it a personal document we file by TYPE, or EVIDENCE that supports a licence motivation (a hunting photograph, a landowner permission letter, a score sheet, or an affidavit about the firearm or a hunt)?',
+        criteria: {
+          document:
+            'Personal paperwork we file by type: an identity document, a firearm licence, a competency certificate, an association certificate or endorsement, a proficiency, a proof of residence, an employment letter, a safe photograph, or a shooting-activity log.',
+          evidence:
+            'Anything else, including a hunting or range photograph, a permission letter, a score sheet, or a licence/certificate that is not about firearms.',
+        },
+      },
+      has_printed_text: {
+        type: 'noul',
+        instructions:
+          'Does `upload` contain printed text that an OCR reader could transcribe? A photograph of a scene, a person, a safe or an object has no printed text.',
+      },
+      kind: {
+        type: 'choice',
+        instructions:
+          'If this is one of our documents, which category primarily describes it? Pick a specific category only where the image itself shows it.',
+        criteria: Object.fromEntries(
+          args.kindOptions.map((o) => [o.id, `${o.label} — ${o.hint}`]),
+        ),
+      },
+    };
+    if (args.evidenceOptions?.length) {
+      questions.evidence_container = {
+        type: 'choice',
+        instructions:
+          'If this is EVIDENCE, which ONE container best describes it? Use OTHER_EVIDENCE only when nothing else fits.',
+        criteria: Object.fromEntries(
+          args.evidenceOptions.map((o) => [o.id, `${o.label} — ${o.hint}`]),
+        ),
+      };
+    }
+    for (const o of covers) {
+      questions[`cover_${o.id}`] = {
+        type: 'noul',
+        instructions: `Does this same document ALSO serve as ${o.label} (${o.hint})? Answer true only where the document itself proves it.`,
+      };
+    }
+
+    try {
+      const res = await this.llm.decide({
+        state: { upload: key },
+        assets: { [key]: args.image },
+        questions,
+        purpose: args.purpose ?? 'vault.file.image',
+        timeoutMs: 30_000,
+      });
+      this.engine?.reportSuccess();
+      const floor = filingConfidenceFloor();
+      const role = res.answers.role;
+      if (!role || role.type !== 'choice') return null;
+      if (role.choice !== 'document' && role.choice !== 'evidence') return null;
+      const hasText =
+        res.answers.has_printed_text?.type === 'noul' &&
+        res.answers.has_printed_text.noul >= 0.5;
+
+      if (role.choice === 'evidence') {
+        const answer = res.answers.evidence_container;
+        const evidenceFolder =
+          answer?.type === 'choice' &&
+          args.evidenceOptions?.some((o) => o.id === answer.choice)
+            ? answer.choice
+            : 'OTHER_EVIDENCE';
+        return {
+          role: 'evidence',
+          folder: '',
+          evidenceFolder,
+          hasPrintedText: hasText,
+          alsoCovers: [],
+          confident: role.confidence >= floor,
+          confidence: role.confidence,
+        };
+      }
+
+      const kind = res.answers.kind;
+      if (!kind || kind.type !== 'choice') return null;
+      if (!args.kindOptions.some((o) => o.id === kind.choice)) return null;
+      const alsoCovers: string[] = [];
+      for (const o of covers) {
+        if (o.id === kind.choice) continue;
+        const ans = res.answers[`cover_${o.id}`];
+        if (ans && ans.type === 'noul' && ans.noul >= floor) alsoCovers.push(o.id);
+      }
+      return {
+        role: 'document',
+        folder: kind.choice,
+        hasPrintedText: hasText,
+        alsoCovers,
+        confident: kind.confidence >= floor,
+        confidence: kind.confidence,
+      };
+    } catch (err) {
+      this.engine?.reportFailure();
+      this.logger.warn(`Jev image filing failed: ${(err as Error).message}`);
       return null;
     }
   }
@@ -219,6 +352,7 @@ export class DocumentFilingService {
         purpose: 'motivation.evidence.file',
         timeoutMs: 15_000,
       });
+      this.engine?.reportSuccess();
       const answer = res.answers.container;
       if (!answer || answer.type !== 'choice') return null;
       if (!args.options.some((o) => o.id === answer.choice)) return null;
@@ -229,6 +363,7 @@ export class DocumentFilingService {
         confidence: answer.confidence,
       };
     } catch (err) {
+      this.engine?.reportFailure();
       this.logger.warn(`Jev evidence filing failed: ${(err as Error).message}`);
       return null;
     }

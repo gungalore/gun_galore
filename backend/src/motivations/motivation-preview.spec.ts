@@ -1,6 +1,6 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { buildPreview, cardSentences, previewFor } from './motivation-preview';
-import { S13_REASONS } from './motivation-cards';
+import { HUNT_REASONS, S13_REASONS } from './motivation-cards';
 
 // ────────────────────────────────────────────────────────────────────
 // "WHAT YOUR MOTIVATION WILL SAY" — the live preview.
@@ -116,6 +116,22 @@ describe('a tapped card becomes a sentence', () => {
       s13_reasons: 'night_travel',
     }).find((s) => s.id === 'the_threat')!;
     expect(section.paragraphs).not.toContain(sentence);
+  });
+
+  it('prints a composed card sentence once, not twice', () => {
+    // The interview writes hunt_reasons into hunting_history for the writer.
+    // The preview already renders the tapped card, so without this guard the
+    // same sentence appeared twice in a row on MO000022.
+    const HUNT = MotivationLicenceType.S16_DEDICATED_HUNTER;
+    const sentence = HUNT_REASONS.find((c) => c.key === 'meat')!.sentence;
+    const section = buildPreview(HUNT, {
+      ...FILLED,
+      firearm_type: 'Rifle',
+      hunt_reasons: 'meat',
+      hunting_history: sentence,
+    }).find((s) => s.id === 'the_quarry' || s.id === 'the_discipline')!;
+
+    expect(section.paragraphs.filter((p) => p === sentence)).toHaveLength(1);
   });
 
   it('skips a stored key the card set no longer offers', () => {

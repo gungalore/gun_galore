@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { Offer } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { OfferCheckoutForm } from './offer-checkout-form';
-import { vicinityLabel } from '@/lib/vicinity';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -102,7 +101,8 @@ export default async function OfferCheckoutPage({
             settledAmount={settledAmount}
             isFirearm={offer.listing.isFirearm ?? false}
             listingType={offer.listing.listingType ?? 'BUY_NOW'}
-            vicinity={vicinityLabel(offer.listing)}
+            dealerName={offer.listing.plannedDealerName}
+            dealerLocation={offer.listing.plannedDealerLocation}
           />
         </div>
 

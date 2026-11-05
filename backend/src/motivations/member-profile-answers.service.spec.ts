@@ -63,12 +63,24 @@ function build(stored?: { answers?: Record<string, string>; provenance?: unknown
 }
 
 describe('which keys are profile-scoped', () => {
-  it('reads the scope off the registry rather than a second list', () => {
+  it('combines the registry scope with the reusable profile list', () => {
     const keys = profileKeys(T);
     expect(keys.has('marital_status')).toBe(true);
     expect(keys.has('safe_present')).toBe(true);
     expect(keys.has('premises_enclosure')).toBe(true);
     expect(keys.has('existing_firearm_1_primary_use')).toBe(true);
+    expect(keys.has('full_name')).toBe(true);
+    expect(keys.has('occupation')).toBe(true);
+    expect(
+      profileKeys(MotivationLicenceType.S16_DEDICATED_HUNTER).has(
+        'association_name',
+      ),
+    ).toBe(true);
+    expect(
+      profileKeys(MotivationLicenceType.S16_DEDICATED_HUNTER).has(
+        'association_expiry',
+      ),
+    ).toBe(true);
     // An application fact stays with the application.
     expect(keys.has('firearm_make')).toBe(false);
     expect(keys.has('threat_circumstances')).toBe(false);

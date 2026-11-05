@@ -5,24 +5,34 @@ import { useEffect } from 'react';
 /**
  * Service worker kill switch.
  *
- * When NEXT_PUBLIC_DISABLE_PWA=true, this component:
+ * Runs automatically in development, and when NEXT_PUBLIC_DISABLE_PWA=true
+ * in production. Either way it:
  *   1. Unregisters every registered service worker for this origin
  *   2. Deletes every cache the SW had set up (Cache Storage API)
+ *
+ * The dev arm exists because `next dev` does not generate a service worker,
+ * but a previous local production build can leave one registered on
+ * localhost. That stale worker then serves old JS chunks over HMR, which
+ * presents as random behaviour that survives reloads and "fixes itself" only
+ * after clearing site data.
  *
  * This is how we remotely "kill" a buggy SW we previously shipped.
  * Without this, even after we stop generating /sw.js, the browser
  * keeps running the cached SW from a previous visit until the user
  * manually clears site data — which is asking too much of users.
  *
- * The script is a no-op when NEXT_PUBLIC_DISABLE_PWA isn't 'true',
- * so flipping the env var is the on/off switch.
+ * Production stays a no-op unless NEXT_PUBLIC_DISABLE_PWA is 'true', so
+ * flipping the env var remains the remote on/off switch.
  *
  * Cost: a useEffect on first render that's idempotent — running it
  * twice does nothing. So no perf concern leaving it in long-term.
  */
 export function SwKillSwitch() {
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_DISABLE_PWA !== 'true') return;
+    const disabled =
+      process.env.NODE_ENV !== 'production' ||
+      process.env.NEXT_PUBLIC_DISABLE_PWA === 'true';
+    if (!disabled) return;
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator)) return;
 

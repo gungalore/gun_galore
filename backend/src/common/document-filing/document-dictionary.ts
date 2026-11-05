@@ -275,6 +275,14 @@ export const WANTED: Record<CredentialKind, string[]> = {
      */
     'serial',
     'holder_name',
+    /**
+     * ⚠️ THE HOLDER'S ID IS HOW WE TELL AN EXISTING LICENCE FROM SOMEBODY
+     * ELSE'S. A member can photograph a friend's or a seller's card; without
+     * this key the only owner link is "this row is in my vault", which is not
+     * the same statement. It is the 13-digit number, never the 4-digit card
+     * number.
+     */
+    'holder_id_number',
     'firearm_type',
     'make',
     // ⚠️ WANTED IS BOTH THE QUESTION AND THE FILTER, so a key missing from

@@ -3697,6 +3697,11 @@ export class ListingsService {
           : 'A buyer is completing payment for this listing — it cannot be cancelled right now. If the sale falls through it will become available again.',
       );
     }
+    if (await this.hasLivePaymentActivity(id)) {
+      throw new BadRequestException(
+        'A buyer has an active checkout or payment for this listing. Wait for it to finish or lapse before cancelling.',
+      );
+    }
 
     // Atomic guard: cancel only while the listing is still in a cancellable
     // state, so a buyer reserving between assertOwner and this write can't be
@@ -4421,6 +4426,50 @@ export class ListingsService {
    * frontend can render a clean explanation card instead of a
    * generic error.
    */
+  /**
+   * A live checkout hold or unpaid/paid-in-escrow transaction means a buyer
+   * has committed to this item. Editing the price or cancelling then can
+   * change the deal under them, and a tracked listing stays ACTIVE while a
+   * unit is held — so the old PAYMENT_PENDING-only guard is not enough.
+   */
+  private async hasLivePaymentActivity(listingId: string): Promise<boolean> {
+    // Partial Prisma mocks in the older listing specs do not define these
+    // delegates. Treat a missing delegate as "no live activity" so those
+    // focused unit tests keep testing their own concern.
+    const db = this.prisma as unknown as {
+      checkoutHold?: { count: (args: unknown) => Promise<number> };
+      transaction?: { count: (args: unknown) => Promise<number> };
+    };
+    const [liveHold, liveTransaction] = await Promise.all([
+      db.checkoutHold
+        ? db.checkoutHold.count({
+            where: {
+              listingId,
+              OR: [
+                { claimedAt: null, expiresAt: { gt: new Date() } },
+                { claimedAt: { gt: new Date(Date.now() - 10 * 60_000) } },
+              ],
+            },
+          })
+        : 0,
+      db.transaction
+        ? db.transaction.count({
+            where: {
+              listingId,
+              paymentStatus: 'HELD',
+              rejectedAt: null,
+              cancelledByBuyerAt: null,
+              OR: [
+                { paidAt: { not: null } },
+                { gatewayCheckoutId: { not: null } },
+              ],
+            },
+          })
+        : 0,
+    ]);
+    return liveHold > 0 || liveTransaction > 0;
+  }
+
   private async assertEditable(listing: {
     id: string;
     listingType: ListingType;
@@ -4428,6 +4477,14 @@ export class ListingsService {
     // The offer edit-lock reads this; callers pass the full listing row.
     acceptsOffers: boolean;
   }): Promise<void> {
+    if (await this.hasLivePaymentActivity(listing.id)) {
+      throw new ConflictException({
+        message:
+          'A buyer has an active checkout or payment for this listing. You cannot change it until that finishes or lapses.',
+        code: 'listing-locked-by-payment',
+        listingId: listing.id,
+      });
+    }
     if (listing.listingType === ListingType.AUCTION && listing.bidCount > 0) {
       throw new ConflictException({
         message:

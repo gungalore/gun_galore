@@ -14,28 +14,29 @@ import {
   FIELD_REGISTRY_VERSION,
   allFieldsFor,
 } from './motivation-fields';
+import { isProfileKey } from './motivation-profile-keys';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ANSWERS THAT BELONG TO THE PERSON, NOT TO ONE APPLICATION.
 //
-// ⚠️ THE SECOND APPLICATION MUST NOT ASK WHAT THE FIRST ONE DID. Marital
+// âš ï¸ THE SECOND APPLICATION MUST NOT ASK WHAT THE FIRST ONE DID. Marital
 // status, what somebody's premises look like, what each firearm they already
 // own is used for, whether they reload: none of that is a fact about an
 // application. Asking it again is the clearest way to tell a member we were
 // not listening the first time, and it is the specific complaint the rebuild
-// exists to answer — MOTIVATION-INTAKE-PLAN.md §2.3, "profile once,
+// exists to answer â€” MOTIVATION-INTAKE-PLAN.md Â§2.3, "profile once,
 // application many".
 //
 // A field says which it is: `MotivationField.scope`. Absent means
 // 'application', which is what almost every field is. This service owns the
 // 'profile' half and nothing else.
 //
-// ⚠️ IT IS A STORE, NOT A POLICY. It does not decide what is asked, it does
+// âš ï¸ IT IS A STORE, NOT A POLICY. It does not decide what is asked, it does
 // not rank anything and it never writes a value nobody supplied. Deciding
 // which keys are in scope is a pure function of the registry (profileKeys
 // below), so there is exactly one answer to "is this a profile key" and it is
 // derived rather than listed.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** What one member's profile holds. */
 export interface ProfileAnswers {
@@ -46,7 +47,7 @@ export interface ProfileAnswers {
 /**
  * The profile-scoped keys for a licence type.
  *
- * ⚠️ allFieldsFor, NOT fieldsFor — THE UNFILTERED LIST, DELIBERATELY. A key
+ * âš ï¸ allFieldsFor, NOT fieldsFor â€” THE UNFILTERED LIST, DELIBERATELY. A key
  * this type has stopped ASKING is still a key this member may have ANSWERED on
  * a different type of application, and the profile is shared across all of
  * them. Filtering here would mean a section 13 applicant's premises answers
@@ -56,7 +57,7 @@ export interface ProfileAnswers {
 export function profileKeys(type: MotivationLicenceType): Set<string> {
   return new Set(
     allFieldsFor(type)
-      .filter((f) => f.scope === 'profile')
+      .filter((f) => f.scope === 'profile' || isProfileKey(f.key))
       .map((f) => f.key),
   );
 }
@@ -65,7 +66,7 @@ export function profileKeys(type: MotivationLicenceType): Set<string> {
  * Split a sanitised answers patch into the application's half and the
  * person's.
  *
- * ⚠️ THE CALLER MUST SANITISE FIRST. This does not validate — it routes. An
+ * âš ï¸ THE CALLER MUST SANITISE FIRST. This does not validate â€” it routes. An
  * unregistered key reaching here would be routed into the application half and
  * stored, which is exactly what sanitiseAnswers exists to stop.
  */
@@ -92,9 +93,9 @@ export class MemberProfileAnswersService {
   /**
    * Everything on this member's profile. Empty for somebody who has none.
    *
-   * ⚠️ FAILS SOFT, LIKE EVERY OTHER BLOB READ IN THIS MODULE. A profile we
-   * cannot decrypt must degrade to "we hold nothing for you" — which asks the
-   * member a few questions again — and never to a 500 that stops them starting
+   * âš ï¸ FAILS SOFT, LIKE EVERY OTHER BLOB READ IN THIS MODULE. A profile we
+   * cannot decrypt must degrade to "we hold nothing for you" â€” which asks the
+   * member a few questions again â€” and never to a 500 that stops them starting
    * an application at all. See MotivationSharedService.readAnswers, which this
    * mirrors deliberately rather than sharing, because that one takes a
    * motivation row.
@@ -111,7 +112,7 @@ export class MemberProfileAnswersService {
       try {
         answers = decryptJson<Record<string, string>>(row.answersEncrypted);
       } catch (err) {
-        // KEYS ARE METADATA, VALUES ARE NOT — so this logs neither. The user
+        // KEYS ARE METADATA, VALUES ARE NOT â€” so this logs neither. The user
         // id is enough to find the row.
         this.logger.error(
           `Could not decrypt profile answers for user ${userId}: ${(err as Error).message}`,
@@ -125,12 +126,12 @@ export class MemberProfileAnswersService {
   /**
    * Write the member's own answers to their profile.
    *
-   * ⚠️ ONLY A VALUE THAT ACTUALLY MOVED IS STAMPED MEMBER, and this is the
+   * âš ï¸ ONLY A VALUE THAT ACTUALLY MOVED IS STAMPED MEMBER, and this is the
    * same trap `saveAnswers` documents at length: the sheet resends the whole
    * blob on every autosave, so stamping the payload's keys would flip every
    * prefilled profile answer to MEMBER the first time somebody saved anything
-   * at all. MEMBER is ABSORBING — from that moment nothing automatic may fill
-   * that field again — so a wrong stamp here is permanent.
+   * at all. MEMBER is ABSORBING â€” from that moment nothing automatic may fill
+   * that field again â€” so a wrong stamp here is permanent.
    */
   async writeFor(
     userId: string,
@@ -150,10 +151,55 @@ export class MemberProfileAnswersService {
   }
 
   /**
+   * Fill the gaps in a profile from the member's own earlier applications.
+   *
+   * This is the bridge for everybody who applied before the profile store
+   * carried the safe, association and personal answers. It fills only keys the
+   * profile does not already have, so it can never overwrite a later
+   * correction. Newest application wins within the history.
+   */
+  async backfillFromHistory(userId: string): Promise<ProfileAnswers> {
+    const current = await this.readFor(userId);
+
+    const rows = await this.prisma.motivation.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { answersEncrypted: true },
+    });
+
+    const values: Record<string, string> = {};
+    for (const row of rows.reverse()) {
+      if (!row.answersEncrypted) continue;
+      try {
+        const answers = decryptJson<Record<string, string>>(
+          row.answersEncrypted,
+        );
+        for (const [key, value] of Object.entries(answers)) {
+          if (!isProfileKey(key)) continue;
+          if ((current.answers[key] ?? '').trim()) continue;
+          const trimmed = (value ?? '').trim();
+          if (trimmed) values[key] = trimmed;
+        }
+      } catch {
+        // A single unreadable old blob costs that application's contribution,
+        // never the backfill.
+      }
+    }
+
+    if (!Object.keys(values).length) return current;
+    return this.writeDerived(userId, values, {
+      source: 'PROFILE',
+      from: 'Your previous application',
+      at: '',
+    } as never);
+  }
+
+  /**
    * Write values WE derived — a document reading, a vault adoption — without
    * claiming the member typed them.
    *
-   * ⚠️ `stamp` REFUSES TO OVERWRITE A MEMBER ENTRY, which is what makes this
+   * âš ï¸ `stamp` REFUSES TO OVERWRITE A MEMBER ENTRY, which is what makes this
    * safe to call repeatedly. A member who corrected something keeps their
    * correction; everything else is filled in for them, which is the operator's
    * standing rule (2026-08-25: fill it in, arm it, let them change it).
@@ -194,9 +240,9 @@ export class MemberProfileAnswersService {
       answersSchemaVersion: FIELD_REGISTRY_VERSION,
       answerProvenance: provenance as unknown as object,
     };
-    // ⚠️ UPSERT ON THE UNIQUE userId, NOT find-then-create. Two saves landing
-    // together — the sheet autosaves, and a vault adoption can fire at the
-    // same moment — would otherwise both find nothing and both insert, and the
+    // âš ï¸ UPSERT ON THE UNIQUE userId, NOT find-then-create. Two saves landing
+    // together â€” the sheet autosaves, and a vault adoption can fire at the
+    // same moment â€” would otherwise both find nothing and both insert, and the
     // unique index would turn the second into a 500 on a keystroke.
     await this.prisma.memberProfileAnswers.upsert({
       where: { userId },

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DocumentFilingService } from './document-filing.service';
+import { DocumentEngineService } from './document-engine.service';
 import { DocumentCaptureService } from '../document-capture/document-capture.service';
 import { DocumentProjectionService } from '../document-projection/document-projection.service';
 
@@ -11,7 +12,17 @@ import { DocumentProjectionService } from '../document-projection/document-proje
  * LlmService is @Global, so nothing else is imported here.
  */
 @Module({
-  providers: [DocumentFilingService, DocumentCaptureService, DocumentProjectionService],
-  exports: [DocumentFilingService, DocumentCaptureService, DocumentProjectionService],
+  providers: [
+    DocumentFilingService,
+    DocumentEngineService,
+    DocumentCaptureService,
+    DocumentProjectionService,
+  ],
+  exports: [
+    DocumentFilingService,
+    DocumentEngineService,
+    DocumentCaptureService,
+    DocumentProjectionService,
+  ],
 })
 export class DocumentFilingModule {}

@@ -10,6 +10,17 @@ import { TransactionsService } from './transactions.service';
 import { FeeCalculator } from './fee.calculator';
 
 function makeService() {
+  const txClient = {
+    transaction: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    offer: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    listing: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    adminAlert: { create: jest.fn().mockResolvedValue({}) },
+  };
   const prisma = {
     transaction: {
       findMany: jest.fn(),
@@ -22,7 +33,7 @@ function makeService() {
     $transaction: jest.fn((arg: unknown) =>
       Array.isArray(arg)
         ? Promise.all(arg)
-        : (arg as (t: unknown) => unknown)({}),
+        : (arg as (t: unknown) => unknown)(txClient),
     ),
   };
   const ozow = { getPaymentStatus: jest.fn() };
@@ -50,7 +61,7 @@ function makeService() {
       'markPaid',
     )
     .mockResolvedValue(undefined);
-  return { service, prisma, ozow, markPaid };
+  return { service, prisma, txClient, ozow, markPaid };
 }
 
 const candidate = (over: Record<string, unknown> = {}) => ({
@@ -72,7 +83,7 @@ const candidate = (over: Record<string, unknown> = {}) => ({
 
 describe('reconcileStaleGatewayCheckouts', () => {
   it('releases an abandoned legacy BUY_NOW checkout to ACTIVE + deletes the tx', async () => {
-    const { service, prisma, ozow } = makeService();
+    const { service, prisma, txClient, ozow } = makeService();
     prisma.transaction.findMany.mockResolvedValue([candidate()]);
     ozow.getPaymentStatus.mockResolvedValue({
       isSuccess: false,
@@ -82,17 +93,17 @@ describe('reconcileStaleGatewayCheckouts', () => {
     const res = await service.reconcileStaleGatewayCheckouts();
 
     expect(res).toEqual({ recovered: 0, released: 1 });
-    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+    expect(txClient.listing.updateMany).toHaveBeenCalledWith({
       where: { id: 'L1', status: 'PAYMENT_PENDING' },
       data: { status: 'ACTIVE' },
     });
-    expect(prisma.transaction.delete).toHaveBeenCalledWith({
-      where: { id: 'TX1' },
+    expect(txClient.transaction.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'TX1', paidAt: null },
     });
   });
 
   it('hands an abandoned auction win back with a LAPSED window, never ACTIVE', async () => {
-    const { service, prisma, ozow } = makeService();
+    const { service, prisma, txClient, ozow } = makeService();
     prisma.transaction.findMany.mockResolvedValue([
       candidate({
         listing: {
@@ -111,16 +122,16 @@ describe('reconcileStaleGatewayCheckouts', () => {
 
     await service.reconcileStaleGatewayCheckouts();
 
-    const data = prisma.listing.updateMany.mock.calls[0][0].data;
+    const data = txClient.listing.updateMany.mock.calls[0][0].data;
     expect(data.expiresAt).toBeInstanceOf(Date);
     expect(data.status).toBeUndefined();
-    expect(prisma.transaction.delete).toHaveBeenCalledWith({
-      where: { id: 'TX1' },
+    expect(txClient.transaction.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'TX1', paidAt: null },
     });
   });
 
   it('recovers a PAID order whose webhook was lost instead of releasing it', async () => {
-    const { service, prisma, ozow, markPaid } = makeService();
+    const { service, prisma, txClient, ozow, markPaid } = makeService();
     prisma.transaction.findMany.mockResolvedValue([candidate()]);
     ozow.getPaymentStatus.mockResolvedValue({
       transactionId: 'txn',
@@ -134,12 +145,12 @@ describe('reconcileStaleGatewayCheckouts', () => {
 
     expect(res).toEqual({ recovered: 1, released: 0 });
     expect(markPaid).toHaveBeenCalledTimes(1);
-    expect(prisma.transaction.delete).not.toHaveBeenCalled();
-    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+    expect(txClient.transaction.deleteMany).not.toHaveBeenCalled();
+    expect(txClient.listing.updateMany).not.toHaveBeenCalled();
   });
 
   it('releases nothing when the Ozow status lookup fails (transient)', async () => {
-    const { service, prisma, ozow, markPaid } = makeService();
+    const { service, prisma, txClient, ozow, markPaid } = makeService();
     prisma.transaction.findMany.mockResolvedValue([candidate()]);
     ozow.getPaymentStatus.mockRejectedValue(new Error('ozow 503'));
 
@@ -147,6 +158,6 @@ describe('reconcileStaleGatewayCheckouts', () => {
 
     expect(res).toEqual({ recovered: 0, released: 0 });
     expect(markPaid).not.toHaveBeenCalled();
-    expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    expect(txClient.transaction.deleteMany).not.toHaveBeenCalled();
   });
 });

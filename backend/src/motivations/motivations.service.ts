@@ -34,6 +34,7 @@ import {
   applicationBlockers,
   requiredEndorsement,
 } from './motivation-eligibility';
+import { isProfileKey } from './motivation-profile-keys';
 import { credentialOffer } from './motivation-credentials';
 import { asScheme, asFormat } from './motivation-pdf.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -78,29 +79,29 @@ import { DocumentPageRasterService } from './document-page-raster.service';
 // what either of them computes changed.
 export { estimateCostUsd, isPaidFor } from './motivation-shared.service';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The motivation lifecycle. Generation, the quality gate and the interview
-// land in later commits — this is create / read / save / abandon / erase, plus
+// land in later commits â€” this is create / read / save / abandon / erase, plus
 // the two gates that have to be right before any of that exists: the throttle
 // and ownership.
 //
 // EVERY method starts with quota.assertEnabled(). Gating in the service rather
 // than the controller means the cron, the admin path and HTTP all get the same
 // check for free.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ────────────────────────────────────────────────────────────────────
-// ⚠️ THIS IS THE FACADE. Five services were split out of this file —
-// prefill, documents, generation, render and witnesses — and every public
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// âš ï¸ THIS IS THE FACADE. Five services were split out of this file â€”
+// prefill, documents, generation, render and witnesses â€” and every public
 // method they took is still declared here, delegating. Controllers, the
 // Licence Centre and the specs all call MotivationsService; moving a route
 // onto a sub-service is a separate decision from splitting the file, and
 // doing both at once would have made the diff unreviewable.
 //
-// ⚠️ A SUB-SERVICE MUST NEVER INJECT THIS. Anything two of them need lives
-// in MotivationSharedService instead — injecting the facade back would be a
+// âš ï¸ A SUB-SERVICE MUST NEVER INJECT THIS. Anything two of them need lives
+// in MotivationSharedService instead â€” injecting the facade back would be a
 // cycle Nest only reports at boot.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @Injectable()
 export class MotivationsService {
@@ -120,7 +121,7 @@ export class MotivationsService {
     private readonly witnesses: MotivationWitnessesService,
     private readonly profileAnswers: MemberProfileAnswersService,
     private readonly vaultAdoption: VaultAdoptionService,
-    // ⚠️ DERIVED ARTEFACTS ARE KEYED BY sha256 AND DO NOT CASCADE. Optional so
+    // âš ï¸ DERIVED ARTEFACTS ARE KEYED BY sha256 AND DO NOT CASCADE. Optional so
     // hand-built specs keep compiling.
     private readonly readCache?: DocumentReadCacheService,
     private readonly pageRaster?: DocumentPageRasterService,
@@ -134,8 +135,8 @@ export class MotivationsService {
   /**
    * Own list.
    *
-   * ⚠️ THE ANSWERS ARE DECRYPTED NOW, FOR THE TITLE ONLY. This was "metadata
-   * only — nothing is decrypted here" until the motivation gained a derived
+   * âš ï¸ THE ANSWERS ARE DECRYPTED NOW, FOR THE TITLE ONLY. This was "metadata
+   * only â€” nothing is decrypted here" until the motivation gained a derived
    * name: the list is where four applications a member cannot tell apart show
    * up, and the title needs the firearm off `answersEncrypted`. It is a short
    * personal list, decrypted once for two fields.
@@ -156,6 +157,8 @@ export class MotivationsService {
         completedAt: true,
         label: true,
         answersEncrypted: true,
+        intakeMode: true,
+        intakeCompletedAt: true,
       },
     });
     return rows.map((r) => ({
@@ -167,6 +170,8 @@ export class MotivationsService {
       createdAt: r.createdAt,
       completedAt: r.completedAt,
       label: r.label,
+      intakeMode: r.intakeMode,
+      intakeCompletedAt: r.intakeCompletedAt,
       licenceTypeLabel: LICENCE_TYPE_LABELS[r.licenceType],
       title: motivationTitle(
         r.licenceType,
@@ -195,7 +200,7 @@ export class MotivationsService {
      * Used by the Licence Centre's renewal one-tap: the vault already holds
      * the licence number, the expiry and the firearm's details, so a renewal
      * should not start by asking for them again. Sanitised through the same
-     * registry as anything the applicant types — a seed is data, not a
+     * registry as anything the applicant types â€” a seed is data, not a
      * shortcut past validation.
      */
     seed: Record<string, string> = {},
@@ -209,7 +214,7 @@ export class MotivationsService {
 
     // Check the beta has room BEFORE allocating a reference number, so a
     // refused start does not burn an MO number. The seat itself is only
-    // claimed at generation — starting a draft costs us nothing.
+    // claimed at generation â€” starting a draft costs us nothing.
     const status = await this.quota.status();
     if (!status.canStart) {
       throw new ConflictException({
@@ -228,7 +233,7 @@ export class MotivationsService {
     //
     // Operator, 2026-08-19: the personal section has to arrive already filled.
     // It is the member's own profile, on their own account, being used for
-    // their own application — asking permission to show someone their own name
+    // their own application â€” asking permission to show someone their own name
     // was ceremony, and it put a click between them and a form that should
     // already have been complete. The wizard says plainly where each value came
     // from and every one of them is editable.
@@ -243,41 +248,41 @@ export class MotivationsService {
       seed,
     );
 
-    // ✅ AND SO DOES THE VAULT. Operator, 2026-08-28: "The licenses already
+    // âœ… AND SO DOES THE VAULT. Operator, 2026-08-28: "The licenses already
     // captured needs to pull though into any new application as firearms I
     // already own... Automation and prefill is what we must get 100% correct
     // with these two centres."
     //
-    // This is the SAME work useLicenceCentre() has always done — it just did
+    // This is the SAME work useLicenceCentre() has always done â€” it just did
     // it behind a button the member had to find and press, on a form that had
     // already asked them for values we were holding. Every firearm licence in
     // the Licence Centre fills an owned-firearm row here, so a new application
     // opens already knowing what they own.
     //
-    // ⚠️ PRECEDENCE IS DELIBERATE AND THE ORDER IS LOAD-BEARING: profile,
+    // âš ï¸ PRECEDENCE IS DELIBERATE AND THE ORDER IS LOAD-BEARING: profile,
     // then vault, then seed. The vault beats the profile because it was read
     // off the member's own documents; the seed beats both because a renewal's
     // licence number came off the very licence being renewed. Getting this
     // backwards would let a stale profile value overwrite a document.
     //
-    // ⚠️ AND IT IS PASSED THE PROFILE'S ANSWERS, not an empty object.
+    // âš ï¸ AND IT IS PASSED THE PROFILE'S ANSWERS, not an empty object.
     // credentialOffer skips what is already answered, so handing it {} would
     // re-offer every field the profile just filled and the later spread would
     // silently prefer the vault's copy of a value the member maintains.
     //
-    // ⚠️ A VAULT FAILURE COSTS THE PREFILL, NOT THE APPLICATION. This is the
-    // module's own established rule — "An unreadable blob costs the autofill,
-    // not the attachment" — and create() is the one path where breaking it
+    // âš ï¸ A VAULT FAILURE COSTS THE PREFILL, NOT THE APPLICATION. This is the
+    // module's own established rule â€” "An unreadable blob costs the autofill,
+    // not the attachment" â€” and create() is the one path where breaking it
     // would be worst: a member who cannot reach their vault would be unable to
     // START an application at all, which is a far heavier failure than opening
     // one with empty firearm rows they can fill by hand.
     //
-    // ⚠️ THE OFFER IS CAPTURED WHOLE, not `.values`. `items` is the only place
+    // âš ï¸ THE OFFER IS CAPTURED WHOLE, not `.values`. `items` is the only place
     // credentialOffer says WHICH vault document each value came from, and
-    // chaining `.values` off the call — which is what this did — discarded it
+    // chaining `.values` off the call â€” which is what this did â€” discarded it
     // at the call site. The empty default has to live in the same catch as the
     // values default or a vault failure desyncs the two.
-    // ⚠️ AND SO DOES WHAT WE ALREADY READ, LAST TIME. Operator, 2026-08-29:
+    // âš ï¸ AND SO DOES WHAT WE ALREADY READ, LAST TIME. Operator, 2026-08-29:
     // "Nothing that is scanned and OCR'd is ever discarded. We will use the
     // information to fill out forms an future applications."
     //
@@ -286,6 +291,23 @@ export class MotivationsService {
     // it loses to the vault, whose documents have been curated in the Centre
     // and carry a confirmed date. Same fail-soft rule as the vault below: a
     // member who cannot reach their history must still be able to start.
+    /**
+     * The member's remembered profile, above their account fields.
+     *
+     * An empty store is backfilled from their own earlier applications, so a
+     * member who applied before this store existed still gets the fast second
+     * application they were promised.
+     */
+    let savedProfile: Record<string, string> = {};
+    try {
+      savedProfile = (await this.profileAnswers.backfillFromHistory(user.id))
+        .answers;
+    } catch (err) {
+      this.logger.warn(
+        `Motivation create: profile prefill skipped â€” ${(err as Error).message}`,
+      );
+    }
+
     let priorValues: Record<string, string> = {};
     let priorFrom: Record<string, MotivationUploadKind> = {};
     try {
@@ -294,18 +316,18 @@ export class MotivationsService {
       priorFrom = prior.from;
     } catch (err) {
       this.logger.warn(
-        `Motivation create: prior-reading prefill skipped — ${(err as Error).message}`,
+        `Motivation create: prior-reading prefill skipped â€” ${(err as Error).message}`,
       );
     }
 
-    // ── and what they told us on the LAST application ─────────────
+    // â”€â”€ and what they told us on the LAST application â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // H12. Fourth source, and it sits with the readings, between profile and
     // vault. A member's second application asked the same thirty-odd
     // criminal-history questions as their first and the same four about the
     // safe they had already described, and offered nothing for any of them.
     //
-    // ⚠️ BELOW THE VAULT, DELIBERATELY, and it matters for exactly one key:
+    // âš ï¸ BELOW THE VAULT, DELIBERATELY, and it matters for exactly one key:
     // `safe_storage_detail`. A vault reading describes the safe we can see in
     // the photograph; last year's answer describes the safe they had last year.
     // Where those disagree the document wins, which is the same precedence
@@ -321,13 +343,13 @@ export class MotivationsService {
       priorAnswerKeys = answered.keys;
     } catch (err) {
       this.logger.warn(
-        `Motivation create: prior-answer prefill skipped — ${(err as Error).message}`,
+        `Motivation create: prior-answer prefill skipped â€” ${(err as Error).message}`,
       );
     }
 
     let vaultValues: Record<string, string> = {};
     let vaultItems: { key: string; from: string; credentialId: string }[] = [];
-    // ⚠️ HELD OUTSIDE THE try BECAUSE THE PROVENANCE STAMP NEEDS THE ROWS, not
+    // âš ï¸ HELD OUTSIDE THE try BECAUSE THE PROVENANCE STAMP NEEDS THE ROWS, not
     // only the values: `dateSource` is what tells an expiry we WORKED OUT from
     // one we read off a document, and it lives on the row. See stampVault.
     let vaultRows: VaultCredential[] = [];
@@ -340,9 +362,9 @@ export class MotivationsService {
         ...priorAnswerValues,
         ...seed,
       };
-      // ⚠️ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
+      // âš ï¸ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
       // is confirmed-only, and the operator's vault holds five firearm
-      // licences of which ZERO are confirmed — phone uploads arrive
+      // licences of which ZERO are confirmed â€” phone uploads arrive
       // unconfirmed and the confirm prompt only ever ran on the desktop
       // upload path. That is the normal state, not a corner case, so the
       // default here meant "What you own" was empty for everybody.
@@ -350,7 +372,7 @@ export class MotivationsService {
       // Safe because credentialOffer now gates PER VALUE rather than per
       // document: an unconfirmed row may supply a make, a calibre or a
       // serial, and may not supply a date. The reminder sweep is untouched
-      // — it reads Credential.expiresOn, which this path never writes.
+      // â€” it reads Credential.expiresOn, which this path never writes.
       vaultRows = await this.prefill.credentialsFor(user.id, {
         includeUnconfirmed: true,
       });
@@ -358,31 +380,31 @@ export class MotivationsService {
         licenceType,
         vaultRows,
         // credentialOffer skips what is already answered, so it must see the
-        // prior readings too — otherwise it re-offers a field they just
+        // prior readings too â€” otherwise it re-offers a field they just
         // filled and the spread below silently prefers the vault's copy.
         answeredSoFar,
-        // ⚠️ NULL ON A NEW APPLICATION, AND THAT IS THE POINT: NO COMPETENCY
+        // âš ï¸ NULL ON A NEW APPLICATION, AND THAT IS THE POINT: NO COMPETENCY
         // IS SEEDED HERE ANY MORE. Operator, 2026-09-07: "the wrong competency
         // chosen before it even knows which firearm is being applied for." A
-        // brand-new application has no `firearm_type` — the firearm step comes
-        // later — so this is null and credentialOffer offers no certificate at
+        // brand-new application has no `firearm_type` â€” the firearm step comes
+        // later â€” so this is null and credentialOffer offers no certificate at
         // all. The old behaviour picked the member's longest-running
         // certificate on a coin toss they never saw, and nothing revisited it;
         // the firearm step now fills the box, correctly, the moment it can
         // (see saveAnswers).
         //
-        // ⚠️ A RENEWAL OF A HANDGUN OR A SHOTGUN GETS ITS COMPETENCY HERE. A
+        // âš ï¸ A RENEWAL OF A HANDGUN OR A SHOTGUN GETS ITS COMPETENCY HERE. A
         // RIFLE OR A COMBINATION GUN DOES NOT, AND THE EARLIER VERSION OF THIS
         // COMMENT SAID OTHERWISE. It claimed "the renewal seed carries the
         // firearm off the licence being renewed, so the endorsement IS known
-        // here" — it is not. `renewalPlan` (licence-centre/licence-renewal.ts)
+        // here" â€” it is not. `renewalPlan` (licence-centre/licence-renewal.ts)
         // seeds firearm_make, firearm_calibre, firearm_type and firearm_serial
         // and NOT firearm_action, because a licence card does not print the
         // action. What makes the handgun and shotgun cases work is the OTHER
         // half of the fix: `endorsementNeed` no longer demands the action for
         // those two types, since the v3 collapse left one unit standard for
-        // each (competency reference §2.2). A rifle renewal genuinely waits for
-        // the action, and is then filled by the saveAnswers hook — which also
+        // each (competency reference Â§2.2). A rifle renewal genuinely waits for
+        // the action, and is then filled by the saveAnswers hook â€” which also
         // catches a combination gun, and any application whose firearm arrived
         // by upload or seller consent rather than by being typed.
         requiredEndorsement(answeredSoFar),
@@ -391,7 +413,7 @@ export class MotivationsService {
       vaultItems = vaultOffer.items;
     } catch (err) {
       this.logger.warn(
-        `Motivation create: Licence Centre prefill skipped — ${(err as Error).message}`,
+        `Motivation create: Licence Centre prefill skipped â€” ${(err as Error).message}`,
       );
     }
 
@@ -407,21 +429,21 @@ export class MotivationsService {
       ...seed,
     });
 
-    // ── and the nearest SAPS station, for a self-defence application ──
+    // â”€â”€ and the nearest SAPS station, for a self-defence application â”€â”€
     //
     // Operator, 2026-09-07: "is it possible for us to pull the per police
     // station crime stats from SAPS and keep it updated?" The precinct
     // figures themselves are fetched at generation time
     // (MotivationGenerationService), but the STATION belongs on the form now
-    // — a member should see, and be free to correct, which one will be cited
+    // â€” a member should see, and be free to correct, which one will be cited
     // long before they ever reach Generate. See
     // MotivationPrefillService.stationOffer(), which already refuses to run
     // for anything but self-defence and already refuses to overwrite a value
     // that is somehow already here.
     //
-    // ⚠️ AFTER `seeded`, NOT FOLDED INTO THE SPREAD ABOVE. The lookup needs
-    // the address this precedence chain has JUST resolved — profile, prior
-    // readings, prior answers, vault, seed — so it has to run once that
+    // âš ï¸ AFTER `seeded`, NOT FOLDED INTO THE SPREAD ABOVE. The lookup needs
+    // the address this precedence chain has JUST resolved â€” profile, prior
+    // readings, prior answers, vault, seed â€” so it has to run once that
     // chain has already produced its answer, not before it.
     let stationValues: Record<string, string> = {};
     let stationFrom = '';
@@ -440,14 +462,14 @@ export class MotivationsService {
       }
     }
 
-    // ── where every one of those values came from ──────────────────
+    // â”€â”€ where every one of those values came from â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ STAMPED IN THE SAME PRECEDENCE ORDER AS THE VALUES, so the last
+    // âš ï¸ STAMPED IN THE SAME PRECEDENCE ORDER AS THE VALUES, so the last
     // writer of a value is also the last writer of its provenance. Reversing
     // the order here would put a "From your profile" chip on a value the vault
     // supplied.
     //
-    // ⚠️ AND ONLY FOR KEYS THAT SURVIVED sanitiseAnswers. It can reject a key
+    // âš ï¸ AND ONLY FOR KEYS THAT SURVIVED sanitiseAnswers. It can reject a key
     // even from a trusted offer, and a provenance entry for a value that was
     // never written is a chip on an empty field.
     let provenance = this.prefill.stampOffers(
@@ -466,7 +488,21 @@ export class MotivationsService {
       // something read off a certificate that does not print one.
       vaultRows,
     );
-    // ⚠️ STAMPED SEPARATELY, LAST — stampOffers' signature is fixed to the
+    /**
+     * The remembered profile is below the vault and the renewal seed, so only
+     * the keys it actually supplied get its chip. A value the vault or seed
+     * overwrote must keep the stronger source.
+     */
+    const fromSavedProfile = Object.keys(savedProfile).filter(
+      (key) => seeded[key] === savedProfile[key],
+    );
+    if (fromSavedProfile.length) {
+      provenance = stamp(provenance, fromSavedProfile, {
+        source: 'PROFILE',
+        from: 'Your profile',
+      });
+    }
+    // âš ï¸ STAMPED SEPARATELY, LAST â€” stampOffers' signature is fixed to the
     // four prefill sources above and does not know about the station lookup.
     // 'DERIVED' rather than any of those four: nothing here was read off a
     // document or copied from the profile, it is arithmetic (a lookup) over
@@ -481,7 +517,7 @@ export class MotivationsService {
 
     if (Object.keys(seeded).length) {
       this.logger.log(
-        `Motivation create: prefilled ${Object.keys(seeded).length} field(s) — ` +
+        `Motivation create: prefilled ${Object.keys(seeded).length} field(s) â€” ` +
           `${Object.keys(provenance).length} attributed`,
       );
     }
@@ -525,6 +561,78 @@ export class MotivationsService {
   }
 
   /**
+   * The member's remembered answers, for the Licence Profile screen and for
+   * prefill on the next application.
+   */
+  async getProfile(userId: string) {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+    const stored = await this.profileAnswers.backfillFromHistory(user.id);
+    const byKey = new Map<string, ReturnType<typeof fieldsFor>[number]>();
+    for (const type of Object.values(MotivationLicenceType)) {
+      for (const field of fieldsFor(type)) {
+        if (isProfileKey(field.key) && !byKey.has(field.key)) {
+          byKey.set(field.key, field);
+        }
+      }
+    }
+    return { ...stored, fields: [...byKey.values()] };
+  }
+
+  /**
+   * Edit the remembered profile directly. Values are still routed through the
+   * registry — an unregistered key is ignored rather than stored — but the
+   * member may save a partially complete profile: this is a convenience store,
+   * not an application.
+   */
+  async saveProfile(userId: string, patch: Record<string, unknown>) {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+    const clean: Record<string, string> = {};
+    for (const type of Object.values(MotivationLicenceType)) {
+      const { answers } = sanitiseAnswers(type, patch);
+      for (const [key, value] of Object.entries(answers)) {
+        if (isProfileKey(key)) clean[key] = value;
+      }
+    }
+    if (!Object.keys(clean).length) {
+      throw new BadRequestException('There is nothing on that profile to save.');
+    }
+    return this.profileAnswers.writeFor(user.id, clean);
+  }
+
+  /**
+   * Record that the member confirmed a prefilled answer without changing it.
+   *
+   * The router and the quarry are deliberately asked once in the interview
+   * even when a profile or an earlier application supplied them. But
+   * saveAnswers only stamps MEMBER for values that MOVED — so when the member
+   * confirms the same value, nothing changes, the provenance stays PROFILE,
+   * and the planner asks again on every turn. This is the explicit
+   * confirmation stamp the interview needs.
+   */
+  async confirmAnswer(userId: string, id: string, key: string) {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { answersEncrypted: true, answerProvenance: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    if (!(answers[key] ?? '').trim()) return;
+    const provenance = markMember(
+      parseProvenance(row.answerProvenance),
+      [key],
+    );
+    await this.prisma.motivation.update({
+      where: { id },
+      data: { answerProvenance: provenance as unknown as object },
+    });
+  }
+
+  /**
    * Full state for the wizard — decrypted answers, progress, uploads.
    *
    * Ownership is part of the WHERE clause, never an if-statement after the
@@ -549,14 +657,14 @@ export class MotivationsService {
             extractedFields: true,
             createdAt: true,
             purgedAt: true,
-            // The same three the documents step gets — see expiryFor. The
+            // The same three the documents step gets â€” see expiryFor. The
             // wizard's own summary renders these rows too, and a row that
             // warns on one screen and not on the other is worse than one that
             // never warned at all.
             extractionEncrypted: true,
             sourceCredential: { select: { expiresOn: true } },
             sourceRemovedAt: true,
-            // storageKey is deliberately NOT selected — the client never needs
+            // storageKey is deliberately NOT selected â€” the client never needs
             // it and it is the one value that addresses a file on our disk.
           },
         },
@@ -564,7 +672,7 @@ export class MotivationsService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
-    // ⚠️ THE PROFILE UNDERNEATH, THE APPLICATION ON TOP. A profile answer is
+    // âš ï¸ THE PROFILE UNDERNEATH, THE APPLICATION ON TOP. A profile answer is
     // an OFFER, never an override: if this application already carries a value
     // for a profile-scoped key, that is the member having changed it here, and
     // it wins. See MemberProfileAnswersService.
@@ -582,17 +690,17 @@ export class MotivationsService {
       referenceNumber: row.referenceNumber,
       licenceType: row.licenceType,
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
-      // The member's own name, or null if they have not set one — see
+      // The member's own name, or null if they have not set one â€” see
       // rename() below. Purely a list label; not an answer.
       label: row.label,
-      // ⚠️ THE NAME A LIST SHOWS: the member's if they set one, otherwise the
+      // âš ï¸ THE NAME A LIST SHOWS: the member's if they set one, otherwise the
       // firearm and the section. See motivation-title.ts.
       title: motivationTitle(row.licenceType, answers, row.label),
       status: row.status,
       fields: fieldsFor(row.licenceType),
       answers,
       missingRequired: missingRequired(row.licenceType, answers),
-      // ⚠️ SURFACED WHILE THEY CAN STILL CHANGE THEIR MIND CHEAPLY. The same
+      // âš ï¸ SURFACED WHILE THEY CAN STILL CHANGE THEIR MIND CHEAPLY. The same
       // rules block generation, but hearing "a rifle cannot be licensed under
       // section 13" the moment the firearm is described costs one edit;
       // hearing it at the Generate button costs a whole form's worth of work
@@ -601,7 +709,7 @@ export class MotivationsService {
       blockers: applicationBlockers(row.licenceType, answers),
       // Surfaced while they are still filling the form, not after a failed
       // gate. Someone who has just typed their existing firearms is in the
-      // best position to explain why they need both — and being asked at that
+      // best position to explain why they need both â€” and being asked at that
       // moment reads as help, where being asked after a rejection reads as a
       // hurdle.
       overlap: (() => {
@@ -624,14 +732,14 @@ export class MotivationsService {
         colourway: asScheme(row.templateColourway),
         layout: asLayout(row.templateLayout),
       },
-      // ⚠️ THE WATERMARK IS GONE. Operator, 2026-10-15: "remove the
+      // âš ï¸ THE WATERMARK IS GONE. Operator, 2026-10-15: "remove the
       // watermark." The flag stays on the wire (always false) so the client
       // contract is unchanged, but nothing is marked any more.
       watermarked: false,
       editable: EDITABLE.includes(row.status),
       createdAt: row.createdAt,
       completedAt: row.completedAt,
-      // ⚠️ REMAPPED, NOT PASSED THROUGH, and the two things being dropped are
+      // âš ï¸ REMAPPED, NOT PASSED THROUGH, and the two things being dropped are
       // the reason: `extractionEncrypted` is the decrypted-at-rest reading of
       // an identity document, and it has no business on the wire. expiryFor
       // turns it into the one fact the client needs.
@@ -639,10 +747,10 @@ export class MotivationsService {
         const { extractionEncrypted: _blob, sourceCredential: _src, ...rest } = u;
         return { ...rest, ...this.shared.expiryFor(u, uploadsNow) };
       }),
-      // ⚠️ `messages` IS GONE AND STAYS GONE. The targeted follow-up interview
-      // is removed — no model asks the applicant a question any more. Where a
+      // âš ï¸ `messages` IS GONE AND STAYS GONE. The targeted follow-up interview
+      // is removed â€” no model asks the applicant a question any more. Where a
       // required fact is missing the review sheet shows the empty input, and
-      // that is the whole mechanism (MOTIVATION-REBUILD-BRIEF.md §2.3). The
+      // that is the whole mechanism (MOTIVATION-REBUILD-BRIEF.md Â§2.3). The
       // key is not returned as an empty array either: a client branching on
       // its presence should meet its absence, not a list that never fills.
     };
@@ -652,7 +760,7 @@ export class MotivationsService {
    * Merge a partial patch into the encrypted answer blob.
    *
    * READ-MODIFY-WRITE, single-user. Two devices editing the same motivation at
-   * the same moment would have one overwrite the other's field — accepted:
+   * the same moment would have one overwrite the other's field â€” accepted:
    * this is one person's own document, and the alternative (per-field rows) is
    * a lot of machinery for a race nobody will hit. It is NOT accepted anywhere
    * money or state transitions are involved, which is why those use CAS.
@@ -686,27 +794,27 @@ export class MotivationsService {
       row.licenceType,
       patch,
     );
-    // ⚠️ PROFILE-SCOPED KEYS ARE PEELED OFF HERE AND STORED AGAINST THE
+    // âš ï¸ PROFILE-SCOPED KEYS ARE PEELED OFF HERE AND STORED AGAINST THE
     // PERSON, NOT THE APPLICATION. The contract with the client does not
-    // change — it sends one whole blob, as it always has, and gets one back —
+    // change â€” it sends one whole blob, as it always has, and gets one back â€”
     // but marital status, the premises and what each owned firearm is for
     // follow the member into every application they ever make. See
     // MemberProfileAnswersService.
     //
-    // ⚠️ AFTER sanitiseAnswers, NEVER BEFORE IT. splitByScope routes; it does
+    // âš ï¸ AFTER sanitiseAnswers, NEVER BEFORE IT. splitByScope routes; it does
     // not validate. Splitting first would let an unregistered key reach the
     // profile store unchecked.
     const { application: cleanApplication, profile: cleanProfile } =
       splitByScope(row.licenceType, clean);
 
-    // ⚠️ THE PREVIOUS ANSWERS ARE HELD, NOT INLINED INTO THE SPREAD. The next
+    // âš ï¸ THE PREVIOUS ANSWERS ARE HELD, NOT INLINED INTO THE SPREAD. The next
     // three lines are the whole of "MEMBER always wins" and they need
     // something to compare against.
     //
-    // ⚠️ AND THE PROFILE IS UNDERNEATH, so a profile answer that has not
+    // âš ï¸ AND THE PROFILE IS UNDERNEATH, so a profile answer that has not
     // changed does not read as a change on this application. Without it, every
     // autosave would see the whole profile arrive as "new" against an empty
-    // application blob and stamp all of it MEMBER — which is absorbing.
+    // application blob and stamp all of it MEMBER â€” which is absorbing.
     const profileBefore = await this.profileAnswers.readFor(user.id);
     const before = {
       ...profileBefore.answers,
@@ -714,23 +822,23 @@ export class MotivationsService {
     };
     const merged = { ...before, ...clean };
 
-    // ⚠️ changedKeys, NOT Object.keys(clean). THIS IS THE BUG THIS FEATURE
+    // âš ï¸ changedKeys, NOT Object.keys(clean). THIS IS THE BUG THIS FEATURE
     // WOULD OTHERWISE SHIP WITH. The wizard sends a whole step back on every
     // save, so stamping the payload's keys would flip every prefilled field on
     // the step to MEMBER the first time somebody pressed Continue without
-    // touching anything — silently, on a write that looks perfectly correct.
+    // touching anything â€” silently, on a write that looks perfectly correct.
     // And MEMBER is absorbing: from that moment no vault re-sync or profile
     // re-consent could ever fill those fields again. Only a value that
     // actually differs is the member's doing.
     const changed = changedKeys(before, merged);
     let provenance = markMember(parseProvenance(row.answerProvenance), changed);
 
-    // ⚠️ EVERYTHING THIS METHOD WRITES BY ITSELF IS COLLECTED HERE AND HANDED
+    // âš ï¸ EVERYTHING THIS METHOD WRITES BY ITSELF IS COLLECTED HERE AND HANDED
     // BACK. Both hooks below fill answers the member never typed, and until
     // 2026-09-07 neither of them told anybody: `saveAnswers` returned
     // `{saved, ignored, refused, missingRequired}` and nothing else, while the
     // wizard's autosave sends the WHOLE answers map on every save. So the
-    // sequence on a real application was — we write the right competency, the
+    // sequence on a real application was â€” we write the right competency, the
     // client still holds the wrong one, the next keystroke sends the wrong one
     // back, `changedKeys` sees it move, `markMember` stamps it MEMBER, and
     // MEMBER is ABSORBING: from that moment no re-derivation, no vault offer
@@ -744,21 +852,21 @@ export class MotivationsService {
     const derivedValues: Record<string, string> = {};
     const derivedProvenance: Record<string, AnswerProvenance | null> = {};
 
-    // ── keep the nearest SAPS station in step with the address ─────────
+    // â”€â”€ keep the nearest SAPS station in step with the address â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // Only when the address itself just moved, and only when nothing already
-    // sits in `police_station` — a value the member typed or corrected was
+    // sits in `police_station` â€” a value the member typed or corrected was
     // just stamped MEMBER above and stationOffer() refuses to touch it
     // anyway, so this can never clobber a deliberate answer. See
     // MotivationPrefillService.stationOffer() and the same hook in create().
     //
-    // ⚠️ APPLIED AFTER markMember, NOT FOLDED INTO `merged` BEFORE IT. Anything
+    // âš ï¸ APPLIED AFTER markMember, NOT FOLDED INTO `merged` BEFORE IT. Anything
     // present in `merged` when changedKeys runs gets marked MEMBER regardless
-    // of who actually wrote it — that guard cannot tell "the applicant typed
+    // of who actually wrote it â€” that guard cannot tell "the applicant typed
     // this" from "we just derived this", so an automatic fill has to land
     // AFTER the comparison, stamped DERIVED by hand.
     //
-    // ⚠️ AND WHATEVER IT WRITES IS RECORDED IN `derived` AND RETURNED. See the
+    // âš ï¸ AND WHATEVER IT WRITES IS RECORDED IN `derived` AND RETURNED. See the
     // return statement: a server-side write the client is not told about is a
     // write the client's next autosave undoes.
     if (
@@ -781,14 +889,14 @@ export class MotivationsService {
       }
     }
 
-    // ── and the competency, now that we know which firearm ─────────────
+    // â”€â”€ and the competency, now that we know which firearm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ THE SAME HOOK, FOR THE SAME REASON, AND ITS ABSENCE IS THE FAULT THE
+    // âš ï¸ THE SAME HOOK, FOR THE SAME REASON, AND ITS ABSENCE IS THE FAULT THE
     // OPERATOR HIT. Operator, 2026-09-07, on a fresh section 13: "the wrong
     // competency chosen before it even knows which firearm is being applied
     // for." create() seeds the vault's answers before `firearm_type` can
     // exist, and until now this method re-derived exactly ONE thing on a
-    // change — the police station, on an address edit. So the competency was
+    // change â€” the police station, on an address edit. So the competency was
     // chosen once, on no information, and never looked at again: the member
     // set the type to Handgun and the box went on saying "Semi-auto Rifle +
     // Shotgun" all the way to the eligibility check, which then told them
@@ -798,11 +906,11 @@ export class MotivationsService {
     // separates a self-loading rifle from a manually operated one, and a
     // member who fixes only the action has changed which certificate is right.
     //
-    // ⚠️ AND A SECOND TRIGGER, BECAUSE THIS IS NOT THE ONLY PLACE THE FIREARM
+    // âš ï¸ AND A SECOND TRIGGER, BECAUSE THIS IS NOT THE ONLY PLACE THE FIREARM
     // IS WRITTEN. `MotivationDocumentsService.applyExtraction` and
     // `MotivationSellerConsentService` both write `firearm_type` and
-    // `firearm_action` straight into the answers blob — the dealer-prefilled
-    // SAPS 271 is called "the common real-world case" in the routing spec — and
+    // `firearm_action` straight into the answers blob â€” the dealer-prefilled
+    // SAPS 271 is called "the common real-world case" in the routing spec â€” and
     // neither of them passes through this method. applyExtraction has since
     // grown the same hook of its own; the seller-consent path has not, and a
     // third door will be opened one day by somebody who has not read this
@@ -814,11 +922,11 @@ export class MotivationsService {
     // next edit whichever door they came in by. The cost is one indexed
     // `Credential.findMany` per edit until it succeeds, and it stops the moment
     // any of the four boxes holds something. It cannot loop for ever on a
-    // member who deliberately cleared a box either — `markMember` stamps a
+    // member who deliberately cleared a box either â€” `markMember` stamps a
     // clear, and competencyOffer refuses a MEMBER key.
     //
-    // ⚠️ APPLIED AFTER markMember, like the station above, and for the same
-    // reason — anything present in `merged` when changedKeys runs is marked
+    // âš ï¸ APPLIED AFTER markMember, like the station above, and for the same
+    // reason â€” anything present in `merged` when changedKeys runs is marked
     // MEMBER regardless of who wrote it. competencyOffer() decides for itself
     // what it is allowed to replace, off the provenance map, and returns empty
     // strings for a certificate the new firearm rules out. A wrong certificate
@@ -841,8 +949,8 @@ export class MotivationsService {
       if (competency) {
         provenance = { ...provenance };
         for (const [key, value] of Object.entries(competency.values)) {
-          // ⚠️ BELT AND BRACES, AND WORTH THE TWO LINES: `stamp()` protects a
-          // MEMBER *provenance entry* and nothing else — it has never guarded
+          // âš ï¸ BELT AND BRACES, AND WORTH THE TWO LINES: `stamp()` protects a
+          // MEMBER *provenance entry* and nothing else â€” it has never guarded
           // the answer. competencyOffer already refuses a MEMBER key, so this
           // can only ever be a no-op; it is here because the day somebody
           // widens that filter, the damage lands on a signed declaration.
@@ -851,11 +959,11 @@ export class MotivationsService {
           derivedValues[key] = value;
 
           const entry = competency.provenance[key];
-          // ⚠️ AND A BOX WE EMPTIED LOSES ITS CHIP. The map has no "unstamp" —
+          // âš ï¸ AND A BOX WE EMPTIED LOSES ITS CHIP. The map has no "unstamp" â€”
           // deliberately, because the one thing it must never do is forget a
-          // MEMBER mark — so a removal is done here, by hand, and only for keys
+          // MEMBER mark â€” so a removal is done here, by hand, and only for keys
           // competencyOffer already established were OURS. Left behind, the
-          // entry would put "From your Document Centre — <the certificate we
+          // entry would put "From your Document Centre â€” <the certificate we
           // just ruled out>" against a blank field.
           if (entry) provenance[key] = entry;
           else delete provenance[key];
@@ -864,20 +972,20 @@ export class MotivationsService {
       }
     }
 
-    // ⚠️ THE APPLICATION BLOB KEEPS ONLY THE APPLICATION'S OWN ANSWERS. Any
-    // profile-scoped key already sitting in it — written before this split
-    // existed — is left exactly where it is rather than migrated out, and it
+    // âš ï¸ THE APPLICATION BLOB KEEPS ONLY THE APPLICATION'S OWN ANSWERS. Any
+    // profile-scoped key already sitting in it â€” written before this split
+    // existed â€” is left exactly where it is rather than migrated out, and it
     // still wins on read (findOne layers the application over the profile).
     // Rewriting somebody's stored blob to tidy up a scope boundary is a
     // migration, not a save, and this is not the place for one.
     //
-    // ⚠️ AND `derivedValues` IS APPLIED HERE, NOT FORGOTTEN. This is the
+    // âš ï¸ AND `derivedValues` IS APPLIED HERE, NOT FORGOTTEN. This is the
     // "one variable doing two jobs" trap this module has now produced three
     // times, and it produced it again in this very change: the two hooks above
     // write what they derived into `merged`, and building the blob from
     // `readAnswers + cleanApplication` alone silently dropped every one of
     // them. A station derived from a changed address went into the response,
-    // was reported to the client, and was never stored — so the next autosave
+    // was reported to the client, and was never stored â€” so the next autosave
     // sent it back, `changedKeys` saw it move, and it would have been stamped
     // MEMBER. Caught by 're-derives the station when the address changes'.
     //
@@ -893,26 +1001,26 @@ export class MotivationsService {
     };
 
     /**
-     * ⚠️ RE-ARM THE AUTOLINK WHEN THE FIREARM CHANGES WHAT WE ARE LOOKING FOR.
+     * âš ï¸ RE-ARM THE AUTOLINK WHEN THE FIREARM CHANGES WHAT WE ARE LOOKING FOR.
      *
      * The autolink runs once per application, and at first open the firearm
      * type is almost never answered yet. With no firearm to match against,
      * every competency certificate a member holds is an equally valid
-     * candidate, the several-candidates rule correctly refuses to guess — and
+     * candidate, the several-candidates rule correctly refuses to guess â€” and
      * the once-only stamp then means the right certificate can NEVER be
      * attached. Operator, 2026-09-08: "so will the competency and proficiency
      * be added when??" On this application, the answer was: never.
      *
-     * ⚠️ RE-ARMING IS SAFE ONLY BECAUSE THE REFUSALS OUTLIVE IT, and they do.
+     * âš ï¸ RE-ARMING IS SAFE ONLY BECAUSE THE REFUSALS OUTLIVE IT, and they do.
      * `Motivation.autolinkSkippedIds` records what was attached and REMOVED,
      * written at the removal precisely because the upload row is hard-deleted
      * and takes its own sourceCredentialId with it. So a document the member
-     * deleted does not come back — which is the whole of "why can't I delete
+     * deleted does not come back â€” which is the whole of "why can't I delete
      * the proof of address?", and the reason the stamp exists at all.
      * rearmAutolinkFor already relies on the same guarantee when a credential
      * is added or confirmed; this is the second trigger, not a new rule.
      *
-     * ⚠️ ONLY WHEN THE ANSWER ACTUALLY MOVES. Comparing the endorsement rather
+     * âš ï¸ ONLY WHEN THE ANSWER ACTUALLY MOVES. Comparing the endorsement rather
      * than the raw fields means editing a model or a serial re-arms nothing:
      * the only change that can alter which certificate qualifies is a change to
      * the endorsement the application needs.
@@ -933,7 +1041,7 @@ export class MotivationsService {
       },
     });
 
-    // ⚠️ AFTER the motivation write, and deliberately not in a transaction
+    // âš ï¸ AFTER the motivation write, and deliberately not in a transaction
     // with it. The two stores fail independently: a profile write that fails
     // costs the member re-answering a premises question on their next
     // application, while rolling the whole save back would cost them the
@@ -945,26 +1053,26 @@ export class MotivationsService {
         await this.profileAnswers.writeFor(user.id, profileWrite);
       } catch (err) {
         this.logger.error(
-          `Motivation ${row.id}: profile answers not saved — ${(err as Error).message}`,
+          `Motivation ${row.id}: profile answers not saved â€” ${(err as Error).message}`,
         );
       }
     }
 
     const unknown = rejected.filter((k) => !refused.includes(k));
     if (unknown.length) {
-      // Not an error — a stale client can legitimately send a key we have
+      // Not an error â€” a stale client can legitimately send a key we have
       // since removed. Logged as KEYS ONLY; the values are the sensitive part.
       this.logger.warn(
         `Motivation ${row.id}: ignored unregistered answer keys ${unknown.join(', ')}`,
       );
     }
     if (refused.length) {
-      // ⚠️ THIS ONE IS A DEFECT UNTIL PROVEN OTHERWISE. The wizard only offers
+      // âš ï¸ THIS ONE IS A DEFECT UNTIL PROVEN OTHERWISE. The wizard only offers
       // values the registry defines, so a registered field refusing its own
-      // value means the two have drifted — which is exactly how `discipline`
+      // value means the two have drifted â€” which is exactly how `discipline`
       // silently discarded every one of its fifty-nine options. Keys only.
       this.logger.error(
-        `Motivation ${row.id}: REFUSED values for registered fields ${refused.join(', ')} — the form and the validator disagree`,
+        `Motivation ${row.id}: REFUSED values for registered fields ${refused.join(', ')} â€” the form and the validator disagree`,
       );
     }
 
@@ -976,17 +1084,17 @@ export class MotivationsService {
       /**
        * WHAT WE WROTE THAT THEY DID NOT SEND. Always present, usually empty.
        *
-       * ⚠️ THE CLIENT MUST MERGE THIS INTO ITS OWN ANSWERS BEFORE ITS NEXT
+       * âš ï¸ THE CLIENT MUST MERGE THIS INTO ITS OWN ANSWERS BEFORE ITS NEXT
        * SAVE, or it will send back the stale values it still holds and they
-       * will be stamped MEMBER — which is absorbing, and which locks a
+       * will be stamped MEMBER â€” which is absorbing, and which locks a
        * certificate we chose onto a form the applicant signs under a chip
        * saying they typed it.
        *
-       * `values` — answer key to value. An EMPTY STRING is an instruction:
+       * `values` â€” answer key to value. An EMPTY STRING is an instruction:
        * clear that box. It is how a certificate the firearm now rules out
        * comes off the form.
        *
-       * `provenance` — the same keys. An entry to show, or `null` meaning
+       * `provenance` â€” the same keys. An entry to show, or `null` meaning
        * DELETE the chip for that key.
        *
        * `missingRequired` above is computed AFTER these are applied, so the
@@ -997,12 +1105,12 @@ export class MotivationsService {
     };
   }
 
-  /** Walk away without deleting — keeps the audit trail, frees nothing. */
+  /** Walk away without deleting â€” keeps the audit trail, frees nothing. */
   async abandon(userId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
     // Stamped HERE as well as on completion. retentionPurgeAt used to be
-    // written on exactly one branch — the transition to COMPLETED — so an
+    // written on exactly one branch â€” the transition to COMPLETED â€” so an
     // abandoned draft never got a date and its encrypted ID scans would have
     // sat on disk with nothing ever coming to look for them.
     const retentionDays = await this.settings.get(FLAGS.motivationRetentionDays);
@@ -1025,14 +1133,14 @@ export class MotivationsService {
    * SELF-SERVE POPIA ERASURE. Deletes the row, its messages, its upload rows
    * AND the encrypted files off our disk.
    *
-   * This did not exist anywhere in the platform before — the only erasure path
+   * This did not exist anywhere in the platform before â€” the only erasure path
    * was the identity-provider user.deleted webhook, which nulls references and openly
    * admits it does not remove stored assets. It is affordable here because we
    * know exactly which files belong to a motivation.
    *
    * Files first, database second. A cascade cannot reach the filesystem, so
    * deleting the rows first would orphan the bytes with nothing left pointing
-   * at them — undeletable except by hand.
+   * at them â€” undeletable except by hand.
    */
   async erase(userId: string, id: string) {
     await this.quota.assertEnabled();
@@ -1044,10 +1152,10 @@ export class MotivationsService {
         id: true,
         coverPhotoKey: true,
         uploads: { select: { storageKey: true, sha256: true } },
-        // ⚠️ SIGNATURES AND SELLER PAPERWORK HANG OFF THE SAME APPLICATION.
+        // âš ï¸ SIGNATURES AND SELLER PAPERWORK HANG OFF THE SAME APPLICATION.
         // This walked `uploads` only, so a witness's or seller's drawn
         // signature, the seller's two licence photographs and every consent
-        // document survived the row — encrypted bytes with nothing left
+        // document survived the row â€” encrypted bytes with nothing left
         // pointing at them, and exactly the third-party material an erasure
         // must reach.
         witnesses: { select: { signatureKey: true } },
@@ -1066,7 +1174,7 @@ export class MotivationsService {
     const keys = [
       row.coverPhotoKey,
       ...(row.uploads ?? []).map((u) => u.storageKey),
-      // ⚠️ Defensive: a hand-built spec and an older row may carry no relation
+      // âš ï¸ Defensive: a hand-built spec and an older row may carry no relation
       // keys, and a missing relation must not turn an erasure into a 500.
       ...(row.witnesses ?? []).map((w) => w.signatureKey),
       ...(row.sellerConsent
@@ -1086,7 +1194,7 @@ export class MotivationsService {
         filesRemoved++;
       } catch (err) {
         // Keep going: one unreadable key must not strand the rest of an
-        // erasure request. Logged loudly — a file we failed to delete is a
+        // erasure request. Logged loudly â€” a file we failed to delete is a
         // POPIA problem an operator has to know about.
         this.logger.error(
           `Erasure of motivation ${row.id}: could not remove ${key}: ${(err as Error).message}`,
@@ -1097,7 +1205,7 @@ export class MotivationsService {
     // Cascades take messages, uploads, witnesses and the consent with it.
     await this.prisma.motivation.delete({ where: { id: row.id } });
 
-    // ⚠️ AFTER THE ROWS, BECAUSE THE HASH LIVES ON THE UPLOAD. Cached OCR text
+    // âš ï¸ AFTER THE ROWS, BECAUSE THE HASH LIVES ON THE UPLOAD. Cached OCR text
     // and 300-dpi page rasters are copies of the member's documents.
     const sha256s = (row.uploads ?? [])
       .map((u) => u.sha256)
@@ -1137,7 +1245,7 @@ export class MotivationsService {
   /**
    * Save the pages the member ticked into their Document Centre.
    *
-   * ⚠️ OWNERSHIP IS THE MOTIVATION'S, AND adoptUpload RE-CHECKS IT PER ROW —
+   * âš ï¸ OWNERSHIP IS THE MOTIVATION'S, AND adoptUpload RE-CHECKS IT PER ROW â€”
    * its own `where` clause scopes every upload to `motivation: { userId }`, so
    * an id from another member's application simply finds nothing. This resolves
    * the user and hands the ids over; it does not trust them.
@@ -1186,8 +1294,8 @@ export class MotivationsService {
     return this.documents.rereadUpload(userId, id, uploadId);
   }
 
-  // ⚠️ FOUR DELEGATORS STOOD HERE — licenceCentreOffer, useLicenceCentre,
-  // profilePrefillOffer and useProfile — and their four endpoints went with
+  // âš ï¸ FOUR DELEGATORS STOOD HERE â€” licenceCentreOffer, useLicenceCentre,
+  // profilePrefillOffer and useProfile â€” and their four endpoints went with
   // them on 2026-09-08. See the note where they were declared in
   // motivations.controller.ts: prefill is automatic now, with provenance, and
   // a confirm step guarding a value we already hold is work we invented.
@@ -1240,23 +1348,23 @@ export class MotivationsService {
     return this.documents.removeUpload(userId, id, uploadId);
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // THE FOLLOW-UP INTERVIEW IS GONE — 2026-09-08
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // THE FOLLOW-UP INTERVIEW IS GONE â€” 2026-09-08
   //
-  // ⚠️ NO MODEL EVER ASKS THE APPLICANT A QUESTION AGAIN. `listMessages` and
+  // âš ï¸ NO MODEL EVER ASKS THE APPLICANT A QUESTION AGAIN. `listMessages` and
   // `answerFollowUp` stood here, with the MotivationMessage table behind them
   // (dropped in 20260908090100). Where a required fact is missing, the review
-  // sheet shows the empty input, and that is the whole mechanism —
-  // MOTIVATION-REBUILD-BRIEF.md §2.3.
+  // sheet shows the empty input, and that is the whole mechanism â€”
+  // MOTIVATION-REBUILD-BRIEF.md Â§2.3.
   //
-  // ⚠️ `thinFields` SURVIVES AND STILL MEANS SOMETHING. It is still computed,
+  // âš ï¸ `thinFields` SURVIVES AND STILL MEANS SOMETHING. It is still computed,
   // still stored and still lowers the quality score; what it no longer does is
   // produce a question. A thin answer is a document problem to log, not an
   // interrogation to start.
-  // ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /**
-   * Record the applicant's declaration. No document renders without it — they
+   * Record the applicant's declaration. No document renders without it â€” they
    * are signing this and submitting it as their own.
    */
   async acceptDeclaration(
@@ -1296,7 +1404,7 @@ export class MotivationsService {
    * The draft text, whether or not it passed review.
    *
    * Separate from the detail payload because the wizard polls that every few
-   * seconds and this is fifteen hundred words — and separate from renderPdf
+   * seconds and this is fifteen hundred words â€” and separate from renderPdf
    * because the PDF is the thing you FILE and stays gated on COMPLETED. This
    * is the thing you READ, so that a document held back for more detail can
    * be argued with instead of only scored.
@@ -1339,8 +1447,8 @@ export class MotivationsService {
   /**
    * Record which template the applicant picked.
    *
-   * ⚠️ ALLOWED IN EVERY STATUS, including COMPLETED. This is not an answer and
-   * it changes nothing the document argues — the body is stored text and the
+   * âš ï¸ ALLOWED IN EVERY STATUS, including COMPLETED. This is not an answer and
+   * it changes nothing the document argues â€” the body is stored text and the
    * PDF is re-rendered from it on every download, so re-skinning a finished
    * motivation costs one query and no Claude call. Locking it to the editable
    * statuses would mean somebody who dislikes the colour has to regenerate a
@@ -1394,14 +1502,14 @@ export class MotivationsService {
    * Section 13 draft. Operator, board review 2026-08-27: "User must be able
    * to rename the motivation."
    *
-   * ⚠️ ALLOWED IN EVERY STATUS, same reasoning as setTemplate above: this is
+   * âš ï¸ ALLOWED IN EVERY STATUS, same reasoning as setTemplate above: this is
    * not an answer, changes nothing the document argues, and is not read into
    * answersEncrypted, documentTextEncrypted or the rendered PDF. A finished
    * motivation is still allowed to be renamed on the list.
    *
-   * ⚠️ WHITESPACE-ONLY IS THE SAME AS UNNAMED. The DTO caps length but does
+   * âš ï¸ WHITESPACE-ONLY IS THE SAME AS UNNAMED. The DTO caps length but does
    * not forbid a string of spaces, and this is user input on a page that
-   * generates a legal document — trimmed here, so "   " is never mistaken
+   * generates a legal document â€” trimmed here, so "   " is never mistaken
    * for a real name and is stored as null instead, matching what an
    * untouched motivation already looks like.
    */
@@ -1505,7 +1613,7 @@ export class MotivationsService {
    * The live submission checklist, for the platform and the PWA.
    *
    * Deliberately NOT part of the PDF. The applicant works through this on
-   * screen — ticking off what they have gathered — and it stays current right
+   * screen â€” ticking off what they have gathered â€” and it stays current right
    * up to the moment they print. Only the annexure index goes into the paper.
    */
   async checklist(userId: string, id: string) {
@@ -1542,17 +1650,17 @@ export class MotivationsService {
   /**
    * THE WHOLE LEFT COLUMN, IN ONE CALL.
    *
-   * The screen used to assemble itself from several endpoints — the checklist
-   * here, the offers there, the answers somewhere else — which is how two
+   * The screen used to assemble itself from several endpoints â€” the checklist
+   * here, the offers there, the answers somewhere else â€” which is how two
    * parts of one page end up disagreeing about the same row while both are
    * "correct". This is one read, one answer.
    *
-   * ⚠️ THE SAME waitingOn() AS checklist(), NOT A SECOND COPY. If these two
+   * âš ï¸ THE SAME waitingOn() AS checklist(), NOT A SECOND COPY. If these two
    * ever compute it differently, the row that says "waiting on Piet" on one
    * screen says "not started" on the next.
    *
-   * ⚠️ NO ANSWER VALUES IN THE PROVENANCE. It carries a source name, a row id,
-   * a timestamp and the member's own title for their own document — checked
+   * âš ï¸ NO ANSWER VALUES IN THE PROVENANCE. It carries a source name, a row id,
+   * a timestamp and the member's own title for their own document â€” checked
    * by parseProvenance, which drops anything else. The answers themselves are
    * returned by findOne, which is where they belong and where they are already
    * ownership-scoped.
@@ -1595,13 +1703,13 @@ export class MotivationsService {
         { waitingOn: this.waitingOn(seller), answers },
       ),
       // Section-by-section completeness, counted in QUESTIONS rather than in
-      // form boxes — saps271-coverage.ts explains why the unit matters.
+      // form boxes â€” saps271-coverage.ts explains why the unit matters.
       coverage: saps271Coverage(row.licenceType, answers, {
         seller: { status: seller.status, name: seller.name },
       }),
       provenance,
       prefill: {
-        // ⚠️ COUNTED AGAINST THE ANSWERS, not against the map. A field we
+        // âš ï¸ COUNTED AGAINST THE ANSWERS, not against the map. A field we
         // filled and the member then cleared is not something we filled for
         // them, and a banner claiming credit for work that is not on the
         // screen is worse than no banner.
@@ -1621,11 +1729,11 @@ export class MotivationsService {
     return this.documents.changeUploadKind(userId, id, uploadId, kind);
   }
 
-  // ────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // WHO WE ARE WAITING ON.
   //
-  // ⚠️ ONE PLACE, BECAUSE TWO WOULD DIVERGE. buildChecklist is pure and cannot
-  // reach a witness or a seller's consent, so the status has to be injected —
+  // âš ï¸ ONE PLACE, BECAUSE TWO WOULD DIVERGE. buildChecklist is pure and cannot
+  // reach a witness or a seller's consent, so the status has to be injected â€”
   // and both callers (checklist() and pack()) must inject the SAME thing or
   // the two endpoints will disagree about the same row on the same screen.
   // This method is that one place; neither caller computes it itself.
@@ -1635,7 +1743,7 @@ export class MotivationsService {
   /**
    * The seller's half of a private sale, as a plain status.
    *
-   * ⚠️ READ ONCE, USED TWICE. Both the checklist row and the 271 section panel
+   * âš ï¸ READ ONCE, USED TWICE. Both the checklist row and the 271 section panel
    * need to know where he stands. Reading it separately for each would be two
    * queries and, worse, two chances to interpret one status differently on one
    * screen.
@@ -1646,7 +1754,7 @@ export class MotivationsService {
    * construction of MotivationsService for a single string.
    */
   /**
-   * ⚠️ DELEGATES. It lived here as a private method, which is why the review
+   * âš ï¸ DELEGATES. It lived here as a private method, which is why the review
    * sheet never called it and shipped with section F missing from its coverage
    * entirely. One copy, on MotivationSharedService, which both surfaces inject.
    */
@@ -1665,10 +1773,10 @@ export class MotivationsService {
     if (seller.status === 'INVITED') {
       out.upload_firearm_source_proof = seller.openedAt
         ? `${who} has opened the link and is busy with it. Nothing for you to do.`
-        : `Sent to ${who}. He photographs his licence on his own phone — you upload nothing.`;
+        : `Sent to ${who}. He photographs his licence on his own phone â€” you upload nothing.`;
     }
-    // ⚠️ COMPLETED HAD NO BRANCH AT ALL, so the one outcome the applicant is
-    // hoping for fell through to the generic "we hold this" copy — a row that
+    // âš ï¸ COMPLETED HAD NO BRANCH AT ALL, so the one outcome the applicant is
+    // hoping for fell through to the generic "we hold this" copy â€” a row that
     // looked no different from one nobody had answered. The seller had signed;
     // the screen would not say so.
     //
@@ -1678,18 +1786,18 @@ export class MotivationsService {
       out.upload_firearm_source_proof = `${who} has completed and signed his half. Nothing more for you to do here.`;
     }
     if (seller.status === 'DECLINED') {
-      // ⚠️ NOT "WAITING", AND DELIBERATELY NOT SILENT EITHER. A declined
+      // âš ï¸ NOT "WAITING", AND DELIBERATELY NOT SILENT EITHER. A declined
       // seller is a dead end for that route and the applicant has to be told
-      // so, with the other route named — otherwise the row sits amber for
+      // so, with the other route named â€” otherwise the row sits amber for
       // ever and looks like a system that has forgotten about them.
       out.upload_firearm_source_proof = `${seller.name || 'The seller'} declined. Upload a certified copy of his licence yourself instead.`;
     }
 
-    // ⚠️ NO WITNESS ENTRY HERE, AND IT IS NOW SETTLED RATHER THAN PENDING.
+    // âš ï¸ NO WITNESS ENTRY HERE, AND IT IS NOW SETTLED RATHER THAN PENDING.
     //
     // This note used to read as a finding awaiting a decision: the witness
     // engine is built, and invited-but-unsigned is exactly what
-    // 'waiting-on-someone' exists for — but CHARACTER_REFERENCE was in no
+    // 'waiting-on-someone' exists for â€” but CHARACTER_REFERENCE was in no
     // licence type's RECOMMENDED list, so a sentence keyed to
     // `upload_character_reference` would attach to nothing.
     //
@@ -1697,7 +1805,7 @@ export class MotivationsService {
     // motivations. It serves no purpose. Only time someone needs these is for
     // the application for a competency." So there is no row because there is
     // no requirement, and there will not be one. A reference speaks to
-    // whether a person is FIT to hold a firearm — the section 9 enquiry — not
+    // whether a person is FIT to hold a firearm â€” the section 9 enquiry â€” not
     // to why this firearm is needed for this purpose.
     //
     // Making it a row changes oursTotal for every licence type and moves the

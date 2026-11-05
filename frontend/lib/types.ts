@@ -577,6 +577,8 @@ export interface Transaction {
   // payment if nothing disputes.
   privateArrangeDeliveredAt: string | null;
   privateArrangeReceivedAt: string | null;
+  /** Store-pickup collection timestamp; null for every other rail. */
+  collectedAt?: string | null;
   /** Latest sales WhatsApp for this order (Meta status: SENT/DELIVERED/READ/FAILED). */
   whatsappStatus?: {
     status: string;
@@ -733,6 +735,7 @@ export interface Offer {
     // as on a straight Buy Now.
     province?: Province;
     publicLocality?: string | null;
+    plannedDealerName?: string | null;
     plannedDealerLocation?: string | null;
     // Public-facing offer surfaces — username only per platform policy.
     // Backend offers.service.ts selects username + userId only.

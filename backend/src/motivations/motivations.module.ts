@@ -1,10 +1,14 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { MotivationsController } from './motivations.controller';
+import { MotivationsIntakeController } from './intake/intake.controller';
+import { MotivationIntakeService } from './intake/intake.service';
+import { MotivationIntakeAgentService } from './intake/intake-agent.service';
+import { MotivationWriterAgentService } from './motivation-writer-agent.service';
 import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
-// ⚠️ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
+// âš ï¸ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
 // they all share. They are providers and NOT exports on purpose: every caller
 // outside this module still goes through the facade, which is what keeps the
 // split a file-level change rather than an API change.
@@ -14,13 +18,14 @@ import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationRenderService } from './motivation-render.service';
 import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
-// Answers that belong to the PERSON rather than to one application — the
+// Answers that belong to the PERSON rather than to one application â€” the
 // premises, marital status, what each owned firearm is for. Provided here and
 // not exported: like the five services above, every caller outside this
 // module goes through the facade.
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationResearchService } from './motivation-research.service';
+import { MotivationCaseResearchService } from './motivation-case-research.service';
 import { MotivationSuitabilityService } from './motivation-suitability.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
@@ -30,6 +35,7 @@ import { DocumentIdentifyService } from '../common/document-identify.service';
 import { DocumentPageRasterService } from './document-page-raster.service';
 import { DocumentScreeningService } from './document-screening.service';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
+import { LocalOcrService } from '../common/local-ocr/local-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
 import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
@@ -56,9 +62,10 @@ import { MotivationReasonService } from './motivation-reason.service';
 // its only caller and the table is not a public lookup.
 import { FirearmUsesService } from './firearm-uses.service';
 import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
+import { LegalModule } from '../legal/legal.module';
 
 /**
- * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
+ * Firearm-licence motivation writer (Phase 1 â€” LICENCE-SERVICES-AND-FEED.md).
  *
  * Deploys INERT: motivation_writer_enabled defaults to false, and every
  * service method asserts it, so nothing is reachable and no model spend is
@@ -69,10 +76,10 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
  * AdminJwtGuard controller MUST import JwtModule.register({}) and provide the
  * guard, or Nest crash-loops at boot while tsc passes clean (see
  * raffle.module.ts, which says so in code). There is no admin controller in
- * this module yet — when one is added, both must be added with it.
+ * this module yet â€” when one is added, both must be added with it.
  *
  * PrismaService, SettingsService, NotificationsService, ActivityService and
- * ReferenceNumberService are all @Global — importing their modules here would
+ * ReferenceNumberService are all @Global â€” importing their modules here would
  * be the wrong instinct and risks an import cycle.
  *
  * SecureFileStorageService is provided locally rather than globally: it is the
@@ -81,22 +88,25 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
  */
 @Module({
   // Jev document filing (Gemini reads, Jev files the folder).
-  imports: [DocumentFilingModule],
-  controllers: [MotivationsController, MotivationsScanController,
+  imports: [DocumentFilingModule, LegalModule],
+  controllers: [MotivationsController, MotivationsIntakeController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,
     MotivationsConsentController,
-    // ⚠️ UNGUARDED BY DESIGN — the seller is a stranger with no account. Every
+    // âš ï¸ UNGUARDED BY DESIGN â€” the seller is a stranger with no account. Every
     // route on it resolves a token to one consent row; see the controller.
     SellerConsentPublicController,
   ],
   providers: [
-    // ⚠️ THE GUARD IS PROVIDED, NOT JUST IMPORTED. A controller decorated
+    // âš ï¸ THE GUARD IS PROVIDED, NOT JUST IMPORTED. A controller decorated
     // with a guard whose dependencies this module cannot resolve crash-loops
-    // Nest at boot while tsc passes clean — the same trap AdminJwtGuard sets
+    // Nest at boot while tsc passes clean â€” the same trap AdminJwtGuard sets
     // and which is documented above.
     ScanHandoffGuard,
     MotivationsService,
+    MotivationIntakeService,
+    MotivationIntakeAgentService,
+    MotivationWriterAgentService,
     MotivationSharedService,
     MemberProfileAnswersService,
     MotivationSheetService,
@@ -110,23 +120,25 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     MotivationPdfService,
     MotivationModelService,
     MotivationResearchService,
+    MotivationCaseResearchService,
     MotivationSuitabilityService,
     MotivationRetentionService,
     MotivationExtractService,
     DocumentReadCacheService,
-    // ⚠️ HERE FOR THE SAME REASON AS MotivationExtractService ABOVE. The
-    // identify store is read by BOTH doors — the vault's create() and the
-    // motivations addUpload() — and the Nest edge runs LicenceCentreModule ->
+    // âš ï¸ HERE FOR THE SAME REASON AS MotivationExtractService ABOVE. The
+    // identify store is read by BOTH doors â€” the vault's create() and the
+    // motivations addUpload() â€” and the Nest edge runs LicenceCentreModule ->
     // MotivationsModule, one way. Provided and exported here, the vault side
     // gets it through the import it already has rather than the other way
     // round, which would close the cycle a spec asserts against.
     DocumentIdentifyService,
     DocumentPageRasterService,
-    // ⚠️ MONITORING, NOT A GATE. Screens an uploaded document's rasterised
+    // âš ï¸ MONITORING, NOT A GATE. Screens an uploaded document's rasterised
     // pages with DeepSeek Flash and writes a finding to the T&S queue; it never
     // blocks an upload. Exported so the vault's upload path can fire it.
     DocumentScreeningService,
     GoogleVisionOcrService,
+    LocalOcrService,
     CipSheetService,
     QuarryPlateService,
     MotivationPlatesService,
@@ -136,7 +148,7 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     MotivationSellerConsentService,
     LicenceCardOcrService,
     SecureFileStorageService,
-    // ⚠️ HERE AND NOT IN LicenceCentreModule, WHERE IT BELONGS BY SUBJECT.
+    // âš ï¸ HERE AND NOT IN LicenceCentreModule, WHERE IT BELONGS BY SUBJECT.
     // That module imports this one for the renewal one-tap and a spec
     // asserts the edge stays one-way, so a service addUpload calls cannot
     // live on the other end of it. It talks to Prisma and the file store
@@ -147,7 +159,7 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
   ],
   // MotivationRetentionService is exported so the account-deletion path can
   // remove a user's encrypted documents BEFORE the cascade takes the rows that
-  // point at them. SecureFileStorageService is deliberately NOT exported — it
+  // point at them. SecureFileStorageService is deliberately NOT exported â€” it
   // stays scoped to this module so nothing else can start writing user files
   // into the encrypted store without a deliberate decision.
   exports: [
@@ -157,10 +169,10 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     MotivationQuotaService,
     MotivationRetentionService,
     /**
-     * ⚠️ THE ONE SUB-SERVICE THAT LEAVES THE MODULE, AND IT IS THE ONLY WAY
+     * âš ï¸ THE ONE SUB-SERVICE THAT LEAVES THE MODULE, AND IT IS THE ONLY WAY
      * THE CENTRE CAN CLASSIFY EVIDENCE. The evidence upload lives in
      * LicenceCentreModule because a master copy is a vault Credential, and
-     * the Nest edge runs LicenceCentreModule -> MotivationsModule — one way,
+     * the Nest edge runs LicenceCentreModule -> MotivationsModule â€” one way,
      * enforced by two module specs. It cannot reach the other four by design
      * ("every caller outside this module still goes through the facade") and
      * it must not, but classifyEvidence is a model call, not a motivation
@@ -172,7 +184,7 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
     // through the one-way edge this module already shares with the Centre.
     DocumentIdentifyService,
     // Exported so the vault can rasterise an uploaded PDF to a print-grade
-    // JPEG before the vision paths (OCR/classify/orient) read it — the same
+    // JPEG before the vision paths (OCR/classify/orient) read it â€” the same
     // one-way edge. See LicenceCentreService.uprightForVision.
     DocumentPageRasterService,
     // Exported so the vault can fire the monitoring screen.
@@ -183,3 +195,5 @@ import { DocumentFilingModule } from '../common/document-filing/document-filing.
   ],
 })
 export class MotivationsModule {}
+
+

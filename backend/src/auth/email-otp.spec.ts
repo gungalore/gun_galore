@@ -149,15 +149,29 @@ describe('sendEmailCode', () => {
   it('keeps the hash when the send throws', async () => {
     // A send that failed at the provider may still have been delivered.
     // Clearing the hash would refuse a code the member is holding.
-    const { service, prisma } = make(
-      { id: 'u1', emailVerifiedAt: null, accountClosedAt: null },
-      { emailVerificationCode: jest.fn().mockRejectedValue(new Error('smtp')) },
-    );
-    await expect(service.sendEmailCode('a@b.com')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(prisma.updates).toHaveLength(1);
-    expect(prisma.updates[0]).toHaveProperty('emailOtpHash');
+    //
+    // ⚠️ PRODUCTION ONLY. Outside production a failed send falls back to
+    // printing the code instead of throwing — the same escape hatch as an
+    // unconfigured mail credential — so this pins the production contract.
+    const oldEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const { service, prisma } = make(
+        { id: 'u1', emailVerifiedAt: null, accountClosedAt: null },
+        {
+          emailVerificationCode: jest
+            .fn()
+            .mockRejectedValue(new Error('smtp')),
+        },
+      );
+      await expect(service.sendEmailCode('a@b.com')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.updates).toHaveLength(1);
+      expect(prisma.updates[0]).toHaveProperty('emailOtpHash');
+    } finally {
+      process.env.NODE_ENV = oldEnv;
+    }
   });
 });
 

@@ -1,10 +1,10 @@
-import {
+﻿import {
   repairUserPrompt,
   REPAIR_SCHEMA,
   REPAIR_SYSTEM,
   type RepairTarget,
 } from './motivation-repair';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
@@ -19,33 +19,34 @@ import {
   generationUserPrompt,
 } from './motivation-prompts';
 import type { StructurePlan } from './motivation-structure';
+import { MotivationWriterAgentService } from './motivation-writer-agent.service';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Every MODEL call the motivation writer makes.
 //
-// ⚠️ IT WAS ITS OWN ANTHROPIC CLIENT UNTIL 2026-09-07, and the file was called
+// âš ï¸ IT WAS ITS OWN ANTHROPIC CLIENT UNTIL 2026-09-07, and the file was called
 // motivation-claude.service.ts. Operator: everything moves from the Claude API
 // to Gemini 2.5 Flash-Lite. Fifteen services each built their own client, chose
 // their own model and parsed their own response; they now speak the one shape
 // in common/llm/llm.types.ts and LlmService speaks the provider's. Nothing in
-// here names a provider any more — which is the point, because the next switch
+// here names a provider any more â€” which is the point, because the next switch
 // must not be fifteen rewrites again.
 //
 // THE FAIL DIRECTIONS ARE DELIBERATELY OPPOSITE, and getting them the wrong way
 // round is the expensive mistake:
-//   • GENERATION fails SOFT. An outage means "try again in a minute", not a
-//     dead motivation — and critically it must not burn the applicant's free
+//   â€¢ GENERATION fails SOFT. An outage means "try again in a minute", not a
+//     dead motivation â€” and critically it must not burn the applicant's free
 //     beta seat.
-//   • THE GATE fails CLOSED. A malformed, refused or unparseable verdict must
+//   â€¢ THE GATE fails CLOSED. A malformed, refused or unparseable verdict must
 //     never read as "passed". A thin motivation reaching the Registrar is
 //     worse than an annoyed applicant.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Long-form output needs a longer timeout than the 60s the vision verifiers
-// use. Still well inside nginx's 90s and Cloudflare's ~100s — a call that
+// use. Still well inside nginx's 90s and Cloudflare's ~100s â€” a call that
 // outlives those returns a gateway error the user cannot act on.
-// ⚠️ 85_000 UNTIL 2026-08-22, AND IT WAS STALE. That number was sized when
-// generation was SYNCHRONOUS — the comment above still reasons about nginx's
+// âš ï¸ 85_000 UNTIL 2026-08-22, AND IT WAS STALE. That number was sized when
+// generation was SYNCHRONOUS â€” the comment above still reasons about nginx's
 // 90s and Cloudflare's ~100s. Generation moved to 202 + polling; the HTTP
 // request returns before the writer starts, so no proxy is waiting on this
 // call and those ceilings stopped applying.
@@ -53,63 +54,63 @@ import type { StructurePlan } from './motivation-structure';
 // It went from theoretical to live the day the corpus sections landed. An S16
 // with an overlap now writes the_discipline, the_firearm, the_calibre,
 // comparison AND statutory_application, and three consecutive real attempts
-// on MO000017 died with "Request timed out" at 85s — the applicant getting
+// on MO000017 died with "Request timed out" at 85s â€” the applicant getting
 // "we could not draft the document just now" for work that was progressing
 // fine.
 //
-// ⚠️ RAISED AGAIN 2026-08-22 WITH THE TOKEN CEILING, AND THE TWO MUST MOVE
+// âš ï¸ RAISED AGAIN 2026-08-22 WITH THE TOKEN CEILING, AND THE TWO MUST MOVE
 // TOGETHER. Output tokens are wall clock. The writer's ceiling went from 8 000
 // to 32 000 because a thinking budget was eating the document alive at the old
 // figure; leaving the clock at 180s would simply have swapped "too short to be
-// usable" for "Request timed out" — the same dead end with a different message.
+// usable" for "Request timed out" â€” the same dead end with a different message.
 //
 // The real ceiling is still sweepStuckGenerations(). The worst realistic path
 // is research 180 + write 300 + one local retry 300 + verify 60 + grade 60 =
 // 15 minutes, so the sweep moved to 25 to keep its headroom. Raise either of
 // these and redo that sum.
 //
-// ⚠️ THEY ARE `timeoutMs` ON THE REQUEST NOW, not a client-construction
+// âš ï¸ THEY ARE `timeoutMs` ON THE REQUEST NOW, not a client-construction
 // option. One shared LlmService serves the whole platform, so a per-call
 // ceiling is the only place a writer's 300s and a verdict's 60s can differ.
 const GENERATE_TIMEOUT_MS = 300_000;
 const GRADE_TIMEOUT_MS = 60_000;
-// ⚠️ 180s IS THE FIGURE THE sweepStuckGenerations SUM ABOVE IS BUILT ON
-// ("research 180 + write 300 + …"). A provider-hosted search is several round
+// âš ï¸ 180s IS THE FIGURE THE sweepStuckGenerations SUM ABOVE IS BUILT ON
+// ("research 180 + write 300 + â€¦"). A provider-hosted search is several round
 // trips inside one call, so it is slower than its token count suggests; raise
 // this and redo that sum before anything else.
 const RESEARCH_TIMEOUT_MS = 180_000;
 
-// ────────────────────────────────────────────────────────────────────
-// MODEL CHOICE — THERE ISN'T ONE ANY MORE, AND THAT COST US SOMETHING.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// MODEL CHOICE â€” THERE ISN'T ONE ANY MORE, AND THAT COST US SOMETHING.
 //
 // This file used to pick three models and say why: Opus wrote (instruction-
 // following under pressure is where the flagship earned its keep), a DIFFERENT
 // model graded, and Haiku phrased the follow-up questions. Every call now takes
-// LlmService.model — one platform model, from LLM_MODEL.
+// LlmService.model â€” one platform model, from LLM_MODEL.
 //
-// ⚠️ THE ONE THAT MATTERED IS THE GATE, so it is recorded rather than quietly
+// âš ï¸ THE ONE THAT MATTERED IS THE GATE, so it is recorded rather than quietly
 // dropped: the grader was deliberately not the writer's model, because a model
-// grading its own output shares its own blind spots — if the writer invents a
+// grading its own output shares its own blind spots â€” if the writer invents a
 // plausible detail, the same model is the one most likely to wave it through.
 // Groundedness is the score that vetoes everything, so the checker was chosen
 // to fail DIFFERENTLY from the writer. Writer and gate fall back to the same
 // model, but `LLM_GATE_MODEL` restores that independence the moment an operator
-// sets it — see `gateModel`. What still stands between an invented fact and
+// sets it â€” see `gateModel`. What still stands between an invented fact and
 // a filed document: the mechanical checks in motivation-verify.ts (code, not a
 // model), the second verifier below, and the groundedness floor itself.
 //
 // If groundedness scores drift up while the operator's own reading of the
-// documents does not, THIS is the first place to look — and the fix is one
+// documents does not, THIS is the first place to look â€” and the fix is one
 // line: `model:` on the gate request, pointed at a different model from the
 // writer's. The contract carries the override for exactly this reason.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Below this the document goes back for more detail. */
 export const QUALITY_FLOOR = 65;
 /**
  * Groundedness is judged separately and harder. A beautifully written document
  * containing a fact the applicant never supplied is the worst thing we can
- * produce — they would be signing it.
+ * produce â€” they would be signing it.
  */
 export const GROUNDEDNESS_FLOOR = 70;
 
@@ -149,7 +150,7 @@ export class MotivationModelService {
    * The model the quality gate runs on, when an operator has pointed it at a
    * different one from the writer's.
    *
-   * ⚠️ UNSET MEANS "SAME AS THE WRITER", WHICH IS THE OLD BEHAVIOUR. Read from
+   * âš ï¸ UNSET MEANS "SAME AS THE WRITER", WHICH IS THE OLD BEHAVIOUR. Read from
    * the env on every call so it can be changed with a restart and no deploy.
    * `LlmRequest.model` carries the override; see llm.types.ts.
    */
@@ -162,6 +163,7 @@ export class MotivationModelService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
+    @Optional() private readonly writerAgent?: MotivationWriterAgentService,
   ) {}
 
   get configured(): boolean {
@@ -184,9 +186,9 @@ export class MotivationModelService {
           urgent: true,
           context:
             `The licence motivation writer is failing (${detail.slice(0, 200)}). ` +
-            // ⚠️ NO PROVIDER NAME. An admin reading this alert should look at
+            // âš ï¸ NO PROVIDER NAME. An admin reading this alert should look at
             // the AI service on /admin/health, whichever provider is behind it
-            // — naming one sends them to the wrong dashboard the day it changes.
+            // â€” naming one sends them to the wrong dashboard the day it changes.
             `Applicants cannot generate documents. Check the AI service status on /admin/health.`,
         },
       })
@@ -214,7 +216,7 @@ export class MotivationModelService {
    * The licence-type rules go in `system` and the applicant's facts and
    * structure plan in the user turn. They were split so the byte-identical
    * half could carry a cache marker; the marker is gone with the SDK
-   * (`cache_control` has no place in the neutral shape — the adapter caches or
+   * (`cache_control` has no place in the neutral shape â€” the adapter caches or
    * does not), and the SPLIT stays because it is also what keeps somebody's
    * name and address out of a block we hand to every applicant of that type.
    *
@@ -233,8 +235,26 @@ export class MotivationModelService {
     if (!this.llm.isConfigured()) {
       throw new Error('Document generation is not available right now.');
     }
+
+    /**
+     * âš ï¸ ROLLBACK IS THE OLD WRITER, NOT A DELETED CODE PATH. The section-by-
+     * section agent is opt-in until it has been compared on real applications.
+     */
+    if (process.env.MOTIVATION_WRITER_AGENT === '1' && this.writerAgent) {
+      try {
+        return await this.writerAgent.generate(pack, plan, retryIssues);
+      } catch (err) {
+        const detail = MotivationModelService.why(err);
+        this.logger.error(`Motivation section agent failed: ${detail}`);
+        this.raiseOutageAlert(detail);
+        throw new Error(
+          'We could not draft the document just now. Please try again in a minute.',
+        );
+      }
+    }
+
     try {
-      // ⚠️ STREAMED, AND maxTokens IS NOT A BUDGET — IT IS A CEILING.
+      // âš ï¸ STREAMED, AND maxTokens IS NOT A BUDGET â€” IT IS A CEILING.
       //
       // THE LIVE FAILURE, 2026-08-22 20:20 SAST. A run logged BOTH "hit
       // max_tokens (8000 out)" AND "Generated document was too short to be
@@ -248,14 +268,14 @@ export class MotivationModelService {
       // 1. 8 000 WAS NEVER ENOUGH. The target is 1 200-1 800 words of prose
       //    (see PROSE_TARGET), which is a few thousand tokens BEFORE any
       //    thinking. The old note
-      //    reasoned the ceiling down from an 85s synchronous request — but
+      //    reasoned the ceiling down from an 85s synchronous request â€” but
       //    generation moved to a detached background run (startGeneration) and
       //    the ceiling never moved with it. Nothing is billed for headroom:
       //    output tokens are charged as generated, so a ceiling the model does
       //    not reach costs exactly nothing.
       // 2. THINKING WAS LEFT TO THE DEFAULT, so an adaptive budget shared the
       //    same 8 000 with the document and won. It is explicit below, and a
-      //    NUMBER now rather than a mode — which is the safer shape of the two,
+      //    NUMBER now rather than a mode â€” which is the safer shape of the two,
       //    because a budget cannot silently expand into the document's room.
       //
       // Streaming because a long generation on a non-streamed request risks a
@@ -267,9 +287,9 @@ export class MotivationModelService {
         // Explicit, so it is never again a default's decision. Rule 4 of this
         // document's own prompt asks for element-by-element statutory
         // application; that is reasoning, and it earns its tokens.
-        // ⚠️ 4096 IS A CEILING ON THE REASONING, NOT ON THE DOCUMENT. It is
+        // âš ï¸ 4096 IS A CEILING ON THE REASONING, NOT ON THE DOCUMENT. It is
         // deliberately a small fraction of the 32 000 above, so the failure
-        // that produced this comment — thinking eating the whole allowance —
+        // that produced this comment â€” thinking eating the whole allowance â€”
         // cannot recur however hard the input looks.
         thinking: { budgetTokens: 4096 },
         system: generationSystemPrompt(pack.licenceType),
@@ -289,11 +309,11 @@ export class MotivationModelService {
         throw new Error('The writer returned no response');
       }
 
-      // ⚠️ EVERY TEXT PART, NOT THE FIRST. This was `.find(b => b.type ===
+      // âš ï¸ EVERY TEXT PART, NOT THE FIRST. This was `.find(b => b.type ===
       // 'text')` on the SDK's blocks, which was correct only while a response
       // was one text block. With thinking enabled the parts interleave, and
       // taking the first text part silently truncates the document at the
-      // first pause in the model's writing — a defect that would have looked
+      // first pause in the model's writing â€” a defect that would have looked
       // exactly like a writing fault and never like a bug. `response.text` is
       // every text part joined, which is that fix made permanent in the
       // contract rather than re-earned at each call site.
@@ -305,20 +325,20 @@ export class MotivationModelService {
       // every document; the WRITER never did, and it cost us a live one. The
       // MO000017 regeneration on 2026-08-22 came back scored and COMPLETED with
       // the gate's own finding reading "Document cuts off mid-sentence at the
-      // end (paragraph 6)" — the applicant would have downloaded a pack whose
+      // end (paragraph 6)" â€” the applicant would have downloaded a pack whose
       // argument stops halfway.
       //
-      // ⚠️ IT IS ONLY A LOG, DELIBERATELY. A short document is a failed attempt
+      // âš ï¸ IT IS ONLY A LOG, DELIBERATELY. A short document is a failed attempt
       // (below), but a truncated one is a nearly-complete document, and throwing
       // it away costs the applicant a full regeneration for something the gate
       // is about to score honestly anyway. What was missing was VISIBILITY: the
       // symptom looked like a writing fault rather than a token ceiling. If this
-      // starts firing regularly, maxTokens is the fix — and note that output
+      // starts firing regularly, maxTokens is the fix â€” and note that output
       // tokens are wall-clock, so raise GENERATE_TIMEOUT_MS with it.
       if (final.stopReason === 'max_tokens') {
         this.logger.error(
           `Motivation document hit max_tokens (${final.usage.outputTokens} out) ` +
-            `— the document is truncated and will read as unfinished. Raise maxTokens.`,
+            `â€” the document is truncated and will read as unfinished. Raise maxTokens.`,
         );
       }
 
@@ -326,9 +346,9 @@ export class MotivationModelService {
         // Too short to be a motivation. Treat as a failed attempt rather than
         // storing something the applicant would have to throw away.
         //
-        // ⚠️ SAY WHAT CAME BACK, NOT JUST THAT IT WAS SHORT. The bare message
+        // âš ï¸ SAY WHAT CAME BACK, NOT JUST THAT IT WAS SHORT. The bare message
         // sent us looking for a writing fault when the response contained no
-        // text part at all — the whole allowance had gone to thinking. The
+        // text part at all â€” the whole allowance had gone to thinking. The
         // part types and the stop reason separate those two worlds in one
         // line of log.
         const shape = final.parts.map((p) => p.type).join('+') || 'empty';
@@ -344,42 +364,42 @@ export class MotivationModelService {
       const detail = MotivationModelService.why(err);
       this.logger.error(`Motivation generation failed: ${detail}`);
       this.raiseOutageAlert(detail);
-      // SOFT failure — the caller must not consume a beta seat for this.
+      // SOFT failure â€” the caller must not consume a beta seat for this.
       throw new Error(
         'We could not draft the document just now. Please try again in a minute.',
       );
     }
   }
 
-  // ⚠️ research() STOOD HERE AND ITS REPLACEMENT IS A SEPARATE SERVICE —
+  // âš ï¸ research() STOOD HERE AND ITS REPLACEMENT IS A SEPARATE SERVICE â€”
   // 2026-09-08. It built ONE grounded brief per motivation out of this
   // applicant's own answers, including their suburb (redacted to an area, but
-  // still theirs), and cached it on that motivation alone — so the second
+  // still theirs), and cached it on that motivation alone â€” so the second
   // applicant for the same firearm paid for the same search again.
   //
   // MotivationResearchService asks four narrower questions keyed on facts
-  // about the WORLD — the firearm model, the cartridge, the discipline, the
-  // class of game — so a row is shared by everyone who asks the same one, and
+  // about the WORLD â€” the firearm model, the cartridge, the discipline, the
+  // class of game â€” so a row is shared by everyone who asks the same one, and
   // NO APPLICANT DATUM REACHES A SEARCH QUERY AT ALL. See its header.
   //
-  // ⚠️ redactToArea() SURVIVES AT THE FOOT OF THIS FILE, deliberately, though
-  // nothing calls it today. It is a TESTED PRIVACY PRIMITIVE — strip a
-  // residential address down to what may appear in a web search — and the next
+  // âš ï¸ redactToArea() SURVIVES AT THE FOOT OF THIS FILE, deliberately, though
+  // nothing calls it today. It is a TESTED PRIVACY PRIMITIVE â€” strip a
+  // residential address down to what may appear in a web search â€” and the next
   // person who needs to put a place into a prompt should find it rather than
   // write it again, worse. Its tests survive with it.
 
   /**
-   * THE SECOND VERIFIER — a fresh pair of eyes on the BUILT document.
+   * THE SECOND VERIFIER â€” a fresh pair of eyes on the BUILT document.
    *
    * The pipeline verifies every document twice and not more (operator's cap):
    * grade() scores the writing against the facts, and THIS reads the finished
-   * document the way a suspicious DFO would — do the numbers agree with each
+   * document the way a suspicious DFO would â€” do the numbers agree with each
    * other, does every annexure citation point at a real tab, is anything
    * promised or implied that the pack cannot back. It runs once, after the
    * gate has passed, on the text that will actually be filed.
    *
    * Deterministic identity checks (serial, ID, annexure letters) are NOT its
-   * job — motivation-verify.ts does those in code, for free. This catches
+   * job â€” motivation-verify.ts does those in code, for free. This catches
    * what regexes cannot: a joined date that contradicts a "member since"
    * sentence, an annexure cited for the wrong kind of fact, a paragraph that
    * quietly promises an outcome.
@@ -391,7 +411,7 @@ export class MotivationModelService {
   /**
    * Rewrite named sentences so refused words do not appear in them.
    *
-   * ⚠️ IT MENDS A SENTENCE; IT DOES NOT WRITE A DOCUMENT. See
+   * âš ï¸ IT MENDS A SENTENCE; IT DOES NOT WRITE A DOCUMENT. See
    * motivation-repair.ts for why this exists at all: the gate is all-or-nothing
    * over nine hundred words, and MO000075 spent two days being binned for two
    * words at a time, a different pair each attempt.
@@ -466,9 +486,9 @@ export class MotivationModelService {
           '  with each other or with the applicant facts',
           '- an annexure cited for a fact that annexure could not evidence',
           '- any promise or prediction about the outcome of the application',
-          '- any VERIFIABLE fact about the applicant — an event, record,',
-          '  membership, qualification, possession or incident — that the',
-          '  supplied facts do not contain. Intentions, purposes and the',
+          '- any VERIFIABLE fact about the applicant â€” an event, record,',
+          '  membership, qualification, possession or incident â€” that the',
+          '  neither the applicant facts nor the supplied research contain. Intentions, purposes and the',
           "  rationale for the firearm are the writer's to supply and are",
           '  NOT defects.',
           'Do NOT comment on style, persuasiveness, or whether the',
@@ -525,10 +545,10 @@ export class MotivationModelService {
    * Grade the draft.
    *
    * FAILS CLOSED, three ways:
-   *   • a shape that is not an object at all → fail
-   *   • any score that is not a finite number → coerced to 0, so a malformed
+   *   â€¢ a shape that is not an object at all â†’ fail
+   *   â€¢ any score that is not a finite number â†’ coerced to 0, so a malformed
    *     reply cannot sail past a `>= floor` comparison
-   *   • unparseable output → fail with a marker issue, NOT a low score, so the
+   *   â€¢ unparseable output â†’ fail with a marker issue, NOT a low score, so the
    *     caller can tell "the grader broke" from "the document is weak" and does
    *     not buy an expensive regeneration on a formatting regression
    */
@@ -557,35 +577,35 @@ export class MotivationModelService {
 
     try {
       const res = await this.llm.complete({
-        // ⚠️ THE VERDICT IS SMALL BUT NOT BOUNDED. It carries thin_fields and
+        // âš ï¸ THE VERDICT IS SMALL BUT NOT BOUNDED. It carries thin_fields and
         // a free-text issues list, and a strict reviewer given a long draft
         // writes a lot of issues. At 1200 the reply was truncated mid-JSON;
         // the brace match below needs a CLOSING brace, found none, and every
         // document was failed with "the reviewer did not return a usable
-        // verdict" — a gate that fails closed, so nothing could ever pass.
+        // verdict" â€” a gate that fails closed, so nothing could ever pass.
         // Output tokens bill as used, so the headroom is close to free.
         maxTokens: 4000,
-        // ⚠️ THINKING OFF, EXPLICITLY. Adaptive thinking engages on its own
-        // when the input looks hard — and the research block made it look
+        // âš ï¸ THINKING OFF, EXPLICITLY. Adaptive thinking engages on its own
+        // when the input looks hard â€” and the research block made it look
         // hard: a live gate call burned all 4000 output tokens on reasoning
         // and emitted 255 characters of truncated JSON, which the fail-closed
         // parse correctly scored as "no usable verdict", 0. A verdict is
         // transcription of a judgement into a fixed shape; the budget must be
         // text. Zero is that rule in the contract's own units.
         thinking: { budgetTokens: 0 },
-        // ⚠️ NO `temperature` HERE, AND THINK BEFORE ADDING ONE.
+        // âš ï¸ NO `temperature` HERE, AND THINK BEFORE ADDING ONE.
         //
         // The docstring used to open "temperature 0: a score sitting near the
-        // pass line must not flip between runs", and that intent still holds —
+        // pass line must not flip between runs", and that intent still holds â€”
         // but the parameter was REMOVED from the Anthropic API on the models
         // this ran on, and sending one was a 400. Every call site here fails
         // soft, so the 400 was caught, logged at warn, and the feature simply
         // did nothing for two days. The parameter went, and deterministic
         // transcription was the default.
         //
-        // ⚠️ THAT DEFAULT WAS THE OLD PROVIDER'S, AND IT DID NOT COME WITH US.
+        // âš ï¸ THAT DEFAULT WAS THE OLD PROVIDER'S, AND IT DID NOT COME WITH US.
         // The neutral contract carries `temperature` again and "omit to take
-        // the provider's default" — which on a Gemini model is not 0. So if
+        // the provider's default" â€” which on a Gemini model is not 0. So if
         // verdicts start flipping across runs on the same document, THIS is
         // the cause and `temperature: 0` is the fix; it is a real parameter
         // again and no longer a 400.
@@ -593,15 +613,15 @@ export class MotivationModelService {
         messages: [
           { role: 'user', content: gateUserPrompt(pack, documentText) },
         ],
-        // ⚠️ AN INDEPENDENT GRADER WHEN ONE IS CONFIGURED. The gate is the score
+        // âš ï¸ AN INDEPENDENT GRADER WHEN ONE IS CONFIGURED. The gate is the score
         // that vetoes everything, and a model grading its own output shares its
-        // blind spots — if the writer invents a plausible detail, the same
+        // blind spots â€” if the writer invents a plausible detail, the same
         // model is the one most likely to wave it through. `LLM_GATE_MODEL`
         // points the gate at a different model. UNSET it is `undefined` and the
         // gate falls back to LLM_MODEL exactly as before, so the override is
         // inert until an operator sets it.
         model: this.gateModel,
-        // ⚠️ THE SHAPE IS THE PROVIDER'S JOB. The prompt asks for JSON in
+        // âš ï¸ THE SHAPE IS THE PROVIDER'S JOB. The prompt asks for JSON in
         // prose; the schema makes the provider enforce it, so a chatty or
         // fenced reply can no longer be mistaken for an unusable verdict. The
         // brace parse below remains only for the Anthropic path, which has no
@@ -612,12 +632,12 @@ export class MotivationModelService {
       });
       raw = res.text;
       usage = this.usageOf(res);
-      // ⚠️ A TRUNCATED VERDICT IS INDISTINGUISHABLE FROM A BAD DOCUMENT unless
+      // âš ï¸ A TRUNCATED VERDICT IS INDISTINGUISHABLE FROM A BAD DOCUMENT unless
       // we say so here. Logged at error because it is our fault, not the
       // applicant's, and it fails their document either way.
       if (res.stopReason === 'max_tokens') {
         this.logger.error(
-          `Motivation quality gate hit max_tokens (${usage.completionTokens} out) — the verdict is truncated and will not parse. Raise maxTokens.`,
+          `Motivation quality gate hit max_tokens (${usage.completionTokens} out) â€” the verdict is truncated and will not parse. Raise maxTokens.`,
         );
       }
     } catch (err) {
@@ -662,7 +682,7 @@ export class MotivationModelService {
       };
     }
 
-    // Shape guard BEFORE touching nested fields — a refusal object must produce
+    // Shape guard BEFORE touching nested fields â€” a refusal object must produce
     // a clean fail rather than a 500.
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
       return {
@@ -733,23 +753,23 @@ export class MotivationModelService {
     };
   }
 
-  // ⚠️ askFollowUpBatch AND askFollowUp STOOD HERE, AND THEY ARE GONE —
+  // âš ï¸ askFollowUpBatch AND askFollowUp STOOD HERE, AND THEY ARE GONE â€”
   // 2026-09-08. No model asks the applicant a question any more
-  // (MOTIVATION-REBUILD-BRIEF.md §2.3). If a required fact is missing, the
+  // (MOTIVATION-REBUILD-BRIEF.md Â§2.3). If a required fact is missing, the
   // review sheet shows the empty input; that is the whole mechanism, and it
   // costs nothing per gate cycle.
   //
   // The thing worth keeping from them is the reason they existed: WE picked
   // the fields and the model only worded the question. That division still
-  // holds everywhere else in this service — we decide what is true, the model
+  // holds everywhere else in this service â€” we decide what is true, the model
   // decides how it reads.
 }
 
 /**
  * Strip a residential address down to what may appear in a WEB SEARCH.
  *
- * ⚠️ THE FIRST LINE IS THE HOUSE. Everything before the first separator — the
- * number and street — is dropped in code, so no prompt mistake can leak it:
+ * âš ï¸ THE FIRST LINE IS THE HOUSE. Everything before the first separator â€” the
+ * number and street â€” is dropped in code, so no prompt mistake can leak it:
  * the model never receives it at all. Digits are removed from what survives,
  * against unit numbers and postal codes riding along in the tail.
  */
@@ -761,3 +781,5 @@ export function redactToArea(address: string): string {
   if (parts.length <= 1) return '';
   return parts.slice(1).join(', ').slice(0, 120);
 }
+
+

@@ -101,7 +101,7 @@ export default async function TransactionPage({
   const isSeller = tx.sellerId === userId;
   const paymentPending = tx.paymentStatus === 'HELD' && !tx.paidAt;
   const paymentStatusLabel = paymentPending
-    ? 'Payment not completed'
+    ? 'Payment not confirmed'
     : PAYMENT_STATUS_LABEL[tx.paymentStatus];
   const paymentStatusColor = paymentPending
     ? 'var(--red)'
@@ -205,7 +205,10 @@ export default async function TransactionPage({
     !!tx.paidAt &&
     !tx.dispatchedAt &&
     !tx.rejectedAt &&
-    !tx.cancellationRequestedAt;
+    !tx.cancellationRequestedAt &&
+    !tx.privateArrangeDeliveredAt &&
+    !tx.privateArrangeReceivedAt &&
+    !tx.collectedAt;
 
   const txRating = (
     tx as unknown as {
@@ -267,14 +270,14 @@ export default async function TransactionPage({
               fontWeight: 600,
             }}
           >
-            Payment not completed
+            Payment not confirmed yet
           </p>
           <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-            No money was taken. Your item is held while you finish checkout.
-            Start again to pay or choose another payment option.
+            If you completed payment, do not pay again — it may still be
+            settling. Resume the existing attempt or check again shortly.
           </p>
           <Link
-            href={`/checkout/${listing.id}`}
+            href={`/checkout/resume/${tx.id}`}
             className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
             style={{
               background: 'var(--red)',
@@ -282,7 +285,7 @@ export default async function TransactionPage({
               textDecoration: 'none',
             }}
           >
-            Complete payment
+            Resume payment
           </Link>
         </div>
       )}
@@ -1376,7 +1379,7 @@ export default async function TransactionPage({
           <div
             title={
               paymentPending
-                ? 'No money was taken. Finish checkout to pay or choose another method.'
+                ? 'Payment not confirmed yet. If you completed payment, do not pay again — resume the existing attempt.'
                 : paymentStatusHint(tx.paymentStatus, tx.shippingMethod)
             }
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mb-4"

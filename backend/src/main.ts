@@ -8,6 +8,13 @@
 import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 
+// Local/dev override for public frontend links (notification and action
+// URLs). Kept separate from .env so a stale tunnel hostname in the file does
+// not require editing it. Production leaves this unset.
+if (process.env.APP_URL_OVERRIDE) {
+  process.env.FRONTEND_URL = process.env.APP_URL_OVERRIDE;
+}
+
 // ─── Prefer IPv4 for ALL outbound connections ─────────────────────────
 // This VPS has NO global IPv6 address. Apple's Web Push endpoint
 // (web.push.apple.com) — and other Akamai/Apple hosts — advertise AAAA
@@ -79,6 +86,53 @@ function assertProductionConfig() {
     log.error(
       '⚠️  OZOW_WEBHOOK_SECRET is not set — incoming Ozow webhooks will be REJECTED (fail-closed). Set the Svix signing secret from the Ozow Dashboard before relying on webhooks.',
     );
+  }
+  // WARN: Peach pay-in is configured/admin-enabled but its credentials are
+  // incomplete, so the buyer would see the rail and hit a mock/error.
+  const peachTouched = !!(
+    process.env.PEACH_CLIENT_ID ||
+    process.env.PEACH_CLIENT_SECRET ||
+    process.env.PEACH_MERCHANT_ID ||
+    process.env.PEACH_ENTITY_ID ||
+    process.env.PEACH_SECRET
+  );
+  if (peachTouched) {
+    if (
+      !process.env.PEACH_CLIENT_ID ||
+      !process.env.PEACH_CLIENT_SECRET ||
+      !process.env.PEACH_MERCHANT_ID ||
+      !process.env.PEACH_ENTITY_ID
+    ) {
+      log.error(
+        '⚠️  Peach checkout credentials are incomplete (PEACH_CLIENT_ID / PEACH_CLIENT_SECRET / PEACH_MERCHANT_ID / PEACH_ENTITY_ID) — the Peach adapter runs in MOCK mode. Keep the Peach pay-in admin flag OFF until all four are set.',
+      );
+    }
+    if (!process.env.PEACH_WEBHOOK_SECRET && !process.env.PEACH_SECRET) {
+      log.error(
+        '⚠️  PEACH_WEBHOOK_SECRET / PEACH_SECRET is not set — incoming Peach checkout webhooks will be REJECTED (fail-closed).',
+      );
+    }
+  }
+  const peachPayoutTouched = !!(
+    process.env.PEACH_PAYOUT_CLIENT_ID ||
+    process.env.PEACH_PAYOUT_CLIENT_SECRET ||
+    process.env.PEACH_PAYOUT_MERCHANT_ID
+  );
+  if (peachPayoutTouched) {
+    if (
+      !process.env.PEACH_PAYOUT_CLIENT_ID ||
+      !process.env.PEACH_PAYOUT_CLIENT_SECRET ||
+      !process.env.PEACH_PAYOUT_MERCHANT_ID
+    ) {
+      log.error(
+        '⚠️  Peach Payouts credentials are incomplete (PEACH_PAYOUT_CLIENT_ID / PEACH_PAYOUT_CLIENT_SECRET / PEACH_PAYOUT_MERCHANT_ID) — payouts fall back to the checkout OAuth pair. Keep the Peach payouts admin flag OFF until the Payouts product is verified.',
+      );
+    }
+    if (!process.env.PEACH_PAYOUT_WEBHOOK_SECRET && !process.env.PEACH_SECRET) {
+      log.error(
+        '⚠️  PEACH_PAYOUT_WEBHOOK_SECRET is not set — Peach payout/BANV webhooks will be REJECTED (fail-closed).',
+      );
+    }
   }
   // NOTE: Payout disbursement is refused unless the separate Payouts API key,
   // site code, verification access token, and key-wrapping secret are set.

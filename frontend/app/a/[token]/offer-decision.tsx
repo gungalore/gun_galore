@@ -97,6 +97,75 @@ export function OfferDecisionPage({
 
   const [view, setView] = useState<ViewState>({ kind: 'choice' });
 
+  // The link can outlive the decision. Before this guard the page kept
+  // rendering Accept/Counter/Reject after the offer had already been accepted
+  // or rejected elsewhere, so a second tap hit the API and produced an error.
+  // Show the closed state instead.
+  const actionable =
+    payload.kind === 'OFFER_DECISION'
+      ? payload.offerStatus === 'PENDING'
+      : payload.offerStatus === 'COUNTERED';
+  if (!actionable) {
+    const closedLabel: Record<string, string> = {
+      ACCEPTED: 'accepted',
+      REJECTED: 'declined',
+      COUNTERED: 'countered',
+      WITHDRAWN: 'withdrawn',
+      EXPIRED: 'expired',
+      CONVERTED: 'paid',
+    };
+    const label = closedLabel[payload.offerStatus] ?? 'closed';
+    return (
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 12,
+          padding: 24,
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+          }}
+        >
+          This offer was already {label}
+        </p>
+        <p
+          style={{
+            margin: '8px 0 18px',
+            fontSize: 14,
+            lineHeight: 1.55,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Nothing more is needed on this link. Open your offers to see the
+          current status and the next step.
+        </p>
+        <a
+          href={
+            payload.kind === 'OFFER_DECISION' ? '/offers/received' : '/my/offers'
+          }
+          style={{
+            display: 'inline-block',
+            padding: '10px 18px',
+            borderRadius: 8,
+            background: 'var(--red)',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}
+        >
+          View offers
+        </a>
+      </div>
+    );
+  }
+
   async function callAction(
     endpoint: string,
     body?: Record<string, unknown>,

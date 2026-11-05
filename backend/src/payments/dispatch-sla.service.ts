@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { PaymentProvider } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OzowService } from './ozow.service';
+import { PaymentRailsService } from './payment-rails.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
@@ -62,6 +64,10 @@ export class DispatchSlaService {
     // refunded order). Same module as TransactionsService, which already
     // injects ShippingService.
     private readonly shipping: ShippingService,
+    // @Global provider router. Optional for positional test harnesses; the
+    // direct Ozow fallback below is only for those and legacy rows.
+    @Optional()
+    private readonly rails?: PaymentRailsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -150,10 +156,13 @@ export class DispatchSlaService {
         // never accepted are handled by escalateStaleAccepts on a
         // separate path — they don't get auto-refunded by this cron.
         acceptedAt: { not: null },
+        paidAt: { not: null },
         dispatchDeadlineAt: { lte: now },
         dispatchedAt: null,
         rejectedAt: null,
         paymentStatus: 'HELD',
+        // A buyer cancellation request freezes the order; support resolves it.
+        cancellationRequestedAt: null,
         shippingMethod: 'COURIER',
       },
       include: { listing: true, seller: true, buyer: true },
@@ -170,7 +179,13 @@ export class DispatchSlaService {
         // let the seller ship. count===0 → another path won; skip. On
         // gateway failure we roll the claim back to HELD for admin review.
         const claim = await this.prisma.transaction.updateMany({
-          where: { id: tx.id, paymentStatus: 'HELD', dispatchedAt: null },
+          where: {
+            id: tx.id,
+            paymentStatus: 'HELD',
+            paidAt: { not: null },
+            dispatchedAt: null,
+            cancellationRequestedAt: null,
+          },
           data: { paymentStatus: 'REFUNDED', releasedAt: null },
         });
         if (claim.count === 0) {
@@ -180,13 +195,35 @@ export class DispatchSlaService {
           continue;
         }
 
-        const r = tx.gatewayPaymentId
-          ? await this.ozow.refundPayment(tx.gatewayPaymentId, tx.buyerTotal)
-          : { success: true, resultCode: 'NO_PAYMENT_ID' };
+        const provider = tx.paymentProvider ?? PaymentProvider.OZOW;
+        const refundableCents = Math.max(
+          0,
+          tx.buyerTotal - tx.refundedAmount,
+        );
+        const r =
+          refundableCents === 0
+            ? { success: true as const, resultCode: 'ALREADY_REFUNDED' }
+            : tx.gatewayPaymentId
+              ? this.rails
+                ? await this.rails.refund(
+                    provider,
+                    tx.gatewayPaymentId,
+                    refundableCents,
+                  )
+                : await this.ozow.refundPayment(
+                    tx.gatewayPaymentId,
+                    refundableCents,
+                  )
+              : {
+                  success: false,
+                  resultCode: 'NO_PAYMENT_ID',
+                  message:
+                    'Paid transaction has no stored gateway payment id — manual refund required',
+                };
 
         if (!r.success) {
           this.logger.warn(
-            `Auto-refund cron: Ozow refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
+            `Auto-refund cron: ${provider} refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
           );
           // Roll the claim back so the row returns to HELD for a retry.
           await this.prisma.transaction
@@ -234,6 +271,10 @@ export class DispatchSlaService {
             fresh?.listing?.listingType,
           ),
         });
+        const recordRefund = this.prisma.transaction.update({
+          where: { id: tx.id },
+          data: { refundedAmount: { increment: refundableCents } },
+        });
         if (blamelessSeller(tx)) {
           // OUR failure, not theirs. Under Bob Go a booking can be created and
           // then refused by the courier, or sit unaccepted — in either case the
@@ -244,13 +285,14 @@ export class DispatchSlaService {
           //
           // The refund and restock still happen — the buyer must not be left
           // holding a sale that will never ship. Only the blame is withheld.
-          await this.prisma.$transaction([restock]);
+          await this.prisma.$transaction([restock, recordRefund]);
           this.logger.warn(
             `Auto-refunded ${tx.id} WITHOUT a seller strike — the courier booking never completed (provider ${tx.carrierProvider ?? 'unknown'})`,
           );
         } else {
           await this.prisma.$transaction([
             restock,
+            recordRefund,
             this.prisma.user.update({
               where: { id: tx.sellerId },
               data: {

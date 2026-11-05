@@ -28,6 +28,26 @@ export const FLAGS = {
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
   /**
+   * Peach pay-in visibility. OFF keeps the buyer on Ozow only, even when the
+   * Peach adapter is configured. Turning it on is the staged-rollout switch.
+   */
+  peachPayinEnabled: {
+    key: 'peach_payin_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  /**
+   * Peach seller payouts. OFF leaves Peach-paid transactions in the due queue
+   * with a visible skip reason; it never routes them to Ozow.
+   *
+   * This one moves real money out of the Peach float, so it is a danger flag.
+   */
+  peachPayoutsEnabled: {
+    key: 'peach_payouts_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  /**
    * Where urgent operations alerts are texted. Empty = nothing is sent.
    *
    * A Setting rather than an env var so it can be changed from /admin without a

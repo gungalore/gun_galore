@@ -61,6 +61,33 @@ export function NotificationsList({
     };
   }, [category, status, isLoaded, isSignedIn, getToken]);
 
+  // Keep the visible ACTIVE list near-live. Only the first page is refreshed;
+  // once the member has paged deeper, replacing the list would yank rows out
+  // from under them. Resolved history is immutable enough not to poll.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || showResolved) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const token = await getToken();
+      if (!token || cancelled) return;
+      const data = await fetchFeed(token, category, 'active');
+      if (cancelled) return;
+      setItems((prev) => (prev.length <= 50 ? data : prev));
+      setHasMore(data.length >= 50);
+    };
+    const t = setInterval(() => void tick(), 15_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [category, showResolved, isLoaded, isSignedIn, getToken]);
+
   const handleDismiss = useCallback(
     async (id: string) => {
       // Optimistic: remove from list immediately.

@@ -45,6 +45,8 @@ import type { LlmProviderClient } from './provider.interface';
 import {
   LlmError,
   SUPPORTED_IMAGE_ASPECT_RATIOS,
+  type LlmAgentRequest,
+  type LlmAgentResponse,
   type LlmPing,
   type LlmImageRequest,
   type LlmImageResponse,
@@ -142,7 +144,14 @@ function isDocumentPurpose(purpose: string): boolean {
     purpose.startsWith('motivation.extract') ||
     // The firearm-listing verifier reads a serial stamp + a licence card;
     // it is an OCR job like the rest and belongs on the cheap flash-lite.
-    purpose === 'listing.licence-read'
+    purpose === 'listing.licence-read' ||
+    /**
+   * The guided intake is a cheap, short-turn conversation. Keep it on the
+   * same flash-lite as the readers; the writer and gate stay on the
+   * flagship model.
+   */
+    purpose === 'motivation.interview' ||
+    purpose === 'motivation.interview.agent'
   );
 }
 
@@ -247,6 +256,12 @@ export class LlmService {
     // because a global LLM_PROVIDER switch is set. An explicit per-purpose env
     // var still wins, above.
     if (purpose === 'feed.moderation.video') return this.gemini;
+    // ⚠️ THE INTERVIEW AGENT IS GEMINI-ONLY. It runs the Interactions API tool
+    // loop; no other provider on the platform implements `agent()`. Pinned so
+    // a global LLM_PROVIDER switch cannot turn every interview turn into an
+    // `unsupported` error. The call site still falls back to the one-shot
+    // phrasing path if Gemini is not configured.
+    if (purpose === 'motivation.interview.agent') return this.gemini;
     // ⚠️ EVERY `.video` MODERATION PURPOSE IS GEMINI-ONLY, for the same
     // reason: DeepSeek and Anthropic both reject a `video` LlmPart. This
     // covers marketplace video (`moderation.listing.video`) and seller
@@ -358,6 +373,17 @@ export class LlmService {
     // STRONG_GEMINI_MODEL on a non-confident answer is the CALL SITE's, passed
     // as an explicit `model`, so it never passes through here — and an explicit
     // `LLM_MODEL_<PURPOSE>` env var still wins over this primary.
+    // The motivation agent — interview, shared research, the per-application
+    // case brief, the writer, the verifier and the gate — runs on the cheap
+    // flash-lite with thinking enabled by the call sites. The plate and quarry
+    // picture calls are image purposes and must not be pulled onto a text model.
+    if (
+      purpose.startsWith('motivation.') &&
+      purpose !== 'motivation.plate' &&
+      purpose !== 'motivation.quarry'
+    ) {
+      return FAST_GEMINI_MODEL;
+    }
     if (isDocumentPurpose(purpose)) return FAST_GEMINI_MODEL;
     return undefined;
   }
@@ -448,6 +474,50 @@ export class LlmService {
   // ══════════════════════════════════════════════════════════════════
   // STREAM
   // ══════════════════════════════════════════════════════════════════
+  // ────────────────────────────────────────────────────────────────────
+  // AGENT
+  // ────────────────────────────────────────────────────────────────────
+  /**
+   * Run a tool-using agent turn.
+   *
+   * ⚠️ THE LEDGER COUNTS THE WHOLE LOOP AS ONE CALL. The provider may make
+   * several Interactions API requests to resolve tool calls, but the caller
+   * asked for one piece of work. The usage it returns is the final cumulative
+   * figure, so the spend chart does not double-count a single interview turn.
+   */
+  async agent(req: LlmAgentRequest): Promise<LlmAgentResponse> {
+    const provider = this.providerFor(req.purpose);
+    const model =
+      req.model ?? this.modelFor(req.purpose) ?? provider.defaultModel();
+    const startedAt = Date.now();
+
+    if (!provider.agent) {
+      const err = new LlmError(
+        'unsupported',
+        `${provider.name} cannot run an agent turn on this platform`,
+      );
+      this.record(req, provider.name, model, startedAt, undefined, err);
+      throw err;
+    }
+    if (!provider.isConfigured()) {
+      const err = new LlmError(
+        'not_configured',
+        `${provider.name} is not configured — no API key`,
+      );
+      this.record(req, provider.name, model, startedAt, undefined, err);
+      throw err;
+    }
+
+    try {
+      const res = await provider.agent({ ...req, model });
+      this.record(req, res.provider, res.model, startedAt, res.usage);
+      return res;
+    } catch (err) {
+      this.record(req, provider.name, model, startedAt, undefined, err);
+      throw err;
+    }
+  }
+
   async *stream(req: LlmRequest): AsyncGenerator<LlmStreamEvent> {
     const provider = this.serve(req);
     const model = req.model ?? this.modelFor(req.purpose) ?? provider.defaultModel();

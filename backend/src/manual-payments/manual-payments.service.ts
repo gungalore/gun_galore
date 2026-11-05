@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { PaymentProvider } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
@@ -9,6 +11,14 @@ import {
   OzowPayoutResult,
 } from '../payments/ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from '../payments/ozow-banks';
+import {
+  PeachService,
+  PeachPayoutBeneficiary,
+} from '../payments/peach.service';
+import {
+  normaliseBankName,
+  universalBranchCodeFor,
+} from '../payments/peach-banks';
 import {
   reserveSellerChargesForPayout,
   settleSellerChargeRecoveries,
@@ -77,21 +87,31 @@ export class ManualPaymentsService {
     private readonly settings: SettingsService,
     // OzowService is @Global (OzowModule) — no PaymentsModule import needed.
     private readonly ozow: OzowService,
+    // @Global PeachModule. Optional for positional test harnesses; the Peach
+    // arm simply reports "not configured" when absent.
+    @Optional()
+    private readonly peach?: PeachService,
   ) {}
 
-  // ── Seller payout disbursement via Ozow Payouts ─────────────────────
+  // ── Seller payout disbursement (Ozow + Peach) ───────────────────────
   // Operator-triggered (admin endpoint). Gathers the due seller payouts and
-  // disburses each payable transaction (one requestpayout per transaction).
-  // An atomic payout hold claims each row before the API call. Accepted
-  // requests stamp payoutRequestedAt; status notifications / polling stamp
-  // paidOutAt only on completion, or hold final failures for review. Buyer
-  // refunds are NOT here: the gateway reverses those on the original payment.
+  // partitions each row by the rail that captured the sale: Ozow rows go to
+  // Ozow Payouts (one requestpayout per transaction), Peach rows go to Peach
+  // Payouts (one batch). An atomic payout hold claims each row before the API
+  // call. Accepted requests stamp payoutRequestedAt; status notifications /
+  // polling stamp paidOutAt only on completion, or hold final failures for
+  // review. Buyer refunds are NOT here: the gateway reverses those on the
+  // original payment. There is NO cross-rail fallback.
   async runDuePayouts(): Promise<{
     attempted: number;
     accepted: number;
     failed: number;
     totalCents: number;
     skipped: SkippedDueRow[];
+    byProvider: Record<
+      'OZOW' | 'PEACH',
+      { attempted: number; accepted: number; failed: number; totalCents: number }
+    >;
   }> {
     if (!PAYMENTS_LIVE) {
       throw new Error(
@@ -106,6 +126,12 @@ export class ManualPaymentsService {
     const payable = due.payouts.filter((p) =>
       collected.payoutIds.includes(p.id),
     );
+    const ozowPayable = payable.filter(
+      (p) => p.paymentProvider !== PaymentProvider.PEACH,
+    );
+    const peachPayable = payable.filter(
+      (p) => p.paymentProvider === PaymentProvider.PEACH,
+    );
     if (payable.length === 0) {
       return {
         attempted: 0,
@@ -113,6 +139,10 @@ export class ManualPaymentsService {
         failed: 0,
         totalCents: 0,
         skipped: collected.skipped,
+        byProvider: {
+          OZOW: { attempted: 0, accepted: 0, failed: 0, totalCents: 0 },
+          PEACH: { attempted: 0, accepted: 0, failed: 0, totalCents: 0 },
+        },
       };
     }
 
@@ -133,7 +163,7 @@ export class ManualPaymentsService {
       orderReference: string | null;
     };
     const candidates: Candidate[] = [];
-    for (const p of payable) {
+    for (const p of ozowPayable) {
       const availableCents = netPayoutCents({ ...p, chargeRecoveryCents: 0 });
       if (availableCents <= 0) {
         collected.skipped.push({
@@ -169,13 +199,17 @@ export class ManualPaymentsService {
         orderReference: p.orderReference ?? null,
       });
     }
-    if (candidates.length === 0) {
+    if (candidates.length === 0 && peachPayable.length === 0) {
       return {
         attempted: 0,
         accepted: 0,
         failed: 0,
         totalCents: 0,
         skipped: collected.skipped,
+        byProvider: {
+          OZOW: { attempted: 0, accepted: 0, failed: 0, totalCents: 0 },
+          PEACH: { attempted: 0, accepted: 0, failed: 0, totalCents: 0 },
+        },
       };
     }
 
@@ -365,13 +399,318 @@ export class ManualPaymentsService {
     this.logger.log(
       `Ozow payout run: ${accepted}/${attempted} accepted, R${Math.round(totalCents / 100)} submitted`,
     );
+    const peach = await this.runPeachPayouts(peachPayable, collected);
     return {
-      attempted,
-      accepted,
-      failed,
-      totalCents,
+      attempted: attempted + peach.attempted,
+      accepted: accepted + peach.accepted,
+      failed: failed + peach.failed,
+      totalCents: totalCents + peach.totalCents,
       skipped: collected.skipped,
+      byProvider: {
+        OZOW: { attempted, accepted, failed, totalCents },
+        PEACH: peach,
+      },
     };
+  }
+
+  /**
+   * Peach seller disbursement. Runs as one batch, but the per-row claim +
+   * seller-charge reservation is the same as Ozow's. `paidOutAt` is only set
+   * on a successful result/webhook; pending/processing stays in flight.
+   */
+  private async runPeachPayouts(
+    payable: Awaited<ReturnType<ManualPaymentsService['getPayoutsDue']>>['payouts'],
+    collected: { skipped: SkippedDueRow[] },
+  ): Promise<{
+    attempted: number;
+    accepted: number;
+    failed: number;
+    totalCents: number;
+  }> {
+    const empty = { attempted: 0, accepted: 0, failed: 0, totalCents: 0 };
+    if (payable.length === 0) return empty;
+    const enabled =
+      !!this.peach?.isPayoutsConfigured() &&
+      (await this.settings.get(FLAGS.peachPayoutsEnabled));
+    if (!enabled) {
+      for (const p of payable) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason:
+            'Peach payouts are not enabled/configured — this Peach-paid row stays queued and is never routed to Ozow',
+        });
+      }
+      return empty;
+    }
+
+    type PeachCandidate = PeachPayoutBeneficiary & {
+      txId: string;
+      sellerId: string;
+      availableCents: number;
+      orderReference: string | null;
+    };
+    const candidates: PeachCandidate[] = [];
+    const now = new Date();
+
+    for (const p of payable) {
+      const availableCents = netPayoutCents({ ...p, chargeRecoveryCents: 0 });
+      if (availableCents <= 0) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: 'Net payout is zero after refunds/shipment charges — nothing to disburse',
+        });
+        continue;
+      }
+      const bank = normaliseBankName(p.seller.bankName);
+      const branchCode = bank ? universalBranchCodeFor(bank) : null;
+      if (
+        !bank ||
+        !branchCode ||
+        !p.seller.bankAccountNumber ||
+        !p.seller.bankAccountHolder
+      ) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? ''} bank "${p.seller.bankName ?? '—'}" is not payable by Peach (${bank ? 'no universal branch code' : 'unrecognised bank'}) — ask them to re-pick their bank on /profile/edit`,
+        });
+        continue;
+      }
+      if (availableCents < 1000) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Amount R${(availableCents / 100).toFixed(2)} is below Peach's R10 payout minimum — held until combined with a later payout`,
+        });
+        continue;
+      }
+
+      const payoutId = randomUUID();
+      let applied = 0;
+      let amountCents = 0;
+      const claimed = await this.prisma.$transaction(async (txc) => {
+        const claim = await txc.transaction.updateMany({
+          where: {
+            id: p.id,
+            releasedAt: { not: null },
+            payoutRequestedAt: null,
+            paidOutAt: null,
+            payoutHeldAt: null,
+          },
+          data: {
+            payoutHeldAt: now,
+            payoutHoldReason: 'Peach payout request in progress',
+            payoutHeldById: null,
+          },
+        });
+        if (claim.count === 0) return false;
+        applied = await reserveSellerChargesForPayout(txc, {
+          sellerId: p.sellerId,
+          transactionId: p.id,
+          availableCents,
+        });
+        amountCents = Math.max(0, availableCents - applied);
+        if (amountCents === 0) {
+          await settleSellerChargeRecoveries(txc, p.id);
+          await txc.transaction.updateMany({
+            where: { id: p.id, paidOutAt: null },
+            data: {
+              paidOutAt: now,
+              payoutRequestedAt: null,
+              payoutHeldAt: null,
+              payoutHoldReason: null,
+              payoutHeldById: null,
+            },
+          });
+          return true;
+        }
+        await txc.peachPayoutAttempt.create({
+          data: {
+            transactionId: p.id,
+            payoutId,
+            amountCents,
+            bankName: bank,
+            branchCode,
+            accountHolder: p.seller.bankAccountHolder ?? '',
+            reference: (p.orderReference ?? `AO ${p.id.slice(-8)}`)
+              .replace(/[^a-zA-Z0-9 ]/g, ' ')
+              .trim()
+              .slice(0, 20),
+            status: 'REQUESTED',
+          },
+        });
+        return true;
+      });
+      if (!claimed) continue;
+      if (amountCents === 0) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Payout fully recovered against seller charges (R${(applied / 100).toFixed(2)}); settled without a bank payment`,
+        });
+        continue;
+      }
+      candidates.push({
+        txId: p.id,
+        sellerId: p.sellerId,
+        availableCents,
+        orderReference: p.orderReference ?? null,
+        payoutId,
+        bankName: bank,
+        accountHolder: p.seller.bankAccountHolder ?? '',
+        bankAccountNumber: p.seller.bankAccountNumber,
+        branchCode,
+        amountCents,
+        reference: (p.orderReference ?? `AO ${p.id.slice(-8)}`)
+          .replace(/[^a-zA-Z0-9 ]/g, ' ')
+          .trim()
+          .slice(0, 20),
+        proofEmail: p.seller.email,
+      });
+    }
+
+    if (candidates.length === 0) return empty;
+
+    let res: Awaited<ReturnType<PeachService['createPayout']>>;
+    try {
+      res = await this.peach!.createPayout(candidates);
+    } catch (err) {
+      const message = `Peach payout request outcome unknown (${(err as Error).message})`;
+      for (const c of candidates) {
+        await this.prisma.peachPayoutAttempt
+          .update({
+            where: { payoutId: c.payoutId },
+            data: { status: 'UNKNOWN', errorMessage: message },
+          })
+          .catch(() => undefined);
+        await this.prisma.transaction.updateMany({
+          where: { id: c.txId, paidOutAt: null },
+          data: {
+            payoutRequestedAt: now,
+            payoutHeldAt: now,
+            payoutHoldReason: 'Peach payout outcome unknown — reconcile before retrying',
+            payoutHeldById: null,
+          },
+        });
+      }
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_PARTIAL',
+            referenceId: `payout-${new Date().toISOString().slice(0, 10)}`,
+            urgent: true,
+            context: `Peach payout run hit an unknown outcome for ${candidates.length} row(s). No charges were released; reconcile the payoutIds in the Peach dashboard. ${message}`,
+          },
+        })
+        .catch(() => undefined);
+      return { attempted: candidates.length, accepted: 0, failed: candidates.length, totalCents: 0 };
+    }
+
+    const byId = new Map(candidates.map((c) => [c.payoutId, c]));
+    let accepted = 0;
+    let totalCents = 0;
+    const failures: string[] = [];
+    for (const result of res.results) {
+      const c = byId.get(result.payoutId);
+      if (!c) continue;
+      const status = result.status.toLowerCase();
+      const isAccepted = ['pending', 'processing', 'successful', 'success'].includes(status);
+      if (!isAccepted) {
+        await this.prisma.peachPayoutAttempt.update({
+          where: { payoutId: c.payoutId },
+          data: {
+            status: result.status,
+            resultCode: result.code,
+            errorMessage: result.error ?? result.code ?? result.status,
+            terminalAt: now,
+          },
+        });
+        await this.prisma.transaction.updateMany({
+          where: { id: c.txId, paidOutAt: null },
+          data: {
+            payoutHeldAt: now,
+            payoutHoldReason: `Peach payout rejected: ${result.error ?? result.code ?? result.status}`.slice(0, 500),
+            payoutHeldById: null,
+          },
+        });
+        await releaseSellerChargeRecoveries(this.prisma, c.txId);
+        failures.push(`${c.txId.slice(0, 8)}: ${result.error ?? result.code ?? result.status}`);
+        continue;
+      }
+      const successful = status === 'successful' || status === 'success';
+      await this.prisma.$transaction([
+        this.prisma.transaction.update({
+          where: { id: c.txId },
+          data: {
+            gatewayPayoutId: c.payoutId,
+            payoutRequestedAt: now,
+            payoutHeldAt: null,
+            payoutHoldReason: null,
+            payoutHeldById: null,
+            ...(successful ? { paidOutAt: now } : {}),
+          },
+        }),
+        this.prisma.peachPayoutAttempt.update({
+          where: { payoutId: c.payoutId },
+          data: {
+            status: result.status,
+            requestId: res.requestId,
+            resultCode: result.code,
+            lastStatusCheckedAt: now,
+            ...(successful ? { completedAt: now, terminalAt: now } : {}),
+          },
+        }),
+      ]);
+      if (successful) {
+        await settleSellerChargeRecoveries(this.prisma, c.txId);
+      }
+      accepted += 1;
+      totalCents += c.amountCents;
+    }
+
+    // Any candidate Peach did not echo back is in an unknown state: keep it
+    // held and let the status query/webhook reconcile it. Never mark it failed
+    // or release its charge reservation.
+    const returned = new Set(res.results.map((r) => r.payoutId));
+    for (const c of candidates) {
+      if (returned.has(c.payoutId)) continue;
+      await this.prisma.peachPayoutAttempt
+        .update({
+          where: { payoutId: c.payoutId },
+          data: { status: 'UNKNOWN', errorMessage: 'No result returned for this payoutId' },
+        })
+        .catch(() => undefined);
+      await this.prisma.transaction.updateMany({
+        where: { id: c.txId, paidOutAt: null },
+        data: {
+          payoutRequestedAt: now,
+          payoutHeldAt: now,
+          payoutHoldReason: 'Peach payout result missing — reconcile before retrying',
+          payoutHeldById: null,
+        },
+      });
+      failures.push(`${c.txId.slice(0, 8)}: no result`);
+    }
+
+    const failed = candidates.length - accepted;
+    if (failed > 0) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_PARTIAL',
+            referenceId: res.requestId ?? `peach-${new Date().toISOString().slice(0, 10)}`,
+            urgent: true,
+            context: `Peach payout run: ${accepted}/${candidates.length} accepted, ${failed} not accepted. ${failures.join('; ')} ${res.message ?? ''}`.trim(),
+          },
+        })
+        .catch(() => undefined);
+    }
+    this.logger.log(
+      `Peach payout run: ${accepted}/${candidates.length} accepted, R${Math.round(totalCents / 100)} submitted`,
+    );
+    return { attempted: candidates.length, accepted, failed, totalCents };
   }
 
   private async holdFailedPayout(
@@ -532,6 +871,7 @@ export class ManualPaymentsService {
     const payoutRows = await this.prisma.transaction.findMany({
       where: {
         paymentStatus: 'RELEASED',
+        paidAt: { not: null },
         sellerPayout: { gt: 0 },
         paidOutAt: null,
         refundOfId: null,
@@ -669,6 +1009,7 @@ export class ManualPaymentsService {
     const payouts = await this.prisma.transaction.findMany({
       where: {
         paymentStatus: 'RELEASED',
+        paidAt: { not: null },
         sellerPayout: { gt: 0 },
         paidOutAt: null,
         payoutRequestedAt: null,
@@ -681,6 +1022,8 @@ export class ManualPaymentsService {
       orderBy: { releasedAt: 'asc' },
       select: {
         id: true,
+        // The rail that captured the sale. The payout MUST use this provider.
+        paymentProvider: true,
         // Needed to spread one seller's outstanding charges across their due
         // payouts (FIFO) instead of docking the full balance on each row.
         sellerId: true,
@@ -709,7 +1052,8 @@ export class ManualPaymentsService {
             // KYC VERIFIED). collectDue skips sellers failing it.
             kycStatus: true,
             profileCompletedAt: true,
-            // bankVerifiedAt no longer gates payouts (Ozow has no BANV).
+            // BANV hard gate once Peach's Payouts/BANV product is configured:
+            // collectDue skips a seller without this on both rails.
             bankVerifiedAt: true,
           },
         },
@@ -858,9 +1202,18 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      // Ozow has no automated AVS/BANV product — the manual admin
-      // holder-name review remains the gate (as in the pre-gateway process).
-      // bankVerifiedAt is no longer consulted.
+      // BANV hard gate. Once Peach BANV is configured it verifies the same
+      // destination bank for BOTH rails (it checks account existence + SA-ID
+      // ownership, not the gateway). A seller who has not passed stays held;
+      // buyer refunds below are deliberately not gated.
+      if (this.peach?.isBanvEnabled() && !p.seller.bankVerifiedAt) {
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? '(no username)'}: bank account not yet verified (BANV) — re-save banking details or re-run verification from the dossier`,
+        });
+        continue;
+      }
       payoutIds.push(p.id);
       payoutTotalCents += payoutAmount;
     }
@@ -908,6 +1261,52 @@ export class ManualPaymentsService {
     const autoPayoutsEnabled = await this.settings.get(
       FLAGS.autoPayoutsEnabled,
     );
-    return { ...due, skipped, autoPayoutsEnabled };
+    const peachPayinEnabled = await this.settings.get(FLAGS.peachPayinEnabled);
+    const peachPayoutsEnabled = await this.settings.get(
+      FLAGS.peachPayoutsEnabled,
+    );
+    const byProvider = {
+      OZOW: { count: 0, amountCents: 0 },
+      PEACH: { count: 0, amountCents: 0 },
+    };
+    for (const p of due.payouts) {
+      const key =
+        p.paymentProvider === PaymentProvider.PEACH ? 'PEACH' : 'OZOW';
+      byProvider[key].count += 1;
+      byProvider[key].amountCents += p.amountCents ?? 0;
+    }
+    // In-flight rows disappear from the due list while a payout is being
+    // confirmed. Show them separately so the operator can see money that is
+    // already moving.
+    const inFlightRows = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'RELEASED',
+        paidAt: { not: null },
+        sellerPayout: { gt: 0 },
+        paidOutAt: null,
+        payoutRequestedAt: { not: null },
+        refundOfId: null,
+      },
+      select: { paymentProvider: true, sellerPayout: true },
+    });
+    const inFlight = {
+      OZOW: { count: 0, amountCents: 0 },
+      PEACH: { count: 0, amountCents: 0 },
+    };
+    for (const row of inFlightRows) {
+      const key =
+        row.paymentProvider === PaymentProvider.PEACH ? 'PEACH' : 'OZOW';
+      inFlight[key].count += 1;
+      inFlight[key].amountCents += row.sellerPayout;
+    }
+    return {
+      ...due,
+      skipped,
+      autoPayoutsEnabled,
+      peachPayinEnabled,
+      peachPayoutsEnabled,
+      byProvider,
+      inFlight,
+    };
   }
 }

@@ -9,6 +9,7 @@ import {
   ownedFirearmSerial,
 } from './motivation-fields';
 import { readSaId, splitName } from './sa-id';
+import { displayMake, displayModel } from './saps-vocabulary';
 import type { Saps271FieldName } from './saps271-coords';
 
 // ────────────────────────────────────────────────────────────────────
@@ -368,8 +369,8 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     );
   }
   put('e_calibre', a('firearm_calibre'));
-  put('e_make', a('firearm_make'));
-  put('e_model', a('firearm_model'));
+  put('e_make', displayMake(a('firearm_make')));
+  put('e_model', displayModel(a('firearm_model')));
 
   // ⚠️ THREE SERIAL ROWS, EACH WITH ITS OWN MAKE — items 1.7 to 1.12. Four of
   // these six boxes had no coordinate until section F was measured, so the

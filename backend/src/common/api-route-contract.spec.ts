@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MotivationsController } from '../motivations/motivations.controller';
+import { MotivationsIntakeController } from '../motivations/intake/intake.controller';
 import { MotivationsWitnessController } from '../motivations/motivations-witness.controller';
 import { MotivationsConsentController } from '../motivations/motivations-consent.controller';
 import { LicenceCentreController } from '../licence-centre/licence-centre.controller';
@@ -75,6 +76,7 @@ const PAIRS = [
     // does not have.
     controller: [
       MotivationsController,
+      MotivationsIntakeController,
       MotivationsWitnessController,
       // The applicant's half of the seller-consent flow. The seller's half is
       // a separate, UNGUARDED controller on its own path prefix and is not

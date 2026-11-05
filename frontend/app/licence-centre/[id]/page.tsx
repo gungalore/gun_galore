@@ -1,1820 +1,272 @@
 'use client';
 
-import { useAuth } from '../../../lib/auth';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { motivationsApi, MotivationApiError } from '@/lib/motivations-api';
-import { prepareSourceBatch } from '@/lib/scan-upload/source-batch';
-import { useReportMotivationBusy } from '@/lib/motivation-busy';
+import { useAuth } from '../../../lib/auth';
+import { motivationsApi } from '@/lib/motivations-api';
 import type {
-  CredentialSlot,
-  PreviewSection,
   SheetItem,
   SheetResponse,
 } from '@/components/licence-centre/contract';
-import SheetHeader from '@/components/licence-centre/sheet-header';
-import SheetSection from '@/components/licence-centre/sheet-section';
-import SheetDisclosure from '@/components/licence-centre/sheet-disclosure';
-import SheetRow from '@/components/licence-centre/sheet-row';
-import UnplacedUploadDialog, {
-  type UnplacedUpload,
-} from '@/components/licence-centre/unplaced-upload-dialog';
-import DeclarationRow from '@/components/licence-centre/declaration-row';
-import DocumentShelf from '@/components/licence-centre/document-shelf';
-import DesignPicker from '@/components/licence-centre/design-picker';
-import SheetFooter from '@/components/licence-centre/sheet-footer';
-import SheetToast from '@/components/licence-centre/sheet-toast';
-import SourceActions from '@/components/licence-centre/source-actions';
-import CompetencyLines from '@/components/licence-centre/competency-lines';
-import CredentialPair from '@/components/licence-centre/credential-pair';
-import DangerAreas from '@/components/licence-centre/danger-areas';
-import { PrecinctCard } from '@/components/motivation/precinct-card';
-import LibraryPicker from '@/components/library-picker';
-import PlaceConfirm from '@/components/motivation/place-confirm';
-import PackSummary from '@/components/licence-centre/pack-summary';
-import PreviewPanel from '@/components/licence-centre/preview-panel';
-import AddPanel from '@/components/licence-centre/add-panel';
-import DeleteApplication from '@/components/licence-pack/delete-application';
-import { VaultConsentBody } from '@/components/vault-consent';
-import { licenceCentreApi } from '@/lib/licence-centre-api';
-import type {
-  DangerArea,
-  LibraryItem,
-  PickableKind,
-  Suggestion,
-} from '@/lib/motivations-api';
 
-// ────────────────────────────────────────────────────────────────────
-// THE REVIEW SHEET — one scrolling page per application.
-//
-// ⚠️ THE ONLY STATEFUL FILE IN THIS SURFACE, and that is a rule rather than an
-// accident — the same one The Bench works to. Everything under
-// components/licence-centre/ takes plain props and calls back. A component
-// that grows its own fetch is a component that can disagree with this page
-// about what the application says.
-//
-// ⚠️ IT IS A SHEET, NOT A WIZARD. There are no steps, nothing is gated behind
-// a Continue, and every question is on this page in the state it is in. The
-// screen it replaces was eleven steps in which every question rendered as a
-// grey row reading "You may know it" with no input visible.
-//
-// ⚠️ ONE NUMBER DRIVES THE THREE PROGRESS VIEWS. `sheet.missing` comes from the
-// server for answer keys, and `sheet.needs.missingRequired` for required
-// documents; the strip's pill, the chip dots and the footer all read their sum
-// and nothing recomputes it. The old screen had four such systems and they
-// contradicted each other on a live application.
-// ────────────────────────────────────────────────────────────────────
+const CONTROL =
+  'mt-1 block w-full rounded-lg border bg-transparent px-2.5 py-2 text-[13.5px]';
+const CONTROL_STYLE = {
+  borderColor: 'var(--border)',
+  color: 'var(--text-primary)',
+} as const;
 
-/** Which route Part F takes, from `firearm_source`. */
-/**
- * The six SAPS 271 section E rows that come off the licence card rather than
- * out of the applicant. `firearm_serial` — the headline number the DFO asks
- * for — is deliberately NOT one of them and stays in the open.
- */
-const CARD_COMPONENT_KEYS = new Set([
-  'barrel_serial',
-  'barrel_make',
-  'frame_serial',
-  'frame_make',
-  'receiver_serial',
-  'receiver_make',
-]);
-
-/**
- * SAPS 271 boxes on the "You" section that a member should never have to think
- * about, because we already hold the answer or the form is asking twice.
- *
- * ⚠️ FOLDED, NOT DELETED. Every one of these is a real box on a statutory
- * form — a postal address distinct from the residential one, a dialling code
- * split from its own number, a postal code per address. Removing them would
- * ship an incomplete 271. What was wrong is that they sat open, marked
- * Optional, between the questions that matter: on the live sheet "Postal
- * address, if different" was prefilled with the SAME address as residential,
- * and the two dialling codes were separate rows from the two phone numbers
- * they belong to.
- */
-const YOU_FORM_BOX_KEYS = new Set([
-  'postal_address',
-  'postal_postal_code',
-  'employer_postal_code',
-  'home_dialling_code',
-  'work_dialling_code',
-]);
-
-/** Who actually fills those six, by route. Keyed on `firearm_source`. */
-const COMPONENT_NOTE: Record<string, string> = {
-  'From a dealer': 'Your dealer fills these in from the licence card.',
-  'From a private owner':
-    'The seller fills these in when they photograph their licence.',
-  default: 'Read off the licence card — most cards print NONE against two of them.',
-};
-
-const SOURCE_ROUTE: Record<string, 'dealer' | 'seller' | 'estate' | 'unstated'> =
-  {
-    'From a dealer': 'dealer',
-    'From a private owner': 'seller',
-    'Inherited from a deceased estate': 'estate',
-  };
-
-/** How long to sit on a keystroke before saving. */
-const SAVE_DEBOUNCE_MS = 600;
-
-/** The eight sections, in the order brief §6.1 lists them. */
-const SECTION_ORDER = [
-  'firearm',
-  'you',
-  'competency',
-  'own',
-  'premises',
-  'case',
-  'declarations',
-  'pack',
-] as const;
-
-/**
- * The licence types whose pack annexes crime evidence.
- *
- * ⚠️ THE SERVER IS STILL THE GATE. `precinctFor` answers null and `areasFor`
- * an empty list for anything else; this only stops the sheet from drawing a
- * crime section on a hunting application and then telling the member there
- * are no figures for their station.
- */
-const SELF_DEFENCE_TYPES = new Set([
-  'S13_SELF_DEFENCE',
-  'S14_RESTRICTED_SELF_DEFENCE',
-]);
-
-/** A history question's detail box and its four form boxes. */
-function declarationParts(items: SheetItem[], key: string) {
-  const detail = items.find((i) => i.key === `${key}_detail`);
-  const boxes = items.filter(
-    (i) => i.key.startsWith(`${key}_`) && i.key !== `${key}_detail`,
-  );
-  return { detail, boxes };
+function optionsFor(item: SheetItem): string[] {
+  if (item.choices?.length) return item.choices;
+  if (item.optionGroups?.length) {
+    return item.optionGroups.flatMap((group) =>
+      group.options.map((option) => option.value),
+    );
+  }
+  return (item.options ?? []).map((option) => option.key);
 }
 
-/**
- * The certificate for the class being applied for, first.
- *
- * ⚠️ RANKS, NEVER HIDES, and the difference is H10 read from the other side.
- * Auto-link once grouped competency candidates by KIND alone and attached a
- * handgun-only certificate to a rifle application, which is refused before it
- * is considered — so `competencyCovers` gates the ATTACHING. This is the
- * member choosing, and the doctrine there is "unknown is a yes": we refuse
- * only what we have READ and know to be wrong. A title we cannot match is a
- * document we do not know is wrong, and dropping it out of somebody's own
- * dropdown on that guess is how they end up unable to attach the right page.
- *
- * ⚠️ AND IT IS NOT A STRING GUESS. A vault title is written by
- * derivedCredentialTitle through endorsementDisplay — "Proficiency - Handgun"
- * — off the same endorsement list that produced `neededLabel`. Where a member
- * has renamed one, the match simply does not fire and the order is unchanged.
- */
-function rankByClass<T extends { title: string }>(
-  items: T[],
-  neededLabel: string | null,
-): T[] {
-  if (!neededLabel) return items;
-  const needle = neededLabel.toLowerCase();
-  const fits = (t: string) => t.toLowerCase().includes(needle);
-  return [...items].sort((a, b) => Number(fits(b.title)) - Number(fits(a.title)));
+function isMissing(item: SheetItem, missingKeys: Set<string>): boolean {
+  if (item.state === 'na' || !item.required) return false;
+  if (item.state === 'needs_you' || item.state === 'suggested') return true;
+  return missingKeys.has(item.key) && !item.value;
 }
 
-export default function LicenceCentreSheetPage() {
+export default function EditMissingSheet() {
   const { getToken } = useAuth();
-  const router = useRouter();
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const id = params?.id ?? '';
 
   const [sheet, setSheet] = useState<SheetResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  // Hide the always-on Shop/Community toggle while a save/generate is in
-  // flight (see lib/motivation-busy.ts) — switching views mid-save would drop
-  // the member out of the action.
-  useReportMotivationBusy(busy);
-  const [toast, setToast] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  /**
-   * A source-paperwork batch is in flight — naming, straightening, pairing and
-   * filing. Its own flag, so the button says so without the sheet's own `busy`
-   * lighting it up for unrelated actions.
-   */
-  const [sourceBusy, setSourceBusy] = useState(false);
-  /**
-   * Files the reader could not place. Nothing has been saved; each one waits
-   * for a description and a re-read, one at a time.
-   */
-  const [unplaced, setUnplaced] = useState<UnplacedUpload[]>([]);
-  const [unplacedBusy, setUnplacedBusy] = useState(false);
-  const [active, setActive] = useState<string>('firearm');
-  /** The Add-a-document sheet, and the kinds it may file into. */
-  const [adding, setAdding] = useState(false);
-  /** Entered through the Scan tile — open the camera without a second click. */
-  const [autoScan, setAutoScan] = useState(false);
-  const [kinds, setKinds] = useState<PickableKind[]>([]);
-
-  /**
-   * The "may we keep your documents?" answer, when it is what stands between
-   * the member and the save they just asked for.
-   *
-   * ⚠️ THE TOAST USED TO BE THE WHOLE RESPONSE. Pressing "Save N to my Licence
-   * Centre" without consent returns `needsConsent`, and the member was told to
-   * go to "Account, then Document Centre" and find the control there — while
-   * the documents they had just ticked stayed unsaved. The same notice now
-   * renders here, and answering it finishes the save they asked for.
-   */
-  const [keepConsent, setKeepConsent] = useState<{
-    ids: string[];
-    busy: boolean;
-  } | null>(null);
-
-  /**
-   * The operator-set retention window, so the in-place consent notice names the
-   * real period instead of falling back to "after the application is finished".
-   */
-  const [retentionDays, setRetentionDays] = useState<number | null>(null);
-  const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
-  useEffect(() => {
-    let live = true;
-    void licenceCentreApi
-      .consent(getTokenRef.current)
-      .then((c) => {
-        if (live) setRetentionDays(c.retentionDays ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  /**
-   * Which sections are folded open. Null until the sheet has arrived.
-   *
-   * ⚠️ COMPUTED ONCE, THEN THE MEMBER OWNS IT. The sheet is refetched after
-   * every save, and recomputing this on each one would close a section
-   * somebody had just opened, mid-answer.
-   */
-  const [openSections, setOpenSections] = useState<Record<
-    string,
-    boolean
-  > | null>(null);
-
-  /**
-   * How many empty owned-firearm rows to offer beyond the ones in use.
-   *
-   * ⚠️ ZERO, UNTIL SOMEBODY ASKS. The registry serves fourteen rows whatever a
-   * member owns; the live sheet rendered all fourteen, so five real firearms
-   * came with nine empty ones — no headings between them, and each empty row
-   * carrying the full eleven-tile "what it is for" grid.
-   */
-  const [extraOwned, setExtraOwned] = useState(0);
-
-  /**
-   * How many EXTRA association slots the member has asked for.
-   *
-   * ⚠️ THE REGISTRY ALWAYS MEANT THESE TO BE HIDDEN. Both extra association
-   * blocks carry the note "the wizard hides the empty rows behind 'add another
-   * association' — operator, 2026-08-20 — so the single-body applicant never
-   * sees them", and nothing implemented it: six empty boxes sat under the
-   * member's real association, two of them labelled "Another association you
-   * belong to". Operator, 2026-09-09: "the another association must be gone
-   * and just a option for Add Another association."
-   *
-   * ⚠️ AN ANSWERED SLOT IS NEVER HIDDEN, whatever this counter says. Several
-   * associations is the normal case for a section 16 applicant — the
-   * professional motivations we studied list three — so a slot with anything
-   * in it opens on its own.
-   */
-  const [extraAssociations, setExtraAssociations] = useState(0);
-
-  /** A save into the Document Centre is in flight. */
-  const [keeping, setKeeping] = useState(false);
-
-  /**
-   * The competency/proficiency reuse picker: which slot asked, and the list.
-   *
-   * ⚠️ FETCHED ON THE TAP, NOT WITH THE SHEET. The sheet carries a COUNT of
-   * what the Document Centre holds — enough to decide whether the door is
-   * worth drawing — and `GET :id/library` is the list, with the two-page
-   * proficiency fold and the across-applications consent already applied.
-   * Loading it on every sheet read would pay for machinery most members never
-   * open.
-   */
-  const [pickerKind, setPickerKind] = useState<CredentialSlot['kind'] | null>(
-    null,
-  );
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
-
-  /**
-   * The dangerous areas around the applicant, and their own ticks.
-   *
-   * ⚠️ ITS OWN FETCH, NOT PART OF THE SHEET. Building the list geocodes every
-   * area to find its police station — one Places lookup each — and the sheet is
-   * refetched after every single answer. Folding it in would pay for a dozen
-   * geocodes each time somebody corrects a serial.
-   *
-   * ⚠️ AND SELF-DEFENCE ONLY. The server answers `{ areas: [] }` for anything
-   * else, but there is no reason to ask at all: a hunting application has no
-   * press-clippings annexure.
-   */
-  const [areas, setAreas] = useState<{
-    station: string | null;
-    withinKm: number;
-    answered: boolean;
-    areas: DangerArea[];
-  } | null>(null);
-  const [savingAreas, setSavingAreas] = useState(false);
-
-  /**
-   * ⚠️ THE ANSWERS THE SERVER LAST CONFIRMED, HELD SEPARATELY FROM THE SHEET.
-   *
-   * The sheet is refetched after a save, and a refetch that landed while
-   * somebody was mid-keystroke would overwrite what they had just typed. This
-   * holds the pending edits so a render always shows the member's own text
-   * even while the server catches up.
-   */
-  const [pending, setPending] = useState<Record<string, string>>({});
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const next = await motivationsApi.sheet(getToken, id);
       setSheet(next);
+      setValues(
+        Object.fromEntries(next.items.map((item) => [item.key, item.value])),
+      );
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
   }, [getToken, id]);
 
-  /**
-   * ⚠️ STABLE, OR THE SHELF RE-FETCHES EVERY THUMBNAIL ON EVERY RENDER.
-   *
-   * The shelf's tiles fetch their bytes through this, and the page re-renders
-   * on every scroll tick and every state change. Handing an inline arrow made
-   * `loadUrl` a new function each time, so — with it in the tile effect's deps
-   * — each re-render re-ran the fetch for all N documents, bursting past the
-   * API's 60-requests-a-minute throttle: tiles fell back to icons and the
-   * preview would not open (429). Memoised on the two things that can actually
-   * change the request, the tile effect runs once per document.
-   */
-  const loadUploadUrl = useCallback(
-    (uploadId: string) => motivationsApi.uploadBlobUrl(getToken, id, uploadId),
-    [getToken, id],
-  );
-
-  /**
-   * Answer "may we keep your documents?" and finish the save that raised it.
-   *
-   * ⚠️ ANSWERING RETRIES THE SAVE. The member pressed "Save to my Licence
-   * Centre"; consent is a step in that, not a detour away from it. A "no"
-   * leaves the documents on the application and says so.
-   */
-  const answerKeepConsent = useCallback(
-    async (agreed: boolean) => {
-      const pending = keepConsent?.ids ?? [];
-      setKeepConsent((c) => (c ? { ...c, busy: true } : c));
-      try {
-        await licenceCentreApi.answerConsent(getToken, agreed);
-        setKeepConsent(null);
-        if (!agreed) {
-          setToast('We will not keep those documents.');
-          return;
-        }
-        if (!pending.length) return;
-        const r = await motivationsApi.keepInCentre(getToken, id, pending);
-        await load();
-        setToast(
-          r.kept === 1
-            ? 'Saved one document to your Licence Centre.'
-            : `Saved ${r.kept} documents to your Licence Centre.`,
-        );
-      } catch {
-        setKeepConsent((c) => (c ? { ...c, busy: false } : c));
-        setToast('We could not save those just now.');
-      }
-    },
-    [getToken, id, load, keepConsent],
-  );
-
   useEffect(() => {
     if (id) void load();
   }, [id, load]);
 
-  // The pickable kinds for the Add sheet. Fetched once, and separately from
-  // the sheet: it is a fixed list per licence type, not something a keystroke
-  // can change.
-  useEffect(() => {
-    if (!id) return;
-    let live = true;
-    void motivationsApi
-      .uploads(getToken, id)
-      .then((u) => {
-        if (live) setKinds(u.kinds);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [getToken, id]);
-
-  /**
-   * Attach what the member already holds, without asking.
-   *
-   * ⚠️ THE SERVER SIDE OF THIS HAS ALWAYS EXISTED AND NOTHING CALLED IT.
-   * `POST :id/autolink` and `motivationsApi.autolink` were both written for the
-   * old wizard's "generator open"; Phase 4 deleted those screens and the sheet
-   * never picked the call up, so `motivationsApi.autolink` sat in the client
-   * with no caller at all. A member with twenty documents in their Document
-   * Centre started every application with an empty shelf. Same failure as the
-   * delete button and the seller context: a capability orphaned by the cutover.
-   *
-   * ⚠️ ONCE PER VISIT, BEHIND A REF LATCH. It is a POST that changes what a DFO
-   * will see, and an effect that can re-run must not be what decides that. The
-   * server is idempotent about it — it answers `already-done` — but the latch
-   * is what stops us relying on that.
-   *
-   * ⚠️ `placeConfirmed` STAYS FALSE. Safe photographs are held back until the
-   * member confirms they are of the safe at THIS address: a safe photograph
-   * does not go stale with time, it goes wrong when somebody moves house, and
-   * nothing on the file says so. The server reports `needsPlaceConfirm` and the
-   * library picker asks the question properly.
-   *
-   * The autolink's own refusals are worth knowing before changing any of this:
-   * never a document describing a firearm or a transaction, never one expiring
-   * within ninety days, never without consent, and never a guess between
-   * candidates — except that the endorsement test runs BEFORE the count, so a
-   * member holding a handgun certificate and a rifle certificate gets the one
-   * that covers the firearm being applied for rather than neither.
-   */
-  const autolinkedFor = useRef<string | null>(null);
-  /**
-   * The server held photographs of a safe back, pending the place tick.
-   *
-   * ⚠️ NOT DERIVED FROM `sheet`. It is the answer to one POST, and the sheet
-   * knows nothing about it — a member with safe photographs in their Centre
-   * and none on the application is indistinguishable, from the sheet alone,
-   * from a member with an empty Centre.
-   */
-  const [needsPlace, setNeedsPlace] = useState(false);
-  useEffect(() => {
-    if (!sheet) return;
-    /**
-     * ⚠️ KEYED ON THE FIREARM, NOT ON "have we run yet".
-     *
-     * A plain once-per-visit latch is what made the competency unreachable: the
-     * run happens at open, before the firearm type is answered, so every
-     * competency certificate the member holds is an equally valid candidate and
-     * the several-candidates rule correctly refuses to guess. Answering the
-     * firearm afterwards changed nothing, because the latch had closed.
-     *
-     * `firearm_type` and `firearm_action` are the two answers `endorsementNeed`
-     * reads, so this re-asks exactly when the question has a different answer —
-     * and never merely because a model or a serial was edited. The server
-     * re-arms its own once-per-application stamp on the same condition.
-     */
-    const key = `${sheet.items.find((i) => i.key === 'firearm_type')?.value ?? ''}|${
-      sheet.items.find((i) => i.key === 'firearm_action')?.value ?? ''
-    }`;
-    if (autolinkedFor.current === key) return;
-    autolinkedFor.current = key;
-    void (async () => {
-      try {
-        const r = await motivationsApi.autolink(getToken, id);
-        /**
-         * ⚠️ READ BEFORE THE EARLY RETURN, WHICH IS WHERE IT USED TO BE LOST.
-         * The one case that raises this question is an application whose ONLY
-         * candidates are photographs of a safe — nothing attaches, so
-         * `!r.attached.length` returned, and the question the server had just
-         * asked went on the floor. The member saw nothing happen and had no
-         * way to find out why.
-         */
-        setNeedsPlace(r.needsPlaceConfirm);
-        /**
-         * ⚠️ THE OFFER CAN WRITE WITHOUT ATTACHING ANYTHING. Re-running the
-         * offer is what fills "Your case" from a document the member uploaded
-         * after this application was created — so a run that attached no
-         * document can still have changed answers, and the sheet must reload
-         * for them to appear.
-         */
-        if (!r.attached.length && !(r.filled?.length ?? 0)) return;
-        await load();
-        if (r.attached.length) {
-          setToast(
-            r.attached.length === 1
-              ? `Added ${r.attached[0].title} from your Licence Centre.`
-              : `Added ${r.attached.length} documents from your Licence Centre.`,
-          );
-        }
-      } catch {
-        /* Fail soft: an application must never fail to open because the
-           Centre was slow. The shelf is simply emptier than it could be. */
-      }
-    })();
-  }, [sheet, getToken, id, load]);
-
-  /**
-   * ⚠️ THE "WHY THIS FIREARM" BOX IS NO LONGER A QUESTION (2026-10-17). The
-   * reason is generated during "Write my motivation" from the same pack, and
-   * the sheet no longer shows an inferred paragraph asking the member to
-   * confirm work we did for them. Nothing to fire here any more.
-   */
-
-  /**
-   * Load the area list once, for a self-defence application.
-   *
-   * ⚠️ KEYED ON THE STATION, because that is what the list is drawn around.
-   * It arrives from `stationOffer()` at create and the member may correct it;
-   * anything else they change — a serial, a safe photograph — must not spend a
-   * dozen geocodes again.
-   */
-  const areasFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!sheet) return;
-    if (sheet.application.licenceType !== 'S13_SELF_DEFENCE') return;
-    const station =
-      sheet.items.find((i) => i.key === 'police_station')?.value ?? '';
-    if (areasFor.current === station) return;
-    areasFor.current = station;
-    void (async () => {
-      try {
-        setAreas(await motivationsApi.areas(getToken, id));
-      } catch {
-        /* Fail soft: the section says it found nothing, which is true. */
-      }
-    })();
-  }, [sheet, getToken, id]);
-
-  /**
-   * The opening fold: the first section that still owes something.
-   *
-   * ⚠️ NOT "all closed", AND NOT "the first section". A member coming back to
-   * a half-finished application should land where the work is; a member with
-   * nothing outstanding should land at the top rather than on a page of eight
-   * shut headings with no hint of where to start.
-   */
-  useEffect(() => {
-    if (!sheet || openSections) return;
-    const first =
-      sheet.sections.find((s) => s.missing.length > 0)?.id ??
-      sheet.sections[0]?.id;
-    setOpenSections(first ? { [first]: true } : {});
-  }, [sheet, openSections]);
-
-  const setSectionOpen = useCallback((id: string, open: boolean) => {
-    setOpenSections((prev) => ({ ...(prev ?? {}), [id]: open }));
-  }, []);
-
-  /**
-   * The active section chip follows the scroll.
-   *
-   * ⚠️ AN OBSERVER, NOT A SCROLL HANDLER. A scroll listener firing on every
-   * frame to measure eight headings is the kind of thing that makes a long
-   * form feel heavy on a phone, which is the specific complaint this surface
-   * exists to answer.
-   */
-  useEffect(() => {
-    if (!sheet) return;
-    const headings = SECTION_ORDER.map((s) =>
-      document.getElementById(s),
-    ).filter((el): el is HTMLElement => !!el);
-    if (!headings.length) return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        const top = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (top?.target.id) setActive(top.target.id);
-      },
-      { rootMargin: '-120px 0px -60% 0px' },
-    );
-    headings.forEach((h) => io.observe(h));
-    return () => io.disconnect();
+  const missingKeys = useMemo(() => {
+    const keys = new Set<string>(sheet?.missing ?? []);
+    for (const section of sheet?.sections ?? []) {
+      for (const key of section.missing) keys.add(key);
+    }
+    return keys;
   }, [sheet]);
 
-  /**
-   * Save, then refresh the sheet and the preview.
-   *
-   * ⚠️ THE WHOLE BLOB, AS THE CONTRACT HAS ALWAYS BEEN. `PATCH :id/answers`
-   * takes everything and the server decides what changed and what is
-   * profile-scoped — see saveAnswers. Sending a diff from here would be this
-   * screen deciding which of somebody's answers matter.
-   */
-  const flush = useCallback(
-    async (patch: Record<string, string>) => {
-      try {
-        const res = await motivationsApi.saveAnswers(getToken, id, patch);
-        await load();
-        // ⚠️ ONLY THE KEYS THIS SAVE CARRIED, AND ONLY WHERE THEY STILL MATCH.
-        // `setPending({})` after the round trip wiped every character typed
-        // while the request was in flight, so the input jumped backwards.
-        setPending((p) => {
-          const next = { ...p };
-          for (const [k, v] of Object.entries(patch)) {
-            if (next[k] === v) delete next[k];
-          }
-          return next;
-        });
-        // ⚠️ A 200 WITH `refused` IS NOT A SAVE. The values were rejected by
-        // the registry's own rules; saying nothing loses an answer silently.
-        if (res?.refused?.length) {
-          setToast(
-            `We could not keep ${res.refused.length === 1 ? 'that answer' : `${res.refused.length} answers`}. Please check the value and try again.`,
-          );
-        }
-      } catch (err) {
-        setError((err as Error).message);
-      }
-    },
-    [getToken, id, load],
-  );
-
-  const onChange = useCallback(
-    (key: string, value: string) => {
-      setPending((p) => {
-        const next = { ...p, [key]: value };
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => void flush(next), SAVE_DEBOUNCE_MS);
-        return next;
-      });
-    },
-    [flush],
-  );
-
-  /** Accept a suggested value as it stands. */
-  const onConfirm = useCallback(
-    (item: SheetItem) => {
-      void flush({ [item.key]: item.value });
-    },
-    [flush],
-  );
-
-  /**
-   * A file dropped on the shelf.
-   *
-   * ⚠️ THE KIND IS EMPTY ON PURPOSE. This door never asks what a document is —
-   * the server classifies it. That is the whole difference from the screen
-   * this replaces, which put a full scanner-plus-picker-plus-reuse block on
-   * every step and asked the member to file each one by hand.
-   */
-  /**
-   * Write what a document was read as into the answers.
-   *
-   * ⚠️ THIS WAS MISSING AND IT IS WHY NOTHING EVER FILLED (2026-10-14). The
-   * server returns the read fields as `suggestions` and deliberately does not
-   * write them; the CALLER confirms them. Nothing on this page did — the
-   * upload's return value was dropped — so a licence card was read perfectly
-   * and every box stayed empty. `applyExtraction` only fills EMPTY fields, so a
-   * value the member typed is never overwritten, and the row stays editable with
-   * a "from a document you uploaded" source line.
-   */
-  const applyReads = useCallback(
-    async (suggestions: Suggestion[]) => {
-      const answers: Record<string, string> = {};
-      for (const s of suggestions) {
-        // ⚠️ TRUSTED ONLY. `trusted: false` is a read our own checks doubt (a
-        // Luhn-failing ID, a value the model was unsure of); writing that into a
-        // form the member signs is the one thing the extraction pipeline is
-        // built to refuse. The safe fields are the ones a licence card prints.
-        if (s?.key && s.value && s.trusted) answers[s.key] = s.value;
-      }
-      if (!Object.keys(answers).length) return;
-      try {
-        await motivationsApi.applyExtraction(getToken, id, answers);
-      } catch {
-        // Fail-soft: the document is stored either way; the member can type.
-      }
-    },
-    [getToken, id],
-  );
-
-  const onAddFile = useCallback(
-    async (kind: string, file: File, description?: string) => {
-      try {
-        const added = await motivationsApi.addUpload(getToken, id, kind, file, {
-          description,
-        });
-        if (added?.suggestions?.length) await applyReads(added.suggestions);
-        await load();
-        setToast(
-          added?.caution?.text
-            ? added.caution.text
-            : added?.kind
-              ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
-              : 'Added.',
-        );
-        return added;
-      } catch (err) {
-        /**
-         * ⚠️ NOTHING DORMANT. The server refused the file before writing a row;
-         * show it to the member and ask what it is. One at a time, two
-         * description chances, then it is discarded.
-         */
-        if (
-          err instanceof MotivationApiError &&
-          err.code === 'needs-identification'
-        ) {
-          setUnplaced((queue) =>
-            queue.some((u) => u.file === file)
-              ? queue
-              : [...queue, {
-                  file,
-                  kind,
-                  reason: err.reason ?? err.message,
-                  attempts: 1,
-                }],
-          );
-          return undefined;
-        }
-        throw err;
-      }
-    },
-    [getToken, id, load, applyReads],
-  );
-
-  /**
-   * Retry one unplaced file with the member's words.
-   *
-   * The server re-runs the evidence classifier with the description before it
-   * writes anything. A second failure keeps the dialog open with the reason and
-   * a second chance; the third discards it.
-   */
-  const retryUnplaced = useCallback(
-    async (description: string) => {
-      const item = unplaced[0];
-      if (!item) return;
-      setUnplacedBusy(true);
-      try {
-        const added = await motivationsApi.addUpload(
-          getToken,
-          id,
-          item.kind,
-          item.file,
-          { description },
-        );
-        if (added?.suggestions?.length) await applyReads(added.suggestions);
-        await load();
-        setUnplaced((queue) => queue.slice(1));
-        setToast(
-          added?.kind
-            ? `Read your ${added.kind.toLowerCase().replace(/_/g, ' ')}.`
-            : 'Added.',
-        );
-      } catch (err) {
-        if (
-          err instanceof MotivationApiError &&
-          err.code === 'needs-identification'
-        ) {
-          setUnplaced((queue) =>
-            queue.map((u, i) =>
-              i === 0
-                ? { ...u, reason: err.reason ?? err.message, attempts: u.attempts + 1 }
-                : u,
-            ),
-          );
-        } else {
-          setError((err as Error).message);
-        }
-      } finally {
-        setUnplacedBusy(false);
-      }
-    },
-    [unplaced, getToken, id, load, applyReads],
-  );
-
-  const onRefile = useCallback(
-    async (uploadId: string, kind: string) => {
-      await motivationsApi.refileUpload(getToken, id, uploadId, kind);
-      await load();
-    },
-    [getToken, id, load],
-  );
-
-  /**
-   * The applied-for firearm's paperwork, as a batch.
-   *
-   * ⚠️ IDENTIFY, TREAT, PAIR, UPLOAD (2026-10-13). The member photographs the
-   * owner's licence as two images, or drops an invoice, a consent letter or a
-   * dealer-completed 271; the server names each file, the scanner treatment runs
-   * in the background, the two sides of a card are composed onto one page, and
-   * the result is filed as the source proof. See lib/scan-upload/source-batch.
-   */
-  const onUploadSource = useCallback(
-    async (files: File[]) => {
-      if (!files.length) return;
-      setSourceBusy(true);
-      try {
-        // NAME THEM FIRST, so the scanner knows the shape and which way is up,
-        // and so the two sides of a licence can be told apart.
-        const verdicts = await motivationsApi.identify(getToken, id, files);
-        const prepared = await prepareSourceBatch(files, verdicts);
-        // ⚠️ COLLECT WHAT EVERY PAGE WAS READ AS, THEN WRITE IT. The upload's
-        // return value carries the suggestions; dropping it is why the firearm
-        // boxes stayed empty after a perfect read. See applyReads.
-        const reads: Suggestion[] = [];
-        for (const p of prepared) {
-          const added = await motivationsApi.addUpload(
-            getToken,
-            id,
-            'FIREARM_SOURCE_PROOF',
-            p.file,
-            {
-              identifyId: p.identifyId || undefined,
-              saps271: p.saps271,
-            },
-          );
-          if (added?.suggestions?.length) reads.push(...added.suggestions);
-        }
-        if (reads.length) await applyReads(reads);
-        await load();
-        setToast(
-          prepared.length === 1
-            ? 'Added the paperwork.'
-            : `Added ${prepared.length} pages.`,
-        );
-      } catch (e) {
-        // ⚠️ THE SERVER'S WORDS, NOT OURS. It refuses by name ("That exact
-        // file is already attached", "That file is larger than 10 MB") and
-        // replacing that with "something went wrong" leaves the member guessing
-        // at a problem we already diagnosed. A blank bar is worse than either.
-        setToast(
-          e instanceof Error && e.message
-            ? e.message
-            : 'We could not add that just now. Please try again.',
-        );
-      } finally {
-        setSourceBusy(false);
-      }
-    },
-    [getToken, id, load, applyReads],
-  );
-
-  /**
-   * Accept the declaration, then draft.
-   *
-   * ⚠️ THE DECLARATION STEP HAD NO SURFACE AND THE FAILURE HAD NO VOICE.
-   * `generate()` has always refused with 409 "Please confirm the declaration
-   * before we prepare the document" — a gate behind a wizard screen Phase 4
-   * deleted. So every section read Done, the button was enabled, the click
-   * 409'd, and the message went into `error`, which the render only shows when
-   * the sheet FAILED TO LOAD. Operator, 2026-09-08: "It wont create the
-   * motivation. Al sections says their done."
-   *
-   * ⚠️ SO A REFUSAL GOES TO THE TOAST NOW. `error` is for "we could not load
-   * your application" and nothing else; a failure the member can act on has to
-   * be somewhere they can see it.
-   */
-  const onWrite = useCallback(
-    async ({ testimonialConsent }: { testimonialConsent: boolean }) => {
-      setBusy(true);
-      try {
-        // ⚠️ THE LAST KEYSTROKES MUST LAND BEFORE THE GATE RUNS. `pending` is
-        // debounced by 600ms; clicking Write inside that window sent the
-        // generation without the edit, so the pack was written from the value
-        // before the member's last correction.
-        if (Object.keys(pending).length) {
-          if (timer.current) clearTimeout(timer.current);
-          await flush(pending);
-        }
-        await motivationsApi.acceptDeclaration(getToken, id, testimonialConsent);
-        await motivationsApi.generate(getToken, id);
-        router.push(`/licence-centre/${id}/pack`);
-      } catch (err) {
-        const missing =
-          err instanceof MotivationApiError ? (err.missingDocuments ?? []) : [];
-        if (missing.length) {
-          const labels = missing.map(
-            (kind) =>
-              sheet?.needs.needs.find((n) => n.kind === kind)?.label ?? kind,
-          );
-          setToast(
-            `Still needed: ${labels.join(', ')}. Add ${
-              labels.length === 1 ? 'it' : 'them'
-            } to your pack and try again.`,
-          );
-        } else {
-          setToast(
-            (err as Error).message ||
-              'We could not start writing it just now. Please try again.',
-          );
-        }
-        setBusy(false);
-      }
-    },
-    [getToken, id, router, pending, flush, sheet],
-  );
-
-  /** The items as the member sees them — server values under pending edits. */
-  const items = useMemo<SheetItem[]>(() => {
+  const groups = useMemo(() => {
     if (!sheet) return [];
-    return sheet.items.map((i) =>
-      i.key in pending ? { ...i, value: pending[i.key] } : i,
-    );
-  }, [sheet, pending]);
+    const bySection = new Map<string, SheetItem[]>();
+    for (const item of sheet.items) {
+      if (!isMissing(item, missingKeys)) continue;
+      const list = bySection.get(item.section) ?? [];
+      list.push(item);
+      bySection.set(item.section, list);
+    }
+    return [...bySection.entries()];
+  }, [sheet, missingKeys]);
 
-  const byKey = useMemo(
-    () => new Map(items.map((i) => [i.key, i])),
-    [items],
+  const missingDocuments = useMemo(
+    () =>
+      (sheet?.needs.needs ?? []).filter(
+        (need) => need.tier === 'required' && !need.have,
+      ),
+    [sheet],
   );
 
-  if (error && !sheet) {
-    return (
-      <main className="px-4 py-10 text-[14px] text-[var(--text-secondary)]">
-        {error}
-      </main>
+  async function save() {
+    if (!sheet) return;
+    const keys = [
+      ...new Set(groups.flatMap(([, items]) => items.map((item) => item.key))),
+    ];
+    const changed = Object.fromEntries(
+      keys
+        .map((key) => [key, values[key] ?? ''])
+        .filter(([, value]) => value.trim().length > 0),
     );
+    if (!Object.keys(changed).length) {
+      router.push(`/licence-centre/${id}/pack`);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await motivationsApi.saveAnswers(getToken, id, changed);
+      router.push(`/licence-centre/${id}/pack`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
+
   if (!sheet) {
     return (
-      <main className="px-4 py-10 text-[14px] text-[var(--text-tertiary)]">
-        Loading your application…
+      <main className="mx-auto w-full max-w-[720px] px-4 py-10 text-[13.5px] text-[var(--text-tertiary)]">
+        {error ?? 'Loading what is missing…'}
       </main>
     );
   }
 
-  const sourceValue = byKey.get('firearm_source')?.value ?? '';
-
-  /**
-   * Has the seller actually signed?
-   *
-   * ⚠️ READ OFF THE PART F DATA THE SERVER ALREADY RETURNS, not tracked here.
-   * saps271Coverage counts Part F as covered only once the consent record
-   * carries the seller's own answers, so this is the same fact the meter shows
-   * — one source, and the card and the meter cannot disagree.
-   */
-  /**
-   * ⚠️ `id` AND `status`, NOT `key` AND `done` — NEITHER OF WHICH EXISTS.
-   *
-   * This shipped as `c.key === 'F' && (c.done ?? 0) > 0`. saps271-coverage.ts
-   * emits `{ id, label, percent, status, note, missingRequired, applicable,
-   * answered }`: there is no `key` and no `done`, so the test was reading two
-   * undefined properties and could only ever be false. And `answered` — the
-   * field `done` was presumably meant to be — is pinned at 0 for F on purpose:
-   * "STATUS, NEVER A PERCENTAGE. Section F is the seller's to complete. A score
-   * would be the applicant being shown a mark for somebody else's homework."
-   * So even spelled correctly it would never have flipped.
-   *
-   * ⚠️ AND THE `as` CAST IS WHY NOBODY SAW IT. Asserting a shape the server
-   * does not send turns a compile error into a silent false. The seller signed
-   * at 12:02 and the line under the panel still read "When they sign…".
-   */
-  const sellerSigned =
-    (
-      sheet.coverage as { sections?: { id?: string; status?: string }[] }
-    )?.sections?.some((c) => c.id === 'F' && c.status === 'complete') ?? false;
-
-  /**
-   * ⚠️ REQUIRED DOCUMENTS ARE NOT `sections[].missing`. The server's
-   * `sections[].missing` list carries answer keys only, so "Your pack" read
-   * "Done" while `generate()` refused with "2 required documents are still
-   * missing." The generation gate uses `needs.missingRequired`; the strip,
-   * the pack fold and the footer must read the same list.
-   */
-  const missingDocumentKinds = sheet.needs.missingRequired ?? [];
-  const missingCount = sheet.missing.length + missingDocumentKinds.length;
-  const sectionMissing = (section: (typeof sheet.sections)[number]) =>
-    section.missing.length +
-    (section.id === 'pack' ? missingDocumentKinds.length : 0);
-  const sectionsForStrip = sheet.sections.map((s) => ({
-    id: s.id,
-    label: s.title,
-    missing: sectionMissing(s),
-  }));
-
-  const renderRows = (sectionId: string) => {
-    const mine = items.filter((i) => i.section === sectionId);
-
-    // ⚠️ "Your pack" HAS NO REGISTRY FIELDS — it is the 271's completeness and
-    // the take-to-SAPS list, both computed on the server.
-    if (sectionId === 'pack') {
-      return (
-        <PackSummary
-          coverage={sheet.coverage as never}
-          licenceType={sheet.application.licenceType}
-          sourceRoute={SOURCE_ROUTE[sourceValue] ?? 'unstated'}
-          needs={sheet.needs.needs}
-          /*
-            ⚠️ ONE PROGRESS FIGURE PER SCREEN. The header on this page counts
-            the answers still outstanding; the 271 meter counts the form's
-            boxes. Both were on screen together reading different numbers, and
-            a member cannot tell which one is their job. The header count wins
-            here; the meter has the pack screen to itself.
-          */
-          outstanding={sheet.sections.reduce(
-            (n, sec) => n + sec.missing.length,
-            0,
-          )}
-        />
-      );
-    }
-
-    // ⚠️ DECLARATIONS RENDER AS YES/NO ROWS, NOT AS ORDINARY ITEMS, and the
-    // detail and form boxes are folded INTO their question rather than listed
-    // after it. A conviction's four boxes sitting loose in the section would
-    // be four questions nobody can tell apart.
-    if (sectionId === 'declarations') {
-      const questions = mine.filter(
-        (i) => i.kind === 'yesno' && !i.key.includes('_detail'),
-      );
-      return questions.map((q) => {
-        const { detail, boxes } = declarationParts(mine, q.key);
-        return (
-          <DeclarationRow
-            key={q.key}
-            item={q}
-            onChange={(v) => onChange(q.key, v)}
-            detail={detail}
-            onDetailChange={(v) => detail && onChange(detail.key, v)}
-            boxes={boxes}
-            onBoxChange={onChange}
-          />
-        );
-      });
-    }
-
-    // An own-words box is rendered INSIDE its card grid, never on its own.
-    const ownWordsKeys = new Set(
-      mine.map((i) => i.ownWordsKey).filter(Boolean) as string[],
-    );
-    const visible = mine.filter((i) => !ownWordsKeys.has(i.key));
-
-    const row = (i: SheetItem) => (
-      <SheetRow
-        key={i.key}
-        item={i}
-        onChange={(v) => onChange(i.key, v)}
-        onConfirm={() => onConfirm(i)}
-        // ⚠️ THE overlap_angle PROMPT PROP IS GONE WITH THE FIELD (2026-09-20).
-        // There is no reason card for the applicant to answer, so there is no
-        // overlap prompt to hang above one.
-        ownWords={i.ownWordsKey ? byKey.get(i.ownWordsKey) : undefined}
-        onOwnWordsChange={
-          i.ownWordsKey ? (v) => onChange(i.ownWordsKey as string, v) : undefined
-        }
-        sameAsValue={
-          i.key === 'dedicated_since'
-            ? byKey.get('association_joined')?.value
-            : undefined
-        }
-      />
-    );
-
-    /*
-      ⚠️ COMPETENCY IS LINES, NOT ROWS, WHEN THE VAULT HAS IT. See
-      CompetencyLines: the screen this replaces showed two scanner blocks, two
-      reuse dropdowns listing nine credentials, and a warning about unreadable
-      proficiency codes — all true, none of it the member's business.
-
-      ⚠️ AND THE DOCUMENTS SIT UNDER THE ANSWERS, NOT INSTEAD OF THEM. What we
-      read OFF the certificate is one thing; whether the certificate and its
-      statement of results are actually in the pack is another, and the section
-      showed only the first — so a member who had never uploaded a statement of
-      results saw a section that looked finished. CredentialPair renders in
-      BOTH states, which is the half that was missing: it was previously
-      reachable only through CompetencyLines' `onAdd`, and only when the vault
-      held nothing at all.
-    */
-    if (sectionId === 'competency') {
-      const known = mine.filter(
-        (i) => i.state === 'filled' || i.state === 'suggested',
-      );
-      return (
-        <>
-          {known.length ? (
-            <CompetencyLines
-              items={mine}
-              covered={!mine.some((i) => i.state === 'needs_you' && i.required)}
-              onAdd={() => setAdding(true)}
-              onChange={onChange}
-            />
-          ) : null}
-          {/*
-            ⚠️ THE UNANSWERED FIELDS STILL NEED A BOX. CompetencyLines shows only
-            what the vault already filled, so rendering it INSTEAD of the rows
-            hid every `needs_you` item in this section behind a certificate
-            that happened to be present — the member could never answer it.
-          */}
-          {visible
-            .filter((i) => i.state !== 'filled' && i.state !== 'suggested')
-            .map(row)}
-          <CredentialPair
-            credentials={sheet.credentials}
-            onScan={() => {
-              setAutoScan(true);
-              setAdding(true);
-            }}
-            onUpload={async (files) => {
-              setBusy(true);
-              try {
-                for (const f of files) await onAddFile('', f);
-                await load();
-                setToast(
-                  files.length === 1
-                    ? 'Added one document.'
-                    : `Added ${files.length} documents.`,
-                );
-              } finally {
-                setBusy(false);
-              }
-            }}
-            onAddFromCentre={async (kind) => {
-              /* A second tap on the same door closes it. */
-              if (pickerKind === kind) {
-                setPickerKind(null);
-                return;
-              }
-              setPickerKind(kind);
-              try {
-                const r = await motivationsApi.library(getToken, id);
-                setLibraryItems(r.items);
-              } catch {
-                setLibraryItems([]);
-                setToast('We could not read your Licence Centre just now.');
-              }
-            }}
-            picker={
-              pickerKind
-                ? {
-                    kind: pickerKind,
-                    node: (
-                      <LibraryPicker
-                        items={rankByClass(
-                          libraryItems.filter((i) => i.kind === pickerKind),
-                          sheet.credentials.neededLabel,
-                        )}
-                        onPick={async (item, placeConfirmed) => {
-                          await motivationsApi.addFromLibrary(
-                            getToken,
-                            id,
-                            item.source,
-                            item.sourceId,
-                            placeConfirmed,
-                          );
-                          setPickerKind(null);
-                          await load();
-                          setToast(`Added ${item.title} to this application.`);
-                        }}
-                      />
-                    ),
-                  }
-                : null
-            }
-          />
-        </>
-      );
-    }
-
-    // ⚠️ THE LICENCE CARD'S COMPONENT ROWS FOLD, AND NOBODY TYPES THEM. Barrel,
-    // frame and receiver each carry a serial and a make on the SAPS 271 because
-    // the frame or receiver IS the firearm in law — but they are read off a
-    // card the applicant has not been handed yet, and on the live sheet they
-    // were six always-open boxes marked Optional, each with two lines of help
-    // about how the answer is usually NONE. The dealer or the seller fills
-    // them; this says which, and gets out of the way.
-    if (sectionId === 'firearm') {
-      const inner = visible.filter((i) => CARD_COMPONENT_KEYS.has(i.key));
-      const out: React.ReactNode[] = [];
-      let placed = false;
-      const fold = () => {
-        placed = true;
-        const filled = inner.filter((i) => i.value.trim()).length;
-        return (
-          <SheetDisclosure
-            key="__card-components"
-            summary="Barrel, frame and receiver"
-            note={COMPONENT_NOTE[sourceValue] ?? COMPONENT_NOTE.default}
-            meta={
-              filled ? (
-                <span className="text-[var(--success)]">{filled} filled</span>
-              ) : (
-                <span className="text-[var(--text-tertiary)]">
-                  {inner.length} rows
-                </span>
-              )
-            }
-          >
-            {inner.map(row)}
-          </SheetDisclosure>
-        );
-      };
-
-      // ⚠️ THE APPLIED-FOR FIREARM'S PAPERWORK AND THE OWNER'S CONSENT COME
-      // FIRST (2026-10-13). The source row is internal now — never rendered —
-      // so this is where the upload control and the collapsed consent live. It
-      // replaces the inline ConsentCard that used to sit here fully open. See
-      // SourceActions.
-      out.push(
-        <SourceActions
-          key="__source-actions"
-          motivationId={id}
-          applicantName={byKey.get('full_name')?.value ?? ''}
-          /*
-            ⚠️ EVERY KEY THE CARD CAN FILL, not just the four the panel used to
-            show. The panel compares these against what the card carries to
-            decide whether there is anything left to adopt, so a short list here
-            means it stops offering the six component rows the moment the first
-            four have landed.
-          */
-          firearm={{
-            make: byKey.get('firearm_make')?.value,
-            model: byKey.get('firearm_model')?.value,
-            type: byKey.get('firearm_type')?.value,
-            calibre: byKey.get('firearm_calibre')?.value,
-            serial: byKey.get('firearm_serial')?.value,
-            barrel_serial: byKey.get('barrel_serial')?.value,
-            barrel_make: byKey.get('barrel_make')?.value,
-            frame_serial: byKey.get('frame_serial')?.value,
-            frame_make: byKey.get('frame_make')?.value,
-            receiver_serial: byKey.get('receiver_serial')?.value,
-            receiver_make: byKey.get('receiver_make')?.value,
-          }}
-          sourceValue={sourceValue}
-          signed={sellerSigned}
-          generated={sheet.application.status === 'COMPLETED'}
-          onUpload={onUploadSource}
-          busy={sourceBusy}
-          onArrived={async (status) => {
-            await load();
-            setToast(
-              status === 'COMPLETED'
-                ? 'The seller has signed. Their consent and licence are on your application.'
-                : 'The seller declined. Nothing has been added to your application.',
-            );
-          }}
-          /*
-            ⚠️ IT FILLS THE EMPTY ONES AND NEVER OVERWRITES. Adopting used to
-            write every field the card carried, which is why the offer had to be
-            shown once and then hidden for good — "inviting them to overwrite
-            their own corrections with the same card a second time". Skipping
-            answered fields makes a second adopt harmless. Theirs wins, always —
-            the same rule the credential offer already follows.
-          */
-          onAdopt={(fields) => {
-            for (const [k, v] of Object.entries(fields)) {
-              const item = byKey.get(k);
-              /*
-                ⚠️ "THEIRS WINS" MEANS THE MEMBER'S, NOT A PREVIOUS READ OF THE
-                SAME CARD. A value the CARD gave us is ours to correct; one the
-                MEMBER typed is not, and the server's stamp() refuses to
-                overwrite MEMBER provenance in any case.
-              */
-              if (item?.provenance?.source === 'MEMBER') continue;
-              if (!item?.provenance && (item?.value ?? '').trim()) continue;
-              onChange(k, v);
-            }
-          }}
-        />,
-      );
-
-      for (const i of visible) {
-        if (CARD_COMPONENT_KEYS.has(i.key)) continue;
-        out.push(row(i));
-
-        // Straight after the headline serial, which is the number they will
-        // actually be asked for at the counter.
-        if (i.key === 'firearm_serial' && inner.length) out.push(fold());
-      }
-      // A sheet that never rendered the headline serial must not swallow the
-      // six rows with it.
-      if (inner.length && !placed) out.push(fold());
-      return out;
-    }
-
-    // ⚠️ THE 271's OWN BOXES FOLD TO THE BOTTOM OF "You". See
-    // YOU_FORM_BOX_KEYS: they are real boxes on a statutory form, so they stay
-    // fillable, but they are not questions anybody should be reading past.
-    if (sectionId === 'you') {
-      const boxes = visible.filter((i) => YOU_FORM_BOX_KEYS.has(i.key));
-      const rest = visible.filter((i) => !YOU_FORM_BOX_KEYS.has(i.key));
-      return (
-        <>
-          {rest.map(row)}
-          {boxes.length ? (
-            <SheetDisclosure
-              key="__form-boxes"
-              summary="Post and dialling codes"
-              note="The SAPS 271 has a box for each. Open this only if post reaches you somewhere else."
-              meta={
-                <span className="text-[var(--text-tertiary)]">
-                  {boxes.length} rows
-                </span>
-              }
-            >
-              {boxes.map(row)}
-            </SheetDisclosure>
-          ) : null}
-        </>
-      );
-    }
-
-    // ⚠️ ONE FOLD PER FIREARM, AND NOTHING AT ALL FOR THE ROWS NOBODY OWNS.
-    // Which rows exist is the server's decision — sheet.ownedRows, built with
-    // the backend's own ownedRowTaken — because deciding it here would make
-    // the browser a fourth reader of "is this row in use", and that function's
-    // note records what happened the last time readers of it disagreed.
-    if (sectionId === 'own') {
-      const byRow = new Map<number, SheetItem[]>();
-      const loose: SheetItem[] = [];
-      for (const i of visible) {
-        const m = /^existing_firearm_(\d+)_/.exec(i.key);
-        if (!m) {
-          loose.push(i);
-          continue;
-        }
-        const n = Number(m[1]);
-        byRow.set(n, [...(byRow.get(n) ?? []), i]);
-      }
-
-      const taken = new Set(sheet.ownedRows.map((r) => r.index));
-      const free = [...byRow.keys()].filter((n) => !taken.has(n)).sort((a, b) => a - b);
-      const offered = free.slice(0, extraOwned);
-      const hasMore = free.length > extraOwned;
-
-      return (
-        <>
-          {sheet.ownedRows.map((r) => (
-            <SheetDisclosure
-              key={`own-${r.index}`}
-              dense
-              summary={r.summary}
-              note={r.note ?? undefined}
-            >
-              {(byRow.get(r.index) ?? []).map(row)}
-            </SheetDisclosure>
-          ))}
-
-          {/* A row the member has just asked for opens straight away — they
-              tapped the button in order to type into it. */}
-          {offered.map((n) => (
-            <SheetDisclosure
-              key={`own-${n}`}
-              dense
-              defaultOpen
-              summary="A firearm you own"
-              note="Photograph the licence card and we will read it for you."
-            >
-              {(byRow.get(n) ?? []).map(row)}
-            </SheetDisclosure>
-          ))}
-
-          {hasMore ? (
-            <button
-              type="button"
-              onClick={() => setExtraOwned((v) => v + 1)}
-              className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border-hover)] px-4 text-[13.5px] font-medium text-[var(--red)]"
-            >
-              <span aria-hidden="true" className="text-[16px] leading-none">
-                +
-              </span>
-              {sheet.ownedRows.length || offered.length
-                ? 'Add another firearm'
-                : 'Add a firearm you already own'}
-            </button>
-          ) : null}
-
-          {loose.map(row)}
-        </>
-      );
-    }
-
-    /**
-     * ⚠️ "Your case" IS WHERE THE AREAS BELONG, under the cards that say what
-     * the applicant's circumstances are. It is the same argument in two
-     * registers: the cards say "I travel at night", and this says which roads.
-     *
-     * ⚠️ AND IT IS THE ONLY THING THAT CAN WRITE `press_clippings`. That key is
-     * internal and its registry comment says the wizard writes it once the
-     * member has picked — Phase 4 deleted the wizard, so the annexure has been
-     * unreachable since. Mounting this is what restores it.
-     */
-    if (sectionId === 'case') {
-      /**
-       * ⚠️ THE SECOND AND THIRD ASSOCIATION FOLD AWAY UNTIL ASKED FOR. Same
-       * shape as the owned-firearm rows above: a slot with an answer in it
-       * shows, an empty one waits behind the button, and asking for one opens
-       * it straight away because the member tapped it in order to type.
-       */
-      const slotOf = (k: string) => {
-        const m = /^association_([23])_/.exec(k);
-        return m ? Number(m[1]) : 0;
-      };
-      const answered = new Set(
-        visible.filter((i) => slotOf(i.key) && i.value.trim()).map((i) => slotOf(i.key)),
-      );
-      const emptySlots = [2, 3].filter((n) => !answered.has(n));
-      const openSlots = new Set([
-        ...answered,
-        ...emptySlots.slice(0, extraAssociations),
-      ]);
-      const shown = visible.filter(
-        (i) => !slotOf(i.key) || openSlots.has(slotOf(i.key)),
-      );
-      const moreAssociations = emptySlots.length > extraAssociations;
-      const associationBlock = moreAssociations ? (
-        <button
-          type="button"
-          onClick={() => setExtraAssociations((v) => v + 1)}
-          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border-hover)] px-4 text-[13.5px] font-medium text-[var(--red)]"
-        >
-          <span aria-hidden="true" className="text-[16px] leading-none">
-            +
-          </span>
-          Add another association
-        </button>
-      ) : null;
-
-      const policeStation =
-        items.find((i) => i.key === 'police_station')?.value ?? '';
-      const precinctCard = SELF_DEFENCE_TYPES.has(
-        sheet.application.licenceType,
-      ) ? (
-        <PrecinctCard
-          motivationId={id}
-          policeStation={policeStation}
-          getToken={getToken}
-        />
-      ) : null;
-
-      return (
-        <>
-          {shown.map(row)}
-          {associationBlock}
-          {precinctCard}
-          {areas ? (
-          <DangerAreas
-            areas={areas.areas}
-            station={areas.station}
-            withinKm={areas.withinKm}
-            answered={areas.answered}
-            busy={savingAreas}
-            onSave={async (ticked) => {
-              setSavingAreas(true);
-              try {
-                const r = await motivationsApi.saveAreas(getToken, id, ticked);
-                /*
-                  ⚠️ THE SERVER'S ANSWER, NOT THE TICK COUNT. The member ticked
-                  areas; how many cuttings that bought is our arithmetic, and
-                  the cap is spent area by area — so "3 areas" can be "3
-                  cuttings" or "8". Saying what actually goes in the pack is the
-                  only honest number.
-                */
-                setToast(
-                  r.areas === 0
-                    ? 'Saved — no areas ticked, so no cuttings go in your pack.'
-                    : `Saved ${r.areas === 1 ? '1 area' : `${r.areas} areas`} — ${
-                        r.clippings === 1
-                          ? '1 cutting'
-                          : `${r.clippings} cuttings`
-                      } will go in your pack.`,
-                );
-                await load();
-              } catch {
-                setToast('We could not save those just now.');
-              } finally {
-                setSavingAreas(false);
-              }
-            }}
-          />
-          ) : null}
-        </>
-      );
-    }
-
-    return visible.map(row);
-  };
+  const nothingMissing = groups.length === 0 && missingDocuments.length === 0;
 
   return (
-    <>
-      {/*
-        ⚠️ THE TWO-COLUMN GRID IS THE PAGE ON A WIDE SCREEN, NOT A MODE IT CAN
-        BE PUT INTO. SPEC-BUILD §3 — "1280 content column, grid 760px | 1fr,
-        gap 40" — and the operator's own mockup both show the sheet on the left
-        and "What your motivation will say" beside it, always. It shipped as
-        `lg:mx-0` on `main` with no grid parent anywhere, so on a wide screen
-        the sheet sat pinned to the left edge with 1,373px of empty white beside
-        it; then as a grid that only existed while a toggle was on, which put
-        the live preview behind a button most members never pressed. Operator,
-        2026-09-08: "I see we don't have the live example generate on the left,
-        lets build it."
+    <main className="mx-auto w-full max-w-[720px] px-4 pb-12 pt-5">
+      <Link
+        href="/licence-centre/applications"
+        className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] no-underline"
+      >
+        <span aria-hidden="true">&#8592;</span> Back to your applications
+      </Link>
 
-        ⚠️ AND `previewOpen` NOW MEANS THE PHONE DRAWER ONLY. There is no room
-        for a second column at 390px, so the toggle and the bottom sheet stay —
-        they simply have nothing to do at `lg`, where the panel is already on
-        screen.
-      */}
-      <div className="lg:mx-auto lg:grid lg:max-w-[1280px] lg:grid-cols-[minmax(0,760px)_minmax(0,1fr)] lg:items-start lg:gap-10">
-      <main className="mx-auto w-full max-w-[760px] pb-4">
-        <SheetHeader
-          reference={sheet.application.referenceNumber}
-          licenceType={sheet.application.licenceTypeLabel}
-          title={sheet.application.title}
-          missingCount={missingCount}
-          sections={sectionsForStrip}
-          active={active}
-          onJump={(sectionId) => {
-            setSectionOpen(sectionId, true);
-            setActive(sectionId);
-          }}
-          previewOpen={previewOpen}
-          onTogglePreview={() => setPreviewOpen((v) => !v)}
-        />
+      <h1 className="m-0 font-[family-name:var(--font-head)] text-[24px] font-medium leading-[1.15] tracking-[-0.01em] text-[var(--text-primary)]">
+        Finish what is missing
+      </h1>
+      <p className="m-0 mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+        {sheet.application.title ?? sheet.application.licenceTypeLabel} ·{' '}
+        {sheet.application.referenceNumber}
+      </p>
 
-        {/*
-          ⚠️ TWO DOORS, BOTH ON THE SHELF, AND NEITHER OF THEM OPENS A SCREEN
-          THAT OFFERS THE CHOICE AGAIN. Upload goes straight to the operating
-          system's file dialog; Scan mounts AddPanel, which renders nothing a
-          member can see and exists only to host the scanner ScanButton's
-          `autoStart` opens. Operator, 2026-09-08: "this is double. two scan
-          with phone options."
-        */}
-         {/*
-           ⚠️ EVIDENCE HAS NO PANEL ANY MORE, AND THAT IS THE POINT. It used to
-           sit here as its own surface above the shelf, asking a member to type
-           what a photograph showed BEFORE anything had looked at it. The AI now
-           decides on the way in — document or evidence — and an item it cannot
-           place waits on its own upload card in the Document Centre for a few
-           more words. An application draws its evidence from that same shelf, by
-           the placement the server gave each row; this page only reads it.
-         */}
-
-          <DocumentShelf
-           documents={sheet.documents}
-           keeping={keeping}
-           loadUrl={loadUploadUrl}
-          onRemove={async (uploadId) => {
-            setBusy(true);
-            try {
-              await motivationsApi.removeUpload(getToken, id, uploadId);
-              await load();
-              setToast('Removed document.');
-            } catch {
-              setToast('We could not remove that just now.');
-            } finally {
-              setBusy(false);
-            }
-          }}
-          /*
-            ⚠️ NOTHING REACHES THE DOCUMENT CENTRE UNTIL THEY ASK. The
-            automatic sweep is gone — operator, 2026-09-08: "yes, stop auto
-            copy. we need to ask consent to add items to the license centre" —
-            so this is the only route in, and `needsConsent` is the one refusal
-            a member can act on. Everything else adoptUpload declines (a kind
-            that is not reusable, bytes already purged) is silent by design and
-            reported as a count.
-          */
-          onKeep={async (ids) => {
-            setKeeping(true);
-            try {
-              const r = await motivationsApi.keepInCentre(getToken, id, ids);
-              if (r.needsConsent) {
-                // ⚠️ NOT A DEAD END. The notice renders below and answering it
-                // retries this exact save — see answerKeepConsent.
-                setKeepConsent({ ids, busy: false });
-                return;
-              }
-              await load();
-              setToast(
-                r.kept === 1
-                  ? 'Saved one document to your Licence Centre.'
-                  : `Saved ${r.kept} documents to your Licence Centre.`,
-              );
-            } catch {
-              setToast('We could not save those just now.');
-            } finally {
-              setKeeping(false);
-            }
-          }}
-          onScan={() => setAdding(true)}
-          onUpload={async (files) => {
-            setBusy(true);
-            try {
-              for (const f of files) await onAddFile('', f);
-              await load();
-              setToast(
-                files.length === 1
-                  ? 'Added one document.'
-                  : `Added ${files.length} documents.`,
-              );
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-
-        {/*
-          ⚠️ THE CONSENT, IN PLACE OF THE DEAD-END TOAST. The member ticked
-          documents and pressed Save; the only thing missing is the answer to
-          this question, so it is asked here and answering it completes the
-          save. It renders only while that save is waiting on it.
-        */}
-        {keepConsent ? (
-          <div className="mx-4 mt-3 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
-            <VaultConsentBody
-              retentionDays={retentionDays}
-              onAnswer={answerKeepConsent}
-              busy={keepConsent.busy}
-            />
-            <button
-              type="button"
-              onClick={() => setKeepConsent(null)}
-              className="mt-3 text-xs text-[var(--text-tertiary)] underline"
-            >
-              Not now
-            </button>
-          </div>
-        ) : null}
-
-        {adding ? (
-          <AddPanel
-            motivationId={id}
-            onAdd={onAddFile}
-            onHandoffArrived={(count) => {
-              void (async () => {
-                try {
-                  // ⚠️ THE PHONE'S READING WAS NEVER APPLIED. This only called
-                  // load(), so a licence card scanned by QR appeared on the
-                  // shelf with every form field still empty. `readingFor` is the
-                  // stored reading — no second vision call.
-                  const r = await motivationsApi.uploads(getToken, id);
-                  const fresh = r.files.slice(-Math.max(1, count));
-                  const answers: Record<string, string> = {};
-                  for (const f of fresh) {
-                    const reading = await motivationsApi.readingFor(
-                      getToken,
-                      id,
-                      f.id,
-                    );
-                    for (const s of reading.suggestions) {
-                      if (s.key && s.value) answers[s.key] = s.value;
-                    }
-                  }
-                  if (Object.keys(answers).length) {
-                    await motivationsApi.applyExtraction(getToken, id, answers);
-                  }
-                } catch {
-                  // The document is stored either way; the member can type.
-                }
-                await load();
-                setToast(
-                  count === 1
-                    ? 'Your phone sent one document.'
-                    : `Your phone sent ${count} documents.`,
-                );
-              })();
-            }}
-            onClose={() => setAdding(false)}
-          />
-        ) : null}
-
-        {/*
-          ⚠️ PAGE LEVEL, NOT INSIDE A SECTION, and not behind a fold. The
-          question is about a document rather than about any one answer, the
-          automatic attach that raises it runs at open, and every section on
-          this page starts CLOSED — so a prompt inside one would be a question
-          nobody is shown. This is the same reasoning as the beta-full notice
-          on the section chooser: say it where they are, not where it belongs
-          in a taxonomy.
-        */}
-        {needsPlace && (
-          <PlaceConfirm
-            onConfirm={async () => {
-              try {
-                const r = await motivationsApi.autolink(getToken, id, true);
-                setNeedsPlace(false);
-                if (!r.attached.length) {
-                  // The server accepted the answer and still attached
-                  // nothing — say so rather than leaving the panel gone and
-                  // the shelf unchanged.
-                  setToast(
-                    'We could not add your safe photographs. Add them from your Document Centre.',
-                  );
-                  return;
-                }
-                await load();
-                setToast(
-                  r.attached.length === 1
-                    ? 'Added your safe photograph from your Licence Centre.'
-                    : `Added ${r.attached.length} safe photographs from your Licence Centre.`,
-                );
-              } catch {
-                // Fail soft, and put the question back: the member can tick
-                // again, and the picker is still there either way.
-                setToast('We could not reach your Licence Centre just now.');
-              }
-            }}
-          />
-        )}
-
-        {sheet.sections.map((s) => (
-          <SheetSection
-            key={s.id}
-            id={s.id}
-            title={s.title}
-            blurb={s.blurb}
-            open={openSections?.[s.id] ?? false}
-            onOpenChange={(v) => setSectionOpen(s.id, v)}
-            /*
-              ⚠️ THE SAME NUMBER AS THE PILL, THE CHIP DOTS AND THE FOOTER — a
-              fourth view of one number, not a fourth number. `sectionMissing`
-              adds `needs.missingRequired` to the pack fold, because the server's
-              `sections[].missing` carries answer keys only. A fold that could
-              hide a "Still needed" without saying so would be a form lying
-              about how much is left. SheetSection draws the pill; this passes
-              the number and nothing else.
-            */
-            missingCount={sectionMissing(s)}
-          >
-            {/*
-              ⚠️ THE CONSENT AND OVERLAP CARDS ARE EMITTED FROM renderRows NOW,
-              directly under the source row — see the note there. The consent
-              card is the door to the seller's own "photograph your licence"
-              scanner, and it must sit beside the answer that opens it.
-            */}
-            {renderRows(s.id)}
-          </SheetSection>
-        ))}
-
-        {/*
-          ⚠️ ABOVE THE FOOTER, NOT ON A SCREEN OF ITS OWN. The footer's own
-          note argues it: a separate step for a cosmetic choice is the
-          confirm-guarding-a-value-we-already-hold shape the operator ruled
-          out. This sits where the consequence is, closed by default, with the
-          red button still the primary action underneath it.
-        */}
-        <DesignPicker
-          token={getToken}
-          motivationId={id}
-          layout={sheet.application.templateLayout}
-          colourway={sheet.application.templateColourway}
-        />
-
-        <SheetFooter
-          missingCount={missingCount}
-          declared={!!sheet.application.declarationAcceptedAt}
-          onWrite={onWrite}
-          busy={busy}
-        />
-
-        {/*
-          ⚠️ PAST THE FOOTER ON PURPOSE, AND STILL A REAL BUTTON. The footer is
-          `sticky bottom-0`, so this is the last thing on the page: a member
-          reaches it only by scrolling to the true end, never by thumbing at
-          the bottom of the viewport. Phase 4 deleted the wizards and took the
-          only delete control with them, so until now an application started by
-          mistake could not be got rid of at all.
-        */}
-        <div className="border-t border-[var(--border-divider)] px-4 pb-6 pt-5">
-          <DeleteApplication
-            token={getToken}
-            motivationId={id}
-            reference={sheet.application.referenceNumber}
-          />
-          <p className="m-0 mt-2 text-[12px] leading-[1.45] text-[var(--text-tertiary)]">
-            Deletes your answers and anything attached only to this
-            application. Your Document Centre is not touched.
+      {nothingMissing ? (
+        <section
+          className="mt-6 rounded-[var(--r-lg)] border px-5 py-6"
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
+        >
+          <p className="m-0 text-[14px] text-[var(--text-primary)]">
+            Nothing is missing. Your motivation is ready to write.
           </p>
-        </div>
-      </main>
-
-      {/*
-        ⚠️ TWO MOUNTS, NOT ONE THAT CHANGES SHAPE. A single element that is a
-        fixed bottom sheet on a phone and a sticky grid child at `lg` has to
-        drop `position: fixed` at the breakpoint, and a `fixed` ancestor is
-        exactly what stops `position: sticky` sticking — so the docked column
-        scrolled away with the page. They are separate elements with separate
-        lifetimes: the phone drawer exists only while `previewOpen`, and the
-        desktop column is simply part of the page.
-      */}
-      {previewOpen ? (
+          <Link
+            href={`/licence-centre/${id}/pack`}
+            className="mt-4 inline-flex rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white"
+            style={{ background: 'var(--red)' }}
+          >
+            Go to your pack
+          </Link>
+        </section>
+      ) : (
         <>
-          <div
-            className="fixed inset-0 z-[5] bg-[rgba(26,22,19,0.32)] lg:hidden"
-            onClick={() => setPreviewOpen(false)}
-          />
-          <aside className="fixed inset-x-0 bottom-0 z-[5] max-h-[640px] overflow-y-auto rounded-t-[var(--r-lg)] border-t border-[var(--border)] bg-[var(--bg-card)] lg:hidden">
-            <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-[var(--border)]" />
-            <PreviewPanel preview={sheet.preview as PreviewSection[]} />
-          </aside>
+          {groups.map(([section, items]) => (
+            <section key={section} className="mt-6">
+              <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
+                {section}
+              </h2>
+              <div className="grid gap-3">
+                {items.map((item) => {
+                  const options = optionsFor(item);
+                  return (
+                    <label
+                      key={item.key}
+                      className="block text-[12px] font-medium text-[var(--text-secondary)]"
+                    >
+                      {item.label}
+                      {item.kind === 'long' ? (
+                        <textarea
+                          value={values[item.key] ?? ''}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [item.key]: e.target.value,
+                            }))
+                          }
+                          rows={4}
+                          className={CONTROL}
+                          style={CONTROL_STYLE}
+                        />
+                      ) : options.length ? (
+                        <select
+                          value={values[item.key] ?? ''}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [item.key]: e.target.value,
+                            }))
+                          }
+                          className={CONTROL}
+                          style={CONTROL_STYLE}
+                        >
+                          <option value="">Choose…</option>
+                          {options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={item.kind === 'date' ? 'date' : 'text'}
+                          value={values[item.key] ?? ''}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [item.key]: e.target.value,
+                            }))
+                          }
+                          className={CONTROL}
+                          style={CONTROL_STYLE}
+                        />
+                      )}
+                      {item.help ? (
+                        <span className="mt-1 block text-[11.5px] font-normal leading-4 text-[var(--text-tertiary)]">
+                          {item.help}
+                        </span>
+                      ) : null}
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+
+          {missingDocuments.length ? (
+            <section className="mt-6">
+              <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
+                Documents still needed
+              </h2>
+              <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
+                {missingDocuments.map((need) => (
+                  <li key={need.kind}>{need.label}</li>
+                ))}
+              </ul>
+              <Link
+                href={`/licence-centre/${id}/interview`}
+                className="mt-3 inline-flex rounded-lg border px-3 py-2 text-[12.5px] font-medium text-[var(--text-primary)]"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                Upload these in the interview
+              </Link>
+            </section>
+          ) : null}
+
+          {error ? (
+            <p className="mt-4 text-[12.5px] text-[var(--red)]">{error}</p>
+          ) : null}
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save()}
+            className="mt-6 w-full rounded-[var(--r-sm)] px-4 py-3 text-[14px] font-medium text-white disabled:opacity-50"
+            style={{ background: 'var(--red)' }}
+          >
+            {busy ? 'Saving…' : 'Save and go to my pack'}
+          </button>
         </>
-      ) : null}
-
-      <aside className="sticky top-5 hidden max-h-[calc(100vh-4rem)] overflow-y-auto rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] lg:block">
-        <PreviewPanel preview={sheet.preview as PreviewSection[]} />
-      </aside>
-      </div>
-
-      {unplaced[0] ? (
-        <UnplacedUploadDialog
-          item={unplaced[0]}
-          busy={unplacedBusy}
-          onRetry={retryUnplaced}
-          onDiscard={() => setUnplaced((queue) => queue.slice(1))}
-        />
-      ) : null}
-
-      <SheetToast message={toast} onDismiss={() => setToast(null)} />
-    </>
+      )}
+    </main>
   );
 }

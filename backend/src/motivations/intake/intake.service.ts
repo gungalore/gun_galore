@@ -1,0 +1,1468 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { LlmService } from '../../common/llm/llm.service';
+import { encryptText, tryDecryptText } from '../../common/blob-crypto';
+import {
+  parseProvenance,
+  type ProvenanceMap,
+} from '../../common/answer-provenance';
+import {
+  EDITABLE,
+  MotivationSharedService,
+} from '../motivation-shared.service';
+import {
+  MotivationSheetService,
+  type SheetResponse,
+} from '../motivation-sheet.service';
+import { MotivationDocumentsService } from '../motivation-documents.service';
+import { MotivationsService } from '../motivations.service';
+import {
+  fieldByKey,
+  fieldsFor,
+  LICENCE_TYPE_LABELS,
+} from '../motivation-fields';
+import {
+  applicationBlockers,
+  firearmShape,
+} from '../motivation-eligibility';
+import { containerById, type EvidenceGroup } from '../evidence-taxonomy';
+import { pendingFields, planQuestion, purposeForAnswers } from './intake-planner';
+import { strategyFor } from './intake-strategies';
+import {
+  normaliseOutputMode,
+  type MotivationOutputMode,
+} from '../motivation-output';
+import {
+  MotivationIntakeAgentService,
+  type InterviewAgentContext,
+} from './intake-agent.service';
+import type { FactCandidate } from './intake-agent.prompts';
+import {
+  INTAKE_SCHEMA,
+  SPECIES_SCHEMA,
+  intakeSystemPrompt,
+  intakeUserPrompt,
+  speciesSystemPrompt,
+  speciesUserPrompt,
+} from './intake-prompts';
+import type {
+  IntakeBlocked,
+  IntakeChoice,
+  IntakeDocumentItem,
+  IntakeMode,
+  IntakeQuestion,
+  IntakeState,
+  IntakeTopicId,
+  IntakeTopicState,
+  TickState,
+} from './intake.types';
+
+const INTERVIEW_VERSION = '2026-10-29a';
+const MAX_TRANSCRIPT = 40;
+
+/**
+ * The interview, grouped by what the member is being asked about.
+ *
+ * ⚠️ IDENTITY BEFORE FIREARM. The ID number is how an existing licence is
+ * proven to be this applicant's, and the firearm is what selects the
+ * competency and proficiency. The old order put the firearm first and the
+ * certificate rows appeared before either was known.
+ */
+const TOPIC_ORDER: readonly IntakeTopicId[] = [
+  'identity',
+  'firearm',
+  'credentials',
+  'existing',
+  'address',
+  'association',
+  'activities',
+  'safe',
+  'declarations',
+  'other',
+];
+
+const TOPIC_TITLES: Record<IntakeTopicId, string> = {
+  identity: 'About you',
+  firearm: 'The firearm you are applying for',
+  credentials: 'Competency and proficiency',
+  existing: 'Firearms you already hold',
+  address: 'Your address',
+  association: 'Association and dedicated status',
+  activities: 'Your hunting and shooting',
+  safe: 'Safe and storage',
+  declarations: 'Declarations',
+  other: 'Other details',
+};
+
+const TOPIC_DOCUMENTS: Partial<Record<IntakeTopicId, string[]>> = {
+  identity: ['IDENTITY_DOCUMENT'],
+  firearm: ['FIREARM_SOURCE_PROOF', 'SELLER_LICENCE'],
+  credentials: ['COMPETENCY_CERTIFICATE', 'PROFICIENCY_CERTIFICATE'],
+  existing: ['CURRENT_LICENCE'],
+  address: ['ADDRESS_CONFIRMATION'],
+  association: [
+    'ASSOCIATION_CARD',
+    'GOOD_STANDING_LETTER',
+    'ASSOCIATION_ENDORSEMENT',
+  ],
+  safe: ['SAFE_PHOTOGRAPHS'],
+};
+
+function topicForField(key: string): IntakeTopicId {
+  if (/^history_/.test(key)) return 'declarations';
+  if (/^existing_firearm_|^existing_licence_|^licence_expiry$|^continued_use$/.test(key)) {
+    return 'existing';
+  }
+  if (/^firearm_/.test(key)) return 'firearm';
+  if (/^competency_|^proficiency_/.test(key)) return 'credentials';
+  if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';
+  if (
+    /^association_|^dedicated_since$|^discipline_|^hunting_|^competition_record$|^activity_record$|^intended_quarry$|^sport_/.test(
+      key,
+    )
+  ) {
+    return 'association';
+  }
+  if (
+    /^safe_|^premises_|^alarm_|^armed_response$|^burglar_bars$|^security_gates$/.test(
+      key,
+    )
+  ) {
+    return 'safe';
+  }
+  if (
+    /^full_name$|^id_number$|^licence_holder_type$|^occupation$|^date_of_birth$|^marital_status$|^spouse_|^cellphone$|^home_telephone$|^work_telephone$/.test(
+      key,
+    )
+  ) {
+    return 'identity';
+  }
+  return 'other';
+}
+
+function topicsFor(
+  type: MotivationLicenceType,
+  answers: Record<string, string>,
+  documentKinds: readonly string[],
+): IntakeTopicId[] {
+  const fieldTopics = new Set(fieldsFor(type).map((field) => topicForField(field.key)));
+  const hasExisting =
+    Object.keys(answers).some((key) => key.startsWith('existing_firearm_')) ||
+    documentKinds.includes('CURRENT_LICENCE');
+  return TOPIC_ORDER.filter((topic) => {
+    if (topic === 'existing') return hasExisting;
+    if (topic === 'association' || topic === 'activities') {
+      return fieldTopics.has(topic);
+    }
+    if (topic === 'other') return fieldTopics.has('other');
+    return true;
+  });
+}
+
+/**
+ * Only these fields may be rewritten by the agent's spelling correction.
+ * A model suggestion must never silently change an address, an ID number or a
+ * declaration answer.
+ */
+const CORRECTABLE_FIELDS = new Set([
+  'firearm_type',
+  'firearm_action',
+  'firearm_make',
+  'firearm_model',
+  'firearm_calibre',
+]);
+
+interface TranscriptMessage {
+  role: 'assistant' | 'user';
+  text: string;
+  at: string;
+}
+
+interface Transcript {
+  version: string;
+  messages: TranscriptMessage[];
+}
+
+interface IntakeRow {
+  id: string;
+  referenceNumber: string;
+  licenceType: MotivationLicenceType;
+  answersEncrypted: string | null;
+  intakeMode: string | null;
+  outputMode: string;
+  intakeStartedAt: Date | null;
+  intakeDocumentsAt: Date | null;
+  intakeCompletedAt: Date | null;
+  interviewEncrypted: string | null;
+  answerProvenance: unknown;
+  status: MotivationStatus;
+}
+
+@Injectable()
+export class MotivationIntakeService {
+  private readonly logger = new Logger(MotivationIntakeService.name);
+  /** Calibre -> species suggestions, kept for an hour. Cheap, not a cache table. */
+  private readonly speciesCache = new Map<
+    string,
+    { at: number; choices: IntakeChoice[] }
+  >();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+    private readonly shared: MotivationSharedService,
+    private readonly sheets: MotivationSheetService,
+    private readonly documents: MotivationDocumentsService,
+    private readonly motivations: MotivationsService,
+    private readonly agent: MotivationIntakeAgentService,
+  ) {}
+
+  async state(userId: string, id: string): Promise<IntakeState> {
+    return this.stateInternal(userId, id);
+  }
+
+  private async stateInternal(
+    userId: string,
+    id: string,
+    previousAnswer: string | null = null,
+    previousQuestion: string | null = null,
+    previousFieldKey: string | null = null,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const library = await this.documents.library(userId, id);
+    const strategy = strategyFor(row.licenceType);
+    const motivationOnly =
+      normaliseOutputMode(row.outputMode) === 'MOTIVATION_ONLY';
+    const blocked = this.blockedFor(row.licenceType, answers);
+
+    const phrased =
+      !blocked &&
+      row.intakeMode === 'INTERVIEW' &&
+      row.intakeDocumentsAt &&
+      !row.intakeCompletedAt
+        ? await this.phrasedQuestion(
+            row,
+            sheet,
+            answers,
+            previousAnswer,
+            previousQuestion,
+            previousFieldKey,
+            library,
+          )
+        : null;
+    const question = phrased?.question ?? null;
+
+    /**
+     * âš ï¸ A CORRECTION IS SAVED, NOT JUST SPOKEN. The next question says
+     * "Mauser" even when the applicant typed "Mausser"; storing the same
+     * correction is what stops the misspelling reaching the DFO's pack. The
+     * whitelist and the small-edit guard are in `spellingFix` below â€” a model
+     * suggestion never touches an address, an ID number or a declaration.
+     */
+    if (
+      phrased?.correction &&
+      previousFieldKey &&
+      CORRECTABLE_FIELDS.has(previousFieldKey)
+    ) {
+      const original = (answers[previousFieldKey] ?? '').trim();
+      if (this.spellingFix(original, phrased.correction)) {
+        try {
+          await this.motivations.saveAnswers(userId, id, {
+            [previousFieldKey]: phrased.correction,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Intake ${row.id}: spelling correction could not be saved â€” ${
+              (err as Error).message
+            }`,
+          );
+        }
+      }
+    }
+
+
+    const documents = this.documentState(sheet, library, answers);
+    const evidence = this.evidenceState(library, row.licenceType, answers);
+    const topic = this.topicState(
+      sheet,
+      documents,
+      answers,
+      question,
+      motivationOnly,
+      row.licenceType,
+    );
+    /**
+     * âš ï¸ THE INTERVIEW IS NOT "OVER" WHILE A DFO DOCUMENT IS OUTSTANDING.
+     * With no question left, stage REVIEW sent the member to the sheet with
+     * "3 things left" and no way back to the upload drawer they had just been
+     * using. Keeping the stage at INTERVIEW renders the completion screen,
+     * where the documents can still be added before they choose Review.
+     */
+    const requiredDocsMissing =
+      !motivationOnly &&
+      documents.needs.some(
+        (need) => need.tier === 'required' && !need.have,
+      );
+
+    const stage: IntakeState['stage'] = blocked
+      ? 'BLOCKED'
+      : !row.intakeMode
+        ? 'MODE'
+        : row.intakeCompletedAt
+          ? 'REVIEW'
+          : !row.intakeDocumentsAt
+            ? 'DOCUMENTS'
+            : row.intakeMode === 'DOCUMENTS'
+              ? 'REVIEW'
+              : question || requiredDocsMissing
+                ? 'INTERVIEW'
+                : 'REVIEW';
+
+    return {
+      motivationId: row.id,
+      referenceNumber: row.referenceNumber,
+      licenceType: row.licenceType,
+      licenceTypeLabel: sheet.application.licenceTypeLabel,
+      mode: (row.intakeMode as IntakeMode | null) ?? null,
+      outputMode: normaliseOutputMode(row.outputMode),
+      stage,
+      blocked,
+      summary: blocked?.message ?? strategy.intro,
+      topic,
+      vaultEmpty: !(library.items ?? []).some((i) => i.source === 'credential'),
+      documents,
+      evidence,
+      question,
+      acknowledgement: phrased?.acknowledgement,
+      progress: {
+        answered: question?.progress.answered ?? 0,
+        total: question?.progress.total ?? 0,
+        sections: sheet.sections.map((s) => ({
+          id: s.id,
+          title: s.title,
+          missing: s.missing.length,
+        })),
+      },
+    };
+  }
+
+  async start(
+    userId: string,
+    id: string,
+    mode: IntakeMode,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    if (mode !== 'DOCUMENTS' && mode !== 'INTERVIEW') {
+      throw new BadRequestException('Choose how you want to build this application.');
+    }
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        intakeMode: mode,
+        intakeStartedAt: new Date(),
+        /**
+         * ⚠️ THE INTERVIEW STARTS DIRECTLY. The old DOCUMENTS stage made the
+         * member choose from the whole vault before the interview knew which
+         * section or firearm it was about. Documents are now attached per
+         * topic as the interview reaches them.
+         */
+        intakeDocumentsAt: mode === 'INTERVIEW' ? new Date() : null,
+        intakeCompletedAt: null,
+        ...(mode === 'INTERVIEW'
+          ? {
+              interviewEncrypted: encryptText(
+                JSON.stringify({
+                  version: INTERVIEW_VERSION,
+                  messages: [],
+                } satisfies Transcript),
+              ),
+              interviewVersion: INTERVIEW_VERSION,
+            }
+          : {}),
+      },
+    });
+    /**
+     * ⚠️ DO NOT AUTOLINK THE WHOLE VAULT HERE. Starting the interview must be
+     * instant. This was reading and attaching every licence before returning,
+     * so the Start button sat doing nothing for minutes. Documents are taken
+     * as topics reach them (and after the firearm is known).
+     */
+    return this.state(userId, id);
+  }
+
+  /**
+   * Choose what this application must produce.
+   *
+   * This is deliberately separate from `start`: the member picks the
+   * deliverable before they pick how they want to build it, and may change
+   * their mind while the draft is still editable.
+   */
+  async setOutputMode(
+    userId: string,
+    id: string,
+    outputMode: string,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    const next = normaliseOutputMode(outputMode);
+    if (
+      outputMode !== 'FULL_PACK' &&
+      outputMode !== 'MOTIVATION_ONLY'
+    ) {
+      throw new BadRequestException('Choose what you need us to produce.');
+    }
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { outputMode: next },
+    });
+    return this.state(userId, id);
+  }
+
+  /**
+   * Change the section on an ungenerated draft, keeping the applicant's answers
+   * and documents. This is the way out of "I chose a .30-06 but the application
+   * is section 13": the interview blocks, the member picks a lawful section,
+   * and the same facts are re-used instead of retyped.
+   */
+  async changeSection(
+    userId: string,
+    id: string,
+    licenceType: string,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    const next = licenceType as MotivationLicenceType;
+    if (!Object.values(MotivationLicenceType).includes(next)) {
+      throw new BadRequestException('That is not a licence section we support.');
+    }
+    if (next === row.licenceType) return this.state(userId, id);
+    try {
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: {
+          licenceType: next,
+          intakeCompletedAt: null,
+          // Keep the document selection: an ID, a competency certificate and
+          // the applicant's own licences are section-agnostic.
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Intake ${row.id}: could not change section to ${next} â€” ${(err as Error).message}`,
+      );
+      throw new ConflictException(
+        'You already have an application of that type. Open it from your applications list instead.',
+      );
+    }
+    return this.state(userId, id);
+  }
+
+  async selectDocuments(
+    userId: string,
+    id: string,
+    body: {
+      items?: { source: 'credential' | 'upload'; sourceId: string }[];
+      placeConfirmed?: boolean;
+    },
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    for (const item of body.items ?? []) {
+      if (!item?.sourceId) continue;
+      try {
+        await this.documents.addFromLibrary(
+          userId,
+          id,
+          item.source,
+          item.sourceId,
+          body.placeConfirmed === true,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Intake ${row.id}: could not attach ${item.source}:${item.sourceId} â€” ${
+            (err as Error).message
+          }`,
+        );
+      }
+    }
+    if (row.intakeMode === 'DOCUMENTS') {
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: { intakeDocumentsAt: new Date(), intakeCompletedAt: new Date() },
+      });
+    } else {
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: { intakeDocumentsAt: new Date() },
+      });
+    }
+    return this.state(userId, id);
+  }
+
+  async answer(
+    userId: string,
+    id: string,
+    body: {
+      fieldKey?: string;
+      value?: string;
+      values?: string[];
+      message?: string;
+      /** Declaration follow-ups submitted with a Yes answer. */
+      fields?: Record<string, string>;
+    },
+  ): Promise<IntakeState & { acknowledgement?: string }> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    if (row.intakeMode !== 'INTERVIEW') {
+      throw new ConflictException('Start the guided interview first.');
+    }
+    if (!row.intakeDocumentsAt) {
+      throw new ConflictException('Confirm your documents before the interview.');
+    }
+    if (row.intakeCompletedAt) {
+      throw new ConflictException('This application is already at the review stage.');
+    }
+
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const blocked = this.blockedFor(row.licenceType, answers);
+    if (blocked) throw new ConflictException(blocked.message);
+    const current = planQuestion({
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+      outputMode: normaliseOutputMode(row.outputMode),
+    });
+    if (!current) {
+      await this.finish(userId, id);
+      return this.state(userId, id);
+    }
+
+    const key = (body.fieldKey ?? current.fieldKey).trim();
+    if (key !== current.fieldKey) {
+      throw new BadRequestException('That question has moved on; reload the interview.');
+    }
+    const field = fieldByKey(row.licenceType, key);
+    if (!field) throw new BadRequestException('Unknown question.');
+
+    /**
+     * âš ï¸ ONE TURN CAN ANSWER SEVERAL FIELDS. A person says "Mauser M96
+     * straight-pull in .30-06" to the make question and expects the model and
+     * calibre to land too. The extractor only sees visible, unanswered,
+     * non-sensitive fields, and every value is validated below before it can be
+     * saved. It is fail-soft: no model, no text, or an unparseable answer just
+     * leaves the ordinary single-field path.
+     */
+    const sourceText = (body.message ?? body.value ?? '').trim();
+    let extracted: Record<string, string> = {};
+    if (
+      sourceText &&
+      !field.sensitive &&
+      !field.formOnly &&
+      sourceText.split(/\s+/).length > 1
+    ) {
+      const candidates: FactCandidate[] = [];
+      for (const pending of pendingFields({
+        type: row.licenceType,
+        answers,
+        sheet,
+        provenance: parseProvenance(row.answerProvenance),
+        outputMode: normaliseOutputMode(row.outputMode),
+      })) {
+        const pendingField = pending.field;
+        if (pendingField.sensitive || pendingField.formOnly) continue;
+        const choices =
+          pending.key === key
+            ? current.choices
+            : pendingField.kind === 'cards'
+              ? (pendingField.options ?? []).map((option) => ({
+                  value: option.key,
+                  label: option.sentence,
+                }))
+              : (pendingField.choices ??
+                (pendingField.kind === 'yesno' ? ['Yes', 'No'] : [])
+              ).map((choice) => ({ value: choice, label: choice }));
+        candidates.push({
+          key: pending.key,
+          label: pendingField.label,
+          kind: pendingField.kind,
+          help: pendingField.help,
+          choices,
+        });
+      }
+      if (!candidates.some((candidate) => candidate.key === key)) {
+        candidates.push({
+          key,
+          label: current.label,
+          kind: current.kind,
+          help: current.help,
+          choices: current.choices,
+        });
+      }
+      extracted = await this.agent.extractFacts({
+        text: sourceText,
+        currentKey: key,
+        candidates,
+      });
+    }
+
+    const patch: Record<string, string> = {};
+    if (Array.isArray(body.values)) {
+      patch[key] = body.values.join(', ');
+    } else if (typeof body.value === 'string') {
+      patch[key] = body.value;
+    }
+    for (const [detailKey, detailValue] of Object.entries(body.fields ?? {})) {
+      if (typeof detailValue !== 'string') continue;
+      if (!fieldByKey(row.licenceType, detailKey)) continue;
+      patch[detailKey] = detailValue;
+    }
+
+    const message = (body.message ?? '').trim();
+    if (message) {
+      if (field.kind === 'short' || field.kind === 'long') {
+        patch[key] = message;
+      } else {
+        const matched = this.matchChoices(current.choices, message);
+        if (matched.length) {
+          const existing = (patch[key] ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+          patch[key] = [...new Set([...existing, ...matched])].join(', ');
+        } else {
+          const customKey = strategyFor(row.licenceType).customKeys[key];
+          if (!customKey) {
+            throw new BadRequestException(
+              'Choose one of the options, or type a different answer.',
+            );
+          }
+          patch[customKey] = message;
+        }
+      }
+    }
+
+    /**
+     * The current field gets the extractor's focused value for a free-text
+     * answer ("Mauser M96 .30-06" -> make "Mauser"), while every OTHER fact it
+     * found is added beside it. The whole sentence is not lost: if the
+     * extractor returned nothing for the current key, the typed text stands.
+     */
+    for (const [extractedKey, extractedValue] of Object.entries(extracted)) {
+      if (!fieldByKey(row.licenceType, extractedKey)) continue;
+      if (extractedKey === key) {
+        if (field.kind === 'short' || field.kind === 'long') {
+          patch[key] = extractedValue;
+        }
+      } else if (!(extractedKey in patch)) {
+        patch[extractedKey] = extractedValue;
+      }
+    }
+
+    if (!Object.keys(patch).length) {
+      throw new BadRequestException('Choose an answer or type one in.');
+    }
+
+    const corePatch = { ...patch };
+    this.composePurposeFields(row.licenceType, patch, answers);
+
+    let saved = await this.motivations.saveAnswers(userId, id, patch);
+    if (saved.refused.length) {
+      // One bad extra must not cost the answer the applicant actually gave.
+      saved = await this.motivations.saveAnswers(userId, id, corePatch);
+    }
+    if (saved.refused.length) {
+      throw new BadRequestException(
+        'That answer did not fit the question. Please choose one of the options.',
+      );
+    }
+
+    // The router and the quarry are confirmed once per application even when
+    // a profile or an earlier application supplied the same value. saveAnswers
+    // only stamps MEMBER for a value that MOVED, so an unchanged confirmation
+    // needs its own stamp or the planner asks it again on the next turn.
+    if (key === 'intended_quarry' || key === 'firearm_use_kind') {
+      try {
+        await this.motivations.confirmAnswer(userId, id, key);
+      } catch (err) {
+        this.logger.warn(
+          `Intake ${row.id}: confirmation of ${key} could not be recorded �?" ${(err as Error).message}`,
+        );
+      }
+    }
+
+    /**
+     * ⚠️ AS SOON AS THE FIREARM IS KNOWN, LOOK FOR ITS CERTIFICATES.
+     *
+     * Autolink runs once per application and the firearm type is almost never
+     * answered when the application opens. Waiting for a later screen means
+     * the member answers competency questions by hand even though the right
+     * certificate is already in their vault, and the 117705 knowledge page may
+     * never be attached. saveAnswers re-arms autolinkedAt when the required
+     * endorsement moves, so this is the trigger that was missing.
+     *
+     * Fail-soft: a vault lookup that fails must not cost the answer just given.
+     */
+    if (key === 'firearm_type' || key === 'firearm_action') {
+      try {
+        await this.motivations.autolink(userId, id);
+      } catch (err) {
+        this.logger.warn(
+          `Intake ${row.id}: certificate autolink after ${key} failed �?" ${(err as Error).message}`,
+        );
+      }
+    }
+    const userText = current.sensitive
+      ? 'Answered privately.'
+      : Object.values(patch).join(' ');
+    await this.appendTranscript(row.id, [
+      {
+        role: 'assistant',
+        text: current.label.slice(0, 500),
+        at: new Date().toISOString(),
+      },
+      {
+        role: 'user',
+        text: userText.slice(0, 500),
+        at: new Date().toISOString(),
+      },
+    ]);
+
+    const state = await this.stateInternal(
+      userId,
+      id,
+      userText,
+      current.label,
+      current.fieldKey,
+    );
+    return { ...state };
+  }
+
+  async finish(userId: string, id: string): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { intakeCompletedAt: new Date() },
+    });
+    return this.state(userId, id);
+  }
+
+  // â”€â”€ document + evidence state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  private documentState(
+    sheet: SheetResponse,
+    library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+    answers: Record<string, string>,
+  ): IntakeState['documents'] {
+    const firearmKnown =
+      Boolean(answers.firearm_type?.trim()) &&
+      Boolean(answers.firearm_action?.trim());
+    const required = new Map(
+      sheet.needs.needs
+        .filter((n) => n.tier === 'required')
+        .map((n) => [n.kind, n] as const),
+    );
+    const requiredMissing = new Set(
+      sheet.needs.needs
+        .filter((n) => n.tier === 'required' && !n.have)
+        .map((n) => n.kind),
+    );
+    const suggested = new Set(
+      (library.suggested ?? []).map((i) => `${i.source}:${i.sourceId}`),
+    );
+
+    const items: IntakeDocumentItem[] = (library.items ?? []).map((row) => {
+      const need = required.get(row.kind);
+      let tick: TickState = row.alreadyHere
+        ? 'attached'
+        : need && requiredMissing.has(row.kind)
+          ? 'required'
+          : suggested.has(`${row.source}:${row.sourceId}`)
+            ? 'suggested'
+            : 'optional';
+      let tickReason: string | null = need?.why ?? null;
+      if (row.caution?.tone === 'stale') {
+        tick = 'blocked';
+        tickReason = row.caution.text;
+      }
+      if (row.askPlace && tick !== 'attached') {
+        tickReason =
+          'Confirm these are the safe at the address on this application.';
+      }
+      return {
+        source: row.source,
+        sourceId: row.sourceId,
+        kind: row.kind,
+        title: row.title,
+        addedOn: row.addedOn,
+        alreadyHere: row.alreadyHere,
+        caution: row.caution,
+        askPlace: row.askPlace,
+        evidenceType: row.evidenceType ?? null,
+        evidencePlacement: row.evidencePlacement ?? null,
+        tick,
+        tickReason,
+      };
+    });
+
+    const missing = sheet.needs.needs
+      .filter(
+        (n) =>
+          n.tier === 'required' &&
+          !n.have &&
+          !items.some((i) => i.kind === n.kind),
+      )
+      .map((n) => ({ kind: n.kind, label: n.label, why: n.why }));
+
+    /**
+     * The ANNEXURE list the interview asks for. Required and expected only:
+     * `strengthens` is evidence for the argument, not paperwork a DFO/CFR
+     * expects at the counter. The frontend renders one row per document with
+     * an upload door and an "enter details instead" door.
+     */
+    const needs = sheet.needs.needs
+      .filter(
+        (n) =>
+          (n.tier === 'required' || n.tier === 'expected') &&
+          (firearmKnown ||
+            (n.kind !== 'PROFICIENCY_CERTIFICATE' &&
+              n.kind !== 'ASSOCIATION_ENDORSEMENT')),
+      )
+      .map((n) => ({
+        kind: n.kind,
+        label: n.label,
+        tier: n.tier,
+        why: n.why,
+        have: n.have,
+        ...(n.minFiles ? { minFiles: n.minFiles, minFilesNote: n.minFilesNote } : {}),
+      }));
+
+    return {
+      items,
+      missing,
+      needs,
+      attached: items.filter((i) => i.alreadyHere).length,
+      required: requiredMissing.size,
+      sourceProofAttached: items.some(
+        (i) =>
+          i.alreadyHere &&
+          (i.kind === 'FIREARM_SOURCE_PROOF' ||
+            i.kind === 'SELLER_LICENCE'),
+      ),
+      firearmKnown,
+    };
+  }
+
+  /**
+   * The current topic, with what we already hold and what this step still
+   * needs. The frontend renders the bullets and one question — never the whole
+   * document library.
+   */
+  private topicState(
+    sheet: SheetResponse,
+    documents: IntakeState['documents'],
+    answers: Record<string, string>,
+    question: IntakeQuestion | null,
+    motivationOnly: boolean,
+    type: MotivationLicenceType,
+  ): IntakeTopicState | null {
+    if (!question) return null;
+    const current = topicForField(question.fieldKey);
+    const topics = topicsFor(
+      type,
+      answers,
+      documents.needs.map((need) => need.kind),
+    );
+    const ordered = topics.includes(current) ? topics : [...topics, current];
+    const fieldKeys = new Set(
+      fieldsFor(type)
+        .filter((field) => topicForField(field.key) === current)
+        .map((field) => field.key),
+    );
+    const have = sheet.items
+      .filter(
+        (item) =>
+          fieldKeys.has(item.key) &&
+          item.value.trim().length > 0 &&
+          item.state !== 'na',
+      )
+      .map((item) => ({
+        label: item.label,
+        value: item.value,
+        from: item.provenance?.from ?? 'your details',
+      }));
+    const docKinds = new Set(TOPIC_DOCUMENTS[current] ?? []);
+    const docs = documents.needs
+      .filter((need) => docKinds.has(need.kind))
+      .map((need) => ({
+        kind: need.kind,
+        label: need.label,
+        have: need.have,
+        required: !motivationOnly && need.tier === 'required',
+      }));
+    const missingRequired = docs.some((doc) => doc.required && !doc.have);
+    return {
+      id: current,
+      title: TOPIC_TITLES[current],
+      index: ordered.indexOf(current) + 1,
+      total: ordered.length,
+      status: missingRequired ? 'needs_document' : 'needs_answers',
+      have,
+      documents: docs,
+      actions: ['upload', 'scan', 'manual'],
+    };
+  }
+
+  private evidenceState(
+    library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+    type: MotivationLicenceType,
+    answers: Record<string, string>,
+  ): IntakeState['evidence'] {
+    const strategy = strategyFor(type);
+    const groups = strategy.evidenceGroups as EvidenceGroup[];
+    const purpose = purposeForAnswers(type, answers);
+    const items: IntakeDocumentItem[] = [];
+    for (const row of library.items ?? []) {
+      if (!row.evidenceType && row.kind !== 'EVIDENCE') continue;
+      const group = containerById(row.evidenceType ?? '')?.group ?? 'other';
+      if (!groups.includes(group)) continue;
+      items.push({
+        source: row.source,
+        sourceId: row.sourceId,
+        kind: row.kind,
+        title: row.title,
+        addedOn: row.addedOn,
+        alreadyHere: row.alreadyHere,
+        caution: row.caution,
+        askPlace: row.askPlace,
+        evidenceType: row.evidenceType ?? null,
+        evidencePlacement: row.evidencePlacement ?? null,
+        tick: row.alreadyHere ? 'attached' : 'suggested',
+        tickReason: row.alreadyHere
+          ? 'Already on this application.'
+          : 'Suggested for this purpose.',
+      });
+    }
+
+    const note =
+      purpose === 'self-defence'
+        ? 'Do you have an incident report, a CCTV still, or a photograph of the gate, fence or safe that you want to add? This is optional; the report is complete without it.'
+        : purpose === 'sport'
+          ? 'Do you have score sheets, range photographs, competition results or an attendance register from the discipline you actually shoot? Up to four body items are printed.'
+          : purpose === 'continued use'
+            ? 'Do you have a log or photographs showing how you have kept using the firearm? This is optional.'
+            : 'Do you have hunting photographs, register pages, permits or a written invitation from a landowner? Up to four body items are printed.';
+    const ready =
+      strategy.purpose !== 'sporting' ||
+      (answers.firearm_use_kind ?? '').trim() !== '';
+    return { items, groups, note, ready };
+  }
+
+  // â”€â”€ model phrasing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /**
+   * Let Gemini turn the calibre into quarry choices. This is the one place the
+   * interview actively researches the firearm for the applicant: a .30-06 gets
+   * kudu/wildebeest/hartebeest/impala/warthog, not a generic species list.
+   * Results are cached by calibre+type+action for an hour.
+   */
+  private async speciesChoices(
+    answers: Record<string, string>,
+  ): Promise<IntakeChoice[]> {
+    const calibre = (answers.firearm_calibre ?? '').trim();
+    if (!calibre || !this.llm.isConfigured()) return [];
+    const type = (answers.firearm_type ?? '').trim();
+    const action = (answers.firearm_action ?? '').trim();
+    const key = `${calibre}|${type}|${action}`.toLowerCase();
+    const hit = this.speciesCache.get(key);
+    if (hit && Date.now() - hit.at < 60 * 60 * 1000) return hit.choices;
+
+    try {
+      const res = await this.llm.complete({
+        system: speciesSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: speciesUserPrompt({ calibre, type, action }),
+          },
+        ],
+        maxTokens: 600,
+        temperature: 0.3,
+        purpose: 'motivation.interview',
+        json: { schema: SPECIES_SCHEMA },
+        timeoutMs: 15_000,
+      });
+      const parsed = JSON.parse(res.text) as {
+        choices?: { value?: unknown; label?: unknown }[];
+      };
+      const seen = new Set<string>();
+      const choices: IntakeChoice[] = [];
+      for (const raw of parsed.choices ?? []) {
+        const value =
+          typeof raw.value === 'string' ? raw.value.trim() : '';
+        const label =
+          typeof raw.label === 'string' ? raw.label.trim() : value;
+        if (!value || !label || seen.has(value.toLowerCase())) continue;
+        seen.add(value.toLowerCase());
+        choices.push({ value, label });
+      }
+      const kept = choices.slice(0, 6);
+      if (kept.length) this.speciesCache.set(key, { at: Date.now(), choices: kept });
+      return kept;
+    } catch (err) {
+      this.logger.warn(
+        `Species suggestions failed for ${calibre}: ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
+
+  private async phrasedQuestion(
+    row: IntakeRow,
+    sheet: SheetResponse,
+    answers: Record<string, string>,
+    previousAnswer: string | null,
+    previousQuestion: string | null,
+    previousFieldKey: string | null,
+    library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+  ): Promise<{
+    question: IntakeQuestion;
+    acknowledgement?: string;
+    correction?: string;
+  } | null> {
+    const base = planQuestion({
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+      outputMode: normaliseOutputMode(row.outputMode),
+    });
+    if (!base) return null;
+
+    /**
+     * THE CALIBRE IS THE RESEARCH. When the interview reaches "what do you
+     * hunt", ask Gemini for the species this exact firearm/calibre is suited
+     * to and show them as taps. The applicant can still type their own quarry.
+     */
+    if (base.fieldKey === 'intended_quarry' && !base.sensitive) {
+      const choices = await this.speciesChoices(answers);
+      if (choices.length) {
+        return {
+          question: { ...base, choices, multi: true },
+        };
+      }
+    }
+
+    if (base.sensitive || !this.llm.isConfigured()) {
+      return { question: base };
+    }
+    /**
+     * âš ï¸ DO NOT SPEND A MODEL ROUND-TRIP ON A SIMPLE CHOICE.
+     *
+     * The action-type, rifle/shotgun and yes/no questions already read as
+     * questions, and the chips carry the answer. Phrasing them through Gemini
+     * added ~2 seconds to every tap with no information gained, which is what
+     * made the interview feel stuck. The model is kept for the purpose router
+     * and the free-text answers, where wording and context actually matter.
+     */
+    /**
+     * ⚠️ THE PURPOSE ROUTER KEEPS ITS OWN THREE CHOICES. Letting the agent
+     * rewrite them produced "dangerous game hunting" / "specialized big game
+     * hunting", which are not stored values; selecting two made the save fail
+     * with "that answer did not fit the question".
+     */
+    const needsPhrasing = base.kind === 'short' || base.kind === 'long';
+    if (!needsPhrasing) return { question: base };
+
+    /**
+     * âš ï¸ THE AGENT PHRASES, THE PLANNER DECIDES. The tool-using Gemini turn can
+     * read the application and write the next question, but it cannot move to
+     * another field: `base` is the question the deterministic planner chose,
+     * and only its label is replaced. A model that invents a topic is ignored
+     * on the next reload because the planner will still ask the missing field.
+     */
+    const agentContext: InterviewAgentContext = {
+      licenceType: row.licenceType,
+      licenceLabel: sheet.application.licenceTypeLabel,
+      summary: strategyFor(row.licenceType).intro,
+      knownFacts: this.knownFacts(answers),
+      question: base,
+      documents: this.documentState(sheet, library, answers),
+      evidence: this.evidenceState(library, row.licenceType, answers),
+      previousQuestion: previousQuestion ?? undefined,
+      previousAnswer: previousAnswer ?? undefined,
+      previousFieldKey: previousFieldKey ?? undefined,
+    };
+    const agentReply = await this.agent.phrase(agentContext);
+    if (agentReply) {
+      const choices =
+        agentReply.choices && agentReply.choices.length > 0
+          ? agentReply.choices
+          : base.choices;
+      return {
+        question: {
+          ...base,
+          label: agentReply.question,
+          choices,
+          customPlaceholder: choices.length
+            ? 'Or type your own answer…'
+            : base.customPlaceholder,
+        },
+        acknowledgement: agentReply.acknowledgement,
+        correction: agentReply.correctedAnswer,
+      };
+    }
+    try {
+      const res = await this.llm.complete({
+        system: intakeSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: intakeUserPrompt({
+              licenceType: sheet.application.licenceTypeLabel,
+              fieldLabel: base.label,
+              fieldHelp: base.help,
+              choices: base.choices,
+              known: this.knownFacts(answers),
+              previousAnswer: previousAnswer ?? undefined,
+            }),
+          },
+        ],
+        maxTokens: 400,
+        temperature: 0.5,
+        purpose: 'motivation.interview',
+        json: { schema: INTAKE_SCHEMA },
+        timeoutMs: 20_000,
+      });
+      const parsed = JSON.parse(res.text) as {
+        question?: unknown;
+        acknowledgement?: unknown;
+      };
+      const question =
+        typeof parsed.question === 'string' ? parsed.question.trim() : '';
+      if (!question) return { question: base };
+      return {
+        question: { ...base, label: question },
+        acknowledgement:
+          typeof parsed.acknowledgement === 'string'
+            ? parsed.acknowledgement.trim()
+            : undefined,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Interview question phrasing failed: ${(err as Error).message}`,
+      );
+      return { question: base };
+    }
+  }
+
+  private knownFacts(answers: Record<string, string>): string[] {
+    const safe = [
+      'firearm_make',
+      'firearm_model',
+      'firearm_calibre',
+      'firearm_type',
+      'firearm_action',
+      'residence_type',
+      'intended_quarry',
+      'hunting_locations',
+      'competition_record',
+      'firearm_use_kind',
+    ];
+    return safe
+      .map((key) => (answers[key] ?? '').trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * A spelling correction is accepted only when it is a SMALL edit to the same
+   * value. "Mausser" -> "Mauser" is one character; "GLOCK 19" -> "Glock 17" is
+   * three and would be a different fact, so it is refused. Case-only changes
+   * are not saved (the printed value is already the same word).
+   */
+  private spellingFix(original: string, corrected: string): boolean {
+    const from = original.trim();
+    const to = corrected.trim();
+    if (!from || !to || from === to || to.length > 80) return false;
+    if (from.toLowerCase() === to.toLowerCase()) return false;
+    const maxEdits = Math.min(
+      4,
+      Math.max(2, Math.floor(Math.max(from.length, to.length) * 0.2)),
+    );
+    return editDistance(from.toLowerCase(), to.toLowerCase()) <= maxEdits;
+  }
+
+
+  /**
+   * Turn the tapped purpose cards into the long answers the writer reads.
+   *
+   * âš ï¸ THE CARD KEY IS FOR RESEARCH, THE LONG FIELD IS FOR THE PROSE. The
+   * research and exhibit pickers read `hunt_game_class`; the writer's fact pack
+   * reads `intended_quarry`, `hunting_locations`, `hunting_history` and
+   * `competition_record`. Writing both is what makes a tap reach the document.
+   */
+  private composePurposeFields(
+    type: MotivationLicenceType,
+    patch: Record<string, string>,
+    existing: Record<string, string>,
+  ): void {
+    const sentencesFor = (cardKey: string): string[] => {
+      const raw = (patch[cardKey] ?? '').trim();
+      if (!raw) return [];
+      const options = fieldByKey(type, cardKey)?.options ?? [];
+      return raw
+        .split(',')
+        .map((key) => options.find((o) => o.key === key.trim())?.sentence)
+        .filter((s): s is string => Boolean(s));
+    };
+    const append = (
+      cardKey: string,
+      textKey: string,
+      onlyIfEmpty = false,
+    ) => {
+      if (onlyIfEmpty && (patch[textKey] ?? existing[textKey] ?? '').trim()) {
+        return;
+      }
+      const sentences = sentencesFor(cardKey);
+      if (!sentences.length) return;
+      patch[textKey] = [patch[textKey], ...sentences]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+    };
+
+    append('s13_reasons', 'threat_circumstances', true);
+    append('s13_movements', 'daily_movements', true);
+    /**
+     * ⚠️ THE PICKED QUARRY AND THE TYPED QUARRY BOTH MATTER.
+     *
+     * `intended_quarry` is the one line the writer and the plates read, and the
+     * cards used to fill it only when it was empty. So a member who typed
+     * "vlakvark" and then ticked "I hunt medium to large plains game" kept
+     * only the typed animal; their picked class never reached the document.
+     * Merge the selected class sentences in, without duplicating on a reload.
+     */
+    const quarryBase = (
+      patch.intended_quarry ??
+      existing.intended_quarry ??
+      ''
+    ).trim();
+    const quarrySentences = sentencesFor('hunt_game_class').filter(
+      (sentence) => !quarryBase.toLowerCase().includes(sentence.toLowerCase()),
+    );
+    if (quarrySentences.length) {
+      patch.intended_quarry = [quarryBase, ...quarrySentences]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+    }
+    append('hunt_terrain', 'hunting_locations');
+    append('hunt_where', 'hunting_locations');
+    append('hunt_reasons', 'hunting_history');
+    append('sport_reasons', 'competition_record');
+    append('sport_formats', 'competition_record');
+  }
+
+  private matchChoices(
+    choices: readonly IntakeChoice[],
+    message: string,
+  ): string[] {
+    const tokens = message
+      .toLowerCase()
+      .split(/[,;/]|\band\b/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const out: string[] = [];
+    for (const token of tokens.length ? tokens : [message.toLowerCase()]) {
+      const hit = choices.find((c) => {
+        const label = c.label.toLowerCase();
+        const value = c.value.toLowerCase();
+        return (
+          token === label ||
+          token === value ||
+          label.includes(token) ||
+          token.includes(label)
+        );
+      });
+      if (hit) out.push(hit.value);
+    }
+    return [...new Set(out)];
+  }
+
+  // â”€â”€ section eligibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  private blockedFor(
+    type: MotivationLicenceType,
+    answers: Record<string, string>,
+  ): IntakeBlocked | null {
+    const blocker = applicationBlockers(type, answers).find(
+      (b) => b.code === 'section-forbids-firearm',
+    );
+    if (!blocker) return null;
+    return {
+      code: blocker.code,
+      field: blocker.field,
+      message: blocker.message,
+      suggested: this.suggestSections(type, answers),
+    };
+  }
+
+  /**
+   * The sections that would lawfully take the firearm the applicant described.
+   * The message already says "a different section"; these are the actual doors.
+   */
+  private suggestSections(
+    type: MotivationLicenceType,
+    answers: Record<string, string>,
+  ): { licenceType: MotivationLicenceType; label: string }[] {
+    const shape = firearmShape(answers);
+    if (!shape) return [];
+    const out: MotivationLicenceType[] = [];
+    const add = (t: MotivationLicenceType) => {
+      if (t !== type && !out.includes(t)) out.push(t);
+    };
+    const rifle = shape.category === 'rifle-carbine';
+    const shotgun = shape.category === 'shotgun';
+    const handgun = shape.category === 'handgun';
+    const selfLoading = shape.selfLoading === true;
+
+    if (type === 'S13_SELF_DEFENCE') {
+      if (rifle) {
+        add('S15_OCCASIONAL_HUNTER');
+        add('S16_DEDICATED_HUNTER');
+        if (selfLoading) add('S16_DEDICATED_SPORT');
+      }
+      if (shotgun && selfLoading) {
+        add('S14_RESTRICTED_SELF_DEFENCE');
+        add('S16_DEDICATED_SPORT');
+      }
+    }
+
+    if (type === 'S14_RESTRICTED_SELF_DEFENCE') {
+      if (handgun) add('S13_SELF_DEFENCE');
+      if (rifle && !selfLoading) {
+        add('S15_OCCASIONAL_HUNTER');
+        add('S16_DEDICATED_HUNTER');
+      }
+      if (shotgun && !selfLoading) add('S13_SELF_DEFENCE');
+    }
+
+    if (type === 'S15_OCCASIONAL_HUNTER' && selfLoading && !handgun) {
+      add('S16_DEDICATED_SPORT');
+      add('S14_RESTRICTED_SELF_DEFENCE');
+    }
+
+    return out.map((licenceType) => ({
+      licenceType,
+      label: LICENCE_TYPE_LABELS[licenceType],
+    }));
+  }
+
+  // â”€â”€ transcript â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  private async appendTranscript(
+    id: string,
+    messages: TranscriptMessage[],
+  ): Promise<void> {
+    const row = await this.prisma.motivation.findUnique({
+      where: { id },
+      select: { interviewEncrypted: true },
+    });
+    const current = this.readTranscript(row?.interviewEncrypted ?? null);
+    const next: Transcript = {
+      version: INTERVIEW_VERSION,
+      messages: [...current.messages, ...messages].slice(-MAX_TRANSCRIPT),
+    };
+    await this.prisma.motivation.update({
+      where: { id },
+      data: {
+        interviewEncrypted: encryptText(JSON.stringify(next)),
+        interviewVersion: INTERVIEW_VERSION,
+      },
+    });
+  }
+
+  private readTranscript(encrypted: string | null): Transcript {
+    if (!encrypted) return { version: INTERVIEW_VERSION, messages: [] };
+    try {
+      const parsed = JSON.parse(tryDecryptText(encrypted) ?? '') as Transcript;
+      if (!Array.isArray(parsed.messages)) throw new Error('bad transcript');
+      return {
+        version: parsed.version || INTERVIEW_VERSION,
+        messages: parsed.messages.slice(-MAX_TRANSCRIPT),
+      };
+    } catch {
+      return { version: INTERVIEW_VERSION, messages: [] };
+    }
+  }
+
+  // â”€â”€ guards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  private async load(userId: string, id: string): Promise<IntakeRow> {
+    const user = await this.shared.requireUser(userId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        referenceNumber: true,
+        licenceType: true,
+        answersEncrypted: true,
+        intakeMode: true,
+        outputMode: true,
+        intakeStartedAt: true,
+        intakeDocumentsAt: true,
+        intakeCompletedAt: true,
+        interviewEncrypted: true,
+        answerProvenance: true,
+        status: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    return row;
+  }
+
+  private assertEditable(row: IntakeRow): void {
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException(
+        'This application is already being written or has been completed.',
+      );
+    }
+  }
+}
+
+/** Levenshtein distance, used only by the small-edit spelling guard. */
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        substitution,
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+
+
+

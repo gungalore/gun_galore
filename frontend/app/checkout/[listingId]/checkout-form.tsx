@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useAuth } from '../../../lib/auth';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -17,7 +18,7 @@ import { useCountdown } from '@/lib/use-countdown';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { BuyerTermsAck } from '@/components/buyer-terms-ack';
+import { usePaymentMethods } from '@/lib/payment-methods';
 import { vicinityLabel } from '@/lib/vicinity';
 import { pargoOptionLabel } from '@/lib/pargo-pickup';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
@@ -36,8 +37,6 @@ import {
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
 import { getCollectionMode } from '@/lib/delivery-estimate';
-import DateField from '@/components/date-field';
-import { parseIso, todayYmd } from '@/lib/date-picker-model';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -58,28 +57,6 @@ interface CreateTxResponse {
 // back from here). Kept in sync with the offer checkout form + the
 // complete page.
 const PENDING_TX_KEY = 'gg:pendingTx';
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
-  color: 'var(--text-primary)',
-  borderRadius: '6px',
-  padding: '8px 12px',
-  fontSize: '14px',
-  outline: 'none',
-};
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
 
 // mm:ss for the 15-minute reservation clock.
 function formatHold(ms: number): string {
@@ -111,6 +88,11 @@ export function CheckoutForm({
   holdIncludedInListing?: boolean;
 }) {
   const { getToken } = useAuth();
+  const {
+    methods: paymentMethods,
+    provider: paymentProvider,
+    setProvider: setPaymentProvider,
+  } = usePaymentMethods();
 
   // SMS-link checkout: when the URL has ?t=<token>, this checkout
   // page can be reached and acted on WITHOUT a Clerk session. The
@@ -211,6 +193,20 @@ export function CheckoutForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdEligible, initialHold]);
 
+  // Coming back from Ozow/Peach via the browser Back button can restore the
+  // page from bfcache with `submitting` still true and a dead hold. Re-render
+  // from the server so the buyer sees the real state instead of a frozen
+  // "Setting up payment…" button.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
   // Collection-only listing (trailers / caravans) — collected in person
   // from the seller, no courier. When true we hide all courier shipping
   // UI, skip the shipping quote, and submit shippingMethod = 'COLLECTION'.
@@ -267,10 +263,7 @@ export function CheckoutForm({
   // delivery. We removed the dealer dropdown because our dealer DB
   // isn't comprehensive enough yet — let the buyer use any
   // SAPS-licensed dealer of their choice.
-  const [dtConsentAccepted, setDtConsentAccepted] = useState(false);
-  useEffect(() => {
-    if (method !== 'DEALER_TRANSFER') setDtConsentAccepted(false);
-  }, [method]);
+
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -332,7 +325,7 @@ export function CheckoutForm({
   // backend HARD-refuses any firearm transaction without the explicit
   // `true` flag, so this gate is mirrored on Pay/isReady. Non-firearm
   // checkouts ignore this state.
-  const [firearmAttestation, setFirearmAttestation] = useState(false);
+
 
   // Collection-only papers acknowledgement — required for requiresPapers
   // listings (trailers / caravans). The backend refuses the transaction
@@ -342,7 +335,7 @@ export function CheckoutForm({
   // Unconditional pre-payment acknowledgement — the buyer has seen where the
   // item is, and location/distance is not a refund ground. Applies to every
   // listing class, so unlike the two above it is not gated on a listing flag.
-  const [buyerTermsAck, setBuyerTermsAck] = useState(false);
+
 
 
   // "Ship to a different address" toggle. Off by default — the
@@ -588,14 +581,7 @@ export function CheckoutForm({
   }
 
   function buildPayload() {
-    // M33 — for firearm listings the backend HARD-refuses any
-    // transaction without firearmAttestation18Plus === true. We
-    // include it on every payload (harmless for non-firearm) so we
-    // never accidentally regress this gate.
-    const attestation = listing.isFirearm
-      ? { firearmAttestation18Plus: firearmAttestation }
-      : {};
-    // Collection papers acknowledgement — only meaningful (and only
+    // Collection papers acknowledgement - only meaningful (and only
     // accepted by the backend) for requiresPapers listings. Harmless to
     // omit otherwise.
     const papers = listing.requiresPapers
@@ -604,17 +590,15 @@ export function CheckoutForm({
     const base = {
       listingId: listing.id,
       shippingMethod: method,
-      // Unconditional — every branch below returns `base`, so there is no
-      // path to Pay that omits it. The server refuses the transaction
-      // without it.
-      buyerTermsAccepted: buyerTermsAck,
-      // P8a — units to buy. Backend resolves to 1 for non-tracked listings.
+      // The rail the buyer chose. The backend locks it to the transaction and
+      // routes the refund + seller payout through the same provider.
+      paymentProvider,
+      // P8a - units to buy. Backend resolves to 1 for non-tracked listings.
       ...(listing.trackInventory ? { quantity } : {}),
       // Claim the 15-minute reservation instead of reserving again. Omitted
       // when the hold could not be taken (e.g. an unsupported auth state), so
       // the backend's normal atomic reserve still protects the sale.
       ...(holdEligible && hold && !holdExpired ? { holdId: hold.holdId } : {}),
-      ...attestation,
       ...papers,
     };
     // ON_SITE_SERVICE is retained on the union for historic rows; nothing in
@@ -686,13 +670,11 @@ export function CheckoutForm({
     // Unconditional, and FIRST — ahead of the `method === 'COLLECTION'` early
     // return below, which would otherwise let a collection buyer pay without
     // ever ticking it. Mirrors the server gate in reserveAndCreateLine.
-    if (!buyerTermsAck) return false;
     // Hard gate — every buyer needs a phone on file before Pay enables
     // (the inline BuyerPhoneCapture block surfaces above when missing).
     // No phone = no dispatch SMS = lost parcel risk.
     if (meLoaded && me && !me.phone) return false;
     // M33 — firearm buyers must affirm 18+/competency.
-    if (listing.isFirearm && !firearmAttestation) return false;
     // Collection papers — buyers of requiresPapers listings must
     // acknowledge the in-person collection + papers handover.
     if (listing.requiresPapers && !collectionPapersAck) return false;
@@ -715,9 +697,9 @@ export function CheckoutForm({
         : me?.addrLat != null && me?.addrLng != null;
       return !!deliveryOption && hasCoords && quoteState.kind === 'ready';
     }
-    if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
-    // The in-person handover carries no checkout gate of its own: those
-    // terms are accepted with the Terms at sign-up.
+    // The hand-over terms (dealer transfer and in-person) live in the Terms
+    // at sign-up. There is no separate checkout acknowledgement.
+    if (method === 'DEALER_TRANSFER') return true;
     if (method === 'PRIVATE_ARRANGE') return true;
     return false;
   }
@@ -802,7 +784,7 @@ export function CheckoutForm({
         // Phase-1 payment gate: the API returns 503 "card payments are
         // launching soon" until PAYMENTS_LIVE. Show the friendly
         // launching-soon state rather than a red error banner.
-        if (res.status === 503 || /launching soon/i.test(msg)) {
+        if (/launching soon/i.test(msg)) {
           setComingSoon(true);
           setSubmitting(false);
           return;
@@ -991,6 +973,13 @@ export function CheckoutForm({
               >
                 {holding ? 'Holding…' : 'Hold it again'}
               </button>
+              {' · '}
+              <Link
+                href="/my/orders"
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                View my orders
+              </Link>
             </p>
           )}
         </div>
@@ -1125,6 +1114,8 @@ export function CheckoutForm({
           selected={method}
           onSelect={setMethod}
           isFirearm={listing.isFirearm}
+          dealerName={listing.plannedDealerName}
+          dealerLocation={listing.plannedDealerLocation}
         />
       )}
 
@@ -1314,13 +1305,6 @@ export function CheckoutForm({
           and AI vision verifies before funds release to the
           seller. The verification flow lives at
           /transactions/[id]/dealer-verification (built in D1–D6). */}
-      {method === 'DEALER_TRANSFER' && (
-        <DealerTransferConsent
-          accepted={dtConsentAccepted}
-          onChange={setDtConsentAccepted}
-        />
-      )}
-
       {/* Private arrangement — the handover terms (payment held until
           confirmation, contact sharing, non-refundable Platform Fee) are in
           the Terms of Service and accepted at sign-up, so there is no
@@ -1330,13 +1314,6 @@ export function CheckoutForm({
       {/* M33 — 18+/competency attestation. Required by the backend
           for every firearm transaction. Rendered last in the consent
           stack so it's the buyer's final affirmation before Pay. */}
-      {listing.isFirearm && (
-        <FirearmAttestation
-          accepted={firearmAttestation}
-          onChange={setFirearmAttestation}
-        />
-      )}
-
       {/* P8a — quantity stepper. Only for inventory-tracked BUY_NOW
           listings; single-item listings never render this. Clamped to
           the sellable stock; the backend re-checks the counter on Pay. */}
@@ -1515,26 +1492,19 @@ export function CheckoutForm({
           );
         })()}
 
-      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
-      <PaymentMethodSection />
+      <p
+        className="text-xs"
+        style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+      >
+        The final delivery rate and total are confirmed on the payment page
+        before you pay.
+      </p>
 
-      {/* Location + no-refund acknowledgement. Directly above Pay on purpose:
-          CPA s49 asks that the buyer's attention be drawn to a term limiting
-          their rights, and the last thing before the button is where attention
-          actually is. It also carries the Terms / Refund Policy links, because
-          the site footer is suppressed on /checkout/* — without them there is
-          no route from this screen to the documents being agreed to. */}
-      <BuyerTermsAck
-        variant={
-          listing.isFirearm
-            ? 'firearm'
-            : isCollection
-              ? 'collection'
-              : 'courier'
-        }
-        location={vicinityLabel(listing)}
-        checked={buyerTermsAck}
-        onChange={setBuyerTermsAck}
+      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      <PaymentMethodSection
+        methods={paymentMethods}
+        value={paymentProvider}
+        onChange={setPaymentProvider}
       />
 
       {/* Proceed button */}
@@ -1771,7 +1741,7 @@ function DeliveringToChip({
             fontWeight: 500,
           }}
         >
-          ⚠ Your saved address looks incomplete. Confirm it's correct or use a different address — wrong delivery details mean wrong delivery.
+          ⚠ Your saved address looks incomplete. Confirm it&apos;s correct or use a different address — wrong delivery details mean wrong delivery.
         </p>
       )}
       <div
@@ -1808,246 +1778,6 @@ function DeliveringToChip({
   );
 }
 
-// Dealer-transfer explainer + soft consent.
-//
-// ALL Outdoor's role in a firearm DEALER_TRANSFER ends at:
-//   1. holding the buyer's funds
-//   2. verifying the seller's SAPS 534 + stock-register + firearm
-//      photos via Claude vision (instant for clear photos, human
-//      review for unclear)
-//   3. notifying the buyer which dealer has booked the firearm in
-//   4. releasing the held funds to the seller
-//
-// After payout, both parties arrange the rest themselves —
-// inter-dealer transfer to the buyer's preferred dealer,
-// collection logistics, whatever. We don't route the firearm
-// or pick the destination dealer.
-//
-// Single checkbox gate — the buyer keeps payment protection
-// (funds held) until verification approves, so this is lower
-// friction than PRIVATE_ARRANGE where they're waiving protection.
-function DealerTransferConsent({
-  accepted,
-  onChange,
-}: {
-  accepted: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div
-      className="rounded-[6px] p-4 text-sm space-y-3"
-      style={{
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-        color: 'var(--text-primary)',
-        lineHeight: 1.55,
-      }}
-    >
-      <p
-        className="text-xs uppercase"
-        style={{
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.05em',
-          fontWeight: 600,
-        }}
-      >
-        Dealer transfer
-      </p>
-
-      <p style={{ color: 'var(--text-secondary)' }}>
-        The seller will drop the firearm with their nearest
-        SAPS-licensed dealer to be booked into the dealer&apos;s
-        stock register. Once we&apos;ve verified the transfer
-        paperwork, we&apos;ll send you that dealer&apos;s contact
-        details so you know exactly where your firearm is sitting.
-        You and the seller then arrange the rest between yourselves.
-      </p>
-
-      <div
-        className="rounded-[6px] p-3 text-xs"
-        style={{
-          background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
-        }}
-      >
-        <p
-          className="uppercase mb-2"
-          style={{
-            color: 'var(--text-tertiary)',
-            letterSpacing: '0.05em',
-            fontWeight: 500,
-          }}
-        >
-          How this works
-        </p>
-        <ol
-          className="space-y-1.5 pl-5"
-          style={{ listStyle: 'decimal', color: 'var(--text-secondary)' }}
-        >
-          <li>
-            You pay now — your funds are{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              held by ALL Outdoor
-            </strong>
-            .
-          </li>
-          <li>
-            We notify the seller that the firearm has been sold. The
-            seller takes it to their nearest SAPS-licensed dealer to
-            sign it over and have it booked into the dealer&apos;s
-            stock register.
-          </li>
-          <li>
-            The seller uploads{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              3 photos
-            </strong>{' '}
-            on ALL Outdoor — the completed SAPS 534, the dealer&apos;s
-            stock-register last line, and the firearm with its serial
-            visible. Our AI checks the documents; if anything&apos;s
-            unclear a human reviewer steps in.
-          </li>
-          <li>
-            Once verified, we send you the{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              dealer&apos;s name, address, and contact details
-            </strong>{' '}
-            so you know where the firearm is — and we release the
-            held funds to the seller.
-          </li>
-          <li>
-            ALL Outdoor&apos;s job in the transaction ends there. You
-            and the seller arrange the inter-dealer transfer to your
-            own dealer (or your preferred collection method) between
-            yourselves.
-          </li>
-        </ol>
-      </div>
-
-      <p
-        className="text-xs"
-        style={{
-          color: 'var(--text-tertiary)',
-          background: 'rgba(245,158,11,0.08)',
-          border: '0.5px solid rgba(245,158,11,0.45)',
-          borderRadius: 4,
-          padding: '8px 10px',
-          lineHeight: 1.5,
-        }}
-      >
-        <strong style={{ color: 'var(--warning)' }}>Important:</strong>{' '}
-        The SAPS 534 must be filled in using{' '}
-        <strong style={{ color: 'var(--text-primary)' }}>
-          BLOCK LETTERS
-        </strong>{' '}
-        so our AI can read it. Unclear handwriting gets flagged for
-        manual review and delays the seller&apos;s payout — which
-        delays everything that follows.
-      </p>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={accepted}
-          onChange={(e) => onChange(e.target.checked)}
-          style={{ marginTop: 3, accentColor: 'var(--red)' }}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I understand ALL Outdoor holds my funds until the
-          seller&apos;s dealer stock-in is verified, after which Gun
-          Galore notifies me which dealer has the firearm and
-          releases the funds — the inter-dealer transfer onwards is
-          arranged between me and the seller directly.
-        </span>
-      </label>
-
-      <p
-        className="text-xs"
-        style={{
-          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
-        }}
-      >
-        {accepted
-          ? '✓ Acknowledged. You can proceed to payment below.'
-          : 'Tick the box to enable payment.'}
-      </p>
-    </div>
-  );
-}
-
-function FirearmAttestation({
-  accepted,
-  onChange,
-}: {
-  accepted: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div
-      className="rounded-[6px] p-4 text-sm space-y-3"
-      style={{
-        background: 'rgba(227,6,19,0.06)',
-        border: '0.5px solid var(--red)',
-        color: 'var(--text-primary)',
-        lineHeight: 1.55,
-      }}
-    >
-      <p
-        className="text-xs uppercase"
-        style={{
-          color: 'var(--red)',
-          letterSpacing: '0.05em',
-          fontWeight: 600,
-        }}
-      >
-        Firearm purchase — required confirmation
-      </p>
-
-      <p style={{ color: 'var(--text-secondary)' }}>
-        South African firearms law requires every buyer to be at least
-        18 and to hold the relevant SAPS competency for the firearm
-        being bought (where competency applies). You will be unable to
-        collect the firearm at the dealer without the correct paperwork
-        and competency on the day.
-      </p>
-
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={accepted}
-          onChange={(e) => onChange(e.target.checked)}
-          style={{ marginTop: 3, accentColor: 'var(--red)' }}
-        />
-        <span style={{ color: 'var(--text-secondary)' }}>
-          I confirm I am over 18 and I am legally entitled to own /
-          collect this firearm under South African law, including
-          holding any required SAPS competency for the calibre and
-          type. I understand that submitting this confirmation
-          dishonestly may be a criminal offence.
-        </span>
-      </label>
-
-      <p
-        className="text-xs"
-        style={{
-          color: accepted ? 'var(--success)' : 'var(--text-tertiary)',
-        }}
-      >
-        {accepted
-          ? '✓ Confirmation recorded. You can proceed to payment below.'
-          : 'Tick the box to enable payment.'}
-      </p>
-    </div>
-  );
-}
-
-// Collection papers acknowledgement — single-checkbox gate for
-// requiresPapers listings (trailers / caravans). The backend HARD-
-// refuses the transaction without `collectionPapersAccepted: true`, so
-// this is both a buyer acknowledgement and a server-enforced gate. No
-// documents are collected or displayed (POPIA) — the seller attests to
-// holding the papers at listing time; the buyer acknowledges they'll
-// receive them at handover.
 function CollectionPapersAck({
   accepted,
   onChange,

@@ -1,4 +1,4 @@
-import { withoutRefusedCopy } from './motivation-scope';
+﻿import { withoutRefusedCopy } from './motivation-scope';
 import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,40 +11,47 @@ import {
   resolveSportingPurpose,
 } from './motivation-purpose';
 import { buildPlateSpecs } from './motivation-plates';
+import { LegalService } from '../legal/legal.service';
+import { MotivationCaseResearchService } from './motivation-case-research.service';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // WHAT THE APPLICANT IS NEVER ASKED, BECAUSE WE LOOK IT UP.
 //
-// Brief §2.1: "the applicant is never asked what the internet, a document or
+// Brief Â§2.1: "the applicant is never asked what the internet, a document or
 // their profile can answer." Firearm capability, calibre role, discipline
-// rules, species and ranges are all research — and the Gerstner and Fourie
+// rules, species and ranges are all research â€” and the Gerstner and Fourie
 // packs are roughly 60% exactly this material.
 //
-// ⚠️ EVERY TARGET IS ABOUT THE WORLD, NEVER ABOUT A PERSON, AND THAT IS WHAT
+// âš ï¸ EVERY TARGET IS ABOUT THE WORLD, NEVER ABOUT A PERSON, AND THAT IS WHAT
 // MAKES IT CACHEABLE AT ALL. A row is about a firearm model, a cartridge, a
-// discipline or a class of game — identical for everyone who applies for the
-// same thing — so the second applicant for a Beretta 1301 costs no call.
+// discipline or a class of game â€” identical for everyone who applies for the
+// same thing â€” so the second applicant for a Beretta 1301 costs no call.
 //
-// ⚠️ AND IT IS A PRIVACY IMPROVEMENT, NOT ONLY A COST ONE. The free-text brief
+// âš ï¸ AND IT IS A PRIVACY IMPROVEMENT, NOT ONLY A COST ONE. The free-text brief
 // this replaces carried the applicant's suburb into a web search (redacted to
 // area, but still theirs). Precinct figures now come from our own SAPS
-// workbook — see crime-stats, and `hasPrecinctFigures` in the brief it
-// replaces — so NO APPLICANT DATUM REACHES A SEARCH QUERY AT ALL any more.
+// workbook â€” see crime-stats, and `hasPrecinctFigures` in the brief it
+// replaces â€” so NO APPLICANT DATUM REACHES A SEARCH QUERY AT ALL any more.
 // A target keyed on anything personal would be both a privacy regression and
 // an uncacheable row; there is no reason to add one.
 //
-// ⚠️ GROUNDED PROSE, NOT STRUCTURED JSON, AND THE PROVIDER DECIDES THAT.
-// `grounding` and `json` cannot be combined on Gemini — the adapter throws
+// âš ï¸ GROUNDED PROSE, NOT STRUCTURED JSON, AND THE PROVIDER DECIDES THAT.
+// `grounding` and `json` cannot be combined on Gemini â€” the adapter throws
 // `bad_request` rather than silently dropping one (see LlmRequest.grounding).
 // The documented way to get grounded JSON is two calls, search then extract,
 // and that would double the cost of every cache MISS to buy structure the
 // writer does not need: it receives this as a brief to argue from, and the
 // card ranking that does need structure gets it from classifyCalibre() in
 // motivation-overlap.ts, which is exact and free. One call per target.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** What a research row is about. */
-export type ResearchTarget = 'firearm' | 'calibre' | 'discipline' | 'game';
+export type ResearchTarget =
+  | 'firearm'
+  | 'calibre'
+  | 'discipline'
+  | 'game'
+  | 'case';
 
 export interface ResearchSource {
   uri: string;
@@ -59,9 +66,9 @@ export interface ResearchEntry {
   /**
    * What this entry cost, in tokens.
    *
-   * ⚠️ PRESENT ONLY ON A CACHE MISS, AND THAT ASYMMETRY IS THE POINT. A hit
+   * âš ï¸ PRESENT ONLY ON A CACHE MISS, AND THAT ASYMMETRY IS THE POINT. A hit
    * cost nothing, so it contributes nothing to the motivation's token columns
-   * — which is what makes `Motivation.costUsd` mean what it says once the
+   * â€” which is what makes `Motivation.costUsd` mean what it says once the
    * second applicant for a given firearm stops paying for the search.
    * LlmService writes its own AiUsage row per call regardless; this is the
    * per-document roll-up, not the ledger.
@@ -72,9 +79,9 @@ export interface ResearchEntry {
 /**
  * What the writer receives under `research{}` in the fact pack.
  *
- * ⚠️ `held` IS A LIST BECAUSE THE COMPARISON NEEDS BOTH SIDES. An applicant
+ * âš ï¸ `held` IS A LIST BECAUSE THE COMPARISON NEEDS BOTH SIDES. An applicant
  * who already holds a .308 is arguing why a second rifle is not a duplicate,
- * and rule 1 forbids the writer every figure it was not given — so without
+ * and rule 1 forbids the writer every figure it was not given â€” so without
  * published material on the OTHER cartridge, the strongest section in a
  * same-class application can only be written in generalities. Each entry is an
  * ordinary `calibre` row and shares the cache with the applied-for one, so a
@@ -87,6 +94,14 @@ export interface ResearchPack {
   discipline?: ResearchEntry;
   game?: ResearchEntry;
   held?: ResearchEntry[];
+  /**
+   * The per-application case theory. Unlike the entries above, this is about
+   * THIS applicant: their calibre, quarry or threat, their battery and their
+   * security. It is generated on every generation and is never cached under a
+   * shared key, because two applicants with the same rifle do not have the
+   * same case.
+   */
+  brief?: ResearchEntry;
 }
 
 /**
@@ -94,7 +109,7 @@ export interface ResearchPack {
  *
  * 180 days, from the brief. A cartridge's character does not change at all; a
  * discipline's published equipment rules do, roughly annually. Half a year is
- * the compromise, and it is the number the operator's own recommendation (§6.5
+ * the compromise, and it is the number the operator's own recommendation (Â§6.5
  * of the intake plan) asked for.
  */
 export const RESEARCH_TTL_DAYS = 180;
@@ -102,7 +117,7 @@ export const RESEARCH_TTL_DAYS = 180;
 /**
  * The one place a target is turned into a key.
  *
- * ⚠️ NORMALISED HERE AND NOWHERE ELSE. "Beretta 1301" and "BERETTA  1301" must
+ * âš ï¸ NORMALISED HERE AND NOWHERE ELSE. "Beretta 1301" and "BERETTA  1301" must
  * be one row or the cache never hits and we pay for the same fact twice; and a
  * writer and a later re-read must key the same fact the same way or the second
  * one silently misses. Lower-cased, whitespace collapsed, pipe-separated.
@@ -110,8 +125,8 @@ export const RESEARCH_TTL_DAYS = 180;
 /**
  * Bump when an ASK changes in a way that should change the answer.
  *
- * ⚠️ THE KEY DID NOT CARRY THE QUESTION, AND THAT MADE A FIX INERT FOR HALF
- * A YEAR. It keys on the SUBJECT — the make, the model, the calibre — so
+ * âš ï¸ THE KEY DID NOT CARRY THE QUESTION, AND THAT MADE A FIX INERT FOR HALF
+ * A YEAR. It keys on the SUBJECT â€” the make, the model, the calibre â€” so
  * rewording the brief changed nothing at all until the row expired 180 days
  * later. MO000075 was refused three times on catalogue copy that came straight
  * out of its own firearm research; rewording the ask without this would have
@@ -132,16 +147,20 @@ export function cacheKeyFor(
 /**
  * What we are prepared to have researched, worked out from the answers.
  *
- * ⚠️ RETURNS NOTHING RATHER THAN GUESSING. A target with no firm input is
+ * âš ï¸ RETURNS NOTHING RATHER THAN GUESSING. A target with no firm input is
  * simply not asked: a brief about "a rifle" is worth neither the call nor the
  * paragraph it would produce.
  */
 export function targetsFor(
   licenceType: MotivationLicenceType,
   answers: Record<string, string>,
-): { target: ResearchTarget; cacheKey: string; ask: string }[] {
+): { target: Exclude<ResearchTarget, 'case'>; cacheKey: string; ask: string }[] {
   const a = (k: string) => (answers[k] ?? '').trim();
-  const out: { target: ResearchTarget; cacheKey: string; ask: string }[] = [];
+  const out: {
+    target: Exclude<ResearchTarget, 'case'>;
+    cacheKey: string;
+    ask: string;
+  }[] = [];
 
   const make = a('firearm_make');
   const model = a('firearm_model');
@@ -149,7 +168,7 @@ export function targetsFor(
   const type = a('firearm_type');
   const action = a('firearm_action');
   /**
-   * ⚠️ THE PACK'S PURPOSE, NOT THE ENUM. MO000099 is a Section 16 hunter
+   * âš ï¸ THE PACK'S PURPOSE, NOT THE ENUM. MO000099 is a Section 16 hunter
    * application whose .223 self-loader is argued as SPORT. `USE_CLASS` keyed
    * the calibre ask on S16_DEDICATED_HUNTER and asked for "advantages for
    * hunting" beside four sport courses; the model returned one truncated
@@ -157,14 +176,14 @@ export function targetsFor(
    */
   const useClass = useClassFor(licenceType, answers);
 
-  // ── the firearm itself ─────────────────────────────────────────────
+  // â”€â”€ the firearm itself â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (make && model) {
     out.push({
       target: 'firearm',
       cacheKey: cacheKeyFor('firearm', [make, model, calibre, useClass]),
       ask: [
         `THE FIREARM: ${[type, action, make, model, calibre].filter(Boolean).join(' ')}.`,
-        'What is this model USED FOR, and by whom, in South Africa —',
+        'What is this model USED FOR, and by whom, in South Africa â€”',
         `which ${useClass} disciplines or quarry it is chosen for, at what`,
         'ranges and in what conditions, and what it is poorly suited to.',
         'NOT a specification: no receiver, no bolt, no trigger, no barrel, no',
@@ -173,10 +192,10 @@ export function targetsFor(
     });
   }
 
-  // ── the cartridge ──────────────────────────────────────────────────
+  // â”€â”€ the cartridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (calibre) {
     /**
-     * ⚠️ NAME THE EXHIBITS THE PACK WILL PRINT. Operator, 2026-10-17: "the WHY
+     * âš ï¸ NAME THE EXHIBITS THE PACK WILL PRINT. Operator, 2026-10-17: "the WHY
      * .30-06 SPRINGFIELD SUITS THIS PURPOSE should be researched why it fits
      * the purpose exhibits that was created." The exhibits are chosen in code
      * before this call (buildPlateSpecs), so the researcher can answer about
@@ -187,12 +206,12 @@ export function targetsFor(
       .map((p) => p.title)
       .filter(Boolean);
     /**
-     * ⚠️ THE PAGE IS AN ARGUMENT, NOT A SPEC SHEET. Operator, 2026-10-24:
+     * âš ï¸ THE PAGE IS AN ARGUMENT, NOT A SPEC SHEET. Operator, 2026-10-24:
      * "that calibre needs to be matched to suit the purpose. I don't care
      * about the specs and velocity. We need to explain to the CFR and DFO why
      * this calibre and gun is perfect for the purpose." So the facts asked for
-     * are the facts of the match — the situations, the space, the way the
-     * firearm is carried — and the ballistics table is expressly refused.
+     * are the facts of the match â€” the situations, the space, the way the
+     * firearm is carried â€” and the ballistics table is expressly refused.
      */
     const suitabilityFacts =
       useClass === 'sport shooting'
@@ -202,12 +221,12 @@ export function targetsFor(
           : 'the kind of encounter described, the space it happens in, how the firearm is carried, and why this round and firearm suit it';
     const exhibitAsk = exhibits.length
       ? `The purpose exhibits in this application are: ${exhibits.join(', ')}. ` +
-        `Explain why this cartridge and firearm suit EACH of them specifically — ${suitabilityFacts} — not merely why the round is standardised.`
+        `Explain why this cartridge and firearm suit EACH of them specifically â€” ${suitabilityFacts} â€” not merely why the round is standardised.`
       : '';
     out.push({
       target: 'calibre',
       /**
-       * ⚠️ THE EXHIBITS ARE PART OF THE QUESTION, SO THEY ARE PART OF THE KEY.
+       * âš ï¸ THE EXHIBITS ARE PART OF THE QUESTION, SO THEY ARE PART OF THE KEY.
        * Two .30-06 hunters with different quarry sets are asking the researcher
        * to explain two different pages; sharing one cached answer would put
        * another applicant's species under this one's heading 5.2. The set is
@@ -222,7 +241,7 @@ export function targetsFor(
         `THE CARTRIDGE: ${calibre}${type ? `, in a ${type}` : ''}.`,
         `THE PURPOSE: ${useClass}.`,
         /**
-         * ⚠️ THE ARGUMENT IS THE MATCH, NOT THE NUMBERS. Operator, 2026-10-24:
+         * âš ï¸ THE ARGUMENT IS THE MATCH, NOT THE NUMBERS. Operator, 2026-10-24:
          * "I don't care about the specs and velocity. We need to explain to the
          * CFR and DFO why this calibre and gun is perfect for the purpose."
          * The old ask opened with origin, recoil, loads and effective range and
@@ -235,11 +254,11 @@ export function targetsFor(
         'the firearm let the applicant do in the situations described, why they',
         'are matched to that use, and where a different calibre or class of',
         'firearm would fall short.',
-        '⚠️ THE REASONS THAT MATTER ARE OPERATIONAL: stopping power at the',
+        'âš ï¸ THE REASONS THAT MATTER ARE OPERATIONAL: stopping power at the',
         'ranges involved, over-penetration and what lies beyond the target,',
         'whether the firearm can be brought into use in the space, recoil and',
         'follow-up, practice, and a humane kill for hunting. Argue those.',
-        '⚠️ NOT A SPECIFICATION SHEET AND NOT A BALLISTICS TABLE. Do not lead',
+        'âš ï¸ NOT A SPECIFICATION SHEET AND NOT A BALLISTICS TABLE. Do not lead',
         'with muzzle velocity, muzzle energy, bullet weight, pressure,',
         'dimensions or chamber measurements, and give no figure unless it is',
         'needed to make a suitability point. Argue the match to the purpose.',
@@ -252,13 +271,13 @@ export function targetsFor(
         'BULLET FORMAT: begin every bullet with "- " at the start of its own',
         'line, one bullet per line, no numbering and no sub-headings.',
         /**
-         * ⚠️ THE LENGTH IS THE SIZE OF THE HOLE IT IS PRINTED IN.
+         * âš ï¸ THE LENGTH IS THE SIZE OF THE HOLE IT IS PRINTED IN.
          *
          * Operator, 2026-09-10: "then you can specify word count for the text
          * because you know the text size and spacing and how much real estate
          * there is and have a perfectly filled sheet everytime."
          *
-         * ⚠️ RE-MEASURED 2026-10-16, WHEN THE PAGE BECAME A BULLET ARTICLE AND
+         * âš ï¸ RE-MEASURED 2026-10-16, WHEN THE PAGE BECAME A BULLET ARTICLE AND
          * THE OPERATOR ASKED FOR "more words more facts" to fill it. The figure
          * and the held dimensions block sit in the right column; the bullets
          * fill the left column top to bottom, then continue under them down the
@@ -270,7 +289,7 @@ export function targetsFor(
          *     dimensions block           ~95-165 mm
          *   capacity                  ~380-400 mm of bullet text
          *   cost per word                0.899 mm, plus a per-bullet gap
-         *   —> the slot holds roughly 400 words / 16 bullets (measured: 400
+         *   â€”> the slot holds roughly 400 words / 16 bullets (measured: 400
          *      words render on one sheet, 450 spill to a second)
          *
          * 350 to 400 words across 12 to 16 bullets is asked for so the list
@@ -279,14 +298,14 @@ export function targetsFor(
          * tail onto a second sheet nobody asked for.
          */
         'LENGTH: about 350 to 400 words in total, across about 12 to 16',
-        'bullets. This is printed in a fixed space on the page — materially',
+        'bullets. This is printed in a fixed space on the page â€” materially',
         'longer overflows it and materially shorter leaves it half empty.',
         '',
-        '⚠️ NEVER PAD TO REACH THE COUNT. Where you cannot document one of the',
+        'âš ï¸ NEVER PAD TO REACH THE COUNT. Where you cannot document one of the',
         'points, write nothing for it and let the page be short. This text is',
         'printed in a document the applicant signs and lodges; an invented',
         'sentence there is worse than a gap.',
-        // ⚠️ AND SOUTH AFRICAN SPELLING, for the same reason as the units. The
+        // âš ï¸ AND SOUTH AFRICAN SPELLING, for the same reason as the units. The
         // first render of the feature page said "widely utilized" and "heavier
         // calibers" in a letter to the Registrar of Firearms.
         'SOUTH AFRICAN ENGLISH: -ise and -isation, calibre, metre, practise',
@@ -295,12 +314,12 @@ export function targetsFor(
     });
   }
 
-  // ── the discipline ─────────────────────────────────────────────────
+  // â”€â”€ the discipline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
-  // ⚠️ KEYED TO THE shooting-disciplines ENTRY, NOT TO WHAT WAS TYPED. The
+  // âš ï¸ KEYED TO THE shooting-disciplines ENTRY, NOT TO WHAT WAS TYPED. The
   // registry stores a stable slug for fifty-nine disciplines; keying on the
   // slug means every applicant shooting IPSC Production shares one row, and a
-  // free-text "something else" answer is deliberately NOT researched — we have
+  // free-text "something else" answer is deliberately NOT researched â€” we have
   // no stable thing to key it to, and one applicant's wording is not a cache.
   const disciplineValue = a('discipline').split(',')[0]?.trim();
   const discipline = disciplineValue
@@ -313,13 +332,13 @@ export function targetsFor(
       ask: [
         `THE DISCIPLINE: ${discipline.label}, run in South Africa by ${discipline.body}.`,
         'Find what the course of fire involves and what the published rules',
-        'require of the firearm — division or class limits, sights, barrel',
+        'require of the firearm â€” division or class limits, sights, barrel',
         'length, capacity, trigger. Cite the governing body where you can.',
       ].join(' '),
     });
   }
 
-  // ── the game, and the ranges it is taken at ────────────────────────
+  // â”€â”€ the game, and the ranges it is taken at â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const gameKeys = a('hunt_game_class')
     .split(',')
     .map((s) => s.trim())
@@ -350,7 +369,7 @@ export function targetsFor(
 /**
  * What the firearm is FOR, for the purposes of a lookup.
  *
- * ⚠️ THE LICENCE TYPE, NOT AN ANSWER. It is part of the cache key, so it has
+ * âš ï¸ THE LICENCE TYPE, NOT AN ANSWER. It is part of the cache key, so it has
  * to be a small closed set: "hunting" and "sport" are different questions
  * about the same cartridge and must not share a row.
  */
@@ -366,8 +385,8 @@ const USE_CLASS: Record<MotivationLicenceType, string> = {
 /**
  * What the cartridge is FOR, for the research ask and its cache key.
  *
- * ⚠️ ONE DOOR MEANS ONE ANSWER. After Section 16 collapsed to a single entry,
- * the licence type no longer says hunting or sport — the pack does. The held
+ * âš ï¸ ONE DOOR MEANS ONE ANSWER. After Section 16 collapsed to a single entry,
+ * the licence type no longer says hunting or sport â€” the pack does. The held
  * calibres already used `resolveSportingPurpose`; the applied-for cartridge
  * did not, which is how MO000099's sport brief was researched as hunting.
  */
@@ -385,8 +404,8 @@ function useClassFor(
 /**
  * The minimum a research answer must contain to be worth storing or printing.
  *
- * ⚠️ A TRUNCATED ANSWER IS WORSE THAN NO ANSWER. MO000099's cache row was one
- * 244-byte bullet ending "[cite: CIP" — the model stopped mid-citation. The
+ * âš ï¸ A TRUNCATED ANSWER IS WORSE THAN NO ANSWER. MO000099's cache row was one
+ * 244-byte bullet ending "[cite: CIP" â€” the model stopped mid-citation. The
  * reader stored it, the writer could not use it, and 5.2 fell back to exhibit
  * captions. A calibre entry is a printed page, so it must carry a real article;
  * the shorter targets only need a fact or two.
@@ -396,6 +415,7 @@ const MIN_WORDS: Record<ResearchTarget, number> = {
   calibre: 120,
   discipline: 20,
   game: 20,
+  case: 120,
 };
 
 function researchIsUsable(target: ResearchTarget, text: string, min = MIN_WORDS[target]): boolean {
@@ -411,14 +431,14 @@ const SYSTEM = [
   'motivation. Search the web for what you do not reliably know.',
   '',
   'Write PARAPHRASED plain-text prose. Never copy a manufacturer or a',
-  'governing body verbatim beyond a few words — this material is reproduced',
+  'governing body verbatim beyond a few words â€” this material is reproduced',
   'in a document somebody signs and files.',
   '',
   'Facts only. No advice, no opinion on any application, and never any',
   'prediction about whether a licence will be granted.',
   '',
   'Cite the publication after each cluster of facts. If a search finds',
-  'nothing solid, say nothing on that point — an empty note beats a guessed',
+  'nothing solid, say nothing on that point â€” an empty note beats a guessed',
   'one, and you will not be asked again for it.',
 ].join('\n');
 
@@ -427,7 +447,7 @@ const TIMEOUT_MS = 90_000;
 /**
  * The headings `toBlock` writes, named once.
  *
- * ⚠️ THE PACK READS THIS BLOCK BACK. The cartridge feature article in the
+ * âš ï¸ THE PACK READS THIS BLOCK BACK. The cartridge feature article in the
  * document is written from the SAME research the writer was given, sliced out
  * of `Motivation.researchEncrypted` at render time - there is no second call,
  * and there must not be one: an outbound request in the download path sits
@@ -437,12 +457,13 @@ const TIMEOUT_MS = 90_000;
 export const BLOCK_LABELS = {
   firearm: 'THE FIREARM APPLIED FOR:',
   calibre: 'THE CARTRIDGE APPLIED FOR:',
+  brief: 'THE CASE BRIEF FOR THIS APPLICANT:',
 } as const;
 
 /**
  * One labelled section of a stored research block, without its citation line.
  *
- * ⚠️ THE SOURCES LINE IS FOR THE WRITER AND NEVER FOR THE PAGE. It exists so
+ * âš ï¸ THE SOURCES LINE IS FOR THE WRITER AND NEVER FOR THE PAGE. It exists so
  * the writer knows what it may attribute; printing it would name somebody
  * else's site in a lodged document, which is the boundary CLAUDE.md draws
  * around the Bench data and the spliced C.I.P. sheet alike.
@@ -471,13 +492,15 @@ export class MotivationResearchService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
+    private readonly legal?: LegalService,
+    private readonly caseResearch?: MotivationCaseResearchService,
   ) {}
 
   /**
    * Everything worth knowing about this application's firearm, cartridge,
    * discipline and quarry.
    *
-   * ⚠️ FAILS SOFT, ALWAYS. Research is seasoning: a null costs the document
+   * âš ï¸ FAILS SOFT, ALWAYS. Research is seasoning: a null costs the document
    * colour, never the document. The same posture as the free-text brief it
    * replaces, and the reason that one survived an outage.
    */
@@ -487,7 +510,7 @@ export class MotivationResearchService {
     opts: {
       /**
        * Cartridges the applicant ALREADY holds that the overlap check matched
-       * against this one. Cartridge names only — never a make, a serial or a
+       * against this one. Cartridge names only â€” never a make, a serial or a
        * licence number.
        */
       heldCalibres?: readonly string[];
@@ -495,13 +518,25 @@ export class MotivationResearchService {
   ): Promise<ResearchPack> {
     const pack: ResearchPack = {};
 
-    for (const t of targetsFor(licenceType, answers)) {
-      const entry = await this.entryFor(t.target, t.cacheKey, t.ask);
-      if (entry) pack[t.target] = entry;
+    // The targets are independent and each grounded call can take most of its
+    // timeout, so run them together. Sequential calls were the single biggest
+    // wall-clock cost in generation: four searches became four waits.
+    const found = await Promise.all(
+      targetsFor(licenceType, answers).map(async (target) => ({
+        target,
+        entry: await this.entryFor(
+          target.target,
+          target.cacheKey,
+          target.ask,
+        ),
+      })),
+    );
+    for (const { target, entry } of found) {
+      if (entry) pack[target.target] = entry;
     }
 
-    // ⚠️ DEDUPED AND CAPPED AT THREE, and the applied-for cartridge is excluded
-    // — the same discipline the brief this replaces used. Three named
+    // âš ï¸ DEDUPED AND CAPPED AT THREE, and the applied-for cartridge is excluded
+    // â€” the same discipline the brief this replaces used. Three named
     // cartridges is already a wide comparison, and an owned table with six
     // rows in one class would otherwise spend the budget on the sixth.
     const applied = (answers.firearm_calibre ?? '').trim().toLowerCase();
@@ -514,24 +549,34 @@ export class MotivationResearchService {
     ].slice(0, 3);
 
     const useClass = useClassFor(licenceType, answers);
-    const entries: ResearchEntry[] = [];
-    for (const calibre of held) {
-      const entry = await this.entryFor(
-        'calibre',
-        cacheKeyFor('calibre', [calibre, useClass]),
-        [
-          `THE CARTRIDGE: ${calibre}.`,
-          'Find its origin and character — recoil, typical factory loads,',
-          'effective range — and what it is commonly used for in South Africa.',
-          `Say what it is well matched to for ${useClass}, and what it is over-`,
-          'or under-matched to. Figures with sources, never impressions.',
-        ].join(' '),
-        // A comparison entry is a paragraph, not the whole suitability page.
-        40,
-      );
-      if (entry) entries.push(entry);
-    }
+    const entries = (
+      await Promise.all(
+        held.map((calibre) =>
+          this.entryFor(
+            'calibre',
+            cacheKeyFor('calibre', [calibre, useClass]),
+            [
+              `THE CARTRIDGE: ${calibre}.`,
+              'Find its origin and character — recoil, typical factory loads,',
+              'effective range — and what it is commonly used for in South Africa.',
+              `Say what it is well matched to for ${useClass}, and what it is over-`,
+              'or under-matched to. Figures with sources, never impressions.',
+            ].join(' '),
+            // A comparison entry is a paragraph, not the whole suitability page.
+            40,
+          ),
+        ),
+      )
+    ).filter((entry): entry is ResearchEntry => Boolean(entry));
     if (entries.length) pack.held = entries;
+
+    const brief = await this.caseResearch?.brief(
+      licenceType,
+      answers,
+      useClass,
+      MotivationResearchService.toBlock(pack),
+    );
+    if (brief) pack.brief = brief;
 
     return pack;
   }
@@ -539,9 +584,9 @@ export class MotivationResearchService {
   /**
    * The pack as the writer receives it: prose, with what it may cite.
    *
-   * ⚠️ SOURCES ARE NAMED OR THE BLOCK SAYS SO. A grounded call that opened
+   * âš ï¸ SOURCES ARE NAMED OR THE BLOCK SAYS SO. A grounded call that opened
    * nothing gives us a brief with nothing to attribute, and a writer told to
-   * cite will otherwise invent a citation — which is rule 1 applied to a
+   * cite will otherwise invent a citation â€” which is rule 1 applied to a
    * bibliography.
    */
   static toBlock(pack: ResearchPack): string {
@@ -553,10 +598,11 @@ export class MotivationResearchService {
             .map((s) => s.title || s.uri)
             .slice(0, 6)
             .join('; ')
-        : 'no source could be opened for this — do not attribute it';
+        : 'no source could be opened for this â€” do not attribute it';
       parts.push(`${label}\n${entry.payload.trim()}\n[sources: ${cites}]`);
     };
 
+    add(BLOCK_LABELS.brief, pack.brief);
     add(BLOCK_LABELS.firearm, pack.firearm);
     add(BLOCK_LABELS.calibre, pack.calibre);
     add('THE DISCIPLINE:', pack.discipline);
@@ -571,7 +617,7 @@ export class MotivationResearchService {
   /**
    * What this pack cost, summed over the entries that actually made a call.
    *
-   * ⚠️ A FULLY-CACHED PACK RETURNS ZEROS, and that is the honest answer rather
+   * âš ï¸ A FULLY-CACHED PACK RETURNS ZEROS, and that is the honest answer rather
    * than a rounding-down: nothing was spent producing it. These feed the
    * motivation's own token columns; LlmService writes its own AiUsage row per
    * call regardless, so the ledger and this roll-up answer different
@@ -586,6 +632,7 @@ export class MotivationResearchService {
       pack.calibre,
       pack.discipline,
       pack.game,
+      pack.brief,
       ...(pack.held ?? []),
     ].reduce(
       (acc, e) => ({
@@ -613,7 +660,7 @@ export class MotivationResearchService {
     let sources: ResearchSource[] = [];
     let usage: ResearchEntry['usage'];
     /**
-     * ⚠️ ONE RETRY, AND ONLY FOR A BAD ANSWER. A grounded call that comes back
+     * âš ï¸ ONE RETRY, AND ONLY FOR A BAD ANSWER. A grounded call that comes back
      * as a single truncated bullet is not a fact we can print, and it must not
      * be cached for 180 days. The second attempt says what was wrong; a second
      * bad answer is taken at its word and costs the page its research, not the
@@ -632,7 +679,11 @@ export class MotivationResearchService {
                   : `${ask}\n\nThe previous answer was too short or cut off. Return the COMPLETE answer now, with every bullet starting "- " on its own line.`,
             },
           ],
-          maxTokens: 1500,
+          maxTokens: 8192,
+          // Thinking is enabled on the flash-lite, and its tokens are billed
+          // inside maxOutputTokens — the old 1 500 cap would be consumed by
+          // reasoning and return an empty answer.
+          thinking: { budgetTokens: 4096 },
           grounding: { web: true },
           purpose: `motivation.research.${target}`,
           timeoutMs: TIMEOUT_MS,
@@ -647,40 +698,40 @@ export class MotivationResearchService {
           completionTokens: res.usage?.outputTokens ?? 0,
         };
       } catch (err) {
-        // ⚠️ NO QUERY TEXT AND NO PROVIDER NAME IN THE LOG. Nothing personal
+        // âš ï¸ NO QUERY TEXT AND NO PROVIDER NAME IN THE LOG. Nothing personal
         // reaches a query any more, but the habit is the guard: a log line that
         // echoes a prompt is one registry change away from echoing an answer.
         const code = err instanceof LlmError ? err.code : 'unknown';
         this.logger.warn(
-          `Research failed for ${target} [${code}] — the document is written without it.`,
+          `Research failed for ${target} [${code}] â€” the document is written without it.`,
         );
         return null;
       }
       if (researchIsUsable(target, text, minWords)) break;
       this.logger.warn(
-        `Research for ${target} came back too thin or truncated (${text.trim().split(/\s+/).filter(Boolean).length} words) — ${attempt === 0 ? 'retrying once' : 'dropping it'}.`,
+        `Research for ${target} came back too thin or truncated (${text.trim().split(/\s+/).filter(Boolean).length} words) â€” ${attempt === 0 ? 'retrying once' : 'dropping it'}.`,
       );
     }
 
     if (!text || !researchIsUsable(target, text, minWords)) return null;
 
     if (!sources.length) {
-      // Sourceless is not a failure — the brief itself says to stay silent on
+      // Sourceless is not a failure â€” the brief itself says to stay silent on
       // a point a search cannot support. A RUN of them means grounding is
       // broken, which is what this line is for.
       this.logger.warn(
-        `Research for ${target} came back with no web sources — thin, not wrong.`,
+        `Research for ${target} came back with no web sources â€” thin, not wrong.`,
       );
     }
 
     /**
-     * ⚠️ SCRUBBED BEFORE IT IS STORED, NOT BEFORE IT IS USED. A payload the
+     * âš ï¸ SCRUBBED BEFORE IT IS STORED, NOT BEFORE IT IS USED. A payload the
      * writer must never see should not be sitting in a cache for 180 days
      * waiting for somebody to read it out of curiosity - and scrubbing on the
      * way in means every reader gets the same text, including the ones written
      * later that forget to ask.
      *
-     * ⚠️ AND IT IS A GUARANTEE, NOT AN INSTRUCTION. MO000075 was refused three
+     * âš ï¸ AND IT IS A GUARANTEE, NOT AN INSTRUCTION. MO000075 was refused three
      * times on "platform" and the sentence came almost word for word out of
      * this very payload: a grounded search for a rifle MODEL returns the
      * manufacturer's marketing. The brief already forbade those words twice
@@ -722,20 +773,20 @@ export class MotivationResearchService {
           expiresAt: true,
         },
       });
-      // ⚠️ EXPIRY IS CHECKED HERE, NOT SWEPT. An expired row is ignored and
+      // âš ï¸ EXPIRY IS CHECKED HERE, NOT SWEPT. An expired row is ignored and
       // overwritten by the next miss; nothing has to run on a schedule for the
       // cache to stay honest, and a sweep that failed would otherwise serve
       // stale discipline rules into a signed document.
       if (!row || row.expiresAt.getTime() <= Date.now()) return null;
       /**
-       * ⚠️ A THIN CACHE ROW IS A MISS, NOT AN ANSWER. MO000099's calibre row
+       * âš ï¸ A THIN CACHE ROW IS A MISS, NOT AN ANSWER. MO000099's calibre row
        * was one truncated bullet ending "[cite: CIP"; serving it again would
        * make every future .223 application fall back to exhibit captions
        * without ever asking the model for the page it needs.
        */
       if (!researchIsUsable(target, row.payload, minWords)) {
         this.logger.warn(
-          `Research cache row for ${target} is too thin or truncated — treating it as a miss.`,
+          `Research cache row for ${target} is too thin or truncated â€” treating it as a miss.`,
         );
         return null;
       }
@@ -782,3 +833,9 @@ export class MotivationResearchService {
     }
   }
 }
+
+
+
+
+
+

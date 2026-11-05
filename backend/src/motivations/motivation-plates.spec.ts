@@ -6,7 +6,13 @@ import {
   purposeFor,
   weaponClass,
 } from './motivation-plates';
-import { PLATE_REQUEST_RATIO, PLATE_W, PLATE_H } from './motivation-plates.service';
+import {
+  PLATE_REQUEST_RATIO,
+  PLATE_W,
+  PLATE_H,
+} from './motivation-plates.service';
+import { QUARRY } from './motivation-quarry';
+import { SPECIES_BRIEFS } from './motivation-quarry-notes';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PURPOSE EXHIBITS — WHICH SCENES, FOR WHICH PACK.
@@ -170,6 +176,31 @@ describe('the hunting plates come from the research', () => {
     ]);
   });
 
+  it('keeps the typed animal and the picked game class together', () => {
+    const plates = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        ...HUNTING,
+        hunt_game_class: 'plains_medium',
+        intended_quarry: 'Vlakvark',
+      },
+      research: 'Well matched to warthog and kudu.',
+    });
+    expect(plates.map((p) => p.title).slice(0, 2)).toEqual(['Warthog', 'Kudu']);
+  });
+
+  it('⚠️ uses only the quarry the applicant named, including "Vlakvark"', () => {
+    // MO000032: the answers said Vlakvark, but the research named four other
+    // species and the exhibits contradicted the paragraph above them.
+    const plates = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: { ...HUNTING, intended_quarry: 'Vlakvark' },
+      research:
+        'Well matched to impala, blesbok, kudu and gemsbok at bushveld distances.',
+    });
+    expect(plates.map((p) => p.title)).toEqual(['Warthog']);
+  });
+
   it('pictures the named species, then fills the two pages from the class', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_HUNT,
@@ -211,10 +242,54 @@ describe('the hunting plates come from the research', () => {
     expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2]);
     expect(plates.map((p) => p.plateIndex)).toEqual([1, 2, 1, 2]);
     for (const p of plates) {
-      expect(p.description).toMatch(/matched to this class of game/);
+      expect(p.description).toContain('6.5 Creedmoor');
       // Operator, 2026-10-25: the exhibits must look like unedited phone
       // snapshots rather than supplied stock photographs.
       expect(p.prompt).toMatch(/unedited and straight out of camera/i);
+    }
+    expect(new Set(plates.map((p) => p.description)).size).toBe(plates.length);
+  });
+
+  it('⚠️ DESCRIBES EACH SPECIES ON ITS OWN TERMS AND NAMES THE CARTRIDGE (2026-11-03)', () => {
+    // The operator saw four dangerous-game captions that differed only in the
+    // animal's name: "this class demands a heavy, controlled cartridge" under
+    // buffalo, elephant, lion and hippo alike. The demand is specific now, and
+    // the applied chambering is named rather than left as "the cartridge".
+    const plates = buildPlateSpecs({
+      licenceType: S16_HUNT,
+      answers: {
+        ...HUNTING,
+        firearm_calibre: '.458 Winchester Magnum',
+        hunt_game_class: 'dangerous',
+        intended_quarry: 'Cape buffalo, elephant, lion and hippopotamus',
+      },
+    });
+    const description = Object.fromEntries(
+      plates.map((plate) => [plate.title, plate.description]),
+    );
+
+    expect(Object.keys(description)).toEqual([
+      'Cape buffalo',
+      'Elephant',
+      'Lion',
+      'Hippopotamus',
+    ]);
+    expect(description['Cape buffalo']).toMatch(/herd-dwelling|boss/i);
+    expect(description.Elephant).toMatch(/largest land animal|thick hide/i);
+    expect(description.Lion).toMatch(/predator|bait/i);
+    expect(description.Hippopotamus).toMatch(/semi-aquatic|water/i);
+    for (const text of Object.values(description)) {
+      expect(text).toContain('.458 Winchester Magnum');
+      expect(text).toMatch(/dangerous-game cartridge/);
+    }
+    expect(new Set(Object.values(description)).size).toBe(plates.length);
+  });
+
+  it('⚠️ EVERY CATALOGUED SPECIES HAS ITS OWN FIELD NOTE', () => {
+    for (const species of QUARRY) {
+      const brief = SPECIES_BRIEFS[species.key];
+      expect(brief?.nature.trim().length).toBeGreaterThan(20);
+      expect(brief?.demand.trim().length).toBeGreaterThan(20);
     }
   });
 
@@ -268,8 +343,7 @@ describe('the hunting plates come from the research', () => {
         firearm_action: 'Bolt action',
         firearm_calibre: '6.5 Creedmoor',
       },
-      research:
-        'Well matched to impala and kudu at bushveld distances.',
+      research: 'Well matched to impala and kudu at bushveld distances.',
     });
     expect(plates).toHaveLength(MAX_PLATES);
     expect(plates.map((p) => p.pageIndex)).toEqual([1, 1, 2, 2]);
@@ -307,7 +381,10 @@ describe('the sport plates are the courses of fire for the firearm', () => {
 
     const rifleSemi = buildPlateSpecs({
       licenceType: S16_SPORT,
-      answers: { firearm_type: 'Rifle', firearm_action: 'Semi-automatic (self-loading)' },
+      answers: {
+        firearm_type: 'Rifle',
+        firearm_action: 'Semi-automatic (self-loading)',
+      },
     }).map((p) => p.title);
     expect(rifleSemi).toContain('IPSC Practical Rifle');
     for (const title of rifleSemi) {
@@ -389,10 +466,12 @@ describe('the sport plates are the courses of fire for the firearm', () => {
     expect(weaponClass({ firearm_type: 'Rifle' })).toBe('rifle');
     expect(weaponClass({ firearm_type: 'Shotgun' })).toBe('shotgun');
     // Type first; calibre only breaks a tie.
-    expect(weaponClass({ firearm_calibre: '9MM PAR (9X19MM)' })).toBe('handgun');
-    expect(weaponClass({ firearm_type: 'Rifle', firearm_calibre: '9MM PAR' })).toBe(
-      'rifle',
+    expect(weaponClass({ firearm_calibre: '9MM PAR (9X19MM)' })).toBe(
+      'handgun',
     );
+    expect(
+      weaponClass({ firearm_type: 'Rifle', firearm_calibre: '9MM PAR' }),
+    ).toBe('rifle');
     // An unrecognised type keeps the whole catalogue (no class, no withholding).
     expect(weaponClass({ firearm_type: 'Combination' })).toBeNull();
   });

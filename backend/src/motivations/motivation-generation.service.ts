@@ -11,6 +11,7 @@ import { Cron } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import {
   decryptJson,
   encryptJson,
@@ -96,7 +97,12 @@ import {
 } from './motivation-fields';
 import { resolveSportingPurpose, s15Purpose } from './motivation-purpose';
 import { packableIncidents } from './motivation-incident-filter';
-import { displayAction, displayCalibre } from './saps-vocabulary';
+import {
+  displayAction,
+  displayCalibre,
+  displayMake,
+  displayModel,
+} from './saps-vocabulary';
 import {
   ownedFirearmCardTypes,
   ownedFirearmSections,
@@ -113,12 +119,12 @@ import {
  * The section the application itself is lodged under, as a licence card writes
  * it, and which discipline it asks for.
  *
- * ⚠️ `appliedSectionNumber` COULD NOT ANSWER EITHER QUESTION. It returns a
+ * âš ï¸ `appliedSectionNumber` COULD NOT ANSWER EITHER QUESTION. It returns a
  * bare number, has no case for S14 (which falls through to ''), and it cannot
- * say that S16_DEDICATED_HUNTER means hunting and not sport — which is the
+ * say that S16_DEDICATED_HUNTER means hunting and not sport â€” which is the
  * whole point of asking here.
  *
- * ⚠️ A RENEWAL IS ABSENT FROM BOTH, deliberately. Section 24 does not record
+ * âš ï¸ A RENEWAL IS ABSENT FROM BOTH, deliberately. Section 24 does not record
  * the section of the licence being renewed.
  */
 const APPLIED_SECTION: Partial<Record<MotivationLicenceType, string>> = {
@@ -132,7 +138,7 @@ const APPLIED_SECTION: Partial<Record<MotivationLicenceType, string>> = {
 const APPLIED_SLICES: Partial<Record<MotivationLicenceType, UseSlice[]>> = {
   [MotivationLicenceType.S13_SELF_DEFENCE]: ['s13'],
   [MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE]: ['s14'],
-  // ⚠️ ONE ENUM VALUE COVERS BOTH. Section 15 is the occasional hunter OR the
+  // âš ï¸ ONE ENUM VALUE COVERS BOTH. Section 15 is the occasional hunter OR the
   // occasional sports shooter and the product does not split them.
   [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: ['s15_hunt', 's15_sport'],
   [MotivationLicenceType.S16_DEDICATED_HUNTER]: ['s16_hunt', 's16_sport'],
@@ -142,12 +148,12 @@ const APPLIED_SLICES: Partial<Record<MotivationLicenceType, UseSlice[]>> = {
 /**
  * Which pool is argued, out of the ones the section admits.
  *
- * ⚠️ THE APPLICANT IS NOT ASKED (2026-10-17). The battery, the firearm's class
- * and action, and the licence sections already held decide it — see
+ * âš ï¸ THE APPLICANT IS NOT ASKED (2026-10-17). The battery, the firearm's class
+ * and action, and the licence sections already held decide it â€” see
  * motivation-purpose.ts. The old `firearm_use_kind` tick was retired with the
  * other purpose questions.
  *
- * ⚠️ THE LICENCE TYPE STILL BOUNDS IT. A section 13 application has no
+ * âš ï¸ THE LICENCE TYPE STILL BOUNDS IT. A section 13 application has no
  * sporting pool whatever the pack says.
  */
 function slicesWanted(
@@ -190,6 +196,7 @@ import {
   missingRequired,
   parsePressClippingIds,
 } from './motivation-fields';
+import { isMotivationOnly } from './motivation-output';
 import { readSaId } from './sa-id';
 import { overlapFromAnswers } from './motivation-overlap';
 import { documentLabel, documentStatus } from './motivation-documents';
@@ -202,20 +209,20 @@ import {
   estimateCostUsd,
 } from './motivation-shared.service';
 
-// ────────────────────────────────────────────────────────────────────
-// GENERATION — the expensive half. Research, write, verify, grade, and the
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// GENERATION â€” the expensive half. Research, write, verify, grade, and the
 // follow-up questions a failed gate leaves behind.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const SIMILARITY_CORPUS = 200;
 
 /**
  * How far out the area list reaches.
  *
- * ⚠️ FIFTY, NOT THE PICKER'S TWENTY-FIVE, AND THE DIFFERENCE IS THE QUESTION.
+ * âš ï¸ FIFTY, NOT THE PICKER'S TWENTY-FIVE, AND THE DIFFERENCE IS THE QUESTION.
  * The clippings picker asks about reporting near where the applicant LIVES.
  * This asks about where they DRIVE, and a commute across a metro routinely
- * runs further than twenty-five kilometres — a radius that cannot reach the
+ * runs further than twenty-five kilometres â€” a radius that cannot reach the
  * applicant's workplace cannot offer them the areas in between. Operator,
  * 2026-09-08: "a 50km radius".
  */
@@ -224,7 +231,7 @@ const AREA_RADIUS_KM = 50;
 /**
  * How many reports the area roll-up reads.
  *
- * ⚠️ MORE THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve articles across
+ * âš ï¸ MORE THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve articles across
  * a metro is four or five areas, and a member asked to tick areas needs enough
  * reports behind them for the list to be worth reading.
  */
@@ -233,8 +240,8 @@ const AREA_INCIDENT_TAKE = 60;
 /**
  * How many travelled precincts print their figures.
  *
- * ⚠️ THREE. Twelve stations of quarterly tables is not evidence, it is a
- * spreadsheet — and MOTIVATION-CORPUS-LEARNINGS.md's finding about padding
+ * âš ï¸ THREE. Twelve stations of quarterly tables is not evidence, it is a
+ * spreadsheet â€” and MOTIVATION-CORPUS-LEARNINGS.md's finding about padding
  * applies to a table as much as to manufacturer copy. The ticked order is the
  * member's own, so the three that print are the ones they listed first.
  */
@@ -243,7 +250,7 @@ const TRAVELLED_STATS_MAX = 3;
 /**
  * How long the commute lookup may take.
  *
- * ⚠️ SHORT, BECAUSE THE MEMBER IS WAITING FOR A LIST THIS DOES NOT GATE. The
+ * âš ï¸ SHORT, BECAUSE THE MEMBER IS WAITING FOR A LIST THIS DOES NOT GATE. The
  * areas render with or without a route; a slow Routes call must degrade to
  * "nothing pre-ticked", never to a spinner.
  */
@@ -254,24 +261,24 @@ const COMMUTE_TIMEOUT_MS = 6_000;
  *
  * EDITABLE plus COMPLETED, and the addition is the point: a finished document
  * had no way back. Answering a follow-up, fixing a wrong make, or simply
- * wanting another attempt all left the applicant on a dead end — the button
+ * wanting another attempt all left the applicant on a dead end â€” the button
  * refused with "This document is already being prepared", which was not even
  * true. The only route to a second draft was an admin editing the row by hand.
  *
- * ⚠️ GENERATING IS STILL EXCLUDED, and that is the whole reason this is a CAS.
+ * âš ï¸ GENERATING IS STILL EXCLUDED, and that is the whole reason this is a CAS.
  * Two clicks must not both call the model. QUALITY_REVIEW is excluded for the same
- * reason — a pass is still in flight. ABANDONED stays out: that is somebody
+ * reason â€” a pass is still in flight. ABANDONED stays out: that is somebody
  * deliberately walking away.
  *
- * ⚠️ FAILED IS IN, AND LEAVING IT OUT MADE THE PRODUCT CONTRADICT ITS OWN SMS.
+ * âš ï¸ FAILED IS IN, AND LEAVING IT OUT MADE THE PRODUCT CONTRADICT ITS OWN SMS.
  * The note here used to read "FAILED and ABANDONED stay out: an admin owns
  * those." Meanwhile notifyOutcome sends the applicant: "we could not finish
  * document MO000074. Nothing is lost and nothing was charged. Open it and try
- * again" — with a link. They open it, the button is enabled, they press it, and
+ * again" â€” with a link. They open it, the button is enabled, they press it, and
  * the server answers 409 "This document cannot be prepared again from here.
  * Contact support." Measured on MO000074 on 2026-09-09, through the real page.
  *
- * A FAILED row is OUR writer failing its own mechanical checks twice — a wrong
+ * A FAILED row is OUR writer failing its own mechanical checks twice â€” a wrong
  * calibre string, an Americanism. There is nothing for an admin to adjudicate
  * and nothing the applicant did wrong; they are the one person who cannot fix
  * it and the only one we sent to fix it.
@@ -281,7 +288,7 @@ const COMMUTE_TIMEOUT_MS = 6_000;
  * takes no second seat, and the controller's 10-per-hour throttle is what
  * bounds the spend.
  *
- * ⚠️ REGENERATING SPENDS REAL MONEY — a measured S16 run cost $1.64 — but it
+ * âš ï¸ REGENERATING SPENDS REAL MONEY â€” a measured S16 run cost $1.64 â€” but it
  * does NOT take a second seat: the seat is claimed once per motivation, not
  * once per attempt (see the claim below). The ceiling is the controller's
  * 10-per-hour throttle.
@@ -289,14 +296,14 @@ const COMMUTE_TIMEOUT_MS = 6_000;
 /**
  * How long a GENERATING row may sit untouched before a RETRY may claim it.
  *
- * ⚠️ IT MUST NOT BE SHORTER THAN A LEGITIMATE RUN. Three draft attempts at
+ * âš ï¸ IT MUST NOT BE SHORTER THAN A LEGITIMATE RUN. Three draft attempts at
  * GENERATE_TIMEOUT_MS, plus research, plates and grading, can outlast ten
- * minutes — and a retry inside a live pass starts a SECOND pipeline on the same
+ * minutes â€” and a retry inside a live pass starts a SECOND pipeline on the same
  * motivation. Fifteen is the ceiling this repo already sets for a stranded
  * member: long enough for a bad provider day, short enough that a
  * deploy-killed generation does not wait on an admin.
  *
- * ⚠️ THE NIGHTLY SWEEP DELIBERATELY WAITS LONGER (25 min). It clears a run no
+ * âš ï¸ THE NIGHTLY SWEEP DELIBERATELY WAITS LONGER (25 min). It clears a run no
  * member is watching, so it is sized to the worst derived run and must never
  * take a row out from under a live writer. The two numbers answer different
  * questions and must not be collapsed.
@@ -312,7 +319,7 @@ export const REGENERABLE: MotivationStatus[] = [
 /**
  * Is an automatic reason needed? True when the applicant has not written one.
  *
- * ⚠️ THE GUARD THAT DECIDES WHETHER TO SPEND A MODEL CALL. Operator,
+ * âš ï¸ THE GUARD THAT DECIDES WHETHER TO SPEND A MODEL CALL. Operator,
  * 2026-09-20: the applicant "never has to sit and think up reasons for his
  * current firearms and for the new firearm". A reason they wrote themselves is
  * theirs and is never regenerated; an empty box is filled from the pack's own
@@ -326,7 +333,7 @@ export function reasonNeeded(answers: Record<string, string>): boolean {
 /**
  * The previous gate verdict's issues, as feedback for the next writer run.
  *
- * ⚠️ OUR OWN WORDS ABOUT THE PREVIOUS DRAFT, never a fact about the applicant.
+ * âš ï¸ OUR OWN WORDS ABOUT THE PREVIOUS DRAFT, never a fact about the applicant.
  * That is what makes them safe to hand back through `renderRetry`, which is
  * the only reason a regeneration is allowed to carry anything the facts did
  * not. Reads the stored verdict defensively: the column is Json and may
@@ -362,7 +369,7 @@ export function proseWordCount(text: string): number {
 /**
  * Repetition and length notes for a retry, ADVISORY and never fatal.
  *
- * ⚠️ THESE DO NOT FAIL A RUN. They are appended to the feedback of a retry the
+ * âš ï¸ THESE DO NOT FAIL A RUN. They are appended to the feedback of a retry the
  * mechanical checks have already triggered, so a near-miss improves and a
  * clean document is never knocked back for repeating a phrase. `scoreMotivation`
  * already measures both; this is the wire from the measurement to the writer.
@@ -407,22 +414,22 @@ export class MotivationGenerationService {
     private readonly shared: MotivationSharedService,
     private readonly crimeStats: CrimeStatsService,
     private readonly news: NewsService,
-    // Structured, cached background — see the note at the research call below.
+    // Structured, cached background â€” see the note at the research call below.
     private readonly research: MotivationResearchService,
     // What a firearm of a given CLASS is used for, generated once per class
     // and shared by everyone who holds one. See firearm-uses.service.ts.
     private readonly firearmUses: FirearmUsesService,
-    // ⚠️ RETIRED 2026-10-15 — no longer called. The composite quarry line-up
+    // âš ï¸ RETIRED 2026-10-15 â€” no longer called. The composite quarry line-up
     // was replaced by one animal per picture under heading 3 (see the purpose
     // exhibits below). The dependency is kept for now so existing specs that
     // build this service positionally are untouched; nothing draws it.
     private readonly quarryPlates: QuarryPlateService,
-    // The purpose exhibits — one to two pages of pictures under heading 3.
+    // The purpose exhibits â€” one to two pages of pictures under heading 3.
     // Drawn here for the same reason as the quarry plate.
     private readonly purposePlates: MotivationPlatesService,
     // The member's vault, for the owned-firearm top-up below.
     private readonly prefill: MotivationPrefillService,
-    // The reason paragraph — the comparison the applicant would otherwise have
+    // The reason paragraph â€” the comparison the applicant would otherwise have
     // to write themselves. Generated automatically when absent; see the call in
     // runGeneration.
     private readonly reason: MotivationReasonService,
@@ -430,6 +437,9 @@ export class MotivationGenerationService {
     // compiling; production provides it.
     @Optional()
     private readonly suitability?: MotivationSuitabilityService,
+    /** Jev-backed document engine; absent in old positional specs. */
+    @Optional()
+    private readonly engine?: DocumentEngineService,
   ) {}
 
   /**
@@ -456,7 +466,7 @@ export class MotivationGenerationService {
 
       for (const [k, v] of owned) answers[k] = v;
 
-      // ⚠️ AND THE PROVENANCE, OR THE SHEET PRETENDS THE MEMBER TYPED IT.
+      // âš ï¸ AND THE PROVENANCE, OR THE SHEET PRETENDS THE MEMBER TYPED IT.
       // Without this the review sheet strips "NONE" values and shows no "From
       // your Document Centre" chip on any firearm topped up here.
       const stored = await this.prisma.motivation.findUnique({
@@ -479,20 +489,20 @@ export class MotivationGenerationService {
       return owned.length;
     } catch (err) {
       this.logger.warn(
-        `Motivation ${row.id}: owned-firearm top-up skipped — ${(err as Error).message}`,
+        `Motivation ${row.id}: owned-firearm top-up skipped â€” ${(err as Error).message}`,
       );
       return 0;
     }
   }
 
   /**
-   * GENERATE — the whole pipeline.
+   * GENERATE â€” the whole pipeline.
    *
    * Order matters and every step is defensive:
    *   1. flag, ownership, declaration, completeness
    *   2. CAS into GENERATING so two clicks cannot both spend money
    *   3. claim a beta seat BEFORE any model call
-   *   4. build the fact pack in code — the model only arranges what we give it
+   *   4. build the fact pack in code â€” the model only arranges what we give it
    *   5. draft, then VERIFY the structure plan was actually followed
    *   6. check sameness against previous documents of this type
    *   7. grade; a thin document never becomes a PDF
@@ -512,9 +522,10 @@ export class MotivationGenerationService {
       select: {
         id: true,
         // The MO number. Carried through the run because it is the ONLY thing
-        // the outcome notification is allowed to name — see notifyOutcome.
+        // the outcome notification is allowed to name â€” see notifyOutcome.
         referenceNumber: true,
         licenceType: true,
+        outputMode: true,
         status: true,
         answersEncrypted: true,
         declarationAcceptedAt: true,
@@ -523,17 +534,17 @@ export class MotivationGenerationService {
         betaSeatNo: true,
         // The gate's findings from the previous run, so a member who fixes the
         // fields it named is regenerated with those findings in front of the
-        // writer rather than blind — see gateFeedbackIssues.
+        // writer rather than blind â€” see gateFeedbackIssues.
         qualityFindings: true,
         // Whether `firearm_fit_reason` is the applicant's own or a paragraph we
-        // drafted — see the note on `draftedReason` in the fact pack.
+        // drafted â€” see the note on `draftedReason` in the fact pack.
         answerProvenance: true,
         // Needed so the sameness corpus can exclude this applicant's own
-        // earlier documents — see recentFingerprints.
+        // earlier documents â€” see recentFingerprints.
         userId: true,
         promptTokens: true,
         completionTokens: true,
-        // Reused across gate cycles — the suburb and the firearm do not
+        // Reused across gate cycles â€” the suburb and the firearm do not
         // change between attempts, so the searches are paid for once.
         researchEncrypted: true,
         researchAskVersion: true,
@@ -554,53 +565,54 @@ export class MotivationGenerationService {
     }
 
     /**
-     * ⚠️ THE PROFILE UNDERNEATH, WHICH THIS READ WITHOUT FOR ITS WHOLE LIFE.
+     * âš ï¸ THE PROFILE UNDERNEATH, WHICH THIS READ WITHOUT FOR ITS WHOLE LIFE.
      * A `scope: 'profile'` answer is saved to the member's profile store and
      * never into `answersEncrypted`, so reading the blob alone made every one
      * of them look unanswered: an applicant with every row green was refused
      * with "Some required answers are still missing" naming `marital_status`
      * and `safe_present`, both of which he had answered.
      *
-     * ⚠️ AND THE COUNT WAS THE SMALL HALF. This same `answers` feeds
+     * âš ï¸ AND THE COUNT WAS THE SMALL HALF. This same `answers` feeds
      * applicationBlockers and the FACT PACK below, so the writer was being
-     * handed a section 13 with no premises answers at all — no safe, no alarm,
-     * no armed response — and writing "Security and safe storage" out of
+     * handed a section 13 with no premises answers at all â€” no safe, no alarm,
+     * no armed response â€” and writing "Security and safe storage" out of
      * nothing.
      */
     const answers = await this.shared.answersFor(row.userId, row.answersEncrypted);
+    const motivationOnly = isMotivationOnly(row.outputMode);
 
     /**
-     * ⚠️ EVERY LICENSED FIREARM IN THE VAULT GOES ON THE FORM, WITHOUT
+     * âš ï¸ EVERY LICENSED FIREARM IN THE VAULT GOES ON THE FORM, WITHOUT
      * BEING ASKED FOR.
      *
      * Operator, 2026-09-10, on a pack listing two of his five: "they should be
      * in the application automatically."
      *
-     * ⚠️ AND IT IS NOT A CONVENIENCE. Section 15(3) caps an occasional sports
+     * âš ï¸ AND IT IS NOT A CONVENIENCE. Section 15(3) caps an occasional sports
      * shooter at four firearms and section 13 caps a self-defence applicant at
      * one, so what a person already holds is a statutory precondition the DFO
      * checks against the declaration they sign. Three licensed firearms
      * missing from that list is the kind of wrong nobody notices until a
      * counter does.
      *
-     * They were not missing through a bug in the reading — the vault had all
+     * They were not missing through a bug in the reading â€” the vault had all
      * five, read correctly. They were OFFERED and never accepted, because the
      * offer is applied when an application is CREATED and nothing revisits it.
      * MO000075 was created before the licence-number fix of 2026-09-09, so at
      * the time the offer collapsed four cards onto one row; the fix landed and
      * reached nothing that already existed.
      *
-     * ⚠️ IT CAN NEVER OVERWRITE AN ANSWER. `credentialOffer` is given the
+     * âš ï¸ IT CAN NEVER OVERWRITE AN ANSWER. `credentialOffer` is given the
      * current answers and skips every key they already carry, so `values` is
      * by construction only what is NOT on the form. CLAUDE.md's rule: fill it
      * in, arm it, let them change it.
      *
-     * ⚠️ OWNED FIREARMS ONLY. The offer can fill competency and association
+     * âš ï¸ OWNED FIREARMS ONLY. The offer can fill competency and association
      * boxes too; those have their own timing rules (the wrong competency
      * chosen before the firearm is known was a real fault) and are left to the
      * paths that already own them.
      *
-     * ⚠️ BEFORE missingRequired, so a firearm supplied only by the vault
+     * âš ï¸ BEFORE missingRequired, so a firearm supplied only by the vault
      * counts towards a complete application rather than blocking it.
      */
     const added = await this.topUpOwnedFirearms(row, answers);
@@ -611,11 +623,11 @@ export class MotivationGenerationService {
     }
 
     /**
-     * ⚠️ A MEMBER WHO MATERIALLY CHANGES THEIR ANSWERS GETS A FRESH GATE
+     * âš ï¸ A MEMBER WHO MATERIALLY CHANGES THEIR ANSWERS GETS A FRESH GATE
      * BUDGET. `gateCycles` exists to stop a thin document looping back to the
      * applicant forever, and it is incremented on every gate knock-back. But
-     * the member who ACTS on the feedback — fills the fields the gate named,
-     * rewrites a circumstance it found thin — was still spending a budget they
+     * the member who ACTS on the feedback â€” fills the fields the gate named,
+     * rewrites a circumstance it found thin â€” was still spending a budget they
      * had already earned: one more knock-back after a fix exhausted a ceiling
      * of two and failed the pack outright, which is the opposite of what the
      * counter is for.
@@ -646,11 +658,13 @@ export class MotivationGenerationService {
       // agreeing with the database.
       row.gateCycles = 0;
       this.logger.log(
-        `Motivation ${row.id}: answers changed since the last gate run — gate cycle budget reset`,
+        `Motivation ${row.id}: answers changed since the last gate run â€” gate cycle budget reset`,
       );
     }
 
-    const missing = missingRequired(row.licenceType, answers);
+    const missing = missingRequired(row.licenceType, answers, {
+      motivationOnly,
+    });
     if (missing.length) {
       throw new ConflictException({
         message: 'Some required answers are still missing.',
@@ -659,18 +673,18 @@ export class MotivationGenerationService {
       });
     }
 
-    // ⚠️ THE HARD CONSTRAINTS, ENFORCED BEFORE WE SPEND A CLAUDE CALL ON A
-    // PACK THAT CANNOT BE GRANTED. Operator's routing spec §3: "If the
+    // âš ï¸ THE HARD CONSTRAINTS, ENFORCED BEFORE WE SPEND A CLAUDE CALL ON A
+    // PACK THAT CANNOT BE GRANTED. Operator's routing spec Â§3: "If the
     // selected firearm violates the selected application type, block the
     // generator with a specific message. Do not silently continue."
     //
     // A self-loading rifle under section 13 is not a weak application, it is
-    // an impossible one — the Act does not permit a rifle under section 13 at
+    // an impossible one â€” the Act does not permit a rifle under section 13 at
     // all. Writing a beautiful motivation for it costs us the generation and
     // costs the applicant the fee, the fingerprints and the wait before the
     // Registrar tells them the same thing.
     //
-    // ⚠️ AFTER missingRequired, DELIBERATELY. These rules read the firearm's
+    // âš ï¸ AFTER missingRequired, DELIBERATELY. These rules read the firearm's
     // type and action, so an applicant who has not filled them in yet must
     // hear "you have not finished" rather than a rule about a firearm they
     // have not described.
@@ -683,24 +697,24 @@ export class MotivationGenerationService {
       });
     }
 
-    // ⚠️ AND THE DOCUMENTS, WHICH NOTHING HAS EVER CHECKED HERE. H13.
+    // âš ï¸ AND THE DOCUMENTS, WHICH NOTHING HAS EVER CHECKED HERE. H13.
     //
     // Generation refused on a missing ANSWER and on an impossible firearm, and
-    // said nothing at all about a missing DOCUMENT — so an applicant with every
+    // said nothing at all about a missing DOCUMENT â€” so an applicant with every
     // box filled and no identity document, no proof of address and no
     // competency certificate got a finished, watermarked, PAID-FOR pack that a
     // DFO cannot accept. The checklist knew: `documentStatus().missingRequired`
     // is computed on every load of the documents step and read by nothing that
     // could stop this.
     //
-    // ⚠️ AFTER THE ANSWER CHECK, DELIBERATELY, AND FOR THE SAME REASON THE
-    // BLOCKERS ARE. The required-document list is CONDITIONAL on the answers —
+    // âš ï¸ AFTER THE ANSWER CHECK, DELIBERATELY, AND FOR THE SAME REASON THE
+    // BLOCKERS ARE. The required-document list is CONDITIONAL on the answers â€”
     // owning a firearm adds CURRENT_LICENCE, a private transfer adds the
-    // seller's licence and a consent — so running it against a half-filled form
+    // seller's licence and a consent â€” so running it against a half-filled form
     // would demand documents for a route the applicant has not chosen, and then
     // stop demanding them when they answer one more question.
     //
-    // ⚠️ THE SAME ConflictException SHAPE AS THE OTHER TWO, so the client has
+    // âš ï¸ THE SAME ConflictException SHAPE AS THE OTHER TWO, so the client has
     // one branch rather than three. `missingDocuments` carries KIND NAMES, not
     // labels: the client already owns the label table (it renders the checklist
     // from the same kinds), and a name it can key off survives a copy change.
@@ -725,14 +739,14 @@ export class MotivationGenerationService {
     });
     const docStatus = documentStatus(
       row.licenceType,
-      // One entry per FILE and every role it fills — the safe row counts files,
+      // One entry per FILE and every role it fills â€” the safe row counts files,
       // and a membership certificate answers two lines. Same expression both
       // other callers use; deduplicating it here would break the safe.
       uploads.flatMap((u) => [u.kind, ...u.coversKinds]),
       answers,
     );
     const missingDocuments = docStatus.missingRequired;
-    if (missingDocuments.length) {
+    if (missingDocuments.length && !motivationOnly) {
       throw new ConflictException({
         message:
           missingDocuments.length === 1
@@ -744,7 +758,7 @@ export class MotivationGenerationService {
     }
 
     /**
-     * ⚠️ AND WHAT THE PROFICIENCY PAGES THEMSELVES ARE MISSING. Operator,
+     * âš ï¸ AND WHAT THE PROFICIENCY PAGES THEMSELVES ARE MISSING. Operator,
      * 2026-10-13: "the application must have the statement of results for the
      * act and the statement of result and certificate for the rifle ... 117705
      * ... must always be present when submitting a motivation."
@@ -755,13 +769,13 @@ export class MotivationGenerationService {
      * autolink attaches what it can; this is the gate that says when it could
      * not.
      *
-     * ⚠️ IT DOES NOT CREATE A REQUIREMENT THAT WAS NOT THERE. The proficiency
+     * âš ï¸ IT DOES NOT CREATE A REQUIREMENT THAT WAS NOT THERE. The proficiency
      * is on the EXPECTED tier, not REQUIRED (the Act does not name it), and a
-     * pack that attaches none is untouched — `proficiencyPackGap` reports
+     * pack that attaches none is untouched â€” `proficiencyPackGap` reports
      * nothing for an empty or unreadable set. The rule bites only on pages the
      * member actually put on the application and we could READ.
      *
-     * ⚠️ NOT the same question as `proficiencyCover`, which asks whether the
+     * âš ï¸ NOT the same question as `proficiencyCover`, which asks whether the
      * member holds 117705 ANYWHERE (vault included). This is about the pack
      * about to be submitted, and a pack can be short while that answer is yes.
      */
@@ -788,7 +802,7 @@ export class MotivationGenerationService {
       });
     const needed = requiredEndorsement(answers);
     const proficiencyGap = proficiencyPackGap(proficiencyPages, needed);
-    if (hasProficiencyPackGap(proficiencyGap)) {
+    if (!motivationOnly && hasProficiencyPackGap(proficiencyGap)) {
       const label = needed ? (endorsementSpec(needed)?.label ?? needed) : '';
       const problems: string[] = [];
       if (proficiencyGap.missingLaw) {
@@ -806,15 +820,15 @@ export class MotivationGenerationService {
       });
     }
 
-    // COMPARE-AND-SWAP. Two clicks on Generate must not both call the model —
+    // COMPARE-AND-SWAP. Two clicks on Generate must not both call the model â€”
     // that is duplicated spend and a race on the row. Only the request that
     // moves the status out of an editable state proceeds.
     /**
-     * ⚠️ A GENERATION THAT DIED MID-FLIGHT MUST NOT LOCK THE MEMBER OUT
+     * âš ï¸ A GENERATION THAT DIED MID-FLIGHT MUST NOT LOCK THE MEMBER OUT
      * FOREVER, AND IT DID.
      *
-     * `pm2 reload` is a restart on this box — fork mode, one instance, which
-     * CLAUDE.md says in as many words — so a deploy while somebody is
+     * `pm2 reload` is a restart on this box â€” fork mode, one instance, which
+     * CLAUDE.md says in as many words â€” so a deploy while somebody is
      * generating kills the request in flight. The row stays GENERATING, and
      * because GENERATING is not in REGENERABLE, every retry from then on is
      * answered "This document is already being prepared. Give it a moment."
@@ -823,8 +837,8 @@ export class MotivationGenerationService {
      *
      * So a GENERATING row that nothing has touched for STALE_GENERATION_MS is
      * treated as abandoned and may be claimed again. The window is far longer
-     * than a real pass — three attempts, a gate and a verify came to about two
-     * minutes on the slowest run observed — so this can never race a live one.
+     * than a real pass â€” three attempts, a gate and a verify came to about two
+     * minutes on the slowest run observed â€” so this can never race a live one.
      */
     const staleBefore = new Date(Date.now() - STALE_GENERATION_MS);
     const claimed = await this.prisma.motivation.updateMany({
@@ -841,9 +855,9 @@ export class MotivationGenerationService {
       data: { status: MotivationStatus.GENERATING },
     });
     if (claimed.count === 0) {
-      // ⚠️ SAY WHICH STATE IT IS ACTUALLY IN. This branch fires for EVERY
+      // âš ï¸ SAY WHICH STATE IT IS ACTUALLY IN. This branch fires for EVERY
       // status outside REGENERABLE, but the message only ever described one of
-      // them — a finished document was told it was "already being prepared",
+      // them â€” a finished document was told it was "already being prepared",
       // which sent the operator looking for a generation that had ended
       // minutes earlier. Re-read rather than guess.
       const now = await this.prisma.motivation.findUnique({
@@ -864,11 +878,11 @@ export class MotivationGenerationService {
   /**
    * The expensive half: two flagship calls and a grading pass.
    *
-   * ⚠️ THIS MUST NOT RUN INSIDE AN HTTP REQUEST. Measured on a live section 16
+   * âš ï¸ THIS MUST NOT RUN INSIDE AN HTTP REQUEST. Measured on a live section 16
    * pack: 88 seconds, 14k prompt and 12k completion tokens over two gate
    * cycles. nginx gives an upstream 60 seconds and Cloudflare cuts the origin
    * at 100 whatever nginx is told, so the applicant got a 504 for a document
-   * that had been written and paid for — and clicking again spent it twice.
+   * that had been written and paid for â€” and clicking again spent it twice.
    *
    * The row is already claimed (GENERATING) before this is called, so a second
    * click cannot start a second run; the caller decides whether to await.
@@ -881,7 +895,7 @@ export class MotivationGenerationService {
     const { row, answers } = prepared;
 
     // Whether THIS call took a seat. If generation then fails, the seat has to
-    // go back — see the catch block.
+    // go back â€” see the catch block.
     let claimedSeatHere = false;
 
     try {
@@ -892,10 +906,10 @@ export class MotivationGenerationService {
         const cap = await this.settings.get(FLAGS.motivationBetaFreeCap);
         seat = await this.quota.claimBetaSeat(cap);
         claimedSeatHere = seat !== null;
-        // ⚠️ WRITE THE SEAT TO THE ROW THE MOMENT IT IS TAKEN, not at the end
+        // âš ï¸ WRITE THE SEAT TO THE ROW THE MOMENT IT IS TAKEN, not at the end
         // of the run. The counter has already been incremented; if the process
-        // dies before the terminal update — a deploy, an OOM kill, and the
-        // generation now runs detached where that is likelier — the seat is
+        // dies before the terminal update â€” a deploy, an OOM kill, and the
+        // generation now runs detached where that is likelier â€” the seat is
         // spent with nothing on the row to show for it, and no sweep can tell
         // whose it was. Persisted here, the row owns it: the retry reads
         // row.betaSeatNo above and reuses it, which is also what makes "one
@@ -927,30 +941,30 @@ export class MotivationGenerationService {
       // follow-up ranking if the gate sends this back.
       const overlap = overlapFromAnswers(row.licenceType, answers);
 
-      // ── SAPS precinct crime figures, self-defence only ──────────────
+      // â”€â”€ SAPS precinct crime figures, self-defence only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
       // Operator, 2026-09-07: "is it possible for us to pull the per police
       // station crime stats from SAPS and keep it updated?" This is the SAME
-      // material the professional motivations we studied annex — see
-      // researchBrief()'s own note on this — except VERIFIED against our own
+      // material the professional motivations we studied annex â€” see
+      // researchBrief()'s own note on this â€” except VERIFIED against our own
       // quarterly copy of the SAPS workbook rather than found by a grounded
       // search. See CrimeStatsService.precinct() and precinctFactLines().
       //
-      // ⚠️ FETCHED FRESH ON EVERY ATTEMPT, NOT CACHED LIKE research() BELOW.
+      // âš ï¸ FETCHED FRESH ON EVERY ATTEMPT, NOT CACHED LIKE research() BELOW.
       // The lookup is a local read, not a paid model call, so there is
-      // nothing to save by caching it — and a member who corrects
+      // nothing to save by caching it â€” and a member who corrects
       // `police_station` between gate cycles should get THAT station's
       // figures on the retry, not whichever one was true when this motivation
       // was first drafted.
       //
-      // ⚠️ A MISS COSTS THE DOCUMENT THESE FIGURES, NEVER THE DOCUMENT. Same
+      // âš ï¸ A MISS COSTS THE DOCUMENT THESE FIGURES, NEVER THE DOCUMENT. Same
       // fail-soft posture as every other prefill/research source in this
       // file: no station answered, no station known to CrimeStatsService, or
-      // the lookup throwing are all the same outcome — write nothing here and
+      // the lookup throwing are all the same outcome â€” write nothing here and
       // let the writer argue from what threat_circumstances and
       // daily_movements actually say.
       let precinctBlock: string | undefined;
-      // ⚠️ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
+      // âš ï¸ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
       // firearm is not enough WHERE THEY LIVE, so the precinct figures and
       // the cuttings are more load-bearing here than on a section 13.
       if (isSelfDefence(row.licenceType)) {
@@ -963,41 +977,41 @@ export class MotivationGenerationService {
             );
             if (figures) {
               precinctBlock = [
-                // ⚠️ THIS HEADING IS WHAT RULE 1 IN generationSystemPrompt()
-                // NAMES — change one and the other goes stale. It also tells
+                // âš ï¸ THIS HEADING IS WHAT RULE 1 IN generationSystemPrompt()
+                // NAMES â€” change one and the other goes stale. It also tells
                 // renderResearch's own reader that the lines under it are not
                 // the applicant's words and not a web search: precinctFactLines
                 // already carries its own period and source on every line.
-                'SAPS PRECINCT CRIME FIGURES — supplied fact, not web research:',
+                'SAPS PRECINCT CRIME FIGURES â€” supplied fact, not web research:',
                 ...precinctFactLines(figures),
               ].join('\n');
             }
           } catch (err) {
             this.logger.warn(
-              `Motivation ${row.id}: precinct crime figures skipped — ${(err as Error).message}`,
+              `Motivation ${row.id}: precinct crime figures skipped â€” ${(err as Error).message}`,
             );
           }
 
           /**
-           * ── AND THE PRECINCTS THEY DRIVE THROUGH ──────────────────
+           * â”€â”€ AND THE PRECINCTS THEY DRIVE THROUGH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
            *
            * Operator, 2026-09-08: "take the police station areas they travel
            * through and incorporate each of thems stats in there."
            *
-           * ⚠️ THE HOME STATION IS WHERE THEY SLEEP; THIS IS WHERE THEY SPEND
+           * âš ï¸ THE HOME STATION IS WHERE THEY SLEEP; THIS IS WHERE THEY SPEND
            * THE DAY. An applicant living in a quiet precinct and driving
            * through three bad ones every morning has an exposure the home
            * figures do not describe, and until now the pack could not say so.
            *
-           * ⚠️ AND EVERY LINE CAME OFF THE MEMBER'S OWN TICK. `travelled_areas`
-           * is an answer they gave, not a radius we drew — which is what makes
+           * âš ï¸ AND EVERY LINE CAME OFF THE MEMBER'S OWN TICK. `travelled_areas`
+           * is an answer they gave, not a radius we drew â€” which is what makes
            * another precinct's numbers admissible about THIS applicant.
            *
-           * ⚠️ THREE, NOT ALL OF THEM. Twelve stations of quarterly tables is
+           * âš ï¸ THREE, NOT ALL OF THEM. Twelve stations of quarterly tables is
            * not evidence, it is a spreadsheet, and the corpus doc's finding
            * about padding applies here as much as to manufacturer copy.
            *
-           * ⚠️ AND THE REASON THEY GAVE TRAVELS WITH IT. "My daughter's school
+           * âš ï¸ AND THE REASON THEY GAVE TRAVELS WITH IT. "My daughter's school
            * is there" is what turns a table into this applicant's own exposure;
            * without it the writer has numbers and no standing to use them.
            */
@@ -1008,7 +1022,7 @@ export class MotivationGenerationService {
               if (offered.length) {
                 precinctBlock = [
                   precinctBlock ?? '',
-                  'PRECINCTS THE APPLICANT TRAVELS THROUGH — supplied fact, from areas they ticked themselves:',
+                  'PRECINCTS THE APPLICANT TRAVELS THROUGH â€” supplied fact, from areas they ticked themselves:',
                   ...offered,
                 ]
                   .filter(Boolean)
@@ -1016,68 +1030,68 @@ export class MotivationGenerationService {
               }
             } catch (err) {
               this.logger.warn(
-                `Motivation ${row.id}: travelled-area figures skipped — ${(err as Error).message}`,
+                `Motivation ${row.id}: travelled-area figures skipped â€” ${(err as Error).message}`,
               );
             }
           }
         }
       }
 
-      // ── background research, once per motivation ───────────────────
+      // â”€â”€ background research, once per motivation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
       // The professional motivations are not templates: precinct crime
       // figures behind a self-defence application, pages on the cartridge in
       // a section 16. That material is published, not something to ask the
-      // applicant for — so it was gathered here, by a model with web search,
+      // applicant for â€” so it was gathered here, by a model with web search,
       // and handed to the writer AND the gate (or the gate would fail every
       // researched sentence as ungrounded).
       //
-      // ⚠️ IT IS SEARCHED AGAIN as of 2026-09-07 (`grounding: { web: true }`
+      // âš ï¸ IT IS SEARCHED AGAIN as of 2026-09-07 (`grounding: { web: true }`
       // on the shared contract), after a few hours returning null while the
       // provider move landed. Nothing in this branch changed across either
       // direction, and that is the point of it: research is fail-soft and
-      // cached, so a null costs colour and never the document — the pipeline
+      // cached, so a null costs colour and never the document â€” the pipeline
       // never had to know whether a search was available.
       //
       // A stored brief is reused whichever era wrote it, and there are no bad
       // ones to worry about: during the gap research() returned null before
       // reaching the model, so nothing unsearched was ever written to
       // researchEncrypted. Every stored brief was searched when it was made.
-      // ⚠️ STRUCTURED AND CACHED SINCE 2026-09-08, not one free-text brief.
+      // âš ï¸ STRUCTURED AND CACHED SINCE 2026-09-08, not one free-text brief.
       //
       // The old call asked one grounded question built from this applicant's
-      // answers — including their suburb, redacted to an area but still
-      // theirs — and cached the result on THIS motivation only, so the second
+      // answers â€” including their suburb, redacted to an area but still
+      // theirs â€” and cached the result on THIS motivation only, so the second
       // applicant for the same firearm paid for the same search again.
       //
       // MotivationResearchService asks four narrower questions instead, each
-      // keyed on a fact about the WORLD — the firearm model, the cartridge,
-      // the discipline, the class of game — so they are shared across every
+      // keyed on a fact about the WORLD â€” the firearm model, the cartridge,
+      // the discipline, the class of game â€” so they are shared across every
       // applicant who asks the same one, and NO APPLICANT DATUM REACHES A
       // SEARCH QUERY AT ALL. Precinct figures come from our own SAPS workbook
       // above, which is where the area ask went.
       //
-      // ⚠️ researchEncrypted STAYS, and it is not the same cache. The shared
+      // âš ï¸ researchEncrypted STAYS, and it is not the same cache. The shared
       // table makes the FETCH free; this column makes the TEXT stable across
       // gate cycles, which is what stops attempt two being graded against a
       // different brief from attempt one.
       let researchIn = 0;
       let researchOut = 0;
       /**
-       * ⚠️ SCRUBBED ON THE WAY OUT, NOT ONLY ON THE WAY IN. The shared
+       * âš ï¸ SCRUBBED ON THE WAY OUT, NOT ONLY ON THE WAY IN. The shared
        * table is cleaned when it is written, and that does nothing for a
-       * document holding its own frozen copy from before the rule existed —
+       * document holding its own frozen copy from before the rule existed â€”
        * which is every document written so far. MO000075 still carried
        * "platform" and "receiver" in `researchEncrypted` two fixes after the
        * shared cache was cleaned, and the writer was still being handed them.
        *
-       * ⚠️ SO THE GUARANTEE BELONGS AT THE POINT OF USE. Wherever the text
-       * came from — a fresh call, the shared row, or a column frozen weeks ago
-       * — the writer is never shown a sentence it would be refused for
+       * âš ï¸ SO THE GUARANTEE BELONGS AT THE POINT OF USE. Wherever the text
+       * came from â€” a fresh call, the shared row, or a column frozen weeks ago
+       * â€” the writer is never shown a sentence it would be refused for
        * repeating. A cache is not a way round a rule.
        */
       /**
-       * ⚠️ AND A BLOCK GATHERED UNDER AN OLDER ASK IS NOT REUSED.
+       * âš ï¸ AND A BLOCK GATHERED UNDER AN OLDER ASK IS NOT REUSED.
        *
        * RESEARCH_ASK_VERSION lives in the SHARED cache key, so rewording an
        * ask re-asks for everybody who has not been researched yet. It did
@@ -1099,7 +1113,7 @@ export class MotivationGenerationService {
       if (!research) {
         const pack = await this.research
           .researchFor(row.licenceType, answers, {
-            // Cartridge names only — never a make, a serial or a licence
+            // Cartridge names only â€” never a make, a serial or a licence
             // number. See ResearchPack.held for why both sides are needed.
             heldCalibres:
               overlap.verdict.kind === 'overlap'
@@ -1108,7 +1122,7 @@ export class MotivationGenerationService {
           })
           .catch(() => ({}) as ResearchPack);
         const text = MotivationResearchService.toBlock(pack).trim();
-        // ⚠️ A CACHE HIT CONTRIBUTES ZERO, WHICH IS THE HONEST NUMBER. These
+        // âš ï¸ A CACHE HIT CONTRIBUTES ZERO, WHICH IS THE HONEST NUMBER. These
         // two feed the motivation's own token columns further down; the
         // AiUsage ledger records every call separately either way.
         const spent = MotivationResearchService.usageOf(pack);
@@ -1128,14 +1142,14 @@ export class MotivationGenerationService {
         }
       }
 
-      // ── the quarry photograph ─────────────────────────────────────
+      // â”€â”€ the quarry photograph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
-      // ⚠️ RETIRED 2026-10-15. The quarry was ONE wide photograph on the
+      // âš ï¸ RETIRED 2026-10-15. The quarry was ONE wide photograph on the
       // cartridge page with the species in a line-up. Operator, 2026-10-15:
       // "we need to do the same for the quarry. one animal per picture with up
       // to five animals where applicable." Each animal now has its OWN picture
-      // under heading 3 — see the purpose exhibits below and speciesPlate in
-      // motivation-plates.ts — so the composite is neither drawn here nor shown
+      // under heading 3 â€” see the purpose exhibits below and speciesPlate in
+      // motivation-plates.ts â€” so the composite is neither drawn here nor shown
       // (motivation-render.service.quarryPhotoFor is a stub). The cartridge
       // page keeps its text.
       //
@@ -1143,21 +1157,21 @@ export class MotivationGenerationService {
       // the applied-for firearm's own two blocks are read (never the held-
       // cartridge blocks, which describe other firearms).
 
-      // ── the purpose exhibits ──────────────────────────────────────
+      // â”€â”€ the purpose exhibits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
-      // One to two pages of pictures under heading 3 — the quarry for a hunting
+      // One to two pages of pictures under heading 3 â€” the quarry for a hunting
       // pack, the scenarios for a self-defence one, the activities for a sport
       // one. Drawn HERE for the same reasons as the quarry plate: background
       // work, fail-soft, and never in the download path. The scenes are chosen
       // in code from the applicant's own answers (see motivation-plates.ts);
       // the only model call is the picture.
       //
-      // ⚠️ NOT GATED ON `research`. A self-defence or sport pack has scenes
+      // âš ï¸ NOT GATED ON `research`. A self-defence or sport pack has scenes
       // that do not need the research at all, and a hunting pack with no
-      // research names no species, so the hunter simply gets no exhibits — the
+      // research names no species, so the hunter simply gets no exhibits â€” the
       // same fail-soft rule the quarry plate already follows.
       //
-      // ⚠️ THE SPORT EXHIBITS MINE THE GENERATED USES, so the uses must be in
+      // âš ï¸ THE SPORT EXHIBITS MINE THE GENERATED USES, so the uses must be in
       // hand BEFORE the pictures are drawn. `firearmUses.forClass` is cached per
       // class, so the later call for the fact pack (below) is a cache hit and
       // costs nothing.
@@ -1179,14 +1193,14 @@ export class MotivationGenerationService {
         })
         .catch(() => undefined);
 
-      // ── the cover photograph ──────────────────────────────────────
+      // â”€â”€ the cover photograph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
       // Fetched HERE and nowhere else. It belongs beside the research pass for
       // the same three reasons: it is background work, it is cached on disk so
-      // the second applicant with a CZ 75 pays nothing, and it is fail-soft —
+      // the second applicant with a CZ 75 pays nothing, and it is fail-soft â€”
       // a miss costs the cover a picture, never the document.
       //
-      // ⚠️ NOT IN THE DOWNLOAD PATH. The pack is re-rendered on every
+      // âš ï¸ NOT IN THE DOWNLOAD PATH. The pack is re-rendered on every
       // download, and an outbound call to somebody else's server there would
       // sit inside our 60-second nginx ceiling on a request the applicant is
       // waiting on. renderPdf only ever reads what is already on disk.
@@ -1200,27 +1214,27 @@ export class MotivationGenerationService {
           .catch(() => null);
       }
 
-      // ── PRESS CLIPPINGS the member chose, self-defence only ──────────
+      // â”€â”€ PRESS CLIPPINGS the member chose, self-defence only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       //
       // Operator, 2026-09-07: "no CFR is going to sit and type in a stupid
-      // link" — so the clippings the applicant picked from
+      // link" â€” so the clippings the applicant picked from
       // GET /motivations/:id/incidents are supplied facts, exactly like the
       // precinct figures above, and cited by annexure letter rather than
       // pasted as a URL. See backend/src/news/news.types.ts.
       //
-      // ⚠️ FETCHED BEFORE THE ANNEXURE LIST BELOW, NOT AFTER. The writer has
+      // âš ï¸ FETCHED BEFORE THE ANNEXURE LIST BELOW, NOT AFTER. The writer has
       // to cite the SAME letter the printed pack will actually carry, and
       // that letter depends on whether a PRESS_CLIPPINGS annexure exists at
-      // all — buildAnnexures only reserves a letter for it when told to. So
+      // all â€” buildAnnexures only reserves a letter for it when told to. So
       // "were there any clippings" has to be known before that call, not
       // worked out from it.
       //
-      // ⚠️ FAIL-SOFT, SAME POSTURE AS THE PRECINCT LOOKUP. A bad id, a
+      // âš ï¸ FAIL-SOFT, SAME POSTURE AS THE PRECINCT LOOKUP. A bad id, a
       // service outage or nothing chosen all collapse to the same outcome:
       // no clippings block, no PRESS_CLIPPINGS annexure, and the document
       // argues from threat_circumstances and daily_movements alone.
       let pressClips: NewsIncident[] = [];
-      // ⚠️ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
+      // âš ï¸ SECTION 14 TOO. s14(4) asks the applicant to show a section 13
       // firearm is not enough WHERE THEY LIVE, so the precinct figures and
       // the cuttings are more load-bearing here than on a section 13.
       if (isSelfDefence(row.licenceType)) {
@@ -1228,7 +1242,7 @@ export class MotivationGenerationService {
         if (ids.length) {
           try {
             /**
-             * ⚠️ FILTERED AGAIN ON THE WAY OUT, NOT ONLY ON THE WAY IN. The
+             * âš ï¸ FILTERED AGAIN ON THE WAY OUT, NOT ONLY ON THE WAY IN. The
              * ids are stored on the application and an older draft can hold
              * one chosen before the filter existed; nothing that reaches an
              * annexure gets there on the strength of when it was picked.
@@ -1236,29 +1250,29 @@ export class MotivationGenerationService {
             pressClips = packableIncidents(await this.news.byIds(ids));
           } catch (err) {
             this.logger.warn(
-              `Motivation ${row.id}: press clippings lookup skipped — ${(err as Error).message}`,
+              `Motivation ${row.id}: press clippings lookup skipped â€” ${(err as Error).message}`,
             );
           }
         }
       }
 
-      // The lettered annexure list — from the SAME function that letters the
+      // The lettered annexure list â€” from the SAME function that letters the
       // printed pack, so a citation the writer makes can never point at a tab
       // that will not exist.
       //
-      // ⚠️ 'PRIOR_NOTICE_REQUEST' IS ALWAYS PASSED HERE NOW. It is built
-      // unconditionally at render time (see motivation-prior-notice.ts — it
+      // âš ï¸ 'PRIOR_NOTICE_REQUEST' IS ALWAYS PASSED HERE NOW. It is built
+      // unconditionally at render time (see motivation-prior-notice.ts â€” it
       // sits at annexure G in every pack), but this call used to omit it from
       // the generated list, so every letter from H onward in the FactPack
       // disagreed with what actually printed. Adding it here is a genuine
-      // correctness fix, not just plumbing for press clippings — it makes the
+      // correctness fix, not just plumbing for press clippings â€” it makes the
       // comment two lines up ("the SAME function that letters the printed
       // pack") true for the first time.
       /**
-       * ⚠️ EVIDENCE IS READ FOR ITS CONTAINER TOO, and it has to be: evidence
+       * âš ï¸ EVIDENCE IS READ FOR ITS CONTAINER TOO, and it has to be: evidence
        * takes a letter when its container is annexure-placed, and the writer
        * cites that letter. The kind alone cannot tell two evidence containers
-       * apart, so the container is collected alongside and split below — the
+       * apart, so the container is collected alongside and split below â€” the
        * same split renderPdf makes before its own buildAnnexures call, so the
        * writer's citation and the printed pack agree.
        */
@@ -1280,7 +1294,7 @@ export class MotivationGenerationService {
       }));
 
       /**
-       * ⚠️ NO ANNEXURE LETTER ANY MORE, AND THAT IS THE POINT. Operator,
+       * âš ï¸ NO ANNEXURE LETTER ANY MORE, AND THAT IS THE POINT. Operator,
        * 2026-09-09: "only paperwork required by the dfo are attached as
        * annexures. all other things like the cartridge specs and clippings and
        * those things must be in the body of the document itself and form part
@@ -1289,57 +1303,57 @@ export class MotivationGenerationService {
        *
        * A cutting is published material we assembled; the applicant holds no
        * original of it and no DFO will ask to see one. So it is cited the way
-       * a person cites a newspaper in a letter — by paper and date, in the
-       * sentence that uses it — and the cutting itself prints in the exposure
+       * a person cites a newspaper in a letter â€” by paper and date, in the
+       * sentence that uses it â€” and the cutting itself prints in the exposure
        * section beside the argument it supports.
        */
       let pressClippingsBlock: string | undefined;
       if (pressClips.length) {
         pressClippingsBlock = [
-          'PRESS CLIPPINGS — supplied fact, printed in the body of this',
+          'PRESS CLIPPINGS â€” supplied fact, printed in the body of this',
           'document beside the paragraph that uses them. Cite each one by its',
-          'PAPER and its DATE inside the sentence that relies on it — never by',
+          'PAPER and its DATE inside the sentence that relies on it â€” never by',
           'an annexure letter, because they are not annexures.',
           ...clippingFactLines(pressClips),
         ].join('\n');
       }
 
       /**
-       * ⚠️ THE ARSENAL, IN ROWS. Until now the writer was given
-       * `<derived name="firearms already held">5</derived>` and nothing else —
-       * no makes, calibres, types, sections or serials — and then INSTRUCTED
+       * âš ï¸ THE ARSENAL, IN ROWS. Until now the writer was given
+       * `<derived name="firearms already held">5</derived>` and nothing else â€”
+       * no makes, calibres, types, sections or serials â€” and then INSTRUCTED
        * by `overlapNote` to "meet that head on: say what this one does that
        * the one held does not". It was ordered to compare against five
        * firearms it had never been shown, so it invented all five, including
        * two licence sections. A DFO holding the licence copies in Annexure G
        * sees the contradiction on the page.
        *
-       * ⚠️ THE SAME ARRAY THE 271 AND THE TABLE USE. Item 2.1 of the form, the
+       * âš ï¸ THE SAME ARRAY THE 271 AND THE TABLE USE. Item 2.1 of the form, the
        * owned-firearms table in the pack and this block must agree serial for
        * serial, and the only way that holds is one source.
        */
       const arsenal = await this.arsenalFor(row.userId, answers);
 
       /**
-       * ⚠️ AND THE FIREARM BEING APPLIED FOR, IN THE OTHER TENSE. Operator,
+       * âš ï¸ AND THE FIREARM BEING APPLIED FOR, IN THE OTHER TENSE. Operator,
        * 2026-09-09, on why the basket exists at all: "lets say I have a
        * section 16 300 winmag. Now I want a 300 prc, they both can do the
        * exact same thing, so this is why the basket of reasons exists. so it
        * can pick one for the 300 winmag I already own and state another reason
        * why I would want the 300 prc."
        *
-       * ⚠️ WHICH ONLY WORKS IF THE TENSES DIFFER. "I use it for plains game"
-       * is true of the Win Mag in the safe and false of the PRC on the form —
+       * âš ï¸ WHICH ONLY WORKS IF THE TENSES DIFFER. "I use it for plains game"
+       * is true of the Win Mag in the safe and false of the PRC on the form â€”
        * and worse than false: "if I state that I already, the obvious question
        * will be why do you need a firearm for it if you already do."
        */
       const intendedUses = await this.intendedUsesFor(row.licenceType, answers);
 
       /**
-       * ⚠️ THE CARTRIDGE, MEASURED RATHER THAN RECALLED. Operator, 2026-09-09:
+       * âš ï¸ THE CARTRIDGE, MEASURED RATHER THAN RECALLED. Operator, 2026-09-09:
        * "why arent we pulling in the dimension sheet of the cartridge its
        * using from The Bench?" MO000071 spent two sections on "115 to 147
-       * grains" and "3 to 5 foot-pounds" — figures nothing supplied and a
+       * grains" and "3 to 5 foot-pounds" â€” figures nothing supplied and a
        * Registrar can correct. The Bench holds 215 dimension sheets; this
        * hands over the one for the calibre applied for, and the block itself
        * forbids every figure it does not carry.
@@ -1347,7 +1361,7 @@ export class MotivationGenerationService {
       const cartridge = await this.cartridgeFor(answers);
 
       /**
-       * ── THE 5.2 SUITABILITY ARGUMENT ───────────────────────────────
+       * â”€â”€ THE 5.2 SUITABILITY ARGUMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
        *
        * Operator, 2026-10-28: "It literally should ask why is the glock 43 x
        * that is chamered in 9mm suited for self defence insode my townhouse.
@@ -1374,9 +1388,9 @@ export class MotivationGenerationService {
           research: rawResearch ?? '',
           exhibits,
           firearmLine: [
-            answers.firearm_make,
-            answers.firearm_model,
-            answers.firearm_calibre,
+            displayMake(answers.firearm_make),
+            displayModel(answers.firearm_model),
+            displayCalibre(answers.firearm_calibre),
           ]
             .filter(Boolean)
             .join(' · '),
@@ -1420,21 +1434,21 @@ export class MotivationGenerationService {
       }
 
       /**
-       * ⚠️ THE APPLICANT IS NEVER ASKED TO WRITE A REASON.
+       * âš ï¸ THE APPLICANT IS NEVER ASKED TO WRITE A REASON.
        *
        * Operator, 2026-09-20: "the applicant never has to sit and think up
        * reasons for his current firearms and for the new firearm, we need to
        * use AI to generate proper good reasons for both cases". If they have
        * not written one themselves, it is generated here from the pack's own
-       * facts — the firearm applied for, the battery, the licence type and
-       * whatever evidence is on file — and folded into the facts the writer
+       * facts â€” the firearm applied for, the battery, the licence type and
+       * whatever evidence is on file â€” and folded into the facts the writer
        * receives. Failure is not fatal: the writer falls back to composing the
        * comparison from <arsenal> and the overlap note.
        *
-       * ⚠️ IT IS DELIVERED AS OURS, NOT AS AN APPLICANT ANSWER. Persisted to
+       * âš ï¸ IT IS DELIVERED AS OURS, NOT AS AN APPLICANT ANSWER. Persisted to
        * `firearm_fit_reason` it arrives inside <applicant-facts> on the next
        * run, where the writer and the gate both treat it as a grounded fact
-       * about the applicant — which is exactly what rule 12's inferred roles
+       * about the applicant â€” which is exactly what rule 12's inferred roles
        * are not. It travels in its own block with its provenance attached; see
        * `draftedReason` on the fact pack.
        */
@@ -1456,7 +1470,7 @@ export class MotivationGenerationService {
           }
         } catch (err) {
           this.logger.warn(
-            `Motivation ${row.id}: automatic reason generation skipped — ${
+            `Motivation ${row.id}: automatic reason generation skipped â€” ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
@@ -1466,7 +1480,7 @@ export class MotivationGenerationService {
       }
 
       /**
-       * ⚠️ A DRAFTED REASON IS STRIPPED FROM THE ANSWERS. Left in, it renders
+       * âš ï¸ A DRAFTED REASON IS STRIPPED FROM THE ANSWERS. Left in, it renders
        * inside <applicant-facts> and both readers mistake our inferred role
        * for the applicant's own statement. Only OUR paragraph is moved; a
        * reason the member wrote stays exactly where it was.
@@ -1477,7 +1491,7 @@ export class MotivationGenerationService {
           )
         : answers;
       /**
-       * ── THE FOUR BODY-EVIDENCE ITEMS ────────────────────────────────
+       * â”€â”€ THE FOUR BODY-EVIDENCE ITEMS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
        *
        * Operator, 2026-10-28: "it should be dynamic. but max of 4 photos. the
        * picker must identify and choose the most appropriate for the
@@ -1536,13 +1550,13 @@ export class MotivationGenerationService {
       const pack: FactPack = {
         licenceType: row.licenceType,
         /**
-         * ⚠️ THE CALIBRE IS TIDIED ON THE WAY TO THE WRITER, AND NOWHERE ELSE.
+         * âš ï¸ THE CALIBRE IS TIDIED ON THE WAY TO THE WRITER, AND NOWHERE ELSE.
          * "9MM PAR ( 9X19MM )" is how the string sits on the operator's licence
-         * card — screaming case, a space inside each bracket, an abbreviation
-         * nobody writes out — and it printed into MO000071 three times exactly
+         * card â€” screaming case, a space inside each bracket, an abbreviation
+         * nobody writes out â€” and it printed into MO000071 three times exactly
          * as read. A card is a source, not a house style.
          *
-         * ⚠️ THE STORED ANSWER IS UNTOUCHED. It is what the card says and what
+         * âš ï¸ THE STORED ANSWER IS UNTOUCHED. It is what the card says and what
          * the 271 boxes take; only the copy handed to the model is normalised,
          * so nothing downstream of the vault sees a value the member did not
          * give. `packConsistency` knows about both forms.
@@ -1551,7 +1565,7 @@ export class MotivationGenerationService {
           ...packAnswers,
           firearm_calibre: displayCalibre(packAnswers.firearm_calibre),
           /**
-           * ⚠️ AND THE ACTION, FOR THE SAME REASON AND TO STOP A BLEND.
+           * âš ï¸ AND THE ACTION, FOR THE SAME REASON AND TO STOP A BLEND.
            * "Semi-automatic (self-loading)" is a choice label carrying two
            * terms for one thing; handed over verbatim the model wrote
            * "semi-loading" three times in one pack. See displayAction.
@@ -1562,10 +1576,10 @@ export class MotivationGenerationService {
         intendedUses,
         draftedReason,
         /**
-         * ⚠️ THE "COMMON SERVICE CALIBRE" FACT IS GONE WITH THE CLAIM IT
+         * âš ï¸ THE "COMMON SERVICE CALIBRE" FACT IS GONE WITH THE CLAIM IT
          * SUPPORTED. It read `calibre_fact_sheet: 'held'` whenever The Bench
          * held a dimension sheet for the round, and the S13 brief treated that
-         * as licence to say ammunition is readily available — which is true of
+         * as licence to say ammunition is readily available â€” which is true of
          * 9mm Parabellum and false of 6.35mm Browning, a round nobody stocks
          * for practice. A dimension sheet proves the cartridge is
          * standardised; it proves nothing about what is on a dealer's shelf,
@@ -1575,13 +1589,13 @@ export class MotivationGenerationService {
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,
-        // ⚠️ THE PRECINCT AND CLIPPINGS BLOCKS RIDE INSIDE `research`,
-        // DELIBERATELY — NOT NEW FactPack FIELDS. renderResearch() already
+        // âš ï¸ THE PRECINCT AND CLIPPINGS BLOCKS RIDE INSIDE `research`,
+        // DELIBERATELY â€” NOT NEW FactPack FIELDS. renderResearch() already
         // wraps this in <background-research> untruncated (unlike `derived`,
         // which runs every value through sanitizePromptValue's 200-char,
-        // newline-collapsing cap — fine for "43" or one sentence, not for
+        // newline-collapsing cap â€” fine for "43" or one sentence, not for
         // nine lines of crime figures or clippings each carrying its own
-        // date and source). Put first so a reader — model or human — meets
+        // date and source). Put first so a reader â€” model or human â€” meets
         // the verified, supplied facts before the softer, web-searched
         // material, if any.
         research:
@@ -1589,7 +1603,7 @@ export class MotivationGenerationService {
             precinctBlock,
             pressClippingsBlock,
             cartridge,
-            // ⚠️ THE MAIN WRITER DOES NOT GET THE CAPABILITY TERMS. The 5.2
+            // âš ï¸ THE MAIN WRITER DOES NOT GET THE CAPABILITY TERMS. The 5.2
             // suitability writer reads the raw research; the letter stays under
             // documentScope, where "stopping power" is still refused.
             withoutRefusedCopy(research ?? ''),
@@ -1601,24 +1615,24 @@ export class MotivationGenerationService {
 
       // Draft, verify the plan landed, and check it does not look like
       // everything else we have produced. ONE retry with a fresh seed covers
-      // both failures — a second identical result means the variation engine
+      // both failures â€” a second identical result means the variation engine
       // is broken, which is an admin problem rather than a user one.
       //
       /**
-       * ⚠️ THE PLAN NEEDS FOUR FACTS ABOUT THE APPLICANT, not just the seed.
+       * âš ï¸ THE PLAN NEEDS FOUR FACTS ABOUT THE APPLICANT, not just the seed.
        * Three of the twelve fixed headings are omitted on the applicant's own
-       * answers rather than on the licence type — the battery table where
+       * answers rather than on the licence type â€” the battery table where
        * nothing is held, the record where nothing is declared, the association
-       * where there is none — and a section 15 chooses between two purpose
+       * where there is none â€” and a section 15 chooses between two purpose
        * headings. Each is a pure read of the answers; see motivation-fields.ts.
        *
-       * ⚠️ `hasOverlap` IS GONE FROM HERE AND THAT IS THE CHANGE, NOT AN
+       * âš ï¸ `hasOverlap` IS GONE FROM HERE AND THAT IS THE CHANGE, NOT AN
        * OMISSION. Heading 6 used to appear only where the applicant held a
        * SAME-CLASS firearm. Book Part 5.1 brief 6 and Part 6.5 make it the
        * battery section: every held firearm gets a row and a sentence, because
        * the DFO reads the licence record against the request whether or not two
        * entries happen to be the same class. The overlap still decides the
-       * writer's DIRECTION — `overlapNote` below — it no longer decides whether
+       * writer's DIRECTION â€” `overlapNote` below â€” it no longer decides whether
        * there is a section to put it in.
        */
       const planOpts = {
@@ -1630,16 +1644,16 @@ export class MotivationGenerationService {
       let seed = row.variantSeed;
       let plan = planFor(row.licenceType, seed, planOpts);
       /**
-       * ⚠️ SPELLING IS FOLDED BEFORE ANYTHING IS CHECKED, AND MO000074 IS WHY.
+       * âš ï¸ SPELLING IS FOLDED BEFORE ANYTHING IS CHECKED, AND MO000074 IS WHY.
        *
        * The scope check is right that "organization" and "specialized" do not
-       * belong in a document filed in South African English — but it is a
+       * belong in a document filed in South African English â€” but it is a
        * MECHANICAL check, and a mechanical failure costs the applicant the
        * whole pack: one regeneration, the same two words, then FAILED and an
        * SMS reading "we could not finish document MO000074". Two spellings are
        * not a reason to refuse somebody their licence application.
        *
-       * `southAfricanise` changes spelling and nothing else — the -ise/-ize
+       * `southAfricanise` changes spelling and nothing else â€” the -ise/-ize
        * alternation and four nouns. No fact moves and no sentence is rewritten,
        * which is what makes it safe to do silently and the only kind of edit
        * that would be. The check stays and now fires only on something this
@@ -1650,10 +1664,10 @@ export class MotivationGenerationService {
         return { ...r, text: southAfricanise(r.text) };
       };
       /**
-       * ⚠️ A RE-GENERATION IS NOT BLIND TO THE GATE'S OWN FINDINGS ANY MORE.
+       * âš ï¸ A RE-GENERATION IS NOT BLIND TO THE GATE'S OWN FINDINGS ANY MORE.
        * When the gate sent this motivation back for more, its issues sat in
        * `qualityFindings` and the next run wrote a fresh draft with no sight of
-       * them — so the same faults recurred and the member's extra answers
+       * them â€” so the same faults recurred and the member's extra answers
        * bought nothing. The issues are our own words about the previous draft
        * and name no applicant fact, so they are safe to hand back; see
        * renderRetry. A run that is not coming back from the gate starts clean.
@@ -1675,24 +1689,33 @@ export class MotivationGenerationService {
       let sameness = maxSimilarity(fingerprint(attempt.text), previous);
       // The FIRST verifier, in code and for free: serial, ID, calibre and
       // annexure citations checked deterministically. A failure here rides
-      // the same single retry as a broken structure — same cost, same cap.
+      // the same single retry as a broken structure â€” same cost, same cap.
       /**
-       * ⚠️ AND THE SCOPE CHECK RIDES WITH IT, for the same reason and on the
+       * âš ï¸ AND THE SCOPE CHECK RIDES WITH IT, for the same reason and on the
        * same retry. A wrong licence section, a role nothing supplied, or
        * "terminal ballistics" in a self-defence application are all faults the
-       * APPLICANT cannot fix by answering another question — they are the
+       * APPLICANT cannot fix by answering another question â€” they are the
        * writer's, so they take the mechanical path (one regeneration, then an
        * admin alert) rather than the quality gate's path back to the member.
        */
       const scopeOf = (t: string) =>
-        documentScope(t, { licenceType: row.licenceType, arsenal });
+        documentScope(t, {
+          licenceType: row.licenceType,
+          arsenal,
+          applied: {
+            make: answers.firearm_make,
+            model: answers.firearm_model,
+            calibre: answers.firearm_calibre,
+            serial: answers.firearm_serial,
+          },
+        });
       let mechanics = [
         ...packConsistency(attempt.text, answers, annexures),
         ...scopeOf(attempt.text),
       ];
       /**
-       * ⚠️ A SECTION THAT RAN ONE SENTENCE IS A PAGE THAT PRINTS ONE SENTENCE.
-       * `thinSectionNotes` is ADVISORY — it never fails a run — but it DOES
+       * âš ï¸ A SECTION THAT RAN ONE SENTENCE IS A PAGE THAT PRINTS ONE SENTENCE.
+       * `thinSectionNotes` is ADVISORY â€” it never fails a run â€” but it DOES
        * extend the retry loop, because the fix is the writer's own detail and a
        * regeneration is what applies it. Operator, 2026-10-15: "can it add
        * content to where the page is at least 50% full?" See motivation-fill.ts.
@@ -1700,11 +1723,11 @@ export class MotivationGenerationService {
       let thin = thinSectionNotes(attempt.text, plan, row.licenceType);
 
       /**
-       * ⚠️ SAMENESS IS NO LONGER A REASON TO REGENERATE, and taking it out is
+       * âš ï¸ SAMENESS IS NO LONGER A REASON TO REGENERATE, and taking it out is
        * the point rather than an oversight.
        *
        * The skeleton is fixed now (book Part 4.2), so a fresh seed produces
-       * the SAME plan — a second call to arrive at the same twelve headings,
+       * the SAME plan â€” a second call to arrive at the same twelve headings,
        * paid for, on a document whose structure is supposed to match every
        * other document of its type. Two motivations of one section scoring
        * alike is now the design working.
@@ -1731,13 +1754,13 @@ export class MotivationGenerationService {
       }
 
       /**
-       * ⚠️ TWO RETRIES, NOT ONE, BECAUSE THE RETRY STOPPED BEING BLIND.
+       * âš ï¸ TWO RETRIES, NOT ONE, BECAUSE THE RETRY STOPPED BEING BLIND.
        *
        * The single retry was set when a second attempt was a fresh seed and
        * the IDENTICAL prompt: "a second identical result means the variation
        * engine is broken", which was true of a rerun that had learnt nothing.
        * It carries the previous draft's own failures now, and attempts
-       * CONVERGE — measured on MO000074, 2026-09-09: nine mechanical issues on
+       * CONVERGE â€” measured on MO000074, 2026-09-09: nine mechanical issues on
        * the first attempt, three on the second, the same three each run.
        *
        * Stopping at two therefore threw away a document that was two words and
@@ -1745,19 +1768,19 @@ export class MotivationGenerationService {
        * it. A third attempt is one more model call against a failure that
        * currently costs them the entire pack.
        *
-       * ⚠️ AND IT STOPS EARLY WHEN IT IS NOT CONVERGING. A round that fixes
-       * nothing — the same count or worse — is a writer that cannot see the
+       * âš ï¸ AND IT STOPS EARLY WHEN IT IS NOT CONVERGING. A round that fixes
+       * nothing â€” the same count or worse â€” is a writer that cannot see the
        * problem, and paying for a fourth read of the same instruction is how a
        * retry budget turns into a bill. That is a different failure from a
        * near miss and it should not cost the same.
        */
       /**
-       * ⚠️ THE BEST ATTEMPT IS KEPT, NOT THE LAST ONE, AND A RETRY CAN MAKE IT
+       * âš ï¸ THE BEST ATTEMPT IS KEPT, NOT THE LAST ONE, AND A RETRY CAN MAKE IT
        * WORSE.
        *
        * Measured on MO000074, 2026-09-09: one run's first attempt carried a
-       * SINGLE mechanical issue; its retry — told exactly what that issue was
-       * — came back with three, including two the first draft had not had. The
+       * SINGLE mechanical issue; its retry â€” told exactly what that issue was
+       * â€” came back with three, including two the first draft had not had. The
        * loop then failed the application on the retry's three, having thrown
        * away a document that was one sentence from filing.
        *
@@ -1765,7 +1788,7 @@ export class MotivationGenerationService {
        * about "here is what you got wrong" stops a model rewriting a clean
        * paragraph badly while it fixes the one that was flagged. So every
        * attempt is scored and the cleanest is what proceeds or what is
-       * reported — bookkeeping, not another model call.
+       * reported â€” bookkeeping, not another model call.
        */
       let best = { text: attempt.text, mechanics, structureOk };
       const keepIfBetter = () => {
@@ -1791,13 +1814,13 @@ export class MotivationGenerationService {
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed, planOpts);
         /**
-         * ⚠️ THE RETRY IS TOLD WHAT IT GOT WRONG, WHICH IT NEVER USED TO BE.
+         * âš ï¸ THE RETRY IS TOLD WHAT IT GOT WRONG, WHICH IT NEVER USED TO BE.
          * A fresh seed and the identical prompt gave the model no reason to
-         * avoid the mistake it had just made — MO000074 was refused twice for
+         * avoid the mistake it had just made â€” MO000074 was refused twice for
          * the same two Americanisms. `mechanics` is our own words about the
          * previous draft and names nothing about the applicant, so it can add
          * no fact; see renderRetry. The repetition and length notes are
-         * ADVISORY — they ride along on a retry the mechanical checks already
+         * ADVISORY â€” they ride along on a retry the mechanical checks already
          * triggered, and never by themselves fail a run. See advisoryIssues.
          */
         const retry = [
@@ -1817,21 +1840,21 @@ export class MotivationGenerationService {
         thin = thinSectionNotes(attempt.text, plan, row.licenceType);
         keepIfBetter();
         /**
-         * ⚠️ THE EARLY BREAK IS GONE, AND IT WAS COSTING US THE THIRD
+         * âš ï¸ THE EARLY BREAK IS GONE, AND IT WAS COSTING US THE THIRD
          * ATTEMPT EVERY TIME.
          *
          * It stopped as soon as an attempt was no better than the one before,
          * reasoning that "the next round would read the same instruction and
          * produce the same draft". That was true when the failures were
-         * SYSTEMATIC — a brief that invited catalogue copy, a marker that was
-         * being suppressed — and every one of those is now fixed at its source.
+         * SYSTEMATIC â€” a brief that invited catalogue copy, a marker that was
+         * being suppressed â€” and every one of those is now fixed at its source.
          *
          * What is left is variance. Across nine hundred words and forty-odd
          * refused phrases, each draft trips something different: platform, then
          * terminal ballistic, then engage targets, then two mistyped digits in
          * a date the facts state plainly. Under that, "attempt two was no
          * better than attempt one" is ONE SAMPLE, not evidence about attempt
-         * three — and MO000075 never reached attempt three once, in five days
+         * three â€” and MO000075 never reached attempt three once, in five days
          * of failing. Every log reads `regenerating 2/3` and then stops.
          *
          * An attempt is five seconds and about a cent. Take all three, keep the
@@ -1839,7 +1862,7 @@ export class MotivationGenerationService {
          */
       }
 
-      // ⚠️ WHATEVER PROCEEDS OR IS REPORTED IS THE CLEANEST DRAFT, not the last
+      // âš ï¸ WHATEVER PROCEEDS OR IS REPORTED IS THE CLEANEST DRAFT, not the last
       // one written. See `best` above.
       attempt = { ...attempt, text: best.text };
       mechanics = best.mechanics;
@@ -1848,10 +1871,10 @@ export class MotivationGenerationService {
       thin = thinSectionNotes(best.text, plan, row.licenceType);
 
       /**
-       * ⚠️ MEND THE SENTENCE BEFORE BINNING THE DOCUMENT.
+       * âš ï¸ MEND THE SENTENCE BEFORE BINNING THE DOCUMENT.
        *
        * The gate is all-or-nothing over nine hundred words, and MO000075 spent
-       * two days failing it — "platform", then "terminal ballistic", then
+       * two days failing it â€” "platform", then "terminal ballistic", then
        * "engage targets". A DIFFERENT word each time, on a draft that was
        * structurally clean every time. That is variance, not a bug still to
        * find: across forty-odd refused phrases a model will occasionally reach
@@ -1859,21 +1882,21 @@ export class MotivationGenerationService {
        * to rewrite fifteen hundred of them and rolls the dice again on every
        * phrase that was already fine.
        *
-       * ⚠️ ONLY WHERE EVERY COMPLAINT IS ABOUT A WORD. repairTargets
-       * returns null for anything else — a wrong section, a missing annexure, a
-       * purpose nobody stated — because those are the writer corrupting facts,
+       * âš ï¸ ONLY WHERE EVERY COMPLAINT IS ABOUT A WORD. repairTargets
+       * returns null for anything else â€” a wrong section, a missing annexure, a
+       * purpose nobody stated â€” because those are the writer corrupting facts,
        * and a pass that "mended" a wrong serial by rephrasing it would be the
        * worst thing in this file.
        *
-       * ⚠️ AND THE FULL GATE RUNS AGAIN OVER THE RESULT. The repair is not
+       * âš ï¸ AND THE FULL GATE RUNS AGAIN OVER THE RESULT. The repair is not
        * trusted: packConsistency and documentScope both re-run, so a rewrite
        * that introduced a fact or traded one refused word for another fails
        * exactly as the draft would have.
        */
       /**
-       * ⚠️ AN UNSTATED PURPOSE IS MENDED IN CODE, BEFORE THE MODEL IS ASKED.
-       * `repairTargets` refuses this fault on purpose — it is a claim, not a
-       * word — so the deterministic rewrite runs first: any sentence that gives
+       * âš ï¸ AN UNSTATED PURPOSE IS MENDED IN CODE, BEFORE THE MODEL IS ASKED.
+       * `repairTargets` refuses this fault on purpose â€” it is a claim, not a
+       * word â€” so the deterministic rewrite runs first: any sentence that gives
        * a held firearm a purpose its own pack never stated is replaced with
        * that firearm's section. See `repairUnstatedPurpose`, and MO000074 /
        * MO000075 / MO000096, three runs binned on the same CZ 6.35mm.
@@ -1932,9 +1955,9 @@ export class MotivationGenerationService {
         }
       }
 
-      // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
+      // âš ï¸ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
       // A wrong serial or a citation to a tab that does not exist is not a
-      // quality problem the applicant can fix with a better answer — it is
+      // quality problem the applicant can fix with a better answer â€” it is
       // the writer corrupting identity data, our defect, an admin's problem.
       if (mechanics.length) {
         await this.prisma.motivation.update({
@@ -1944,10 +1967,10 @@ export class MotivationGenerationService {
             failedAt: new Date(),
             failureReason: mechanics.slice(0, 3).join('; ').slice(0, 500),
             /**
-             * ⚠️ KEEP THE REJECTED DRAFT. A mechanical failure discarded the
+             * âš ï¸ KEEP THE REJECTED DRAFT. A mechanical failure discarded the
              * text, so the one artefact that could explain the refusal was
              * gone: `failureReason` names the WORD it tripped on and never the
-             * sentence, and nobody — operator or engineer — could see what the
+             * sentence, and nobody â€” operator or engineer â€” could see what the
              * document actually said. Diagnosing MO000074 meant reasoning about
              * a document that no longer existed anywhere.
              *
@@ -1979,11 +2002,11 @@ export class MotivationGenerationService {
       const nextCycles = row.gateCycles + 1;
 
       /**
-       * ⚠️ THE CODE-SIDE MEASUREMENTS, STORED, NOT A SECOND GATE. The gate
+       * âš ï¸ THE CODE-SIDE MEASUREMENTS, STORED, NOT A SECOND GATE. The gate
        * schema has no length or repetition dimension, so the prose word count
        * (against the licence type's band) and the within-document repetition
        * `scoreMotivation` already measures are recorded beside the verdict for
-       * the operator. Repetition is ADVISORY to a retry and fatal to nothing —
+       * the operator. Repetition is ADVISORY to a retry and fatal to nothing â€”
        * a measurement that also refuses is a measurement nobody will run.
        */
       const proseQuality = scoreMotivation(attempt.text);
@@ -1994,13 +2017,13 @@ export class MotivationGenerationService {
         duplicateSentences: proseQuality.duplicateSentences,
         repeatedPhrases: proseQuality.repeatedPhrases,
         // The sections still under their floor after the top-up attempts, and
-        // the estimated fill of the whole body. Reported, never fatal — see
+        // the estimated fill of the whole body. Reported, never fatal â€” see
         // motivation-fill.ts.
         thinSections: thin,
         pageFillEstimate: Number(
           estimatedFill(proseWordCount(attempt.text)).toFixed(2),
         ),
-        // ⚠️ THE RESET CHECK. Kept in this Json column rather than a schema
+        // âš ï¸ THE RESET CHECK. Kept in this Json column rather than a schema
         // change: prepareGeneration compares it with the answers it is about to
         // generate from, and gives the member a fresh cycle budget when they
         // have materially changed them after a gate knock-back.
@@ -2011,16 +2034,16 @@ export class MotivationGenerationService {
         variantSeed: seed,
         structurePlan: plan as unknown as object,
         structureFingerprint: fingerprint(attempt.text),
-        // ⚠️ KEEP THE DRAFT EVEN WHEN THE GATE SENDS IT BACK. It used to be
+        // âš ï¸ KEEP THE DRAFT EVEN WHEN THE GATE SENDS IT BACK. It used to be
         // written only on a pass, so an applicant whose document was held for
-        // more detail could never SEE the document — they paid for it, it was
+        // more detail could never SEE the document â€” they paid for it, it was
         // written, and all they got was a score and a list of questions. That
         // makes the gate impossible to argue with and impossible to learn
         // from: neither the applicant nor the operator can tell a fair
         // knock-back from an over-strict one without reading the text.
         //
         // Only the PASSED branch sets documentVersion, completedAt and
-        // qualityPassedAt, so "finished" still means finished — the PDF stays
+        // qualityPassedAt, so "finished" still means finished â€” the PDF stays
         // gated on COMPLETED (see renderPdf) and this is a draft to read, not
         // a document to file.
         documentTextEncrypted: encryptText(attempt.text),
@@ -2036,18 +2059,18 @@ export class MotivationGenerationService {
       };
 
       // Read once for BOTH terminal branches. A document that failed the gate
-      // needs a retention date every bit as much as one that passed — its
+      // needs a retention date every bit as much as one that passed â€” its
       // uploads are the same identity documents.
       const retentionDays = await this.settings.get(
         FLAGS.motivationRetentionDays,
       );
 
-      // THE SECOND VERIFIER — a fresh model reading the finished document the
+      // THE SECOND VERIFIER â€” a fresh model reading the finished document the
       // way a suspicious DFO would, once, only on text that passed the gate.
       // Advisory: its findings are stored beside the verdict for the operator
       // and the applicant, but a broken verifier must not un-pass a passed
-      // document. Two verifiers per document — this and the mechanical checks
-      // above — and not more, per the operator.
+      // document. Two verifiers per document â€” this and the mechanical checks
+      // above â€” and not more, per the operator.
       let verification: string[] | undefined;
       if (graded.verdict.passed) {
         const v = await this.model
@@ -2059,7 +2082,7 @@ export class MotivationGenerationService {
           tokensOut += v.usage.completionTokens;
           if (v.issues.length) {
             this.logger.warn(
-              `Motivation ${row.id}: verifier noted ${v.issues.length} issue(s) — stored with the verdict`,
+              `Motivation ${row.id}: verifier noted ${v.issues.length} issue(s) â€” stored with the verdict`,
             );
           }
         }
@@ -2076,9 +2099,9 @@ export class MotivationGenerationService {
             } as unknown as object,
             status: MotivationStatus.COMPLETED,
             /**
-             * ⚠️ THE CYCLE COUNT RESETS ON A PASS. It was incremented on every
+             * âš ï¸ THE CYCLE COUNT RESETS ON A PASS. It was incremented on every
              * gate failure and never cleared, so a document that passed on a
-             * later attempt kept the old count — and the next time the member
+             * later attempt kept the old count â€” and the next time the member
              * regenerated a finished document, one knock-back was enough to
              * exhaust a ceiling of two and fail it outright. A pass ends the
              * run and the count with it; the answers-change reset lives in
@@ -2086,15 +2109,15 @@ export class MotivationGenerationService {
              */
             gateCycles: 0,
             /**
-             * ⚠️ CLEARED, NOT LEFT TO GO STALE. A document that failed once and
+             * âš ï¸ CLEARED, NOT LEFT TO GO STALE. A document that failed once and
              * passed on a later regeneration used to keep the old `failureReason`
-             * beside a COMPLETED status — "why it failed" next to "it did not" —
+             * beside a COMPLETED status â€” "why it failed" next to "it did not" â€”
              * and any surface reading that column showed a failure that no
              * longer existed.
              */
             failureReason: null,
             failedAt: null,
-            // (the text itself comes from `common` now — see the note there)
+            // (the text itself comes from `common` now â€” see the note there)
             documentVersion: { increment: 1 },
             templateVersion: TEMPLATE_VERSION,
             disclaimerVersion: DISCLAIMER_VERSION,
@@ -2112,7 +2135,7 @@ export class MotivationGenerationService {
         };
       }
 
-      // Out of retries — an admin owns it from here, rather than sending the
+      // Out of retries â€” an admin owns it from here, rather than sending the
       // applicant round the loop forever.
       if (nextCycles > maxCycles) {
         await this.prisma.motivation.update({
@@ -2154,15 +2177,15 @@ export class MotivationGenerationService {
           gateCycles: nextCycles,
         },
       });
-      // ⚠️ NO FOLLOW-UP QUESTIONS ARE QUEUED — 2026-09-08. `queueFollowUps`
+      // âš ï¸ NO FOLLOW-UP QUESTIONS ARE QUEUED â€” 2026-09-08. `queueFollowUps`
       // stood here and turned the gate's thin-field list into questions for
       // the applicant. No model ever asks the applicant a question now
-      // (MOTIVATION-REBUILD-BRIEF.md §2.3): `thinFields` is still computed,
+      // (MOTIVATION-REBUILD-BRIEF.md Â§2.3): `thinFields` is still computed,
       // still stored on the row and still lowers the score, and the review
       // sheet shows those fields as ordinary empty inputs like any other.
       //
-      // The status is unchanged. NEEDS_MORE_INFO still means what it said —
-      // we need more from you before this can be written — it is simply no
+      // The status is unchanged. NEEDS_MORE_INFO still means what it said â€”
+      // we need more from you before this can be written â€” it is simply no
       // longer accompanied by an interview.
       await this.notifyOutcome(row, 'held');
       return {
@@ -2172,7 +2195,7 @@ export class MotivationGenerationService {
       };
     } catch (err) {
       // Release the CAS so the applicant can try again. Without this a failed
-      // generation strands the row in GENERATING forever — uneditable and
+      // generation strands the row in GENERATING forever â€” uneditable and
       // un-regenerable, the worst possible end state.
       await this.prisma.motivation
         .updateMany({
@@ -2182,7 +2205,7 @@ export class MotivationGenerationService {
         .catch(() => undefined);
 
       // AND GIVE THE SEAT BACK. The seat is claimed before the first model
-      // call so we never spend money we have not accounted for — but that
+      // call so we never spend money we have not accounted for â€” but that
       // means a provider outage would otherwise consume a free-beta seat
       // and produce nothing. The applicant did not get a document; they must
       // not lose their place in the beta for our failure.
@@ -2193,10 +2216,10 @@ export class MotivationGenerationService {
         await this.quota.releaseBetaSeat().catch(() => undefined);
       }
 
-      // ⚠️ AND TELL THEM. THIS is the branch that fired on 2026-08-22 and said
+      // âš ï¸ AND TELL THEM. THIS is the branch that fired on 2026-08-22 and said
       // nothing: a model timeout, or a document that came back unusable,
-      // put the row back to NEEDS_MORE_INFO and returned the seat — correctly
-      // — and then simply rethrew into startGeneration's catch, which logs.
+      // put the row back to NEEDS_MORE_INFO and returned the seat â€” correctly
+      // â€” and then simply rethrew into startGeneration's catch, which logs.
       // The applicant, who is holding a phone waiting for the message we
       // promised them, got a button that went grey and came back.
       //
@@ -2209,32 +2232,32 @@ export class MotivationGenerationService {
   }
 
   /**
-   * Tell the applicant their document is finished — ready, or held back.
+   * Tell the applicant their document is finished â€” ready, or held back.
    *
-   * ⚠️ THE RUN IS DETACHED, SO NOTHING ELSE EVER TELLS THEM. startGeneration
-   * returns immediately and the wizard settles on "Writing it — about a
-   * minute…"; a minute and a half later the row changes and the page does not,
+   * âš ï¸ THE RUN IS DETACHED, SO NOTHING ELSE EVER TELLS THEM. startGeneration
+   * returns immediately and the wizard settles on "Writing it â€” about a
+   * minuteâ€¦"; a minute and a half later the row changes and the page does not,
    * because the applicant has long since locked their phone. Both terminal
    * gate branches call this, because a document held back for more detail is
-   * just as FINISHED from where they are standing — and a knock-back nobody
+   * just as FINISHED from where they are standing â€” and a knock-back nobody
    * is told about is the one outcome with no way back into the flow.
    *
-   * ⚠️ AND SO DOES EVERY FAILURE BRANCH, WHICH IS NEW. Only the two success
+   * âš ï¸ AND SO DOES EVERY FAILURE BRANCH, WHICH IS NEW. Only the two success
    * paths called this, so the outcome where somebody is MOST certainly still
-   * waiting — the one where nothing was written at all — was the one that said
+   * waiting â€” the one where nothing was written at all â€” was the one that said
    * nothing. Operator, 2026-08-22: "Pressed the Prepare my motivation and it
    * greyed out. It is back to prepare my motivation again and did not receive
    * any notifications." The button returning is the only signal there was, and
    * only if you happened to be looking at the page.
    *
-   * ⚠️ IT NEVER THROWS. The row is already in its terminal state by the time
+   * âš ï¸ IT NEVER THROWS. The row is already in its terminal state by the time
    * this runs and the document is written and (in time) paid for; a Resend
    * outage, a missing phone number or a stale user row must cost a message,
    * never the document. Every failure is a warning in the log.
    *
    * The MO reference is the only identifier passed on. NotificationsService
-   * owns the rule about what may reach a lock screen — see motivationFinished
-   * — but nothing here hands it a firearm, a calibre or a section to leak.
+   * owns the rule about what may reach a lock screen â€” see motivationFinished
+   * â€” but nothing here hands it a firearm, a calibre or a section to leak.
    */
   private async notifyOutcome(
     row: { id: string; userId: string; referenceNumber: string },
@@ -2250,7 +2273,7 @@ export class MotivationGenerationService {
       // deref here would be an unhandled rejection on a detached promise.
       if (!user?.email) {
         this.logger.warn(
-          `Motivation ${row.id}: finished (${outcome}) but the applicant has no email on file — not notified`,
+          `Motivation ${row.id}: finished (${outcome}) but the applicant has no email on file â€” not notified`,
         );
         return;
       }
@@ -2265,7 +2288,7 @@ export class MotivationGenerationService {
       });
     } catch (err) {
       this.logger.warn(
-        `Motivation ${row.id}: could not tell the applicant it finished (${outcome}) — ${
+        `Motivation ${row.id}: could not tell the applicant it finished (${outcome}) â€” ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -2275,11 +2298,16 @@ export class MotivationGenerationService {
   /**
    * Generate and wait for the outcome.
    *
-   * Kept for callers that genuinely want the result in hand — the tests, and
+   * Kept for callers that genuinely want the result in hand â€” the tests, and
    * anything server-side that is not answering an HTTP request. NOT the route:
    * see startGeneration and the timing note on runGeneration.
    */
   async generate(userId: string, id: string) {
+    await this.engine?.assertAvailable({
+      userId,
+      motivationId: id,
+      action: 'GENERATE',
+    });
     const prepared = await this.prepareGeneration(userId, id);
     return this.runGeneration(prepared);
   }
@@ -2293,7 +2321,7 @@ export class MotivationGenerationService {
    * `null`, never a thrown error, for every reason there might be nothing to
    * show: not a self-defence application, no station answered yet, or
    * CrimeStatsService knows no precinct for it. Ownership-scoped like every
-   * other read in this module — a wrong id and someone else's id must be
+   * other read in this module â€” a wrong id and someone else's id must be
    * indistinguishable, so this uses the same `findFirst` + `userId` shape as
    * findOne(), never an if-statement after the fetch.
    */
@@ -2318,11 +2346,11 @@ export class MotivationGenerationService {
         (answers.police_station_province ?? '').trim() || undefined,
       );
     } catch (err) {
-      // Same fail-soft posture as the fetch inside runGeneration — a broken
+      // Same fail-soft posture as the fetch inside runGeneration â€” a broken
       // lookup costs the preview, never a 500 on a step the member is just
       // reading.
       this.logger.warn(
-        `Motivation ${id}: precinct preview failed — ${(err as Error).message}`,
+        `Motivation ${id}: precinct preview failed â€” ${(err as Error).message}`,
       );
       return null;
     }
@@ -2330,7 +2358,7 @@ export class MotivationGenerationService {
 
   /**
    * The crime reporting near THIS application's station, for the "Your
-   * circumstances" step's clipping picker — the wizard shows this list, the
+   * circumstances" step's clipping picker â€” the wizard shows this list, the
    * member chooses up to `PRESS_CLIPPINGS_MAX` and saves the ids through the
    * ordinary answers path (see `press_clippings` in motivation-fields.ts).
    *
@@ -2338,7 +2366,7 @@ export class MotivationGenerationService {
    * reason there might be nothing to offer: not a self-defence application,
    * no station answered yet, or NewsService knows of nothing nearby. Same
    * fail-soft posture as precinctFor() immediately above, and ownership-
-   * scoped the same way — a wrong id and someone else's id must be
+   * scoped the same way â€” a wrong id and someone else's id must be
    * indistinguishable.
    */
   async incidentsFor(
@@ -2366,13 +2394,13 @@ export class MotivationGenerationService {
           province: (answers.police_station_province ?? '').trim(),
         },
         months: 12,
-        // ⚠️ ASK FOR MORE THAN WE SHOW, BECAUSE THE FILTER TAKES SOME. Twelve
+        // âš ï¸ ASK FOR MORE THAN WE SHOW, BECAUSE THE FILTER TAKES SOME. Twelve
         // in and twelve out meant a precinct whose last quarter was mostly
         // court reporting offered the member three cuttings.
         limit: 24,
       });
       /**
-       * ⚠️ THE PICKER OFFERED A CHILD-RAPE CASE AND A COURT POSTPONEMENT. See
+       * âš ï¸ THE PICKER OFFERED A CHILD-RAPE CASE AND A COURT POSTPONEMENT. See
        * motivation-incident-filter: a report the applicant would not want in
        * their own pack must never be offered to them in the first place, and a
        * court diary entry is a report about a case rather than about a
@@ -2380,11 +2408,11 @@ export class MotivationGenerationService {
        */
       return { station, incidents: packableIncidents(incidents).slice(0, 12) };
     } catch (err) {
-      // Same fail-soft posture as every other lookup here — a broken feed
+      // Same fail-soft posture as every other lookup here â€” a broken feed
       // costs the picker its list, never a 500 on a step the member is just
       // browsing.
       this.logger.warn(
-        `Motivation ${id}: nearby incidents lookup failed — ${(err as Error).message}`,
+        `Motivation ${id}: nearby incidents lookup failed â€” ${(err as Error).message}`,
       );
       return { station, incidents: [] };
     }
@@ -2399,18 +2427,18 @@ export class MotivationGenerationService {
    * and "take the police station areas they travel through and incorporate
    * each of thems stats in there".
    *
-   * ⚠️ FIFTY KILOMETRES, NOT THE PICKER'S TWENTY-FIVE. `incidentsFor` asks for
+   * âš ï¸ FIFTY KILOMETRES, NOT THE PICKER'S TWENTY-FIVE. `incidentsFor` asks for
    * reporting near the applicant's OWN station, which is a question about
    * where they live. This is a question about where they DRIVE, and a commute
-   * across a metro is routinely further than twenty-five kilometres — a radius
+   * across a metro is routinely further than twenty-five kilometres â€” a radius
    * that cannot reach the applicant's workplace cannot offer the areas between
    * here and it.
    *
-   * ⚠️ AND EACH AREA CARRIES ITS OWN PRECINCT. The stats block a section 13
+   * âš ï¸ AND EACH AREA CARRIES ITS OWN PRECINCT. The stats block a section 13
    * already annexes is the applicant's home station; an area they drive
    * through every day has a station of its own, and its figures are the
    * evidence that the drive matters. Resolved by geocoding the area name, one
-   * lookup each, and every one of them is allowed to fail on its own — an area
+   * lookup each, and every one of them is allowed to fail on its own â€” an area
    * we cannot place is still an area they can tick, it simply arrives without
    * numbers.
    */
@@ -2423,14 +2451,14 @@ export class MotivationGenerationService {
     /**
      * Has the member ever answered this question?
      *
-     * ⚠️ IT IS WHAT STOPS THE ROUTE UNDOING A DECISION. An area on the commute
+     * âš ï¸ IT IS WHAT STOPS THE ROUTE UNDOING A DECISION. An area on the commute
      * is pre-ticked, and a member who deliberately UNTICKS one has said
-     * something — Maps drew a road they do not take. Without this flag the next
+     * something â€” Maps drew a road they do not take. Without this flag the next
      * load would tick it again, for ever, because `onRoute` is still true: the
      * same failure as "why can't I delete the proof of address?", arriving
      * through a helpful default.
      *
-     * True once `travelled_areas` is set, INCLUDING to an empty list — "I
+     * True once `travelled_areas` is set, INCLUDING to an empty list â€” "I
      * travel through none of these" is an answer.
      */
     answered: boolean;
@@ -2471,31 +2499,31 @@ export class MotivationGenerationService {
         },
         months: 12,
         withinKm: AREA_RADIUS_KM,
-        // ⚠️ MORE INCIDENTS THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve
+        // âš ï¸ MORE INCIDENTS THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve
         // articles across a metro is four or five areas; the member is asked
         // about areas, and a short list of them needs a long list of reports.
         limit: AREA_INCIDENT_TAKE,
       });
-      // ⚠️ AND THE AREAS ARE BUILT ONLY FROM REPORTS THAT COULD BE ANNEXED.
+      // âš ï¸ AND THE AREAS ARE BUILT ONLY FROM REPORTS THAT COULD BE ANNEXED.
       // An area whose entire evidence is a court diary entry is an area we
       // would ask the member to tick and then have nothing to print for.
       incidents = packableIncidents(incidents);
     } catch (err) {
       this.logger.warn(
-        `Motivation ${id}: area lookup failed — ${(err as Error).message}`,
+        `Motivation ${id}: area lookup failed â€” ${(err as Error).message}`,
       );
       return { station, withinKm: AREA_RADIUS_KM, answered, areas: [] };
     }
 
     /**
-     * ⚠️ THE ROUTE IS WORKED OUT BEFORE THE ROLL-UP, because `dangerAreas`
+     * âš ï¸ THE ROUTE IS WORKED OUT BEFORE THE ROLL-UP, because `dangerAreas`
      * orders by it: an area the applicant demonstrably drives through outranks
      * a busier one across the city, which is the whole reason for asking about
      * routes at all.
      *
-     * ⚠️ AND IT NEEDS THE ROLL-UP'S OWN OUTPUT TO KNOW WHAT TO GEOCODE. So the
+     * âš ï¸ AND IT NEEDS THE ROLL-UP'S OWN OUTPUT TO KNOW WHAT TO GEOCODE. So the
      * list is built twice: once to learn the names, once ordered and flagged.
-     * The second pass is pure and free — the geocodes and the Routes call
+     * The second pass is pure and free â€” the geocodes and the Routes call
      * are the cost, and they happen once.
      */
     const provisional = dangerAreas(incidents);
@@ -2508,7 +2536,7 @@ export class MotivationGenerationService {
     } catch (err) {
       // A commute lookup must never cost somebody their area list.
       this.logger.warn(
-        `Motivation ${id}: commute route skipped — ${(err as Error).message}`,
+        `Motivation ${id}: commute route skipped â€” ${(err as Error).message}`,
       );
     }
 
@@ -2521,24 +2549,24 @@ export class MotivationGenerationService {
     );
 
     /**
-     * ⚠️ ONE STATION LOOKUP PER AREA, IN PARALLEL, AND EACH FAILS ALONE. A
+     * âš ï¸ ONE STATION LOOKUP PER AREA, IN PARALLEL, AND EACH FAILS ALONE. A
      * geocoder timeout on one suburb must not take the list down: the member
      * can still tick it, the pack simply annexes its cuttings without a stats
      * table beside them.
      *
-     * ⚠️ AND THE NAME IS GEOCODED BARE, WITH NO PROVINCE ATTACHED. It was
-     * anchored — `"${a.name}, ${province}"` — for one deploy, on the reasoning
+     * âš ï¸ AND THE NAME IS GEOCODED BARE, WITH NO PROVINCE ATTACHED. It was
+     * anchored â€” `"${a.name}, ${province}"` â€” for one deploy, on the reasoning
      * that place names are not unique in South Africa. That is true and it was
      * still the wrong fix, because anchoring cannot tell "this place is in the
      * Western Cape" from "I told it to answer within the Western Cape".
      *
      * The live case: a Kraaifontein applicant was offered "OR Tambo". Bare, it
-     * resolved to Edenvale — a Gauteng precinct, obviously wrong, and the
+     * resolved to Edenvale â€” a Gauteng precinct, obviously wrong, and the
      * system saying so. Anchored, it resolved to Philippi East and looked
      * entirely plausible. The article was "Man arrested at OR Tambo with
      * suspected cocaine en route to Hong Kong": the Johannesburg airport,
      * carried by a Cape Town community paper. The anchor did not correct the
-     * error, it LAUNDERED it — and the operator caught it by reading the name.
+     * error, it LAUNDERED it â€” and the operator caught it by reading the name.
      */
     const province = (answers.police_station_province ?? '').trim();
     const stations = await Promise.all(
@@ -2547,18 +2575,18 @@ export class MotivationGenerationService {
           const found = await this.crimeStats.nearestStation(a.name);
           if (!found?.station) return null;
           /**
-           * ⚠️ AN OUT-OF-PROVINCE STATION IS NOT A BAD LOOKUP, IT IS PROOF THE
-           * PLACE IS SOMEWHERE ELSE — AND IT IS THE ONLY CHECK IN THIS CHAIN
+           * âš ï¸ AN OUT-OF-PROVINCE STATION IS NOT A BAD LOOKUP, IT IS PROOF THE
+           * PLACE IS SOMEWHERE ELSE â€” AND IT IS THE ONLY CHECK IN THIS CHAIN
            * THAT KNOWS. `distanceKm` is measured from the ARTICLE's stored
            * position, which for a syndicated piece is the PAPER's patch and
            * not where the thing happened: an airport arrest in Gauteng,
            * published by a Cape Town community paper, arrives 22.7km from a
            * Kraaifontein applicant's front door.
            *
-           * ⚠️ SO IT ALSO DROPS A NAME WE CANNOT PLACE CONFIDENTLY, and that is
+           * âš ï¸ SO IT ALSO DROPS A NAME WE CANNOT PLACE CONFIDENTLY, and that is
            * the right direction to be wrong in. A genuinely local suburb whose
            * name is ambiguous ("Brooklyn") may geocode to another province and
-           * be dropped — the member loses one row they could have ticked.
+           * be dropped â€” the member loses one row they could have ticked.
            * Keeping it costs them an annexure about somewhere they have never
            * been, on a document they sign.
            */
@@ -2574,7 +2602,7 @@ export class MotivationGenerationService {
             province: found.station.province,
           };
         } catch {
-          // ⚠️ A FAILED LOOKUP KEEPS THE AREA. Only a station we successfully
+          // âš ï¸ A FAILED LOOKUP KEEPS THE AREA. Only a station we successfully
           // resolved to another province is evidence; silence is not.
           return null;
         }
@@ -2600,9 +2628,9 @@ export class MotivationGenerationService {
   /**
    * Every firearm the applicant holds, as rows the writer may name.
    *
-   * ⚠️ THE SECTION COMES OFF THE LICENCE CARD, BY SERIAL, OR IT IS ABSENT.
+   * âš ï¸ THE SECTION COMES OFF THE LICENCE CARD, BY SERIAL, OR IT IS ABSENT.
    * `ownedFirearmSections` matches an owned row to its vault credential and
-   * refuses a make-and-calibre match — two of a battery can share both, and
+   * refuses a make-and-calibre match â€” two of a battery can share both, and
    * the wrong section on a signed document is the fault this exists to stop. A
    * row we cannot place carries no section, and the prompt then forbids the
    * writer from naming one.
@@ -2631,19 +2659,19 @@ export class MotivationGenerationService {
     }
 
     /**
-     * ⚠️ TWO PASSES, BECAUSE THE CLASS IS READ OFF THE ROW. The first builds
-     * the rows so each one's calibre, type and section are settled — the
-     * member's own correction of a bad OCR included — and the second attaches
+     * âš ï¸ TWO PASSES, BECAUSE THE CLASS IS READ OFF THE ROW. The first builds
+     * the rows so each one's calibre, type and section are settled â€” the
+     * member's own correction of a bad OCR included â€” and the second attaches
      * what a firearm of that class is used for. Generating from the raw
      * answers instead would ask about a section the member had already fixed.
      *
-     * ⚠️ ONE LOOKUP PER CLASS, NOT PER FIREARM. A battery of four 9mm
+     * âš ï¸ ONE LOOKUP PER CLASS, NOT PER FIREARM. A battery of four 9mm
      * handguns under section 13 is ONE class: resolved per row they would all
      * miss the cache together and buy four generations of the same answer,
      * with the upsert deciding which one survived. The corpus's own example
      * battery is exactly that shape.
      *
-     * ⚠️ IN PARALLEL AND NEVER FATAL. `forClass` returns [] rather than
+     * âš ï¸ IN PARALLEL AND NEVER FATAL. `forClass` returns [] rather than
      * throwing (a model outage must not fail somebody's application), so a
      * row that comes back empty is the state this feature replaces, not an
      * error.
@@ -2659,13 +2687,13 @@ export class MotivationGenerationService {
       const c = {
         calibre: r.calibre,
         type: r.type,
-        // ⚠️ THE ONE BIT THE FORM'S FOUR CHOICES CANNOT HOLD, and the only
+        // âš ï¸ THE ONE BIT THE FORM'S FOUR CHOICES CANNOT HOLD, and the only
         // thing taken off the card's free-text Type row. Keeping the card's
         // words out of the class key is deliberate: "S/L RIFLE" and
         // "SELF-LOADING RIFLE" are the same firearm and must not each buy
         // their own generation.
         action: actionFromCardType(cardTypes[r.index] ?? ''),
-        // Not part of the class key — it chooses which slices are read back.
+        // Not part of the class key â€” it chooses which slices are read back.
         section: r.section,
       };
       const key = `${useClassKey(c, 's13')}|${c.section}`;
@@ -2678,8 +2706,8 @@ export class MotivationGenerationService {
     const keys = [...classes.keys()];
     const resolved = await Promise.all(
       /**
-       * ⚠️ SEEDED ON THE SERIAL, so two members holding the same calibre are
-       * not offered the same ten sentences in the same order — the table holds
+       * âš ï¸ SEEDED ON THE SERIAL, so two members holding the same calibre are
+       * not offered the same ten sentences in the same order â€” the table holds
        * up to forty per list and the writer sees a window into it. Stable for
        * one firearm across regenerations, which is what keeps a retry a second
        * attempt at the same document rather than a different one.
@@ -2701,20 +2729,20 @@ export class MotivationGenerationService {
   /**
    * What the applicant might do with the firearm they are APPLYING for.
    *
-   * ⚠️ ONLY WHERE THEY HAVE STATED NOTHING THEMSELVES, which is the same rule
+   * âš ï¸ ONLY WHERE THEY HAVE STATED NOTHING THEMSELVES, which is the same rule
    * `licensedFor` follows on a held row and for the same reason. The wizard
    * asks what they hunt, where, why they shoot and in what formats; where any
    * of that is answered it IS the purpose, it is theirs, and offering the
    * writer a generated alternative beside it invites a nicer sentence than the
    * truth. Rule 12 is enforced by absence, not by hope.
    *
-   * ⚠️ THE APPLICATION NARROWS THE DISCIPLINE WHERE A CARD CANNOT. A held
+   * âš ï¸ THE APPLICATION NARROWS THE DISCIPLINE WHERE A CARD CANNOT. A held
    * section 16 firearm is offered both hunting and sport reasons because the
    * card does not say which; an S16_DEDICATED_HUNTER application says exactly
    * which, so only that list is asked for.
    *
-   * ⚠️ AND A RENEWAL GETS NOTHING. Section 24 does not record the section of
-   * the licence being renewed, so there is no discipline to ask under — and a
+   * âš ï¸ AND A RENEWAL GETS NOTHING. Section 24 does not record the section of
+   * the licence being renewed, so there is no discipline to ask under â€” and a
    * renewal argues continuity rather than a new purpose anyway.
    */
   private async intendedUsesFor(
@@ -2722,15 +2750,15 @@ export class MotivationGenerationService {
     answers: Record<string, string>,
   ): Promise<CandidateUses[]> {
     /**
-     * ⚠️ ONLY `intended_quarry` IS LEFT OF THIS GATE, and that is the point.
+     * âš ï¸ ONLY `intended_quarry` IS LEFT OF THIS GATE, and that is the point.
      * It used to test five keys, four of which were the card grids the
-     * generated uses replaced on 2026-09-09 — asking whether the applicant had
+     * generated uses replaced on 2026-09-09 â€” asking whether the applicant had
      * described their own purpose. `firearm_use_kind` is NOT such a key: it
      * says which pool to draw from, not what the applicant does, so ticking it
      * must not suppress the pool it just chose.
      *
      * What survives is the one box where somebody types a purpose in their own
-     * words. Where they have, it is theirs and it wins outright — the same rule
+     * words. Where they have, it is theirs and it wins outright â€” the same rule
      * `licensedFor` follows on a held row, enforced by absence rather than by
      * hope.
      */
@@ -2760,9 +2788,9 @@ export class MotivationGenerationService {
   /**
    * The dimension sheet for the calibre applied for, or nothing.
    *
-   * ⚠️ FAILS SOFT AND SILENT, like every other supplied-fact lookup here. A
+   * âš ï¸ FAILS SOFT AND SILENT, like every other supplied-fact lookup here. A
    * cartridge we hold no sheet for simply arrives without a block, and the
-   * prompt's rule against recalled ballistics still stands — so the absence
+   * prompt's rule against recalled ballistics still stands â€” so the absence
    * costs a paragraph its measurements, never the document.
    */
   private async cartridgeFor(
@@ -2772,8 +2800,8 @@ export class MotivationGenerationService {
     if (!printed) return undefined;
     try {
       /**
-       * ⚠️ MATCHED IN MEMORY, NOT IN SQL. The key is a reduction — case,
-       * spaces and punctuation removed on BOTH sides — and there is no index
+       * âš ï¸ MATCHED IN MEMORY, NOT IN SQL. The key is a reduction â€” case,
+       * spaces and punctuation removed on BOTH sides â€” and there is no index
        * on a reduction. 232 cartridges and their aliases is a page, not a
        * scan, and the alternative is a LIKE that cannot express "9 mm Luger"
        * matching "9MMLUGER".
@@ -2803,7 +2831,7 @@ export class MotivationGenerationService {
         },
       });
 
-      // ⚠️ THE SAME MATCHER THE DRAWING USES. A pack that argues about one
+      // âš ï¸ THE SAME MATCHER THE DRAWING USES. A pack that argues about one
       // round and prints the dimensions of another is worse than one that
       // prints no dimensions at all.
       return cartridgeFacts(findCartridge(all, printed)) ?? undefined;
@@ -2818,13 +2846,13 @@ export class MotivationGenerationService {
   /**
    * The ticked areas' own precinct figures, as fact-pack lines.
    *
-   * ⚠️ IT RE-RESOLVES THE STATIONS RATHER THAN STORING THEM, and that is the
+   * âš ï¸ IT RE-RESOLVES THE STATIONS RATHER THAN STORING THEM, and that is the
    * cheaper mistake. Storing a station against a tick would freeze whichever
    * geocode answered on the day; re-resolving costs a lookup per ticked area
-   * at generation — three at most — and cannot go stale against a corrected
+   * at generation â€” three at most â€” and cannot go stale against a corrected
    * address or a renamed precinct.
    *
-   * ⚠️ EACH ONE FAILS ALONE. An area we cannot place, or a station with no
+   * âš ï¸ EACH ONE FAILS ALONE. An area we cannot place, or a station with no
    * release covering it, drops its own lines and nothing else.
    */
   private async travelledPrecincts(
@@ -2853,7 +2881,7 @@ export class MotivationGenerationService {
         );
         if (!figures) continue;
         out.push(
-          `${t.key} — ${station.name} precinct${
+          `${t.key} â€” ${station.name} precinct${
             t.reason ? ` (why the applicant is there: ${t.reason})` : ''
           }:`,
           ...precinctFactLines(figures),
@@ -2871,14 +2899,14 @@ export class MotivationGenerationService {
    * Operator, 2026-09-08: "we could also use the work address and google maps
    * routes to see through which areas they travel and link it that way?"
    *
-   * ⚠️ EVERY FAILURE HERE IS THE SAME OUTCOME: NO PRE-TICKS. No key, no work
-   * address, a quota error, a route Google will not draw — all of them return
+   * âš ï¸ EVERY FAILURE HERE IS THE SAME OUTCOME: NO PRE-TICKS. No key, no work
+   * address, a quota error, a route Google will not draw â€” all of them return
    * an empty line and the member is asked about every area instead, which is
    * exactly what they were asked before this existed. A commute lookup must
    * never be able to cost somebody their area list.
    *
-   * ⚠️ AND IT IS NOT CACHED, ON PURPOSE. It runs once per area-list load,
-   * which is once per application unless the member changes their station —
+   * âš ï¸ AND IT IS NOT CACHED, ON PURPOSE. It runs once per area-list load,
+   * which is once per application unless the member changes their station â€”
    * see the `areasFor` effect's own key. Caching a route against an address
    * that the member is still correcting would pre-tick the areas around their
    * old office.
@@ -2915,7 +2943,7 @@ export class MotivationGenerationService {
         routes?: { polyline?: { encodedPolyline?: string } }[];
       };
       /**
-       * ⚠️ THE FIRST ROUTE ONLY. Google returns alternatives; pre-ticking the
+       * âš ï¸ THE FIRST ROUTE ONLY. Google returns alternatives; pre-ticking the
        * union of every way Google can get there would tick areas the applicant
        * has never driven, on a document they sign. The first is the one it
        * recommends, which is the closest thing to "the way they go".
@@ -2930,13 +2958,13 @@ export class MotivationGenerationService {
   /**
    * Where each area actually is, so the route test has something to test.
    *
-   * ⚠️ THE AREA'S OWN COORDINATES, NOT THE ARTICLE'S. `distanceKm` on an
+   * âš ï¸ THE AREA'S OWN COORDINATES, NOT THE ARTICLE'S. `distanceKm` on an
    * incident is measured from the ARTICLE's stored position, which for a
-   * syndicated piece is the paper's patch — that is how a Gauteng airport
+   * syndicated piece is the paper's patch â€” that is how a Gauteng airport
    * arrest arrived 22.7km from a Kraaifontein front door. A pre-tick has to
    * rest on where the PLACE is.
    *
-   * ⚠️ EACH GEOCODE FAILS ALONE, AND A FAILURE MEANS "NOT PRE-TICKED" RATHER
+   * âš ï¸ EACH GEOCODE FAILS ALONE, AND A FAILURE MEANS "NOT PRE-TICKED" RATHER
    * THAN "NOT ON THE LIST". Failing to place a suburb is our problem; the
    * honest consequence is that we do not answer for the member.
    */
@@ -2959,7 +2987,7 @@ export class MotivationGenerationService {
   /**
    * Record which areas the applicant travels through.
    *
-   * ⚠️ THE SERVER DERIVES THE CLIPPINGS, NEVER THE BROWSER. The member ticks
+   * âš ï¸ THE SERVER DERIVES THE CLIPPINGS, NEVER THE BROWSER. The member ticks
    * AREAS; which articles that buys is our arithmetic, and a stale bundle
    * deciding it would put an annexure in a pack the ticked areas do not
    * account for. See clippingIdsFor for why the cap is spent area by area.
@@ -3000,22 +3028,27 @@ export class MotivationGenerationService {
   /**
    * Start generating and return at once. What the route calls.
    *
-   * Every refusal the applicant can act on — not found, declaration not
-   * accepted, answers missing, already running — still happens before this
+   * Every refusal the applicant can act on â€” not found, declaration not
+   * accepted, answers missing, already running â€” still happens before this
    * returns, so the wizard gets a real error rather than a hopeful "started"
    * followed by silence. Only the part that cannot fail fast runs detached.
    *
-   * ⚠️ THE PROMISE IS DELIBERATELY NOT AWAITED, and its rejection is swallowed
+   * âš ï¸ THE PROMISE IS DELIBERATELY NOT AWAITED, and its rejection is swallowed
    * here rather than left to crash the process. runGeneration's own catch has
    * already restored the row and returned the beta seat by the time it
    * rethrows; there is no caller left to tell, and the applicant learns the
    * outcome from the row's status.
    */
   async startGeneration(userId: string, id: string) {
+    await this.engine?.assertAvailable({
+      userId,
+      motivationId: id,
+      action: 'GENERATE',
+    });
     const prepared = await this.prepareGeneration(userId, id);
     void this.runGeneration(prepared).catch((err) => {
       this.logger.error(
-        `Motivation ${prepared.row.id}: background generation failed — ${
+        `Motivation ${prepared.row.id}: background generation failed â€” ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -3026,13 +3059,13 @@ export class MotivationGenerationService {
   /**
    * Free rows left claimed by a process that died mid-generation.
    *
-   * ⚠️ THE ONE FAILURE runGeneration's catch CANNOT COVER. It restores the row
+   * âš ï¸ THE ONE FAILURE runGeneration's catch CANNOT COVER. It restores the row
    * on a thrown error, but a deploy, an OOM kill or a pm2 restart takes the
-   * process with the promise still in flight — and GENERATING is not editable
+   * process with the promise still in flight â€” and GENERATING is not editable
    * and not re-generable, so the applicant is stranded on a document that
    * looks permanently busy with nothing to click.
    *
-   * ⚠️ TWENTY-FIVE MINUTES, AND THE FIGURE IS DERIVED, NOT CHOSEN. It must
+   * âš ï¸ TWENTY-FIVE MINUTES, AND THE FIGURE IS DERIVED, NOT CHOSEN. It must
    * stay clear of the worst realistic run, which GENERATE_TIMEOUT_MS's comment
    * computes: research 180s + write 300s + one local retry 300s + verify 60s +
    * grade 60s = 15 minutes. It was 15 when the writer's clock was 180s and the
@@ -3053,7 +3086,7 @@ export class MotivationGenerationService {
     });
     if (stuck.count > 0) {
       this.logger.error(
-        `Released ${stuck.count} motivation(s) stuck in GENERATING — a generation was interrupted, most likely by a restart.`,
+        `Released ${stuck.count} motivation(s) stuck in GENERATING â€” a generation was interrupted, most likely by a restart.`,
       );
     }
     return { released: stuck.count };
@@ -3073,7 +3106,7 @@ export class MotivationGenerationService {
         //
         // The sameness engine exists for one reason: so the CFR never sees a
         // flood of near-identical documents from DIFFERENT people. Two
-        // motivations by the SAME person are a different case entirely — they
+        // motivations by the SAME person are a different case entirely â€” they
         // describe one life, so they SHOULD share circumstances, and forcing
         // them apart is actively harmful. A second application whose account of
         // the same commute, the same premises and the same history reads
@@ -3104,7 +3137,7 @@ export class MotivationGenerationService {
     const derived: Record<string, string> = {};
 
     // AGE ONLY, deliberately. readSaId also yields date of birth, gender and
-    // citizenship — those are SAPS 271 box-fillers, not argument material, and
+    // citizenship â€” those are SAPS 271 box-fillers, not argument material, and
     // there is no reason to put someone's date of birth in a prompt. Age is
     // here because a motivation may legitimately reason about it.
     const { age } = readSaId(answers.id_number ?? '', asAt);
@@ -3127,7 +3160,7 @@ export class MotivationGenerationService {
     // applicant cannot lawfully hold the firearm before the licence is
     // granted, so somebody else is holding it, and saying who closes the loop.
     //
-    // ⚠️ NEVER "IN MY POSSESSION", AND NEVER "COLLECTED PRIVATELY". A firearm
+    // âš ï¸ NEVER "IN MY POSSESSION", AND NEVER "COLLECTED PRIVATELY". A firearm
     // always moves through a licensed dealer; on the private route the seller
     // keeps lawful possession until that transfer happens. Deriving this in
     // code rather than asking is what stops the writer inventing a custody
@@ -3140,14 +3173,14 @@ export class MotivationGenerationService {
       derived.custody_pending_outcome =
         'The current licensed owner keeps the firearm until the licence is granted, and the transfer is then done through a licensed dealer.';
     } else if (source === SOURCE_ESTATE) {
-      // ⚠️ THE ESTATE HOLDS IT, AND SAYING SO MATTERS MORE HERE THAN ANYWHERE.
+      // âš ï¸ THE ESTATE HOLDS IT, AND SAYING SO MATTERS MORE HERE THAN ANYWHERE.
       // An heir living in the deceased's house is the person most likely to
       // have the firearm in the same building already, and a motivation that
       // implied they were keeping it would describe an offence on a document
       // they sign. An estate firearm is held by the executor, in a licensed
       // dealer's safe or with SAPS, until the licence is decided.
       derived.custody_pending_outcome =
-        'The firearm is held by the estate — with a licensed dealer or SAPS — until the licence is granted and it is transferred through a dealer.';
+        'The firearm is held by the estate â€” with a licensed dealer or SAPS â€” until the licence is granted and it is transferred through a dealer.';
     }
 
     return derived;

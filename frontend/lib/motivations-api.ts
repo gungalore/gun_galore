@@ -1,13 +1,13 @@
-﻿import { safeJson } from './safe-json';
+import { safeJson } from './safe-json';
 
-// ────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------
 // The motivation writer's client-side API.
 //
 // One place, because the wizard makes a lot of calls and every one of them
 // needs the same three things right:
 //
 //   A FRESH TOKEN PER REQUEST. Clerk tokens are short-lived and the wizard is
-//   a long sitting — someone can spend twenty minutes on their circumstances
+//   a long sitting â€” someone can spend twenty minutes on their circumstances
 //   before the next autosave. A token captured on mount is stale by then, so
 //   getToken() is called per request, never hoisted.
 //
@@ -16,16 +16,16 @@
 //   as a blank page over a request that actually SUCCEEDED.
 //
 //   413 HANDLED SEPARATELY. nginx rejects an oversized upload ITSELF, with an
-//   HTML error page — the request never reaches our API, so there is no JSON
+//   HTML error page â€” the request never reaches our API, so there is no JSON
 //   to read and no message to show. Without this the applicant gets a generic
 //   crash instead of "that file is too big".
-// ────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export type TokenGetter = () => Promise<string | null>;
 
-// ⚠️ THE SHEET'S SHAPES LIVE WITH THE COMPONENTS THAT RENDER THEM, and are
+// ?? THE SHEET'S SHAPES LIVE WITH THE COMPONENTS THAT RENDER THEM, and are
 // imported rather than restated. components/licence-centre/contract.ts is the
 // single mirror of the server's own types; a second copy here would be the
 // drift this file's own header warns about.
@@ -42,17 +42,17 @@ export class MotivationApiError extends Error {
     /**
      * The field keys the server is holding out for.
      *
-     * ⚠️ THE SERVER HAS ALWAYS SENT THESE and nothing ever read them. "Some
+     * ?? THE SERVER HAS ALWAYS SENT THESE and nothing ever read them. "Some
      * required answers are still missing" with no list is a dead end: the
      * member is looking at a form where everything they can see is filled in,
-     * and the one thing that would let them act — WHICH answers — was in the
+     * and the one thing that would let them act â€” WHICH answers â€” was in the
      * response body being thrown away.
      */
     readonly missing?: string[],
     /**
      * Upload KINDS the server is holding out for, alongside `missing`.
      *
-     * ⚠️ A DIFFERENT FAILURE FROM `missing`, AND IT NEEDS A DIFFERENT SCREEN.
+     * ?? A DIFFERENT FAILURE FROM `missing`, AND IT NEEDS A DIFFERENT SCREEN.
      * A missing answer is fixed by typing on the step that owns the field; a
      * missing DOCUMENT is fixed by photographing something on the documents
      * step. Folding them into one list would send somebody looking for a text
@@ -76,16 +76,35 @@ async function request<T>(
 ): Promise<T> {
   const token = await getToken();
   const isForm = init.body instanceof FormData;
-  const res = await fetch(`${API_URL}/motivations${path}`, {
-    ...init,
-    headers: {
-      // FormData sets its own multipart boundary — setting Content-Type by
-      // hand here produces a boundary-less header and multer parses nothing.
-      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/motivations${path}`, {
+      ...init,
+      headers: {
+        // FormData sets its own multipart boundary â€” setting Content-Type by
+        // hand here produces a boundary-less header and multer parses nothing.
+        ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    /**
+     * âš ï¸ A DEAD API MUST SAY SO. Without this catch, a stopped local backend
+     * surfaced as the browser's "Failed to fetch" or â€” worse, through a proxy
+     * â€” the generic "Something went wrong", and the applicant had no idea the
+     * answer itself was fine. Nothing was saved; retrying once the server is
+     * up is the fix.
+     */
+    throw new MotivationApiError(
+      'Cannot reach the server. Check your connection and try again.',
+      0,
+      'network',
+      undefined,
+      undefined,
+      (err as Error).message,
+    );
+  }
 
   if (res.status === 413) {
     throw new MotivationApiError(
@@ -119,7 +138,7 @@ async function request<T>(
   return safeJson<T>(res, (fallback ?? null) as T);
 }
 
-// ── types the wizard renders from ───────────────────────────────────
+// -- types the wizard renders from -----------------------------------
 
 export type FieldKind = 'short' | 'long' | 'date' | 'choice' | 'multi' | 'yesno';
 
@@ -136,7 +155,7 @@ export interface MotivationField {
   showIf?: { key: string; equals: string };
   formOnly?: true;
   /**
-   * `date` fields only — where the three-step picker opens.
+   * `date` fields only â€” where the three-step picker opens.
    *
    * A competency issued two years ago, a dedicated status held for ten and a
    * section 24 renewal lodged this year are not reconcilable by heuristic, and
@@ -147,7 +166,7 @@ export interface MotivationField {
   /** 'far' adds a decade strip, for a field that reaches back decades. */
   reach?: 'near' | 'far';
   /**
-   * A grouped option list, served rather than written into the registry —
+   * A grouped option list, served rather than written into the registry â€”
    * fifty-nine shooting disciplines with their governing bodies.
    */
   optionGroups?: {
@@ -164,20 +183,20 @@ export interface MotivationField {
    * A document can answer this. Mirrors docSourced in motivation-fields.ts,
    * and holds the MotivationUploadKind that carries the value.
    *
-   * When we have ALREADY filled it in — off a document or from the member's
-   * profile — the wizard renders it in place, greyed, with an edit pen. It is
+   * When we have ALREADY filled it in â€” off a document or from the member's
+   * profile â€” the wizard renders it in place, greyed, with an edit pen. It is
    * never taken off the form.
    *
-   * ⚠️ Whether it is locked is decided ONCE, from what was present when the
+   * ?? Whether it is locked is decided ONCE, from what was present when the
    * application loaded. An earlier version tested the live answer, so a field
    * locked itself the moment it held one character and the box vanished from
    * under the cursor mid-word.
    */
   docSourced?: string;
   /**
-   * This answer can carry evidence — offer a camera and a file picker on it.
+   * This answer can carry evidence â€” offer a camera and a file picker on it.
    *
-   * ⚠️ THE OPPOSITE OF docSourced. That marks a field a document ANSWERS, so
+   * ?? THE OPPOSITE OF docSourced. That marks a field a document ANSWERS, so
    * we stop asking it. This marks a field a document SUPPORTS: the applicant
    * still writes their record, and the targets, register pages and permits are
    * what make a DFO believe it. Nothing is extracted from these and nothing is
@@ -206,6 +225,14 @@ export interface MotivationQuotaStatus {
   canStart: boolean;
 }
 
+/** Whether Jev, and therefore document preparation/uploads, is available. */
+export interface DocumentEngineStatus {
+  available: boolean;
+  reason: 'ok' | 'maintenance';
+  message: string;
+  retryAt: string | null;
+}
+
 export interface MotivationSummary {
   id: string;
   referenceNumber: string;
@@ -215,16 +242,20 @@ export interface MotivationSummary {
   /**
    * The member's own name for this application, or null. See `title`.
    *
-   * ⚠️ THE SERVER HAS ALWAYS SENT THESE AND THIS TYPE OMITTED THEM, so the
+   * ?? THE SERVER HAS ALWAYS SENT THESE AND THIS TYPE OMITTED THEM, so the
    * list could not show what it already held. `title` is the name to render:
    * the member's `label` when they set one, otherwise the firearm and the
-   * section ("Glock 19 9mm — Section 13"). The section label is the fallback.
+   * section ("Glock 19 9mm â€” Section 13"). The section label is the fallback.
    */
   label?: string | null;
   licenceTypeLabel?: string;
   completedAt?: string | null;
   qualityScore?: number | null;
   title?: string;
+  /** Present so the list can resume an unfinished interview. */
+  intakeMode?: 'DOCUMENTS' | 'INTERVIEW' | null;
+  outputMode?: MotivationOutputMode;
+  intakeCompletedAt?: string | null;
 }
 
 export interface MotivationDetail extends MotivationSummary {
@@ -233,8 +264,8 @@ export interface MotivationDetail extends MotivationSummary {
   /**
    * Reasons this application cannot be granted as described.
    *
-   * ⚠️ NOT THE SAME AS missingRequired. That is "you have not finished"; this
-   * is "what you have described is not permitted" — a rifle under section 13,
+   * ?? NOT THE SAME AS missingRequired. That is "you have not finished"; this
+   * is "what you have described is not permitted" â€” a rifle under section 13,
    * or a firearm your competency does not cover. Both block Generate, but only
    * one of them is fixed by filling in more boxes, and telling somebody to
    * complete a form that cannot succeed is worse than telling them nothing.
@@ -246,13 +277,13 @@ export interface MotivationDetail extends MotivationSummary {
   qualityScore: number | null;
   /**
    * Something has been written. TRUE FOR A DRAFT THAT DID NOT PASS, so it is
-   * not a synonym for "finished" — pair it with `status === 'COMPLETED'` for
+   * not a synonym for "finished" â€” pair it with `status === 'COMPLETED'` for
    * that. It gates the reading copy; the PDF stays behind COMPLETED.
    */
   hasDocument: boolean;
   /**
    * Whether the applicant already holds a firearm in the same class as the one
-   * applied for — the ".308 and .270 are both medium game" question the
+   * applied for â€” the ".308 and .270 are both medium game" question the
    * Registrar asks whether or not we do. Computed server-side from the
    * firearms-owned rows.
    */
@@ -267,7 +298,7 @@ export interface MotivationDetail extends MotivationSummary {
    * The document still carries the PREVIEW mark.
    *
    * True until the pack is paid for or holds a free-beta seat. Payments are
-   * not live, so today this is on for almost everyone — which is the right
+   * not live, so today this is on for almost everyone â€” which is the right
    * way round: the mark is the only thing between an unpaid pack and a
    * fileable one.
    */
@@ -275,7 +306,7 @@ export interface MotivationDetail extends MotivationSummary {
 }
 
 /**
- * One format since 2026-08-21 — the operator withdrew Concise and Standard.
+ * One format since 2026-08-21 â€” the operator withdrew Concise and Standard.
  * Kept as a named type because the field is still on the wire and still
  * stored, and older rows hold the withdrawn values.
  */
@@ -284,8 +315,8 @@ export type TemplateFormat = 'comprehensive';
 /**
  * The house scheme, then the ten from the design handoff.
  *
- * ⚠️ 'alloutdoor' IS FIRST AND IS THE DEFAULT, added 2026-08-24 when the pack
- * was rebranded — the site's own near-black and #E30613 red. It leads the union
+ * ?? 'alloutdoor' IS FIRST AND IS THE DEFAULT, added 2026-08-24 when the pack
+ * was rebranded â€” the site's own near-black and #E30613 red. It leads the union
  * for the same reason it leads SCHEME_KEYS on the server: the picker renders in
  * list order and opens on the first entry.
  */
@@ -348,7 +379,7 @@ export interface TemplateColourOption {
   /**
    * The one saturated colour on the page: the rule under a cover title.
    *
-   * ⚠️ AND IT WENT MISSING FOR A FORTNIGHT. `accent` was added to the
+   * ?? AND IT WENT MISSING FOR A FORTNIGHT. `accent` was added to the
    * renderer on 2026-08-24 and never reached this type, so the note above about
    * under-declaring the response was true again the moment it was written.
    */
@@ -356,7 +387,7 @@ export interface TemplateColourOption {
   /**
    * The cover banner and the running band.
    *
-   * ⚠️ SEPARATE FROM deep/deep2, WHICH ARE AN INK ROLE. The banner is a
+   * ?? SEPARATE FROM deep/deep2, WHICH ARE AN INK ROLE. The banner is a
    * tint now and those two are still the dark fill for headings and marks on
    * white paper; a picker that drew a swatch from `deep2` would show a colour
    * no cover has.
@@ -368,9 +399,9 @@ export interface TemplateColourOption {
 /**
  * The fifteen templates, served rather than hard-coded.
  *
- * ⚠️ THE HEX VALUES COME FROM THE RENDERER. Keeping a copy of "#2A4A32"
+ * ?? THE HEX VALUES COME FROM THE RENDERER. Keeping a copy of "#2A4A32"
  * in the frontend would be right on the day it was written and wrong the
- * first time somebody adjusted the ink — and the failure is the worst kind:
+ * first time somebody adjusted the ink â€” and the failure is the worst kind:
  * a member picks a colour, pays, and the PDF arrives a different one.
  */
 export type TemplateLayoutKey =
@@ -381,15 +412,15 @@ export type TemplateLayoutKey =
   | 'classic';
 
 /**
- * One way of SETTING the document — cover, headings, furniture, body face.
+ * One way of SETTING the document â€” cover, headings, furniture, body face.
  *
- * ⚠️ A SEPARATE AXIS FROM `colours`, and the picker presents it as one: five
+ * ?? A SEPARATE AXIS FROM `colours`, and the picker presents it as one: five
  * layouts times ten schemes is fifty combinations, and none is special. The
  * layout says WHERE the ink goes; the scheme says WHICH ink.
  *
- * ⚠️ AND IT IS NOT THE RETIRED concise/standard AXIS. That varied the CONTENT
+ * ?? AND IT IS NOT THE RETIRED concise/standard AXIS. That varied the CONTENT
  * and was settled in favour of one comprehensive pack. Every layout here
- * carries every section — what changes is only how it looks.
+ * carries every section â€” what changes is only how it looks.
  */
 export interface TemplateLayoutOption {
   key: TemplateLayoutKey;
@@ -420,14 +451,14 @@ export interface CredentialChoice {
   credentialId: string;
   title: string;
   expiresOn: string | null;
-  /** Field key → the value this document would put there. */
+  /** Field key ? the value this document would put there. */
   values: Record<string, string>;
 }
 
 /**
  * One document the member already has, offered for reuse.
  *
- * ⚠️ ONE ENTRY PER DOCUMENT, not per stored copy. The same photograph reused
+ * ?? ONE ENTRY PER DOCUMENT, not per stored copy. The same photograph reused
  * onto a second motivation is a second row in the database; the server dedupes
  * on content so the member is never asked to choose between two identical
  * lines.
@@ -443,7 +474,7 @@ export interface LibraryItem {
   /**
    * A note to show beside it, or null.
    *
-   * ⚠️ A WARNING, NOT A BLOCK. A proof of address four months old is still
+   * ?? A WARNING, NOT A BLOCK. A proof of address four months old is still
    * theirs to send and they may have a reason; what must never happen is it
    * going in silently and a DFO being the one to notice. 'stale' means we can
    * see the problem from the date, 'ask' means only they can know.
@@ -452,15 +483,15 @@ export interface LibraryItem {
   /**
    * Needs "this is the safe at the address on this application" ticked first.
    *
-   * A safe photograph does not go stale with time — it goes wrong when the
+   * A safe photograph does not go stale with time â€” it goes wrong when the
    * applicant moves house, and nothing on the file says so.
    */
   askPlace: boolean;
   /**
    * An EVIDENCE item's container id, where it has one.
    *
-   * ⚠️ THE ONLY THING THAT NAMES AN EVIDENCE ROW. Every evidence item is
-   * `kind: 'EVIDENCE'`, whose generic label is "Evidence" — the container says
+   * ?? THE ONLY THING THAT NAMES AN EVIDENCE ROW. Every evidence item is
+   * `kind: 'EVIDENCE'`, whose generic label is "Evidence" â€” the container says
    * whether this is a hunt photograph or a permission letter, and the group
    * label the picker shows comes from it. Null is "we could not place it".
    */
@@ -468,7 +499,7 @@ export interface LibraryItem {
   /**
    * Where an EVIDENCE item would print, resolved by the server.
    *
-   * ⚠️ SERVED, NOT DERIVED FROM `evidenceType` HERE. The container registry
+   * ?? SERVED, NOT DERIVED FROM `evidenceType` HERE. The container registry
    * lives in backend/src/motivations/evidence-taxonomy.ts and is served by
    * /licence-centre/evidence/containers; a placement worked out on this side
    * would mean a second copy of the taxonomy in the frontend, stale the first
@@ -476,6 +507,154 @@ export interface LibraryItem {
    * every non-evidence item.
    */
   evidencePlacement?: 'annexure' | 'body' | null;
+}
+
+// -- Guided intake ----------------------------------------------------
+// Mirrors backend/src/motivations/intake/intake.types.ts. This is the only
+// client surface for the start/interview screens; they never compose their
+// own answers.
+
+export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
+export type MotivationOutputMode = 'FULL_PACK' | 'MOTIVATION_ONLY';
+export type IntakeStage =
+  | 'MODE'
+  | 'DOCUMENTS'
+  | 'INTERVIEW'
+  | 'BLOCKED'
+  | 'REVIEW'
+  | 'DONE';
+
+export interface IntakeBlocked {
+  code: string;
+  field: string;
+  message: string;
+  suggested: { licenceType: string; label: string }[];
+}
+export type IntakeTick =
+  | 'attached'
+  | 'required'
+  | 'suggested'
+  | 'optional'
+  | 'blocked';
+
+export interface IntakeChoice {
+  value: string;
+  label: string;
+}
+
+export interface IntakeDetailField {
+  key: string;
+  label: string;
+  kind: 'short' | 'long' | 'date' | 'choice' | 'multi' | 'yesno' | 'cards';
+  help: string;
+  choices: IntakeChoice[];
+  multi: boolean;
+  customPlaceholder: string;
+}
+
+export interface IntakeQuestion {
+  id: string;
+  fieldKey: string;
+  label: string;
+  help: string;
+  kind: 'short' | 'long' | 'date' | 'choice' | 'multi' | 'yesno' | 'cards';
+  choices: IntakeChoice[];
+  details?: IntakeDetailField[];
+  multi: boolean;
+  sensitive: boolean;
+  customPlaceholder: string;
+  progress: { answered: number; total: number };
+  optional: boolean;
+}
+
+export interface IntakeDocumentItem {
+  source: 'credential' | 'upload';
+  sourceId: string;
+  kind: string;
+  title: string;
+  addedOn: string;
+  alreadyHere: boolean;
+  caution: { tone: 'ask' | 'stale'; text: string } | null;
+  askPlace: boolean;
+  evidenceType?: string | null;
+  evidencePlacement?: 'annexure' | 'body' | null;
+  tick: IntakeTick;
+  tickReason: string | null;
+}
+
+export type IntakeTopicId =
+  | 'identity'
+  | 'firearm'
+  | 'credentials'
+  | 'existing'
+  | 'address'
+  | 'association'
+  | 'activities'
+  | 'safe'
+  | 'declarations'
+  | 'other';
+
+export interface IntakeTopicState {
+  id: IntakeTopicId;
+  title: string;
+  index: number;
+  total: number;
+  status: 'needs_document' | 'needs_answers' | 'complete';
+  have: { label: string; value: string; from: string }[];
+  documents: {
+    kind: string;
+    label: string;
+    have: boolean;
+    required: boolean;
+  }[];
+  actions: ('upload' | 'scan' | 'manual')[];
+}
+
+export interface IntakeState {
+  motivationId: string;
+  referenceNumber: string;
+  licenceType: string;
+  licenceTypeLabel: string;
+  mode: IntakeMode | null;
+  outputMode: MotivationOutputMode;
+  stage: IntakeStage;
+  blocked: IntakeBlocked | null;
+  summary: string;
+  /** The current topic, with what we already hold and what it still needs. */
+  topic: IntakeTopicState | null;
+  /** True when the member's Document Library holds no documents at all. */
+  vaultEmpty: boolean;
+  documents: {
+    items: IntakeDocumentItem[];
+    missing: { kind: string; label: string; why: string }[];
+    needs: {
+      kind: string;
+      label: string;
+      tier: 'required' | 'expected' | 'strengthens' | 'extra';
+      why: string;
+      have: boolean;
+      minFiles?: number;
+      minFilesNote?: string;
+    }[];
+    attached: number;
+    required: number;
+    sourceProofAttached: boolean;
+    /** Type and action known: the certificate/endorsement rows can be named. */
+    firearmKnown: boolean;
+  };
+  evidence: {
+    items: IntakeDocumentItem[];
+    groups: string[];
+    note: string;
+    ready: boolean;
+  };
+  question: IntakeQuestion | null;
+  acknowledgement?: string;
+  progress: {
+    answered: number;
+    total: number;
+    sections: { id: string; title: string; missing: number }[];
+  };
 }
 
 export interface LicenceCentreOffer {
@@ -500,7 +679,7 @@ export interface LicenceCentreOffer {
     expiresOn: string | null;
   }[];
   /**
-   * What the member can CHOOSE from, per group — as opposed to `items`, which
+   * What the member can CHOOSE from, per group â€” as opposed to `items`, which
    * is what we would fill if they pressed the one button. Somebody holding
    * two competency certificates has to be asked which.
    */
@@ -530,6 +709,8 @@ export interface Suggestion {
 
 export interface AddedUpload extends UploadRow {
   suggestions?: Suggestion[];
+  /** SAQA codes read from a proficiency statement, e.g. 117705 + 119649. */
+  unitStandards?: string[];
   /** We chose the type, not the member — so offer a correction. */
   autoFiled?: boolean;
   confident?: boolean;
@@ -538,9 +719,9 @@ export interface AddedUpload extends UploadRow {
 /**
  * One file's verdict from identify(), named by a server-minted id.
  *
- * ⚠️ `side` AND `rotate` EXIST FOR THE APPLIED-FOR-FIREARM DOOR (2026-10-13).
- * A licence card is photographed as two images — a front (Serial Number, Make,
- * Calibre, Type, Model) and a back (Signature, Fingerprint) — and the client
+ * ?? `side` AND `rotate` EXIST FOR THE APPLIED-FOR-FIREARM DOOR (2026-10-13).
+ * A licence card is photographed as two images â€” a front (Serial Number, Make,
+ * Calibre, Type, Model) and a back (Signature, Fingerprint) â€” and the client
  * composes them onto one page. `rotate` lets the headless scanner turn the page
  * the right way up. Everything else is the vault's verdict shape.
  */
@@ -562,8 +743,8 @@ export interface IdentifyVerdict {
 /**
  * Whether this member holds unit standard 117705, across every document.
  *
- * ⚠️ SERVED, NEVER DERIVED HERE. The answer spans every motivation they have
- * ever made — 117705 is usually on the statement from their FIRST course — so
+ * ?? SERVED, NEVER DERIVED HERE. The answer spans every motivation they have
+ * ever made â€” 117705 is usually on the statement from their FIRST course â€” so
  * the client cannot compute it from the documents on this application, and a
  * client that tried would alert on a member who has held it for a decade.
  */
@@ -589,13 +770,13 @@ export interface UploadRow {
    * Inferred from the extraction that already ran: a document filed as a
    * competency certificate that yielded none of the fields a competency
    * certificate carries is probably on the wrong line. Only set for kinds we
-   * can actually read — a photograph of a safe extracts nothing by design.
+   * can actually read â€” a photograph of a safe extracts nothing by design.
    */
   suspect?: boolean;
   /**
    * When the document itself expires, ISO date, or null where it cannot.
    *
-   * ⚠️ SERVED, NEVER DERIVED FROM THE FILE. A competency certificate carries
+   * ?? SERVED, NEVER DERIVED FROM THE FILE. A competency certificate carries
    * its own expiry and a photograph of a safe carries none; only the read
    * knows which. The row renders what it is given.
    */
@@ -603,8 +784,8 @@ export interface UploadRow {
   /**
    * A note to show ON the row, or null.
    *
-   * ⚠️ 'red' IS A BLOCK, 'amber' IS NOT. Amber is "this is close" — under 90
-   * days to expiry, a proof of address getting old — and the member may still
+   * ?? 'red' IS A BLOCK, 'amber' IS NOT. Amber is "this is close" â€” under 90
+   * days to expiry, a proof of address getting old â€” and the member may still
    * have a good reason to send it. Red is "this cannot answer the requirement
    * any more", and a red row must never tick a required checklist line: a
    * checklist that goes green on an expired certificate is worse than one that
@@ -614,7 +795,7 @@ export interface UploadRow {
   /**
    * The Document Centre copy this row was taken from has been deleted.
    *
-   * The bytes on THIS application may still be here, but the source is gone —
+   * The bytes on THIS application may still be here, but the source is gone â€”
    * so a re-read, a refresh or a renewal has nothing behind it, and the member
    * needs to be told before a DFO is the one who notices.
    */
@@ -622,13 +803,13 @@ export interface UploadRow {
   /**
    * What an EVIDENCE item is, and where it will print.
    *
-   * ⚠️ `container === null` IS THE ONE "WE COULD NOT DECIDE". A low-confidence
+   * ?? `container === null` IS THE ONE "WE COULD NOT DECIDE". A low-confidence
    * answer stores no container at all, so an unplaced item reads the same
-   * however it got here — a model that could not choose, or a container id
+   * however it got here â€” a model that could not choose, or a container id
    * retired since. Both mean "tell us more", and both must be offered the
    * description box again rather than a wrong container.
    *
-   * ⚠️ NOT THE SAME AS `suspect`. `suspect` is a vision read that failed;
+   * ?? NOT THE SAME AS `suspect`. `suspect` is a vision read that failed;
    * evidence is never read for fields, so the two badges must not be
    * conflated or every evidence row goes amber.
    */
@@ -662,18 +843,18 @@ export interface DocumentNeed {
   /**
    * One short line naming what a multi-file row still wants.
    *
-   * ⚠️ `why` renders only on the SELECTED row, and the shots the safe wants
-   * have to be readable without selecting anything — which is what the four
+   * ?? `why` renders only on the SELECTED row, and the shots the safe wants
+   * have to be readable without selecting anything â€” which is what the four
    * separate menu entries used to do for free.
    */
   minFilesNote?: string;
   /**
    * Offer the seller-consent flow on this row.
    *
-   * ⚠️ SERVED, LIKE EVERYTHING ELSE ABOUT A ROW. True only on the private
+   * ?? SERVED, LIKE EVERYTHING ELSE ABOUT A ROW. True only on the private
    * route; a dealer purchase uploads the dealer's invoice on this same row and
    * has nobody to send a consent link to. The wizard must not test the source
-   * answer itself — it hardcodes no route value anywhere, which is why
+   * answer itself â€” it hardcodes no route value anywhere, which is why
    * retiring the estate route cost no client change at all.
    */
   sellerConsent?: true;
@@ -686,7 +867,7 @@ export interface DocumentNeed {
  * array and it had already drifted from the backend: it omitted two kinds
  * outright and described the safe photograph in the singular while the server
  * asked for three separate shots. A list maintained in two places is a list
- * maintained in neither — and the safe has changed shape twice since.
+ * maintained in neither â€” and the safe has changed shape twice since.
  */
 export interface PickableKind {
   kind: string;
@@ -713,35 +894,35 @@ export interface FollowUp {
   createdAt: string;
 }
 
-// ── calls ───────────────────────────────────────────────────────────
+// -- calls -----------------------------------------------------------
 
-// ────────────────────────────────────────────────────────────────────
-// THE PACK — ONE CALL FOR THE WHOLE LEFT COLUMN AND THE RIGHT RAIL.
+// --------------------------------------------------------------------
+// THE PACK â€” ONE CALL FOR THE WHOLE LEFT COLUMN AND THE RIGHT RAIL.
 //
-// ⚠️ EVERY TYPE BELOW IS A MIRROR, NOT A DEFINITION. The server owns these
+// ?? EVERY TYPE BELOW IS A MIRROR, NOT A DEFINITION. The server owns these
 // shapes: backend/src/motivations/motivation-checklist.ts,
 // saps271-coverage.ts and common/answer-provenance.ts. When one of them
-// changes, this changes to match — it never leads.
+// changes, this changes to match â€” it never leads.
 //
 // The screen used to assemble itself from several endpoints, which is how two
 // parts of one page end up disagreeing about the same row while both are
 // "correct". This is one read, one answer.
-// ────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------
 
 /** Who can close a row. */
 export type ChecklistOwner = 'us' | 'applicant';
 
 /**
- * ⚠️ THREE STATES, NOT TWO. "Not started" and "waiting on someone" look the
+ * ?? THREE STATES, NOT TWO. "Not started" and "waiting on someone" look the
  * same to a `done: boolean` and are completely different to a member: one is
  * work they have to do, the other is work they cannot do and should stop
- * worrying about. The gold treatment belongs to the second — never red, since
+ * worrying about. The gold treatment belongs to the second â€” never red, since
  * a row waiting on a third party is not an error.
  */
 export type ChecklistState = 'done' | 'waiting-on-someone' | 'not-started';
 
 /**
- * ⚠️ TWO DOORS. NOT FOUR, AND NEVER A WEBCAM.
+ * ?? TWO DOORS. NOT FOUR, AND NEVER A WEBCAM.
  *
  * The design pack drew four and the handoff spec still says "the four doors";
  * both are stale. The operator settled it on 2026-08-28: scan by QR, or
@@ -792,7 +973,7 @@ export interface CoverageSection {
   applicable: number;
   answered: number;
   /**
-   * ⚠️ NULL IS A REAL VALUE AND MEANS UNSCORED, NOT ZERO. Section F is
+   * ?? NULL IS A REAL VALUE AND MEANS UNSCORED, NOT ZERO. Section F is
    * somebody else's half of the form; rendering `null` as an empty progress
    * bar tells the member they are 0% done on work that is not theirs.
    */
@@ -818,11 +999,11 @@ export type ProvenanceSource =
   | 'MEMBER';
 
 /**
- * Where one answer came from. ⚠️ NEVER carries the answer itself.
+ * Where one answer came from. ?? NEVER carries the answer itself.
  *
- * ⚠️ RENDER `from`, NEVER A LOCAL LABEL TABLE. The server keeps the chip text
+ * ?? RENDER `from`, NEVER A LOCAL LABEL TABLE. The server keeps the chip text
  * (SOURCE_LABELS in common/answer-provenance.ts) precisely so the API, the
- * printed pack and the screen cannot drift — the same words appear in all
+ * printed pack and the screen cannot drift â€” the same words appear in all
  * three. A copy here would be the drift it exists to prevent.
  */
 export interface AnswerProvenance {
@@ -853,7 +1034,7 @@ export interface MotivationPack {
   provenance: ProvenanceMap;
   prefill: {
     /**
-     * ⚠️ COUNTED AGAINST THE ANSWERS, not against the provenance map. A field
+     * ?? COUNTED AGAINST THE ANSWERS, not against the provenance map. A field
      * we filled and the member then cleared is not something we filled for
      * them, and a banner claiming credit for work that is not on the screen is
      * worse than no banner. The server does this; do not recount here.
@@ -867,9 +1048,9 @@ export interface MotivationPack {
 /**
  * What a save comes back with.
  *
- * ⚠️ `refused` IS THE FIELD THAT MATTERS AND IT IS OPTIONAL. It names
- * REGISTERED fields whose value the server would not store — a validator and a
- * form that disagree — and treating a 200 with a non-empty `refused` as a save
+ * ?? `refused` IS THE FIELD THAT MATTERS AND IT IS OPTIONAL. It names
+ * REGISTERED fields whose value the server would not store â€” a validator and a
+ * form that disagree â€” and treating a 200 with a non-empty `refused` as a save
  * is how an answer is lost silently. `ignored` is the harmless cousin: keys
  * that are not registered fields at all.
  */
@@ -879,7 +1060,7 @@ export interface SaveAnswersResult {
   refused?: string[];
 }
 
-// ── SAPS crime stats — the station picker and precinct card ─────────
+// -- SAPS crime stats â€” the station picker and precinct card ---------
 //
 // The S13 "Your circumstances" step names the SAPS station nearest the
 // applicant's address, then shows what that precinct's own quarterly release
@@ -896,7 +1077,7 @@ export interface CrimeStatsStation {
 /** What `/crime-stats/stations/nearest` answers for a given address. */
 export interface NearestStationResult {
   station: CrimeStatsStation | null;
-  /** How the match was made — never shown to the member, useful in support. */
+  /** How the match was made â€” never shown to the member, useful in support. */
   how: 'places' | 'name' | null;
   candidates: CrimeStatsStation[];
 }
@@ -917,7 +1098,7 @@ export interface PrecinctCategoryFigures {
   note?: string;
 }
 
-/** `GET /motivations/:id/precinct` — null when the station has no figures on file. */
+/** `GET /motivations/:id/precinct` â€” null when the station has no figures on file. */
 export interface PrecinctFigures {
   station: CrimeStatsStation;
   release: {
@@ -931,11 +1112,11 @@ export interface PrecinctFigures {
 
 /**
  * One thing the local press reported near the station named in
- * `police_station` — a card in the "Reported near you" clippings picker.
+ * `police_station` â€” a card in the "Reported near you" clippings picker.
  *
- * ⚠️ RENDERS AS THE PAPER PUBLISHED IT, not as our own summary. It prints in
- * the pack as a clipping — headline, standfirst, picture, the paper's name
- * and the date — so nothing here is reworded on the way to the screen.
+ * ?? RENDERS AS THE PAPER PUBLISHED IT, not as our own summary. It prints in
+ * the pack as a clipping â€” headline, standfirst, picture, the paper's name
+ * and the date â€” so nothing here is reworded on the way to the screen.
  */
 export interface NewsIncident {
   id: string;
@@ -952,14 +1133,14 @@ export interface NewsIncident {
   distanceKm: number | null;
 }
 
-/** `GET /motivations/:id/incidents` — same station as `precinct`. */
+/** `GET /motivations/:id/incidents` â€” same station as `precinct`. */
 export interface IncidentsResult {
   station: CrimeStatsStation | null;
   incidents: NewsIncident[];
 }
 
 /**
- * `/crime-stats/*` — a separate resource from `/motivations`, so this is a
+ * `/crime-stats/*` â€” a separate resource from `/motivations`, so this is a
  * thin request helper of its own rather than a call to `request()` above.
  *
  * Fails to its fallback rather than throwing: a station search or a precinct
@@ -982,7 +1163,7 @@ async function crimeStatsRequest<T>(
 }
 
 export const crimeStatsApi = {
-  /** Live search as the member types. `q` is sent as given — debounce lives in the caller. */
+  /** Live search as the member types. `q` is sent as given â€” debounce lives in the caller. */
   stations: (t: TokenGetter, q: string, signal?: AbortSignal) =>
     crimeStatsRequest<{ stations: CrimeStatsStation[] }>(
       t,
@@ -991,7 +1172,7 @@ export const crimeStatsApi = {
       signal,
     ),
 
-  /** What the server itself would prefill from an address — not called by the picker directly. */
+  /** What the server itself would prefill from an address â€” not called by the picker directly. */
   nearestStation: (t: TokenGetter, address: string, signal?: AbortSignal) =>
     crimeStatsRequest<NearestStationResult>(
       t,
@@ -1004,13 +1185,13 @@ export const crimeStatsApi = {
 /**
  * One place the local press reports crime in.
  *
- * ⚠️ MIRRORS backend/src/motivations/motivation-danger-areas.ts. The server
+ * ?? MIRRORS backend/src/motivations/motivation-danger-areas.ts. The server
  * owns the shape; this never leads.
  */
 export interface DangerArea {
   /** The place as the papers print it. */
   name: string;
-  /** What a tick is stored against. Normalised — see areaKey. */
+  /** What a tick is stored against. Normalised â€” see areaKey. */
   key: string;
   incidentIds: string[];
   count: number;
@@ -1021,7 +1202,7 @@ export interface DangerArea {
   /**
    * The applicant's route passes through here.
    *
-   * ⚠️ ALWAYS FALSE UNTIL THE MAPS WORK LANDS. In the shape so the list can
+   * ?? ALWAYS FALSE UNTIL THE MAPS WORK LANDS. In the shape so the list can
    * order and pre-tick by it the day it does.
    */
   onRoute: boolean;
@@ -1035,11 +1216,11 @@ export const motivationsApi = {
   /**
    * Whether the module is open, and whether a new one can be started.
    *
-   * ⚠️ THE TYPE USED TO DECLARE ONLY { enabled, priceCents? } WHILE THE
+   * ?? THE TYPE USED TO DECLARE ONLY { enabled, priceCents? } WHILE THE
    * SERVER SENT SIX FIELDS. That is not a cosmetic omission: `canStart` was
    * invisible to anyone writing against this client, so the motivations page
    * rendered five enabled "start a new one" buttons that the server refused
-   * with a 409 — and the member saw nothing happen at all.
+   * with a 409 â€” and the member saw nothing happen at all.
    *
    * A client type that under-declares its response does not just lose
    * information, it hides the information from the next person to look.
@@ -1051,10 +1232,25 @@ export const motivationsApi = {
       cap: 0,
       used: 0,
       priceCents: 0,
-      // ⚠️ FALSE ON A FAILED READ. If we cannot tell whether a motivation
+      // ?? FALSE ON A FAILED READ. If we cannot tell whether a motivation
       // may be started, offering the buttons is the wrong guess: the click
       // 409s and the member is back where they started.
       canStart: false,
+    }),
+
+  engineStatus: (t: TokenGetter) =>
+    request<DocumentEngineStatus>(t, '/system/engine-status', {
+      cache: 'no-store',
+    }),
+
+  engineInterest: (
+    t: TokenGetter,
+    action: 'GENERATE' | 'MOTIVATION_UPLOAD' | 'VAULT_UPLOAD',
+    motivationId?: string,
+  ) =>
+    request<DocumentEngineStatus>(t, '/system/engine-interest', {
+      method: 'POST',
+      body: JSON.stringify({ action, motivationId }),
     }),
 
   fields: (t: TokenGetter, licenceType: string) =>
@@ -1073,14 +1269,14 @@ export const motivationsApi = {
   /**
    * What the precinct named in `police_station` has actually recorded, per
    * the latest SAPS quarterly release. Null once there is no station chosen
-   * yet, or none on file for the one that is — both render the same quiet
+   * yet, or none on file for the one that is â€” both render the same quiet
    * empty state, never an error.
    */
   precinct: (t: TokenGetter, id: string, signal?: AbortSignal) =>
     request<PrecinctFigures | null>(t, `/${id}/precinct`, { signal }, null),
 
   /**
-   * What the local press has reported near the same station — the "Reported
+   * What the local press has reported near the same station â€” the "Reported
    * near you" clippings picker's fetch. Same contract shape as `precinct`:
    * nothing on file and a failed request both render the same quiet empty
    * state, never an error.
@@ -1094,8 +1290,8 @@ export const motivationsApi = {
     ),
 
   /**
-   * ⚠️ `refused` IS NOT COSMETIC. It names registered fields whose value the
-   * server would not store — the answer is gone, and until this was read the
+   * ?? `refused` IS NOT COSMETIC. It names registered fields whose value the
+   * server would not store â€” the answer is gone, and until this was read the
    * wizard still said "Saved". (The old declaration here said `rejected`,
    * which the server has never sent; it sends `ignored`. A key nothing could
    * ever match is indistinguishable from a check nobody wrote.)
@@ -1108,20 +1304,20 @@ export const motivationsApi = {
       { missingRequired: [] },
     ),
 
-  // ⚠️ FOUR CALLS STOOD HERE — profileOffer, licenceCentreOffer,
-  // useLicenceCentre and useProfile — and their four endpoints were deleted on
+  // ?? FOUR CALLS STOOD HERE â€” profileOffer, licenceCentreOffer,
+  // useLicenceCentre and useProfile â€” and their four endpoints were deleted on
   // 2026-09-08 (Phase 4). They showed a member what we COULD fill from their
   // own profile and their own vault, and asked them to press a button to
   // accept it; create() now applies both automatically, with provenance, and
   // the review sheet shows each value with a chip saying where it came from.
   //
-  // ⚠️ backend/src/common/api-route-contract.spec.ts IS WHAT CAUGHT THESE.
-  // It parses this file and refuses a call with no matching route — which is
+  // ?? backend/src/common/api-route-contract.spec.ts IS WHAT CAUGHT THESE.
+  // It parses this file and refuses a call with no matching route â€” which is
   // the whole reason the sheet's two calls were added here rather than to a
   // client of their own.
 
   /**
-   * Everything this member could reuse instead of photographing it again —
+   * Everything this member could reuse instead of photographing it again â€”
    * their vault plus every document on their other motivations.
    */
   library: (t: TokenGetter, id: string) =>
@@ -1132,27 +1328,105 @@ export const motivationsApi = {
       { items: [], suggested: [] },
     ),
 
+  /**
+   * The guided-intake state: mode, document ticks, evidence pool and the next
+   * question. Server-owned; this client renders what it is told.
+   */
+  intake: (t: TokenGetter, id: string) =>
+    request<IntakeState>(t, `/${id}/intake`, { cache: 'no-store' }),
+
+  startIntake: (t: TokenGetter, id: string, mode: IntakeMode) =>
+    request<IntakeState>(t, `/${id}/intake/start`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    }),
+
+  setIntakeOutput: (
+    t: TokenGetter,
+    id: string,
+    outputMode: MotivationOutputMode,
+  ) =>
+    request<IntakeState>(t, `/${id}/intake/output`, {
+      method: 'POST',
+      body: JSON.stringify({ outputMode }),
+    }),
+
+  profile: (t: TokenGetter) =>
+    request<{
+      answers: Record<string, string>;
+      provenance: unknown;
+      fields: MotivationField[];
+    }>(t, '/profile', { cache: 'no-store' }),
+
+  saveProfile: (t: TokenGetter, answers: Record<string, string>) =>
+    request<{ answers: Record<string, string>; provenance: unknown }>(
+      t,
+      '/profile',
+      { method: 'PATCH', body: JSON.stringify({ answers }) },
+    ),
+
+  selectIntakeDocuments: (
+    t: TokenGetter,
+    id: string,
+    items: { source: 'credential' | 'upload'; sourceId: string }[],
+    placeConfirmed = false,
+  ) =>
+    request<IntakeState>(t, `/${id}/intake/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ items, placeConfirmed }),
+    }),
+
+  answerIntake: (
+    t: TokenGetter,
+    id: string,
+    body: {
+      fieldKey: string;
+      value?: string;
+      values?: string[];
+      message?: string;
+      fields?: Record<string, string>;
+    },
+  ) =>
+    request<IntakeState & { acknowledgement?: string }>(
+      t,
+      `/${id}/intake/answer`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  finishIntake: (t: TokenGetter, id: string) =>
+    request<IntakeState>(t, `/${id}/intake/finish`, { method: 'POST' }),
+
+  changeIntakeSection: (
+    t: TokenGetter,
+    id: string,
+    licenceType: string,
+  ) =>
+    request<IntakeState>(t, `/${id}/intake/section`, {
+      method: 'POST',
+      body: JSON.stringify({ licenceType }),
+    }),
+
   /** Attach one, without asking for the file again. */
   /**
    * Attach everything this application needs that the member already holds.
    *
-   * ⚠️ CALLED ONCE, ON PURPOSE. It is a POST because it writes to the
+   * ?? CALLED ONCE, ON PURPOSE. It is a POST because it writes to the
    * application; firing it from an effect that can re-run would silently
    * change what a DFO sees.
    */
   /**
    * Save the pages the member ticked into their Document Centre.
    *
-   * ⚠️ THIS IS THE ONLY ROUTE IN NOW. Every upload used to be swept into the
+   * ?? THIS IS THE ONLY ROUTE IN NOW. Every upload used to be swept into the
    * Centre automatically the moment it landed, behind a blanket consent and
-   * with no UI — the member could neither see what had been kept nor decline
+   * with no UI â€” the member could neither see what had been kept nor decline
    * one page of six. `needsConsent` comes back true when they have not been
    * asked yet, which is the one refusal they can act on.
    */
   /**
    * Remove the seller's consent, so a new one can be sent.
    *
-   * ⚠️ THE SERVER HAS BEEN NAMING THIS ACTION WITH NOTHING BEHIND IT — invite()
+   * ?? THE SERVER HAS BEEN NAMING THIS ACTION WITH NOTHING BEHIND IT â€” invite()
    * refuses a resend against a signed consent with "Delete that consent first
    * if you need a new one".
    */
@@ -1167,9 +1441,9 @@ export const motivationsApi = {
   /**
    * Write the "why this firearm" paragraph.
    *
-   * ⚠️ IT LANDS AS A SUGGESTION, NOT AN ANSWER. The server stamps it DERIVED +
+   * ?? IT LANDS AS A SUGGESTION, NOT AN ANSWER. The server stamps it DERIVED +
    * inferred onto `firearm_fit_reason`, which is what makes the sheet render it
-   * with "check this" and a Confirm button — and stamp() refuses to overwrite
+   * with "check this" and a Confirm button â€” and stamp() refuses to overwrite
    * anything the applicant has written themselves.
    */
   reason: (t: TokenGetter, id: string) =>
@@ -1180,7 +1454,7 @@ export const motivationsApi = {
       /**
        * What the Registrar may ask about.
        *
-       * ⚠️ NOT A REFUSAL, AND IT USED TO BE CALLED `blockers`, which is what
+       * ?? NOT A REFUSAL, AND IT USED TO BE CALLED `blockers`, which is what
        * it behaved like. MOTIVATION-CORPUS-LEARNINGS.md read ten motivations
        * written by paid writers, nine approved: one argued a FOURTH 9mm from a
        * generic product comparison and passed. Refusing to write because a
@@ -1194,7 +1468,7 @@ export const motivationsApi = {
   /**
    * The dangerous areas around this applicant, for them to tick.
    *
-   * ⚠️ AREAS, NOT ARTICLES. Operator, 2026-09-08: "pull the areas and list them
+   * ?? AREAS, NOT ARTICLES. Operator, 2026-09-08: "pull the areas and list them
    * and ask the user if he travels through these areas regularly." "Which of
    * these fourteen articles would you like" is a question about our filing;
    * "do you drive through Edgemead" is a question about their life, and it is
@@ -1204,7 +1478,7 @@ export const motivationsApi = {
     request<{
       station: string | null;
       withinKm: number;
-      /** Has the member ever answered? See DangerAreas — it gates the pre-tick. */
+      /** Has the member ever answered? See DangerAreas â€” it gates the pre-tick. */
       answered: boolean;
       areas: DangerArea[];
     }>(
@@ -1217,7 +1491,7 @@ export const motivationsApi = {
   /**
    * Record which of them they travel through.
    *
-   * ⚠️ KEYS AND REASONS GO UP; THE SERVER DECIDES THE CLIPPINGS. Sending
+   * ?? KEYS AND REASONS GO UP; THE SERVER DECIDES THE CLIPPINGS. Sending
    * article ids from here could put an annexure in a pack the ticked areas do
    * not account for.
    */
@@ -1247,9 +1521,9 @@ export const motivationsApi = {
     /**
      * "These are the safe at the address on this application."
      *
-     * ⚠️ THE SERVER HOLDS THE SAFE PHOTOGRAPHS BACK UNTIL THIS IS TRUE and
+     * ?? THE SERVER HOLDS THE SAFE PHOTOGRAPHS BACK UNTIL THIS IS TRUE and
      * says so with `needsPlaceConfirm`. A safe photograph does not go stale
-     * with time — it goes wrong when the applicant moves house, and nothing on
+     * with time â€” it goes wrong when the applicant moves house, and nothing on
      * the file says so. Same question LibraryPicker asks; one wording.
      */
     placeConfirmed = false,
@@ -1269,7 +1543,7 @@ export const motivationsApi = {
       /**
        * Answer keys the offer filled from the member's documents, even though
        * no document was attached this run. The sheet has to reload when this is
-       * non-empty — see the effect that calls this.
+       * non-empty â€” see the effect that calls this.
        */
       filled?: string[];
     }>(
@@ -1316,7 +1590,7 @@ export const motivationsApi = {
           requiredHave: 0,
         },
         kinds: [],
-        // ⚠️ THE FALLBACK IS SILENT, NOT ACCUSING. `request` uses this when the
+        // ?? THE FALLBACK IS SILENT, NOT ACCUSING. `request` uses this when the
         // call fails, and a network error must never render as "SAPS wants a
         // certificate you have not given us". UNREAD with no alert says
         // nothing, which is the only honest thing to say about a response we
@@ -1335,7 +1609,7 @@ export const motivationsApi = {
   /**
    * Add one document.
    *
-   * `kind` may be EMPTY, which means "sort it for me" — the server names the
+   * `kind` may be EMPTY, which means "sort it for me" â€” the server names the
    * document from its contents. That is how a whole pack goes up at once: the
    * member cannot label files that do not exist yet.
    */
@@ -1372,7 +1646,7 @@ export const motivationsApi = {
     if (opts.saps271) form.append('saps271', 'true');
     form.append('file', file);
     // The response carries SUGGESTIONS read off the document. They are not
-    // answers yet — the applicant confirms them first.
+    // answers yet â€” the applicant confirms them first.
     return request<AddedUpload>(
       t,
       `/${id}/uploads`,
@@ -1383,9 +1657,9 @@ export const motivationsApi = {
   /**
    * Name a batch of files before any of them is stored.
    *
-   * ⚠️ THE SAME DOOR THE LICENCE CENTRE USES. Each file gets a server-minted id
+   * ?? THE SAME DOOR THE LICENCE CENTRE USES. Each file gets a server-minted id
    * and a verdict: is it a document or evidence, which kind, which container,
-   * which way up the page is, and — for a firearm licence card — which side
+   * which way up the page is, and â€” for a firearm licence card â€” which side
    * (front or back). The client uses `side` to compose the two sides onto one
    * page and `rotate` to straighten it, then uploads with the id.
    */
@@ -1406,11 +1680,11 @@ export const motivationsApi = {
     );
   },
 
-  // ── The previous owner's consent, for a private transfer ────────
+  // -- The previous owner's consent, for a private transfer --------
   //
-  // ⚠️ THE FIREARM IS SENT WITH THE INVITE, not read server-side at signing
+  // ?? THE FIREARM IS SENT WITH THE INVITE, not read server-side at signing
   // time. It is snapshotted the moment the link goes out so the seller signs
-  // for the firearm they were shown — see the schema note on
+  // for the firearm they were shown â€” see the schema note on
   // firearmSnapshotEncrypted.
   inviteSellerConsent: (
     t: TokenGetter,
@@ -1419,10 +1693,10 @@ export const motivationsApi = {
       name: string;
       phone: string;
       /**
-       * ⚠️ REQUIRED BY THE SERVER, AND IT WAS NOT IN THIS TYPE.
+       * ?? REQUIRED BY THE SERVER, AND IT WAS NOT IN THIS TYPE.
        *
        * motivation-seller-consent.service.ts refuses an invite without a valid
-       * address — "BOTH, NOT EITHER: the email carries the link … the number is
+       * address â€” "BOTH, NOT EITHER: the email carries the link â€¦ the number is
        * the nudge that makes him look". The panel had no email input, no email
        * state and no field here, so every "Send them the link" came back
        * "Enter a valid email address for them." against a form with nowhere to
@@ -1431,9 +1705,9 @@ export const motivationsApi = {
        */
       email: string;
       /**
-       * Which ways the link goes out — any combination.
+       * Which ways the link goes out â€” any combination.
        *
-       * ⚠️ THE LAST TWO GO TO THE APPLICANT, not the seller: the link comes to
+       * ?? THE LAST TWO GO TO THE APPLICANT, not the seller: the link comes to
        * them and they pass it on. Omitted means both seller channels, which is
        * what this always did.
        */
@@ -1447,8 +1721,8 @@ export const motivationsApi = {
       firearm: Record<string, string | undefined>;
       /**
        * The applicant has confirmed overwriting a consent the owner already
-       * signed. ⚠️ A CONSENT IS ONCE-OFF, so a resend over a signed one is
-       * refused unless this is true — see the warning the panel shows first.
+       * signed. ?? A CONSENT IS ONCE-OFF, so a resend over a signed one is
+       * refused unless this is true â€” see the warning the panel shows first.
        */
       replace?: boolean;
     },
@@ -1459,7 +1733,7 @@ export const motivationsApi = {
     }),
 
   // The buyer checks on the invite and, once signed, collects the firearm the
-  // government card records — to confirm into their own application.
+  // government card records â€” to confirm into their own application.
   sellerConsentStatus: (t: TokenGetter, id: string) =>
     request<{
       status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
@@ -1468,7 +1742,7 @@ export const motivationsApi = {
       /**
        * What the seller signed, in the words that will print.
        *
-       * ⚠️ THE SAME BUILDERS THE PACK USES, so the preview cannot disagree
+       * ?? THE SAME BUILDERS THE PACK USES, so the preview cannot disagree
        * with the document.
        */
       statement: {
@@ -1486,7 +1760,7 @@ export const motivationsApi = {
       statement: null,
     }),
 
-  // ── Character witnesses ─────────────────────────────────────────
+  // -- Character witnesses -----------------------------------------
 
   witnesses: (t: TokenGetter, id: string) =>
     request<{ witnesses: WitnessSummary[] }>(t, `/${id}/witnesses`, {}, {
@@ -1511,7 +1785,7 @@ export const motivationsApi = {
   /**
    * The signature, as an object URL.
    *
-   * ⚠️ NOT AN <img src> POINTING AT THE ENDPOINT — it needs a bearer token and
+   * ?? NOT AN <img src> POINTING AT THE ENDPOINT â€” it needs a bearer token and
    * a browser will not attach one to an image request. Same reason as the
    * cover photograph; the caller revokes the URL.
    */
@@ -1532,24 +1806,24 @@ export const motivationsApi = {
     return URL.createObjectURL(await res.blob());
   },
 
-  // ── The cover photograph ────────────────────────────────────────
+  // -- The cover photograph ----------------------------------------
 
   /** What we hold, what they chose, and where a stock photograph came from. */
   coverPhoto: (t: TokenGetter, id: string) =>
     request<CoverPhotoState>(t, `/${id}/cover-photo`, {}, {
-      // ⚠️ A FALLBACK THAT SHOWS NOTHING, never one that invents a photograph.
+      // ?? A FALLBACK THAT SHOWS NOTHING, never one that invents a photograph.
       // The card is about approving an image before it prints on a police
       // document; a failed fetch must not leave it saying "we found one".
       choice: null,
       hasOwn: false,
       firearmLine: null,
       stock: null,
-      // ⚠️ A COPY OF THE SERVER'S FRAME, AND IT WENT STALE ONCE ALREADY. The
+      // ?? A COPY OF THE SERVER'S FRAME, AND IT WENT STALE ONCE ALREADY. The
       // real numbers arrive from /cover-photo, which serves COVER_FRAME_MM
       // directly; these are used ONLY when that fetch fails. They still have
       // to track it: while the frame was widened from 86 x 44 to the full
       // content column, a failed fetch would have gone on locking the trim box
-      // to the old letterbox — the exact crop the operator reported, appearing
+      // to the old letterbox â€” the exact crop the operator reported, appearing
       // only for people whose first request happened to fail.
       aspect: 182 / 85,
       frameMm: { w: 182, h: 85 },
@@ -1559,8 +1833,8 @@ export const motivationsApi = {
   /**
    * The image itself, as an object URL.
    *
-   * ⚠️ NOT AN <img src> POINTING AT THE ENDPOINT. It needs a bearer token, and
-   * a browser will not attach one to an image request — the tag would render a
+   * ?? NOT AN <img src> POINTING AT THE ENDPOINT. It needs a bearer token, and
+   * a browser will not attach one to an image request â€” the tag would render a
    * broken-image icon on a card whose entire job is showing somebody a
    * picture. Fetched as a blob, and the caller revokes the URL.
    */
@@ -1596,7 +1870,7 @@ export const motivationsApi = {
     }),
 
   /**
-   * The template catalogue. No id — it is product information, the same for
+   * The template catalogue. No id â€” it is product information, the same for
    * everyone, so it is fetched once and reused.
    *
    * The fallback is an EMPTY catalogue rather than a guessed one: a picker
@@ -1620,7 +1894,7 @@ export const motivationsApi = {
   /**
    * Record the template the applicant picked.
    *
-   * Both fields optional and sent independently — changing the colour must
+   * Both fields optional and sent independently â€” changing the colour must
    * not resend the format, or two rapid clicks on different controls would
    * have one overwrite the other's choice.
    */
@@ -1641,7 +1915,7 @@ export const motivationsApi = {
       t,
       `/${id}/template`,
       { method: 'PATCH', body: JSON.stringify(choice) },
-      // ⚠️ THE FALLBACK MUST MATCH THE RENDERER'S OWN DEFAULTS, or a failed
+      // ?? THE FALLBACK MUST MATCH THE RENDERER'S OWN DEFAULTS, or a failed
       // PATCH shows the member a selection their document does not have.
       { format: 'comprehensive', colourway: 'alloutdoor', layout: 'banner' },
     ),
@@ -1671,8 +1945,8 @@ export const motivationsApi = {
   /**
    * Read an attached document again after a failed read.
    *
-   * `readable: false` means the kind yields nothing by design — a photograph
-   * of a safe — rather than that the attempt failed.
+   * `readable: false` means the kind yields nothing by design â€” a photograph
+   * of a safe â€” rather than that the attempt failed.
    */
   /**
    * The reading already stored for an attached document. No vision call, so
@@ -1688,11 +1962,21 @@ export const motivationsApi = {
     }),
 
   rereadUpload: (t: TokenGetter, id: string, uploadId: string) =>
-    request<{ ok: boolean; fields: string[]; readable: boolean }>(
+    request<{
+      ok: boolean;
+      fields: string[];
+      readable: boolean;
+      suggestions?: {
+        key: string;
+        value: string;
+        label: string;
+        trusted: boolean;
+      }[];
+    }>(
       t,
       `/${id}/uploads/${uploadId}/reread`,
       { method: 'POST' },
-      { ok: false, fields: [], readable: true },
+      { ok: false, fields: [], readable: true, suggestions: [] },
     ),
 
   removeUpload: (t: TokenGetter, id: string, uploadId: string) =>
@@ -1706,12 +1990,12 @@ export const motivationsApi = {
   /**
    * The bytes of one uploaded document, as an object URL.
    *
-   * ⚠️ THE ENDPOINT NEEDS AN AUTHORIZATION HEADER, so `<img src>` and
-   * `<a href>` cannot reach it — the file is decrypted per request out of the
+   * ?? THE ENDPOINT NEEDS AN AUTHORIZATION HEADER, so `<img src>` and
+   * `<a href>` cannot reach it â€” the file is decrypted per request out of the
    * encrypted store and there is deliberately no public URL for it. Fetch the
    * bytes and hand back a blob URL. Mirrors licenceCentreApi.fileBlobUrl.
    *
-   * ⚠️ THE CALLER OWNS THE URL and must revokeObjectURL it, or the blob stays
+   * ?? THE CALLER OWNS THE URL and must revokeObjectURL it, or the blob stays
    * pinned in memory for the life of the tab.
    */
   uploadBlobUrl: async (
@@ -1732,9 +2016,9 @@ export const motivationsApi = {
   /**
    * The signed consent letter, rendered read-only as a PDF.
    *
-   * ⚠️ SAME SHEET THE PACK PRINTS, DEFAULT STYLE (2026-10-13). It is generated
+   * ?? SAME SHEET THE PACK PRINTS, DEFAULT STYLE (2026-10-13). It is generated
    * on demand from the stored consent, so there is no public URL and `<a href>`
-   * cannot reach it — fetch the bytes and hand back a blob URL, like
+   * cannot reach it â€” fetch the bytes and hand back a blob URL, like
    * uploadBlobUrl. The caller owns the URL and must revokeObjectURL it.
    */
   sellerConsentLetterUrl: async (
@@ -1752,7 +2036,7 @@ export const motivationsApi = {
     return URL.createObjectURL(await r.blob());
   },
 
-  /** POPIA erasure — deletes the application AND its encrypted documents. */
+  /** POPIA erasure â€” deletes the application AND its encrypted documents. */
   erase: (t: TokenGetter, id: string) =>
     request<{ erased: boolean; filesRemoved: number }>(
       t,
@@ -1764,25 +2048,25 @@ export const motivationsApi = {
   /**
    * EVERYTHING THE REVIEW SHEET NEEDS, IN ONE CALL.
    *
-   * ⚠️ ADDED HERE RATHER THAN IN A CLIENT OF ITS OWN, DELIBERATELY.
+   * ?? ADDED HERE RATHER THAN IN A CLIENT OF ITS OWN, DELIBERATELY.
    * backend/src/common/api-route-contract.spec.ts parses THIS FILE and asserts
-   * every call in it has a matching backend route — a separate module would
+   * every call in it has a matching backend route â€” a separate module would
    * silently fall outside that check, which is exactly how the two `messages`
    * calls survived their endpoints being deleted for as long as they did.
    *
-   * ⚠️ no-store. The response varies by viewer and carries their identity
+   * ?? no-store. The response varies by viewer and carries their identity
    * document's contents; CLAUDE.md's rule about never caching a viewer-varying
    * read applies to the browser's own HTTP cache as much as to Next's.
    */
   sheet: (t: TokenGetter, id: string) =>
     request<SheetResponse>(t, `/${id}/sheet`, { cache: 'no-store' }),
 
-  /** The live preview alone — refetched, debounced, after every saved answer. */
+  /** The live preview alone â€” refetched, debounced, after every saved answer. */
   preview: (t: TokenGetter, id: string) =>
     request<PreviewSection[]>(t, `/${id}/preview`, { cache: 'no-store' }, []),
 
   /**
-   * The draft as written, passed review or not. NOT fetched with the detail —
+   * The draft as written, passed review or not. NOT fetched with the detail â€”
    * that is polled every few seconds and this is fifteen hundred words.
    */
   draft: (t: TokenGetter, id: string) =>
@@ -1794,11 +2078,11 @@ export const motivationsApi = {
       final: boolean;
     }>(t, `/${id}/draft`),
 
-  // ⚠️ `messages` AND `answerFollowUp` STOOD HERE AND THEIR ROUTES ARE GONE —
+  // ?? `messages` AND `answerFollowUp` STOOD HERE AND THEIR ROUTES ARE GONE â€”
   // 2026-09-08. No model asks the applicant a question any more; where a
   // required fact is missing the sheet shows the empty input. The FollowUp
   // type below is deliberately kept until the old wizard screens are deleted
-  // in Phase 4, so the components that still name it keep compiling — a type
+  // in Phase 4, so the components that still name it keep compiling â€” a type
   // costs no route, and common/api-route-contract.spec.ts checks CALLS.
 
   acceptDeclaration: (t: TokenGetter, id: string, testimonialConsent: boolean) =>
@@ -1810,13 +2094,13 @@ export const motivationsApi = {
     ),
 
   /**
-   * START the document. Returns 202 as soon as the work is claimed — the
+   * START the document. Returns 202 as soon as the work is claimed â€” the
    * document does NOT exist yet, and `status` will be GENERATING.
    *
-   * ⚠️ DO NOT WAIT ON THIS REQUEST FOR THE RESULT. A real run takes about a
+   * ?? DO NOT WAIT ON THIS REQUEST FOR THE RESULT. A real run takes about a
    * minute and a half; nginx allows an upstream sixty seconds and Cloudflare
-   * cuts the origin at a hundred, so the old awaited call returned a 504 —
-   * with no JSON body, hence the generic "Something went wrong" below — for a
+   * cuts the origin at a hundred, so the old awaited call returned a 504 â€”
+   * with no JSON body, hence the generic "Something went wrong" below â€” for a
    * document that had been written and paid for. Poll the row instead.
    */
   generate: (t: TokenGetter, id: string) =>
@@ -1827,12 +2111,12 @@ export const motivationsApi = {
   /**
    * THE WHOLE LEFT COLUMN AND THE RIGHT RAIL, IN ONE CALL.
    *
-   * ⚠️ NO FALLBACK ARGUMENT, DELIBERATELY. A pack that failed to load has no
+   * ?? NO FALLBACK ARGUMENT, DELIBERATELY. A pack that failed to load has no
    * safe empty state: an empty checklist reads as "nothing left to do" and a
    * zeroed coverage reads as "you have answered nothing". Both are lies a
    * member would act on. Let it throw and show the error.
    *
-   * ⚠️ NOT A REPLACEMENT FOR `checklist` BELOW. That one is narrower, still
+   * ?? NOT A REPLACEMENT FOR `checklist` BELOW. That one is narrower, still
    * correct for its single caller, and left alone on purpose.
    */
   pack: (t: TokenGetter, id: string) =>
@@ -1851,7 +2135,7 @@ export const motivationsApi = {
           done: boolean;
           annexure?: string;
           note?: string;
-          // subItems went with the safe collapse on 2026-08-23 — the three
+          // subItems went with the safe collapse on 2026-08-23 â€” the three
           // shots were the only thing that ever hung off a row, and the server
           // stopped sending them. Nothing here rendered them either.
         }[];
@@ -1861,18 +2145,18 @@ export const motivationsApi = {
       theirsTotal: number;
     }>(t, `/${id}/checklist`),
 
-  /** The finished document. Blob, not JSON — it is a PDF. */
+  /** The finished document. Blob, not JSON â€” it is a PDF. */
   pdfUrl: (id: string) => `${API_URL}/motivations/${id}/pdf`,
 
-  /** The pre-filled SAPS 271 — only answers for applicants who opted in. */
+  /** The pre-filled SAPS 271 â€” only answers for applicants who opted in. */
   saps271Url: (id: string) => `${API_URL}/motivations/${id}/saps271`,
 
   /**
-   * ⚠️ THE URLS ABOVE CANNOT BE PUT IN AN <a href>. Every motivation endpoint
+   * ?? THE URLS ABOVE CANNOT BE PUT IN AN <a href>. Every motivation endpoint
    * sits behind the Clerk guard, and a plain anchor carries no Authorization
-   * header — so "Open your motivation" was a guaranteed 401, found the first
+   * header â€” so "Open your motivation" was a guaranteed 401, found the first
    * time a finished document existed to open. Fetch with the token, mint a
-   * blob: URL, and point a tab at that instead — the same pattern
+   * blob: URL, and point a tab at that instead â€” the same pattern
    * uploadBlobUrl already uses for viewing attachments.
    */
   pdfBlobUrl: async (t: TokenGetter, id: string): Promise<string> => {
@@ -1890,13 +2174,13 @@ export const motivationsApi = {
    * One page: their own cover, in a layout and colourway they are trying on,
    * as BYTES.
    *
-   * ⚠️ NOT A BLOB URL, AND THAT IS THE FIX FOR A SHIPPED BUG. This
+   * ?? NOT A BLOB URL, AND THAT IS THE FIX FOR A SHIPPED BUG. This
    * returned one, and the picker put it in an <iframe>. Desktop Chrome drew it
    * perfectly; on a phone all five cards were empty, because iOS renders no PDF
    * in an iframe and says nothing about it. The caller rasterises page one with
    * pdf.js instead, which needs the bytes.
    *
-   * ⚠️ A REAL RENDER, NOT A DRAWING OF ONE. The server runs the actual
+   * ?? A REAL RENDER, NOT A DRAWING OF ONE. The server runs the actual
    * document renderer - no model call, so it is free. The picker this replaces
    * drew its own approximation and told members Report was "sans-serif
    * throughout" while their packs came out serif.
@@ -1936,15 +2220,15 @@ export const motivationsApi = {
  * Only the fields that apply right now.
  *
  * Mirrors isVisible() on the backend. Both halves have to agree about what is
- * being asked, or the wizard shows a question the server will not accept —
+ * being asked, or the wizard shows a question the server will not accept â€”
  * or hides one it insists on.
  */
 /** The SAPS 271 opt-in. Mirrors SAPS271_OPT_KEY / SAPS271_FILL on the server. */
 
-// ── the cover photograph ────────────────────────────────────────────
+// -- the cover photograph --------------------------------------------
 
 /**
- * `null` means nobody has been asked yet — which is NOT the same as 'NONE'.
+ * `null` means nobody has been asked yet â€” which is NOT the same as 'NONE'.
  * See the schema comment on coverPhotoChoice: a deliberate refusal has to
  * survive the next time our search finds an image.
  */
@@ -1953,14 +2237,14 @@ export type CoverChoice = 'STOCK' | 'OWN' | 'NONE';
 export interface CoverPhotoState {
   choice: CoverChoice | null;
   hasOwn: boolean;
-  /** "Tikka T3", from their own answers — what the caption will say. */
+  /** "Tikka T3", from their own answers â€” what the caption will say. */
   firearmLine: string | null;
   /** Present only when we hold a stock photograph of this model. */
   stock: { source: string } | null;
   /**
    * Width / height of the fixed frame on the cover. The trim box locks to it.
    *
-   * ⚠️ SENT BY THE SERVER, NOT HARD-CODED HERE. A copy in this bundle would go
+   * ?? SENT BY THE SERVER, NOT HARD-CODED HERE. A copy in this bundle would go
    * stale the first time the cover layout moved, and the symptom would be a
    * red box promising a crop the cover does not print.
    */
@@ -1970,19 +2254,19 @@ export interface CoverPhotoState {
   maxPx: { w: number; h: number };
 }
 
-// ── character witnesses ─────────────────────────────────────────────
+// -- character witnesses ---------------------------------------------
 
 export interface WitnessSummary {
   id: string;
   slot: number;
   invitedName: string;
   invitedPhone: string;
-  /** INVITED · VERIFIED · DECLINED · COMPLETED. */
+  /** INVITED Â· VERIFIED Â· DECLINED Â· COMPLETED. */
   status: string;
   openedAt: string | null;
   signedAt: string | null;
   declinedAt: string | null;
-  /** Present only once signed — never for a half-finished statement. */
+  /** Present only once signed â€” never for a half-finished statement. */
   answers?: Record<string, string>;
   signedPlace?: string | null;
   hasSignature?: boolean;
@@ -1998,12 +2282,12 @@ export function visibleFields(
   // Mirrors isVisible() on the backend, including the 271 gate: form-only
   // fields exist only for the SAPS 271, so on the dealer path they are not
   // shown at all. Both halves must agree or the wizard asks questions the
-  // server does not require — or hides ones it insists on.
+  // server does not require â€” or hides ones it insists on.
   const wantsForm = (answers[SAPS271_OPT_KEY] ?? '').trim() === SAPS271_FILL;
   return fields.filter((f) => {
     if (f.formOnly && f.key !== SAPS271_OPT_KEY && !wantsForm) return false;
     if (!f.showIf) return true;
-    // ⚠️ A MULTI ANSWER IS A LIST — see isVisible() on the backend, which this
+    // ?? A MULTI ANSWER IS A LIST â€” see isVisible() on the backend, which this
     // mirrors. `discipline` stores "vlakteskiet-chasa, other", and a gate
     // written as equality could never open `discipline_other` for a member who
     // picked Something Else alongside a real discipline. On section 16 sport
@@ -2019,11 +2303,11 @@ export function visibleFields(
   });
 }
 
-/** Section order, as the registry lists them — not alphabetical. */
+/** Section order, as the registry lists them â€” not alphabetical. */
 export function groupBySection(
   fields: MotivationField[],
 ): { section: string; fields: MotivationField[] }[] {
-  // ⚠️ BY NAME, NOT BY CONSECUTIVE RUN — and the difference blocked an
+  // ?? BY NAME, NOT BY CONSECUTIVE RUN â€” and the difference blocked an
   // application from being generated at all.
   //
   // The registry visits "About you" three times: the main block, a later run
@@ -2037,7 +2321,7 @@ export function groupBySection(
   // the FIRST run and only appears once spouse_id_type is answered. So a
   // married member could not reach the question, could not answer it, and hit
   // "Some required answers are still missing" on generate with nothing on
-  // screen to fix — every field they could see was filled in.
+  // screen to fix â€” every field they could see was filled in.
   //
   // One step per section name now, in first-appearance order.
   const out: { section: string; fields: MotivationField[] }[] = [];
@@ -2057,9 +2341,9 @@ export function groupBySection(
 /**
  * Put a field that others hang off BEFORE the fields that hang off it.
  *
- * ⚠️ MERGING THE RUNS EXPOSES AN ORDER THE REGISTRY NEVER HAD TO GET RIGHT.
+ * ?? MERGING THE RUNS EXPOSES AN ORDER THE REGISTRY NEVER HAD TO GET RIGHT.
  * While "About you" was three separate steps, nobody noticed that
- * spouse_id_number is declared before the spouse_id_type it depends on —
+ * spouse_id_number is declared before the spouse_id_type it depends on â€”
  * they were pages apart. In one step it means answering a question near the
  * bottom makes a new field appear near the top, above where the member is
  * looking, which is its own way of being invisible.
@@ -2067,7 +2351,7 @@ export function groupBySection(
  * A stable single pass: each field is emitted after anything its showIf names
  * within the same section. Cycles are impossible to express in the registry
  * (showIf takes one key, not a chain), and a dependency in another section is
- * left alone — it is already on an earlier step.
+ * left alone â€” it is already on an earlier step.
  */
 export function orderByDependency(
   fields: MotivationField[],

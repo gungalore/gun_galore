@@ -94,12 +94,31 @@ function section(
   paragraphs: (string | null | undefined)[],
   fromCards: string[] = [],
 ): PreviewSection {
+  /**
+   * ⚠️ A SENTENCE APPEARS ONCE. The same card sentence can arrive twice — once
+   * from `cardSentences()` and again because the interview composed it into the
+   * long field the writer reads (`hunt_reasons` -> `hunting_history`). MO000022's
+   * preview printed "I hunt for meat for my own household" twice, back to back.
+   * The long field still carries it for the writer; this is the display edge.
+   */
+  const seen = new Set<string>();
+  const unique = (items: (string | null | undefined)[]) => {
+    const out: string[] = [];
+    for (const item of items) {
+      if (!item) continue;
+      const text = item.trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push(text);
+    }
+    return out;
+  };
   return {
     id,
     heading,
     placeholder,
-    paragraphs: paragraphs.filter((p): p is string => !!p && !!p.trim()),
-    fromCards,
+    paragraphs: unique(paragraphs),
+    fromCards: [...new Set(fromCards.map((s) => s.trim()).filter(Boolean))],
   };
 }
 

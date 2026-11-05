@@ -16,7 +16,7 @@ import { extractAccessToken } from './extract-token';
  *
  * Used on endpoints that need to work from BOTH the normal signed-in app AND
  * from an SMS-link checkout flow:
- *   - POST /transactions  (buyer creates the order + Peach checkout)
+ *   - POST /transactions  (buyer creates the order + gateway checkout)
  *   - GET  /users/me      (checkout-form fetches saved address)
  *   - PATCH /users/me     (checkout-form saves captured address)
  *

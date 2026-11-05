@@ -289,7 +289,19 @@ export function findCartridge<T extends NameableCartridge>(
     if (want.length < 4) continue;
     for (const test of [
       (k: string) => k.startsWith(want),
-      (k: string) => k.includes(want),
+      /**
+       * ⚠️ A SUBSTRING MUST START AT A NUMBER BOUNDARY. The contraction of
+       * "7mm magnum" produces `7MAGNUM`, which is a substring of `357MAGNUM`.
+       * That matched the .357 Magnum sheet and printed its dimensions under a
+       * 7mm application. A preceding digit or letter means this is a different
+       * number, not this cartridge.
+       */
+      (k: string) => {
+        const at = k.indexOf(want);
+        if (at < 0) return false;
+        const before = k[at - 1] ?? '';
+        return !/[a-z0-9]/i.test(before);
+      },
     ]) {
       const hits = matching(rows, test);
       if (hits.length === 1) return hits[0];

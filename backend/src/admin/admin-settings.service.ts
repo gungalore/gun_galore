@@ -53,12 +53,29 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'auto_payouts_enabled',
     label: 'Auto payouts enabled',
-    hint: 'ON = the scheduled sweep disburses due seller payouts through Ozow without the operator pressing "Execute batch payouts" on /admin/money. OFF = manual only: nothing leaves the float until an admin runs the batch. This moves real money automatically — leave it OFF until the payout rail has been watched through a full settlement cycle.',
+    hint: 'ON = the scheduled sweep disburses due seller payouts through their captured rail (Ozow or Peach) without the operator pressing "Execute batch payouts" on /admin/money. OFF = manual only: nothing leaves either float until an admin runs the batch. This moves real money automatically — leave it OFF until both payout rails have been watched through a full settlement cycle.',
     group: 'Payments',
     type: 'boolean',
     default: 'false',
     // Automates the disbursement of real money from the float. Exactly the
     // class of switch that demands the typed-key gate and a real audit reason.
+    danger: true,
+  },
+  {
+    key: 'peach_payin_enabled',
+    label: 'Peach pay-in enabled',
+    hint: 'ON = buyers can choose Peach at checkout alongside Ozow. OFF = Ozow only. Enabling this does not move seller money; it only exposes the card rail.',
+    group: 'Payments',
+    type: 'boolean',
+    default: 'false',
+  },
+  {
+    key: 'peach_payouts_enabled',
+    label: 'Peach payouts enabled',
+    hint: 'ON = the payout runner sends Peach-paid sales to Peach Payouts. OFF = Peach-paid rows stay in the due queue with a skip reason; they are never routed to Ozow. This moves real money from the Peach float.',
+    group: 'Payments',
+    type: 'boolean',
+    default: 'false',
     danger: true,
   },
 

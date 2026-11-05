@@ -179,6 +179,24 @@ export function resolveSportingPurpose(
   if (cls === 'handgun') return 'sport';
   if (semi) return 'sport';
 
+  /**
+   * ⚠️ THE APPLICANT'S EXPLICIT ANSWER WINS, IN THE GUIDED INTERVIEW ONLY.
+   *
+   * Operator, 2026-10-29: "if they will be hunting or sport shooting or both,
+   * then dynamically change the follow-up questions to suit it." The old
+   * 2026-10-17 rule retired the question for everybody; the interview now asks
+   * it, and a stored answer is the member's own statement. Document-first
+   * applications leave it empty and still fall through to the automation
+   * below, unchanged.
+   *
+   * The handgun/self-loader guard above stays first: a handgun cannot be
+   * converted into a hunting application by a tap.
+   */
+  const explicit = (a.firearm_use_kind ?? '').trim().toLowerCase();
+  if (explicit === 'hunting' || explicit === 'sport' || explicit === 'both') {
+    return explicit;
+  }
+
   // Dangerous-game chamberings are hunting, not sport, whatever the action.
   // ⚠️ THE CURATED TABLE IS NOT EVERY BIG-BORE. A .375 H&H wildcat or an
   // Afrikaans spelling the table does not carry is still a dangerous-game

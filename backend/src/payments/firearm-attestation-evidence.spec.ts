@@ -12,7 +12,6 @@
 // meilisearch; stub it so ts-jest doesn't choke (same as the sibling specs).
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
-import { BadRequestException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { FeeCalculator } from './fee.calculator';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -152,16 +151,14 @@ describe('M33 firearm attestation evidence', () => {
     expect(created.data.firearmAttestationAcceptedAt).toBeNull();
   });
 
-  it('creates no transaction at all when a firearm checkout omits the attestation', async () => {
-    // The hard gate fires before the reserve, so there is no row to stamp and
-    // no orphaned hold on the listing.
-    const { reserve, prisma } = makeService(makeListing());
+  it('does not require the old attestation flag at checkout', async () => {
+    // The 18+/competency declaration now lives in the Terms accepted at
+    // registration, so an older client that omits the flag must still be able
+    // to buy. No evidence stamp is written without an explicit true.
+    const { reserve, created } = makeService(makeListing());
 
-    await expect(
-      reserve(firearmDto({ firearmAttestation18Plus: undefined })),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await reserve(firearmDto({ firearmAttestation18Plus: undefined }));
 
-    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
-    expect(prisma.transaction.create).not.toHaveBeenCalled();
+    expect(created.data.firearmAttestationAcceptedAt).toBeNull();
   });
 });

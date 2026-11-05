@@ -932,6 +932,13 @@ export interface MotivationPdfInput {
    */
   annexureImages?: AnnexureImagePage[];
   /**
+   * Blank, lettered pages for the motivation-only deliverable. The applicant
+   * attaches their own copies behind these; no upload is printed, and no
+   * optional evidence is included. The set comes from the mandatory annexures
+   * for the licence type, so the letters match the index.
+   */
+  annexurePlaceholders?: { letter: string; label: string }[];
+  /**
    * The request for prior notice and written reasons, if one was built.
    *
    * Rendered as its own page and lettered in the annexure index. See
@@ -1382,6 +1389,19 @@ const RUNNING_LABELS: Record<string, string> = {
   'Request for prior notice and written reasons': 'Prior notice request',
   Annexures: 'Annexures',
 };
+
+/**
+ * The top banner on a body page.
+ *
+ * ⚠️ THE FULL LABEL IS LONGER THAN THE BANNER. "Section 16 — Dedicated hunting
+ * or sport-shooting" reached the page as "SECTION 16 — DEDICATED HUNTI…"; the
+ * section number is the part a reader needs while thumbing the pack, and the
+ * cover plus the body already carry the purpose.
+ */
+export function bannerTitleFor(licenceTypeLabel: string): string {
+  const section = /Section\s+\d+/i.exec(licenceTypeLabel)?.[0];
+  return `Motivation · ${section ?? licenceTypeLabel}`;
+}
 
 /** The banner label for a heading — its short form, with the number stripped. */
 export function runningLabelFor(heading: string): string {
@@ -5138,6 +5158,44 @@ export class MotivationPdfService {
     // arithmetic: full content width each, as many per page as genuinely fit,
     // never scaled down to squeeze one more in. See
     // motivation-annexure-layout.ts.
+    // Placeholder pages for the motivation-only deliverable. The applicant
+    // gets the index and one lettered page per mandatory annexure, then
+    // attaches their own copies behind them. No uploaded page is reprinted and
+    // no optional evidence is added.
+    if (input.annexurePlaceholders?.length) {
+      for (const placeholder of input.annexurePlaceholders) {
+        doc.addPage();
+        doc.y = bodyTop;
+
+        /**
+         * A DIVIDER, NOT A FORM. The applicant prints this page and places
+         * their own copy behind it, so the only thing it has to do is name the
+         * annexure. The old bordered box and "Place the copy here" made it
+         * look like a document that had failed to print.
+         */
+        const heading = `Annexure ${placeholder.letter} — ${placeholder.label}`;
+        const headingWidth = contentWidth * 0.8;
+        const headingX = MARGIN + contentWidth * 0.1;
+        doc.font(F.sansSemi).fontSize(K.px(24)).fillColor(C.deep);
+        const headingHeight = doc.heightOfString(heading, {
+          width: headingWidth,
+          align: 'center',
+        });
+        const headingY =
+          K.BODY_TOP +
+          (K.BODY_BOTTOM - K.BODY_TOP - headingHeight) / 2;
+        doc.text(heading, headingX, headingY, {
+          width: headingWidth,
+          align: 'center',
+        });
+
+        const tocEntry = toc.find((entry) =>
+          entry.heading.startsWith(`Annexure ${placeholder.letter} `),
+        );
+        if (tocEntry) tocEntry.page = doc.bufferedPageRange().count;
+      }
+    }
+
     if (input.annexureImages?.length) {
       /**
        * ⚠️ THE SAFE SHEET IS PLANNED IN LETTER ORDER, NOT APPENDED. Safe
@@ -5978,7 +6036,7 @@ export class MotivationPdfService {
           // appeared and the only place the document did not say what it was.
           K.banner(
             chrome,
-            `Motivation \u25c7 ${input.licenceTypeLabel}`,
+            bannerTitleFor(input.licenceTypeLabel),
             pageLabels[i] ?? '',
           );
         }
@@ -6088,3 +6146,4 @@ export class MotivationPdfService {
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }
 }
+

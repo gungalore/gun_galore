@@ -1,6 +1,8 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { QUARRY, quarriesFor, type QuarrySpecies } from './motivation-quarry';
-import { classifyCalibre } from './motivation-overlap';
+import { SPECIES_BRIEFS } from './motivation-quarry-notes';
+import { classifyCalibre, type QuarryClass } from './motivation-overlap';
+import { huntGameClassOptions } from './motivation-hunt-classes';
 import { resolveSportingPurpose, weaponClass } from './motivation-purpose';
 import { coursesFor, type CourseSpec } from './motivation-courses';
 import {
@@ -49,7 +51,7 @@ import {
  * wording with no way to tell which is which — the same trap
  * QUARRY_PROMPT_VERSION and researchAskVersion were written to close.
  */
-export const PLATES_PROMPT_VERSION = '2026-10-27a';
+export const PLATES_PROMPT_VERSION = '2026-11-03a';
 
 /** Which of the purposes a pack's exhibits serve. */
 export type PlatePurpose = 'hunting' | 'sport' | 'both' | 'self_defence';
@@ -203,20 +205,76 @@ function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** How the cartridge's own class is described in a species caption. */
+const CALIBRE_CLASS_LABEL: Record<QuarryClass, string> = {
+  rimfire: 'rimfire',
+  varmint: 'varmint and small-game',
+  medium_game: 'medium-game',
+  large_game: 'large-game',
+  dangerous_game: 'dangerous-game',
+  handgun: 'handgun',
+  shotgun: 'shotgun',
+};
+
+/**
+ * Why THIS cartridge suits THIS species, in the species' own terms.
+ *
+ * The old caption stated the game class once and printed the same sentence
+ * under every animal. The operator's note of 2026-11-03 is the correction: a
+ * buffalo, an elephant, a lion and a hippo do not ask the same thing of a
+ * bullet, and a caption that says they do is not worth the page it occupies.
+ *
+ * ⚠️ THE CALIBRE NAME COMES FROM THE APPLICANT'S OWN ANSWER. No model chooses
+ * it here and no figure is added — the caption only joins the actual chambering
+ * to the documented demand of the species. Where the chambering is not a
+ * sensible match for the species, the sentence stops at what the species asks
+ * for rather than claiming a fit that the cartridge table does not support.
+ */
+function calibreFitClause(
+  species: QuarrySpecies,
+  answers: Record<string, string>,
+): string {
+  const calibre = (answers.firearm_calibre ?? '').trim();
+  const cartridge = calibre ? `the ${calibre}` : 'the cartridge applied for';
+  const klass = calibre ? classifyCalibre(calibre) : null;
+  const label = klass ? CALIBRE_CLASS_LABEL[klass] : null;
+  const demand =
+    SPECIES_BRIEFS[species.key]?.demand ??
+    CLASS_RATIONALE[species.klass] ??
+    CLASS_RATIONALE.plains_medium;
+  const fits =
+    !!klass &&
+    huntGameClassOptions(calibre).some(
+      (option) => option.key === species.klass,
+    );
+
+  if (fits && label) {
+    return (
+      `${capitalise(cartridge)} is a ${label} cartridge, and that is the fit ` +
+      `here: ${demand}.`
+    );
+  }
+  if (label) {
+    return `${capitalise(cartridge)} is a ${label} cartridge. ${species.name} asks for ${demand}.`;
+  }
+  return `The cartridge applied for must provide ${demand}.`;
+}
+
 function speciesPlate(
   species: QuarrySpecies,
+  answers: Record<string, string>,
 ): Omit<PlateSpec, 'pageIndex' | 'plateIndex'> {
   const habitat =
     species.setting ?? HABITAT[species.klass] ?? HABITAT.plains_medium;
   const range = RANGE[species.klass] ?? RANGE.plains_medium;
   const label = CLASS_LABEL[species.klass] ?? CLASS_LABEL.plains_medium;
-  const why = CLASS_RATIONALE[species.klass] ?? CLASS_RATIONALE.plains_medium;
+  const nature = SPECIES_BRIEFS[species.key]?.nature ?? `is ${label}, ${range}`;
   return {
     title: species.name,
     description:
-      `${species.name} is ${label}, ${range}. The cartridge applied for is ` +
-      `matched to this class of game, and this is why: ${why}. It is pictured ` +
-      `in ${habitat}, the setting a licence for this purpose is intended for.`,
+      `${species.name} ${nature}. ${calibreFitClause(species, answers)} It is ` +
+      `pictured in ${habitat}, the setting a licence for this purpose is ` +
+      `intended for.`,
     prompt: imageBrief({
       subject:
         `${capitalise(species.subject)}, standing broadside in ${habitat}, ` +
@@ -651,6 +709,46 @@ function huntingSpecs(
   ]
     .filter(Boolean)
     .join(' ');
+  /**
+   * ⚠️ WHAT THE APPLICANT NAMED STAYS THE WHOLE LINE-UP.
+   *
+   * The reserve below exists to finish a page when the cartridge chooses the
+   * species. It must not run when the applicant chose them: "Vlakvark" became
+   * Warthog plus Impala, Blesbok and Kudu, and heading 3 printed animals the
+   * applicant never named. Only one species is a short exhibit, not an error.
+   */
+  const explicit = (ctx.answers.intended_quarry ?? '').trim();
+  const selectedClasses = new Set(
+    (ctx.answers.hunt_game_class ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const explicitlyNamed = explicit
+    ? quarriesFor({ userText: explicit }).filter((q) => !exclude.has(q.key))
+    : [];
+  /**
+   * ⚠️ BOTH THE TYPED ANIMAL AND THE PICKED CLASS. The applicant who typed
+   * "vlakvark" and then ticked "medium to large plains game" selected both
+   * facts; showing only the typed animal silently dropped the class. The class
+   * contributes its representative species after the explicitly named one.
+   */
+  const classNamed =
+    explicit && [...selectedClasses].length
+      ? QUARRY.filter(
+          (q) =>
+            selectedClasses.has(q.klass) &&
+            !exclude.has(q.key) &&
+            !explicitlyNamed.some((named) => named.key === q.key),
+        )
+      : [];
+  const applicantNamed = [...explicitlyNamed, ...classNamed];
+  if (applicantNamed.length) {
+    return applicantNamed
+      .slice(0, limit)
+      .map((species) => speciesPlate(species, ctx.answers));
+  }
+
   const named = quarriesFor({
     userText: userQuarryText,
     cartridgeText: ctx.research,
@@ -702,7 +800,9 @@ function huntingSpecs(
   add(true);
   add(false);
 
-  return out.slice(0, limit).map(speciesPlate);
+  return out
+    .slice(0, limit)
+    .map((species) => speciesPlate(species, ctx.answers));
 }
 
 /**

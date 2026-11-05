@@ -16,9 +16,8 @@ import { KycModule } from '../kyc/kyc.module';
 // instantiated per-controller-module by Nest. Making this global means any
 // module that applies @UseGuards(AuthGuard) can resolve the guard's deps.
 //
-// (Previously imported PaymentsModule for PeachService.verifyBankAccount()
-// — that automated AVS check was removed with Ozow, which has no BANV
-// product, so the dependency is gone too.)
+// BANV dependencies (PeachService / BanvService) are @Global via PeachModule,
+// so UsersService injects them without importing PaymentsModule.
 @Global()
 @Module({
   // MotivationsModule for MotivationRetentionService: the identity provider

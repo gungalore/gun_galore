@@ -6,6 +6,7 @@ import { BRAND_NAME } from '@/lib/brand';
 import {
   Listing,
   CategoryAttributeDef,
+  CheckoutHold,
   Me,
   ShippingMethod,
 } from '@/lib/types';
@@ -214,6 +215,25 @@ export default async function ListingDetailPage({
         ).catch(() => null)
       : null;
   const hasUnpaidCheckout = !!unpaidCheckout?.transactionId;
+
+  // A buyer can leave the checkout page before pressing Pay. The hold is
+  // theirs, but the listing is PAYMENT_PENDING and the generic "not
+  // available" state would hide the only way back. Look up the live hold.
+  const heldCheckout =
+    !isOwnListing &&
+    !hasUnpaidCheckout &&
+    listing.status === 'PAYMENT_PENDING' &&
+    listing.listingType === 'BUY_NOW' &&
+    userId &&
+    token
+      ? await apiFetch<CheckoutHold | null>(
+          `/transactions/hold?listingId=${encodeURIComponent(listing.id)}`,
+          {
+            cache: 'no-store',
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        ).catch(() => null)
+      : null;
 
   // Dealer-distance is viewer-specific. Read the signed-in buyer's own saved
   // coordinates server-side (never send them to the browser) and calculate a
@@ -1099,7 +1119,8 @@ export default async function ListingDetailPage({
               listingId={listing.id}
               sellerId={sellerUserId}
             />
-          ) : listing.status === 'PAYMENT_PENDING' && hasUnpaidCheckout ? (
+          ) : listing.status === 'PAYMENT_PENDING' &&
+            (hasUnpaidCheckout || heldCheckout) ? (
             <div
               className="rounded-[6px] px-4 py-3 mb-5 text-sm"
               style={{
@@ -1108,14 +1129,19 @@ export default async function ListingDetailPage({
               }}
             >
               <p className="font-medium mb-1" style={{ color: 'var(--red)' }}>
-                Payment not completed
+                {hasUnpaidCheckout ? 'Payment not confirmed yet' : 'Checkout in progress'}
               </p>
               <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                No money was taken. Finish checkout to pay or choose another
-                payment option.
+                {hasUnpaidCheckout
+                  ? 'If you completed payment, do not pay again. Resume the existing attempt or check My Orders.'
+                  : 'You still hold this item. Continue checkout before the reservation expires.'}
               </p>
               <Link
-                href={`/checkout/${listing.id}`}
+                href={
+                  hasUnpaidCheckout && unpaidCheckout?.transactionId
+                    ? `/checkout/resume/${unpaidCheckout.transactionId}`
+                    : `/checkout/${listing.id}`
+                }
                 className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
                 style={{
                   background: 'var(--red)',
@@ -1123,7 +1149,7 @@ export default async function ListingDetailPage({
                   textDecoration: 'none',
                 }}
               >
-                Complete payment
+                {hasUnpaidCheckout ? 'Resume payment' : 'Continue checkout'}
               </Link>
             </div>
           ) : listing.status !== 'ACTIVE' ? (

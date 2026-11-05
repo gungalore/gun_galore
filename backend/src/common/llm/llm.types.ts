@@ -221,6 +221,57 @@ export type LlmStreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'done'; response: LlmResponse };
 
+// ────────────────────────────────────────────────────────────────────
+// AN AGENT TURN.
+//
+// The interviewer needs more than one model round-trip: it must inspect the
+// application through tools before it writes the next question. This is the
+// Interactions API's shape, exposed through the same adapter so the call site
+// still never constructs a Gemini client, picks a model, or parses provider
+// steps.
+//
+// ⚠️ THIS IS NOT `LlmRequest` WITH TOOLS. `LlmRequest.tools` is a single
+// request/response pair: the caller receives the calls and echoes the results
+// back itself. Here the provider owns the loop, executes the tools through
+// `executeTool`, and returns the final prose. That is the difference between
+// "the model may call a function" and "the model can do a piece of work".
+// ────────────────────────────────────────────────────────────────────
+
+export interface LlmAgentRequest {
+  system: string;
+  input: string;
+  tools: LlmTool[];
+  maxTokens: number;
+  purpose: string;
+  model?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** The shape of the FINAL answer, after the tool loop settles. */
+  json?: { schema: Record<string, unknown> };
+  /** Stop after this many tool-result round-trips. Default 3. */
+  maxToolRounds?: number;
+  /**
+   * Runs ONE tool call. The provider sends its return value back to the model
+   * as a `function_result`. Throwing is allowed; the provider reports the
+   * error to the model instead of failing the whole turn.
+   */
+  executeTool: (call: LlmToolCall) => Promise<unknown> | unknown;
+}
+
+export interface LlmAgentResponse {
+  /** The final text after the last model round. */
+  text: string;
+  /** Every tool call the model made, in order, for diagnostics only. */
+  toolCalls: LlmToolCall[];
+  usage: LlmUsage;
+  model: string;
+  provider: LlmProvider;
+  /** The last Interactions API id. Diagnostic only; the DB is canonical. */
+  interactionId: string;
+  /** How many model round-trips ran, including the first. */
+  rounds: number;
+}
+
 export type LlmErrorCode =
   | 'not_configured'
   | 'bad_request'
@@ -411,6 +462,15 @@ export type JevQuestion =
       type: 'score';
       instructions: JevInstructions;
       criteria: JevInstructions[];
+    }
+  /**
+   * Locate something in an attached image. Requires the
+   * `TypeSafe-Danger-Zone-Images: true` header. The answer is normalized
+   * coordinates, not text.
+   */
+  | {
+      type: 'box';
+      instructions?: JevInstructions;
     };
 
 export interface JevNoulAnswer {
@@ -434,12 +494,42 @@ export interface JevScoreAnswer {
   confidence: number;
 }
 
-export type JevAnswer = JevNoulAnswer | JevChoiceAnswer | JevScoreAnswer;
+export interface JevBoxCoordinates {
+  /** Fraction of image height from the top, 0..1. */
+  top: number;
+  /** Fraction of image height from the top, 0..1. */
+  bottom: number;
+  /** Fraction of image width from the left, 0..1. */
+  left: number;
+  /** Fraction of image width from the left, 0..1. */
+  right: number;
+}
+
+export interface JevBoxAnswer {
+  type: 'box';
+  box: JevBoxCoordinates;
+  /** Null when TypeSafe did not report confidence. */
+  confidence: number | null;
+}
+
+export type JevAnswer =
+  | JevNoulAnswer
+  | JevChoiceAnswer
+  | JevScoreAnswer
+  | JevBoxAnswer;
+
+export interface JevImageAsset {
+  type: 'image';
+  format: 'png' | 'jpg';
+  data_base64: string;
+}
 
 export interface JevDecideRequest {
   state: JevState;
   /** One entry per question. An answer comes back under the same key. */
   questions: Record<string, JevQuestion>;
+  /** Top-level image map; reference strings in state/questions point here. */
+  assets?: Record<string, JevImageAsset>;
   /** Ledger and log label, like every other call. */
   purpose: string;
   /** Overrides JEV_MODEL / the default alias. */

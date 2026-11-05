@@ -69,6 +69,12 @@ const CHUNK_HEAL_SCRIPT = `(function(){try{var KEY='gg-chunk-reload-at';var seen
 // appinstalled clears the stash + flags installed. See useInstallPrompt().
 const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window.__ggInstallEvent||null;window.__ggInstalled=window.__ggInstalled||false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__ggInstallEvent=e;try{window.dispatchEvent(new Event('gg:install-available'));}catch(_){}});window.addEventListener('appinstalled',function(){window.__ggInstallEvent=null;window.__ggInstalled=true;try{window.dispatchEvent(new Event('gg:installed'));}catch(_){}});}catch(_){}})();`;
 
+// Development-only stale-SW cleanup. `next dev` does not generate a service
+// worker, but a previous local production build can leave one registered on
+// localhost. That worker then serves old JS chunks over HMR, which looks like
+// random behaviour that survives reloads. Unregister before the app boots.
+const DEV_SW_CLEANUP_SCRIPT = `(function(){try{if(!('serviceWorker' in navigator))return;navigator.serviceWorker.getRegistrations().then(function(rs){for(var i=0;i<rs.length;i++){rs[i].unregister();}}).catch(function(){});if(window.caches&&caches.keys){caches.keys().then(function(ks){for(var i=0;i<ks.length;i++){caches.delete(ks[i]);}}).catch(function(){});}}catch(_){}})();`;
+
 // Pre-paint theme detection â€” sets <html data-theme="light|dark"> before React
 // hydrates so CSS [data-theme] rules apply on the very first frame. Without
 // this, the page flashes the OS default (usually light) before the client-side
@@ -259,6 +265,11 @@ export default function RootLayout({
           <script
             dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }}
           />
+          {process.env.NODE_ENV !== 'production' && (
+            <script
+              dangerouslySetInnerHTML={{ __html: DEV_SW_CLEANUP_SCRIPT }}
+            />
+          )}
           {/* Pre-paint theme detection â€” sets <html data-theme="light|dark">
                before React hydrates so CSS [data-theme] rules apply on the
                first frame. Without this the page flashes the OS default

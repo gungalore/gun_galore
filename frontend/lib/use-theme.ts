@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 type ThemeValue = 'light' | 'dark' | 'system';
 type ResolvedTheme = 'light' | 'dark';
@@ -100,27 +100,28 @@ export function useTheme() {
     setTheme(next);
   }, []);
 
-  // Sync DOM when theme changes — EXCEPT on the very first run. The pre-paint
-  // script has already put the right value on <html>, and this render's
-  // `theme` is the placeholder 'light': writing it here would flip an OS-dark
-  // page to light for one tick before the adopt effect corrects it — a flash
-  // on exactly the devices that had nothing wrong with them.
-  const syncedOnce = useRef(false);
+  // Sync DOM when theme changes, but NEVER write the placeholder 'light'
+  // over a stored/system dark page. A `syncedOnce` ref was not StrictMode-safe:
+  // React double-invokes mount effects in development, the second pass saw the
+  // ref already true and wrote the placeholder light, then the adopt effect's
+  // dark state was overwritten. Comparing against the STORED preference is
+  // idempotent across any number of mounts and keeps the pre-paint value.
   useEffect(() => {
-    if (!syncedOnce.current) {
-      syncedOnce.current = true;
-      return;
-    }
+    const resolved = resolveTheme(getStoredTheme());
+    if (theme !== resolved) return;
     document.documentElement.dataset.theme = theme;
     syncThemeColor(theme);
   }, [theme]);
 
-  // Listen for external theme changes (direct DOM manipulation)
+  // Keep every mounted instance's icon/state in step when one of them changes
+  // the DOM. Do NOT write localStorage here: the pre-paint script and the sync
+  // effect both touch data-theme, and a transient DOM value must never become
+  // the member's saved preference. The action that changes the theme already
+  // writes storage before it updates state.
   useEffect(() => {
     const observer = new MutationObserver(() => {
       const newTheme = document.documentElement.dataset.theme;
       if (newTheme && (newTheme === 'light' || newTheme === 'dark')) {
-        localStorage.setItem(STORAGE_KEY, newTheme);
         setTheme(newTheme as ResolvedTheme);
       }
     });

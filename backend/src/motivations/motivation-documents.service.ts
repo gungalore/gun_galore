@@ -65,9 +65,11 @@ import {
   isContainerId,
 } from './evidence-taxonomy';
 import { looksLikeSaps271, SAPS_271_MARKER } from '../common/document-markers';
+import { parseUnitStandards } from '../common/sa-competency';
 import type { DocumentCapture } from '../common/document-capture/document-capture';
 import { DocumentCaptureService } from '../common/document-capture/document-capture.service';
 import { DocumentProjectionService } from '../common/document-projection/document-projection.service';
+import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { fieldByKey } from './motivation-fields';
 import { nextOwnedSlot, remapOwnedSlot } from './motivation-extract.service';
 import {
@@ -123,12 +125,14 @@ const AUTOLINK_CONCURRENCY = 3;
  * The document cap exists so a runaway client cannot fill the encrypted store,
  * and it has to clear the largest legitimate pack with room to spare. Splitting
  * the safe photograph into three shots (2026-08-19) took the recommended set
- * for a dedicated licence from eight to ten, which left the old cap of twelve
- * with room for two extra documents — so sixteen, not twelve. A cap that a
- * thorough applicant can hit is a bug that only shows up in the field.
+ * for a dedicated licence from eight to ten, and sixteen was then hit in the
+ * field on MO000022: five existing licences, four proficiency certificates,
+ * three safe photographs, the ID, competency, source proof and association
+ * certificate left no room for the required proof of address. Twenty clears
+ * that pack and still stops a runaway client.
  */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const MAX_UPLOADS = 16;
+const MAX_UPLOADS = 20;
 
 /**
  * One file's verdict, as the picker's status card needs it.
@@ -233,6 +237,8 @@ export class MotivationDocumentsService {
     @Optional() private readonly captureService?: DocumentCaptureService,
     /** Projects the capture into this upload kind's keys before any re-read. */
     @Optional() private readonly projection?: DocumentProjectionService,
+    /** Jev-backed document engine; absent in old positional specs. */
+    @Optional() private readonly engine?: DocumentEngineService,
   ) {}
 
   /**
@@ -1246,7 +1252,7 @@ export class MotivationDocumentsService {
 
     // ⚠️ ROOM FOR THE WHOLE DOCUMENT, DECIDED BEFORE EITHER PAGE IS WRITTEN.
     // attachOne checks the ceiling per page, which is right for one document
-    // and silent for two: at 15 of 16 the member picks a two-page proficiency,
+    // and silent for two: at 19 of 20 the member picks a two-page proficiency,
     // gets the certificate, gets no error — and with the picker hiding a
     // folded entry it believes is already here, no way to add the page that
     // was refused. All or nothing, and the message names the limit either way.
@@ -1340,7 +1346,7 @@ export class MotivationDocumentsService {
    * ⚠️ A PAGE ALREADY ON THE PACK COSTS NO SLOT. attachOne hands back the row
    * that already exists rather than writing a second one, so the question is
    * how many of the two are NEW — which is what keeps re-adding a deleted page
-   * possible at fifteen of sixteen, the exact repair the fold made necessary.
+   * possible at nineteen of twenty, the exact repair the fold made necessary.
    */
   private async roomForPair(
     ctx: AttachContext,
@@ -1359,7 +1365,7 @@ export class MotivationDocumentsService {
         select: { sha256: true },
       }),
       // ⚠️ DOCUMENTS ONLY. Room is being measured for a two-page DOCUMENT, and
-      // an evidence item occupies none of the sixteen slots it is measuring —
+      // an evidence item occupies none of the twenty slots it is measuring —
       // see capacityFor. Counting every row would refuse a proficiency at
       // fourteen documents and two photographs, which is a pack with room.
       this.capacityFor(motivationId),
@@ -1458,7 +1464,7 @@ export class MotivationDocumentsService {
    * against MAX_UPLOADS; an evidence item counts against ONE of the two
    * evidence caps, chosen by where its container prints. `held.documents`
    * therefore EXCLUDES evidence, or four photographs would eat four of the
-   * sixteen slots the paperwork needs.
+   * twenty slots the paperwork needs.
    */
   private async capacityFor(motivationId: string) {
     const rows = await this.prisma.motivationUpload.findMany({
@@ -1551,7 +1557,7 @@ export class MotivationDocumentsService {
     const row = ctx.row;
 
     // ⚠️ EVIDENCE DOES NOT COUNT AGAINST THE DOCUMENT CEILING, AND THE THREE
-    // CAPS ARE DISTINCT ON PURPOSE. The operator's numbers: 16 documents, then
+    // CAPS ARE DISTINCT ON PURPOSE. The operator's numbers: 20 documents, then
     // 2 evidence items that take an annexure letter and 4 that print on the
     // Activities page. Folding evidence into MAX_UPLOADS would let four
     // photographs crowd out the paperwork SAPS actually processes; counting
@@ -1734,6 +1740,29 @@ export class MotivationDocumentsService {
         try {
           const details =
             decryptJson<Record<string, string>>(c.detailsEncrypted) ?? {};
+          /**
+           * ⚠️ AN EXISTING LICENCE MUST BELONG TO THE APPLICANT.
+           *
+           * A member can photograph a friend's or a seller's card into their
+           * own vault. Without this check the card is treated as one of their
+           * owned firearms and its details leak into the application. Both
+           * numbers have to be present before we refuse: an older vault row
+           * read before holder_id_number existed must still attach.
+           */
+          if (kind === MotivationUploadKind.CURRENT_LICENCE) {
+            const holder = String(details.holder_id_number ?? '').replace(
+              /\D/g,
+              '',
+            );
+            const applicant = String(
+              this.shared.readAnswers(row.answersEncrypted).id_number ?? '',
+            ).replace(/\D/g, '');
+            if (holder.length === 13 && applicant.length === 13 && holder !== applicant) {
+              throw new BadRequestException(
+                'That licence card carries a different identity number from the applicant. Check that it is your own licence.',
+              );
+            }
+          }
           // ⚠️ ONLY KEYS THIS UPLOAD KIND ACTUALLY ANSWERS. A vault reading
           // carries things the motivation registry has no field for — a
           // holder name, what a competency covers — and offering those as
@@ -2223,7 +2252,23 @@ export class MotivationDocumentsService {
         extractionEncrypted: encryptJson(values),
       },
     });
-    return { ok: true, fields: found.map((f) => f.key), readable: true };
+    return {
+      ok: true,
+      fields: found.map((f) => f.key),
+      readable: true,
+      /**
+       * The re-read is also a second chance to WRITE what the old prompt never
+       * asked for (a status certificate's "valid until" was discarded before
+       * 2026-10-30). The caller applies these exactly like an upload's
+       * suggestions; low-confidence reads stay advisory.
+       */
+      suggestions: found.map((f) => ({
+        key: f.key,
+        value: f.value,
+        label: f.key,
+        trusted: f.trusted,
+      })),
+    };
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -2249,6 +2294,11 @@ export class MotivationDocumentsService {
     id: string,
     files: { buffer: Buffer; mimetype: string; description?: string }[],
   ): Promise<IdentifyVerdict[]> {
+    await this.engine?.assertAvailable({
+      userId,
+      motivationId: id,
+      action: 'MOTIVATION_UPLOAD',
+    });
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
 
@@ -2313,15 +2363,22 @@ export class MotivationDocumentsService {
       };
     }
 
-    // ⚠️ THE PAGE IS READ ONCE, HERE, AND TRAVELS WITH THE ID. The stored row
-    // later takes the server's OCR, never a client's.
-    const ocrText = await this.extract
-      .ocr(file.buffer, file.mimetype)
+    // Jev decides from the image first. Only then is OCR spent, and a
+    // photograph with no printed text is never sent to the OCR reader.
+    const guess = await this.extract
+      .classify({
+        bytes: file.buffer,
+        mimeType: file.mimetype,
+        ocrText: undefined,
+      })
       .catch(() => null);
 
-    const guess = await this.extract
-      .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
-      .catch(() => null);
+    const ocrText =
+      guess?.hasPrintedText === false
+        ? null
+        : await this.extract
+            .ocr(file.buffer, file.mimetype)
+            .catch(() => null);
 
     let role: IdentifyRecord['role'] = 'evidence';
     let kind: string | null = null;
@@ -2453,6 +2510,11 @@ export class MotivationDocumentsService {
       saps271?: boolean;
     } = {},
   ) {
+    await this.engine?.assertAvailable({
+      userId,
+      motivationId: id,
+      action: 'MOTIVATION_UPLOAD',
+    });
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
 
@@ -2480,7 +2542,7 @@ export class MotivationDocumentsService {
     }
 
     // ⚠️ THE SAME SPLIT THE LIBRARY ROUTE USES. A pack that ALREADY holds
-    // evidence must not have its photographs counted against the sixteen
+    // evidence must not have its photographs counted against the twenty
     // document slots, or a member with two activity photos and fourteen
     // documents is refused the fifteenth paper.
     //
@@ -2511,9 +2573,11 @@ export class MotivationDocumentsService {
     // local run: the key is IP-restricted to the live box BY DESIGN. Both
     // consumers already treat null as "nothing to add", so this degrades to
     // exactly the previous behaviour rather than to a broken upload.
-    const ocrText = await this.extract
-      .ocr(file.buffer, file.mimetype)
-      .catch(() => null);
+    // OCR is now AFTER the Jev image decision. A no-text photograph must not
+    // spend a Gemini/Vision read, and a text document only needs one once Jev
+    // has said which fields matter.
+    let ocrText: string | null = null;
+    let hasPrintedText: boolean | undefined;
 
     // NAME IT, if they did not. Before the row, because the kind is a column
     // on it — and fail-soft: an unsortable document becomes OTHER, which reads
@@ -2563,7 +2627,11 @@ export class MotivationDocumentsService {
         // to reading the bytes we were actually handed. Nothing is blocked,
         // and nothing is filed on an assertion the client made.
         const guess = await this.extract
-          .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
+          .classify({
+            bytes: file.buffer,
+            mimeType: file.mimetype,
+            ocrText: undefined,
+          })
           .catch(() => null);
         if (guess) {
           // ⚠️ AN EVIDENCE VERDICT FILES AS EVIDENCE, NOT AS A DOCUMENT KIND —
@@ -2573,6 +2641,10 @@ export class MotivationDocumentsService {
           // description.
           resolved = guess.role === 'evidence' ? 'EVIDENCE' : guess.kind;
           confident = guess.confident;
+          hasPrintedText = guess.hasPrintedText;
+          if (guess.role === 'evidence' && guess.evidenceContainer) {
+            evidenceContainer = guess.evidenceContainer;
+          }
           capture = guess.capture ?? null;
         }
         if (resolved === 'EVIDENCE') evidenceWords = (opts.description ?? '').trim() || null;
@@ -2583,7 +2655,13 @@ export class MotivationDocumentsService {
      * ⚠️ A DECLARED KIND SKIPS THE CLASSIFIER, NOT THE READ. See the vault's
      * identical fallback: the member's own menu choice must still be captured.
      */
-    if (!capture && this.captureService) {
+    if (hasPrintedText !== false) {
+      ocrText = await this.extract
+        .ocr(file.buffer, file.mimetype)
+        .catch(() => null);
+    }
+
+    if (hasPrintedText !== false && !capture && this.captureService) {
       capture = await this.captureService
         .capture({ bytes: file.buffer, mimeType: file.mimetype })
         .catch(() => null);
@@ -2901,7 +2979,7 @@ export class MotivationDocumentsService {
         // would be read and its serial offered on the applied-for firearm's
         // boxes. We read it once, to match it; we never fill from it.
         !endorsementMismatch &&
-        MotivationExtractService.readsFirearm(resolved)
+        MotivationExtractService.readsFirearm(resolved, row.licenceType)
       ) {
         try {
           const firearm = await this.extract.readFirearm({
@@ -3013,7 +3091,7 @@ export class MotivationDocumentsService {
         !opts.skipExtraction &&
         (endorsementMismatch ||
           MotivationExtractService.canExtract(resolved) ||
-          MotivationExtractService.readsFirearm(resolved))
+          MotivationExtractService.readsFirearm(resolved, row.licenceType))
       ) {
         try {
           // ⚠️ A SAPS 271 IS READ, NEVER ANNEXED (2026-10-13). Operator: "271
@@ -3084,8 +3162,26 @@ export class MotivationDocumentsService {
       // what tells it which rows to put a correction control on. A demoted
       // endorsement carries the caution immediately, so the reason is on screen
       // before any reload.
+      //
+      // ⚠️ THE CODES ARE READ HERE, NOT JUST AT GENERATION. A statement of
+      // results is recognised by its SAQA codes (117705, 119649, 119650,
+      // 119651, 119652). Returning them lets the review pane say which firearm
+      // proficiency the page proves, instead of showing "no fields" on a
+      // document whose whole value is the code.
+      const unitStandards =
+        resolved === MotivationUploadKind.PROFICIENCY_CERTIFICATE
+          ? parseUnitStandards(
+              [ocrText, capture?.pageText].filter(Boolean).join('\n'),
+            )
+          : [];
       return {
         ...created,
+        // ⚠️ THE REVIEW HEADER READ THE RAW ENUM. `created` is the Prisma row
+        // and carries `kind` but no `label`, so the client fell back to
+        // "PROFICIENCY_CERTIFICATE" on a page the applicant is reading. The
+        // list route already uses this helper; the upload route must match.
+        label: documentLabel(created.kind),
+        unitStandards,
         suggestions,
         autoFiled,
         confident,

@@ -41,6 +41,14 @@ const nextConfig = {
      * long, and a local timeout is never the answer we want to show a member.
      */
     proxyTimeout: 300_000,
+    /**
+     * ⚠️ THE 10MB DEFAULT TRUNCATED BATCH UPLOADS. Sixteen documents arrive in
+     * one identify request; Next buffers the proxied body and kept only the
+     * first 10MB, so multer saw an incomplete multipart stream and the member
+     * got a spinner that never finished. The backend's own per-file cap is
+     * 10MB, but a batch is legitimately much larger.
+     */
+    proxyClientMaxBodySize: '256mb',
   },
   /**
    * The retired motivation surfaces.

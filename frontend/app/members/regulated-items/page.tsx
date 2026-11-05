@@ -493,7 +493,7 @@ export default function RegulatedItemsAnnexPage() {
           (5) days after payment if the order is not disputed before
           then. Either party may raise a dispute before release, which
           holds the payment for review. See paragraph 11 above and
-          paragraph 7 of the Terms of Service for the binding text.
+          section 7 of the Terms of Service for the binding text.
         </li>
         <li>
           <strong>Dispatch-SLA auto-refund does not apply to

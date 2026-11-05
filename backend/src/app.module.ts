@@ -8,6 +8,8 @@ import { DiditModule } from './didit/didit.module';
 import { CrimeStatsModule } from './crime-stats/crime-stats.module';
 import { NewsModule } from './news/news.module';
 import { OzowModule } from './payments/ozow.module';
+import { PeachModule } from './payments/peach.module';
+import { PaymentRailsModule } from './payments/payment-rails.module';
 import { ScanModule } from './scan/scan.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { SearchModule } from './search/search.module';
@@ -55,6 +57,7 @@ import { MyShipmentsModule } from './my-shipments/my-shipments.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { FeedModule } from './feed/feed.module';
 import { ValuationModule } from './valuation/valuation.module';
+import { LegalModule } from './legal/legal.module';
 
 @Module({
   imports: [
@@ -81,6 +84,8 @@ import { ValuationModule } from './valuation/valuation.module';
     CrimeStatsModule,
     NewsModule,
     OzowModule,
+    PeachModule,
+    PaymentRailsModule,
     ScanModule,
     CloudinaryModule,
     SearchModule,
@@ -125,6 +130,7 @@ import { ValuationModule } from './valuation/valuation.module';
     WhatsappModule,
     FeedModule,
     ValuationModule,
+    LegalModule,
   ],
   controllers: [AppController],
   providers: [

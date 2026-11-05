@@ -15,6 +15,7 @@ import {
   VAULT_KIND_OPTIONS,
 } from '../common/document-filing/vault-kind-options';
 import { WANTED } from '../common/document-filing/document-dictionary';
+import { toJevImage } from '../common/llm/jev-image';
 import { CredentialKind } from '@prisma/client';
 import { parseIsoDate } from './licence-dates';
 import { readMarkers } from '../common/document-markers';
@@ -302,6 +303,7 @@ export type VaultClassifyAnswer =
       role: 'document';
       kind: CredentialKind;
       confident: boolean;
+      hasPrintedText?: boolean;
       /**
        * Other roles this same document satisfies. Usually empty.
        *
@@ -320,6 +322,7 @@ export type VaultClassifyAnswer =
   | {
       role: 'evidence';
       confident: boolean;
+      hasPrintedText?: boolean;
       /** The one-pass read, for the row's capture store. */
       capture?: DocumentCapture;
     };
@@ -436,6 +439,58 @@ export class LicenceCentreExtractService {
     mimeType: string;
   }): Promise<VaultClassifyAnswer | null> {
     if (!this.llm.isConfigured()) return null;
+
+    // Jev image first: the membership/association/personal folders are decided
+    // from the page itself, before any OCR is spent.
+    if (
+      this.filing?.isConfigured() &&
+      args.mimeType !== 'application/pdf' &&
+      typeof this.filing.fileImage === 'function'
+    ) {
+      let imageReady = false;
+      try {
+        const image = await toJevImage(args.bytes, args.mimeType);
+        imageReady = true;
+        const filed = await this.filing.fileImage({
+          image,
+          kindOptions: VAULT_KIND_OPTIONS,
+          coverOptions: VAULT_COVER_OPTIONS,
+          purpose: 'vault.classify.image',
+        });
+        if (filed) {
+          if (filed.role === 'evidence') {
+            return {
+              role: 'evidence',
+              confident: filed.confident,
+              hasPrintedText: filed.hasPrintedText,
+            };
+          }
+          const known = Object.values(CredentialKind) as string[];
+          if (known.includes(filed.folder)) {
+            const kind = currentKind(filed.folder as CredentialKind);
+            return {
+              role: 'document',
+              kind,
+              confident: filed.confident,
+              hasPrintedText: filed.hasPrintedText,
+              alsoCovers: cleanAlsoCovers(
+                kind,
+                filed.alsoCovers.map((k) =>
+                  currentKind(String(k ?? '').trim() as CredentialKind),
+                ),
+              ),
+              via: 'model',
+            };
+          }
+        }
+        if (imageReady) return null;
+      } catch (err) {
+        this.logger.warn(
+          `Jev image vault classification failed: ${(err as Error).message}`,
+        );
+        if (imageReady) return null;
+      }
+    }
 
     if (this.filing?.isConfigured()) {
       /**
@@ -1243,6 +1298,8 @@ export function userPrompt(
           'firearm_type is the Type row EXACTLY as printed, including any S/L,',
           'N/S/L or M/O in front of it - that prefix says whether the firearm is',
           'self-loading and must not be dropped or expanded.',
+          'holder_id_number is the holder\'s 13-digit identity number printed on',
+          'the card. It is NOT the short card number and NOT the serial number.',
           // ⚠️ THERE IS NO LICENCE NUMBER ON A FIREARM LICENCE CARD. Operator,
           // 2026-10-13: "there is no license number on a firearm license card.
           // The police will use the Serial Number as the reference number of

@@ -1,4 +1,4 @@
-﻿import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
+import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
 import { withoutRefusedCopy } from './motivation-scope';
 import { PDFDocument } from 'pdf-lib';
 import {
@@ -23,7 +23,12 @@ import { QuarryPlateService } from './quarry-plate.service';
 import { MotivationPlatesService } from './motivation-plates.service';
 import { purposeFor } from './motivation-plates';
 
-import { displayAction, displayCalibre } from './saps-vocabulary';
+import {
+  displayAction,
+  displayCalibre,
+  displayMake,
+  displayModel,
+} from './saps-vocabulary';
 import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import {
@@ -66,7 +71,7 @@ import type { EvidencePage } from './motivation-pdf.service';
 /**
  * The shape evidenceForRender and buildEvidenceBody read off an upload.
  *
- * ⚠️ A NARROW INTERFACE RATHER THAN THE PRISMA ROW, so both methods can be
+ * âš ï¸ A NARROW INTERFACE RATHER THAN THE PRISMA ROW, so both methods can be
  * exercised on a plain object in a spec without a database or a full upload
  * select — the same posture as the rest of this renderer's helpers.
  */
@@ -117,20 +122,21 @@ import {
   PRESS_CLIPPINGS_KEY,
   parsePressClippingIds,
 } from './motivation-fields';
+import { isMotivationOnly } from './motivation-output';
 import { Saps271Service } from './saps271.service';
 import {
   MotivationSharedService,
   TEMPLATE_VERSION,
 } from './motivation-shared.service';
 
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // RENDERING — the finished pack. The PDF, its annexure images, the C.I.P.
 // datasheet, the signed statements that go behind it, the cover photograph
 // and the pre-filled SAPS 271.
-// ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * ⚠️ FIRST PERSON, LIKE EVERY OTHER WORD ON THE PAGE. Operator, 2026-08-21:
+ * âš ï¸ FIRST PERSON, LIKE EVERY OTHER WORD ON THE PAGE. Operator, 2026-08-21:
  * "do not refer to the applicant in the third person anywhere in the doc.
  * First person perspective as if it the applicant typing the document
  * always."
@@ -148,7 +154,7 @@ import {
 /**
  * What the design sample says under the cover.
  *
- * ⚠️ DELIBERATELY NOT THE APPLICANT'S OWN WORDS. Most people reach the
+ * âš ï¸ DELIBERATELY NOT THE APPLICANT'S OWN WORDS. Most people reach the
  * design choice BEFORE anything is written, so there is usually no draft to
  * show - and half a real argument presented as a sample is worse than none.
  * Two lines of plain text is enough to prove the body face and the heading
@@ -169,7 +175,7 @@ const DISCLAIMER_TEXT =
 /**
  * An ISO date as a South African reader expects it, and anything else verbatim.
  *
- * ⚠️ NEVER GUESSES. `kind: 'date'` fields store ISO, but a value that arrived
+ * âš ï¸ NEVER GUESSES. `kind: 'date'` fields store ISO, but a value that arrived
  * some other way is printed exactly as it was given rather than reinterpreted —
  * reading 03/04/2029 as one order or the other is how a licence expiry becomes
  * a different licence expiry on a document somebody files.
@@ -184,7 +190,7 @@ function saDate(raw: string): string {
  * The firearms the applicant already holds, read out of the numbered answer
  * fields and into a table the PDF can print.
  *
- * ⚠️ EVERY ROW THE REGISTRY OFFERS, NOT THREE. This looped `i <= 3` while
+ * âš ï¸ EVERY ROW THE REGISTRY OFFERS, NOT THREE. This looped `i <= 3` while
  * the registry carried six rows and the 271 printed six — so an applicant with
  * four licences had the fourth collected, printed on their form, argued about
  * by the overlap check, and MISSING from the one table in the pack a DFO reads
@@ -194,7 +200,7 @@ function saDate(raw: string): string {
  * shortfall — it understates the statutory precondition being checked.
  * OWNED_ROWS is imported so this can never sit behind the registry again.
  *
- * ⚠️ FOUR COLUMNS: MAKE, CALIBRE, SERIAL, EXPIRY. Operator, 2026-09-07:
+ * âš ï¸ FOUR COLUMNS: MAKE, CALIBRE, SERIAL, EXPIRY. Operator, 2026-09-07:
  * "Make, Calibre, Serial Number, Date of expiry" — replacing the earlier
  * Type / "Held under" (licence number) columns. Type and the licence number
  * are dropped from this table; the serial and expiry each get their own
@@ -217,7 +223,7 @@ function saDate(raw: string): string {
 /**
  * The section a held firearm's card puts it under, as the table prints it.
  *
- * ⚠️ AN EM DASH RATHER THAN A GUESS, AND THAT IS THE WHOLE POINT OF THE
+ * âš ï¸ AN EM DASH RATHER THAN A GUESS, AND THAT IS THE WHOLE POINT OF THE
  * COLUMN. MO000071 had no section column, the prompt asked the writer for one
  * per firearm, and it supplied five — putting a section 16 Marlin under
  * section 15 in a document the applicant signed. A row we cannot place prints
@@ -233,7 +239,7 @@ function heldSection(answers: Record<string, string>, i: number): string {
 /**
  * What the card and the endorsement say the firearm is FOR.
  *
- * ⚠️ STATED OR ABSENT — NEVER DERIVED FROM THE SECTION. "Section 16" does not
+ * âš ï¸ STATED OR ABSENT — NEVER DERIVED FROM THE SECTION. "Section 16" does not
  * tell you whether somebody hunts or shoots sport with it, and filling the
  * column from the section number would put a role on the page that nothing
  * supplied. Rule 12 in a table instead of in a sentence.
@@ -243,7 +249,7 @@ function heldStatus(answers: Record<string, string>, i: number): string {
   return (
     (answers[`${p}use`] ?? '').trim() ||
     OWN_USE_WORDS[(answers[`${p}primary_use`] ?? '').trim()] ||
-    // ⚠️ EMPTY, NOT AN EM DASH. The battery table drops its whole Purpose
+    // âš ï¸ EMPTY, NOT AN EM DASH. The battery table drops its whole Purpose
     // column when nothing was stated, and an em dash is a non-empty string —
     // so returning one here made every battery print a column of dashes. The
     // section column keeps its dash (a wrong section is worse than a gap); a
@@ -256,7 +262,7 @@ function heldStatus(answers: Record<string, string>, i: number): string {
 /**
  * The card keys as a table cell, in three or four words.
  *
- * ⚠️ NOT THE CARD'S OWN SENTENCE. PRIMARY_USE stores first-person sentences —
+ * âš ï¸ NOT THE CARD'S OWN SENTENCE. PRIMARY_USE stores first-person sentences —
  * "I use it for plains game." — which is right in the picker and wrong in a
  * column six centimetres wide beside three other columns.
  */
@@ -323,14 +329,14 @@ export function existingFirearms(
 /**
  * "CZ 6.35mm Browning, serial 81815" — the firearm, named once.
  *
- * ⚠️ MAKE, MODEL, CALIBRE AND SERIAL, IN THAT ORDER. It was make + TYPE +
+ * âš ï¸ MAKE, MODEL, CALIBRE AND SERIAL, IN THAT ORDER. It was make + TYPE +
  * serial, so the PAJA letter read "for CZ Handgun, serial 81815" — a firearm
  * identified by the word every firearm on the form shares, with the two facts
  * that actually distinguish it (the model and the cartridge) missing. A request
  * to the Registrar that cannot name the firearm it is about is a request about
  * a category.
  *
- * ⚠️ AND A FIELD THE CARD PRINTS AS "NONE" STAYS OUT OF THE LINE. The make and
+ * âš ï¸ AND A FIELD THE CARD PRINTS AS "NONE" STAYS OUT OF THE LINE. The make and
  * model are joined for prose; "CZ NONE" is a licence card's placeholder read
  * aloud, not a model name. The 271 and the cover still print NONE verbatim —
  * this is only the running sentence, where the word is noise.
@@ -344,13 +350,16 @@ export function existingFirearms(
 function firearmLine(answers: Record<string, string>): string | undefined {
   const clean = (v: string | undefined) =>
     /^(none|n\/?a|-+)$/i.test((v ?? '').trim()) ? '' : (v ?? '').trim();
-  const makeModel = [clean(answers.firearm_make), clean(answers.firearm_model)]
+  const makeModel = [
+    displayMake(clean(answers.firearm_make)),
+    displayModel(clean(answers.firearm_model)),
+  ]
     .filter(Boolean)
     .join(' ');
   const calibre = displayCalibre(clean(answers.firearm_calibre));
   const base = [
     makeModel,
-    // ⚠️ NOT TWICE. "Browning" is both a model and part of the calibre's name
+    // âš ï¸ NOT TWICE. "Browning" is both a model and part of the calibre's name
     // ("6.35mm Browning"); a line reading "CZ Browning 6.35mm Browning" is the
     // same fact said twice.
     calibre && !makeModel.toLowerCase().includes(calibre.toLowerCase())
@@ -372,12 +381,12 @@ function firearmLine(answers: Record<string, string>): string | undefined {
 /**
  * The cartridge feature, out of the research the writer was already given.
  *
- * ⚠️ NO SECOND MODEL CALL, AND THERE MUST NOT BE ONE. This runs in the
+ * âš ï¸ NO SECOND MODEL CALL, AND THERE MUST NOT BE ONE. This runs in the
  * DOWNLOAD path, where an outbound request sits inside our sixty-second nginx
  * ceiling on a request the applicant is waiting on - the same rule that keeps
  * the cover photograph out of here. The block is already on the row.
  *
- * ⚠️ AND IT IS ABOUT THE CARTRIDGE, NEVER THE APPLICANT. That is what makes
+ * âš ï¸ AND IT IS ABOUT THE CARTRIDGE, NEVER THE APPLICANT. That is what makes
  * it safe to print prose we did not have a person check: it carries no claim
  * about who they are or what they have done. It has also been through the
  * same scrub as everything the writer sees, so it cannot carry vocabulary the
@@ -397,11 +406,11 @@ function cartridgeArticle(
     .map((l) => l.trim())
     .filter(Boolean);
   /**
-   * ⚠️ A THIN BRIEF IS NOT WORTH A FEATURE. Two lines under a drawing reads
+   * âš ï¸ A THIN BRIEF IS NOT WORTH A FEATURE. Two lines under a drawing reads
    * as a page that ran out of things to say, which is worse for the
    * application than the drawing standing alone.
    *
-   * ⚠️ BUT ONE FULL PARAGRAPH IS. The old floor counted LINES, so a grounded
+   * âš ï¸ BUT ONE FULL PARAGRAPH IS. The old floor counted LINES, so a grounded
    * answer delivered as a single 350-word block was discarded and 5.2 fell
    * back to generic exhibit captions (MO000099). The floor is now the word
    * count; the page sets the block as prose if it has no line breaks.
@@ -416,12 +425,12 @@ function cartridgeArticle(
  * Operator, 2026-09-09: "the Firearm manufacturer and caliber as a nice
  * biggish readable subscript for it."
  *
- * ⚠️ THE MAKE AND THE CALIBRE, AND NOT THE REST OF THE LINE ABOVE. It is a
+ * âš ï¸ THE MAKE AND THE CALIBRE, AND NOT THE REST OF THE LINE ABOVE. It is a
  * label on a picture, not a second identification block: the model, the
  * action and the serial are rows in the particulars grid further down the same
  * page, where a DFO transcribes them onto the 271 one at a time.
  *
- * ⚠️ AND THE CALIBRE IS NORMALISED WITH `displayCalibre`, THE SAME AS EVERY
+ * âš ï¸ AND THE CALIBRE IS NORMALISED WITH `displayCalibre`, THE SAME AS EVERY
  * OTHER SURFACE OF THE PACK. The drawing is of "6,5 Creedmoor" because that is
  * what the figures were found under; the card says "6.5MM CREEDMOOR". Printing
  * the card's raw shouting on the cover while the particulars grid below — and
@@ -432,7 +441,7 @@ function heroSubtitle(answers: Record<string, string>): string | undefined {
   const make = (answers.firearm_make ?? '').trim();
   const calibre = displayCalibre(answers.firearm_calibre);
   if (!calibre) return undefined;
-  return make ? `${make} · ${calibre}` : calibre;
+  return make ? `${displayMake(make)} · ${calibre}` : calibre;
 }
 
 /**
@@ -440,19 +449,19 @@ function heroSubtitle(answers: Record<string, string>): string | undefined {
  *
  * MOTIVATION-GUIDE-BOOK Part 7.2: "a particulars table (Applicant, Identity
  * number, Firearm type and action, Make, Model, Calibre, Serial number(s),
- * Section applied under, Date). … Nothing else."
+ * Section applied under, Date). â€¦ Nothing else."
  *
- * ⚠️ ROWS, NOT ONE COMBINED LINE, AND THAT IS THE POINT OF THE TABLE. A DFO
+ * âš ï¸ ROWS, NOT ONE COMBINED LINE, AND THAT IS THE POINT OF THE TABLE. A DFO
  * transcribing onto the SAPS 271 copies these one field at a time; a single
  * "Howa 1500 bolt-action rifle, serial B742119" makes them parse a sentence to
  * find the model. The combined line survives for the footer and the PAJA
  * letter, where it is prose.
  *
- * ⚠️ AN ABSENT FIELD DROPS ITS ROW RATHER THAN PRINTING A DASH. A blank
+ * âš ï¸ AN ABSENT FIELD DROPS ITS ROW RATHER THAN PRINTING A DASH. A blank
  * against "Serial number" on the cover of a licence application reads as a
  * firearm with no serial.
  *
- * ⚠️ AND A FIELD THE CARD PRINTS AS "NONE" PRINTS AS "NONE". Operator,
+ * âš ï¸ AND A FIELD THE CARD PRINTS AS "NONE" PRINTS AS "NONE". Operator,
  * 2026-09-20: "When a NONE value is read from a license disk, it must display
  * NONE. It may never be altered or thrown away. It is how it was captured by
  * SAPS and they expect it should stay like that." The row is the card's own
@@ -465,7 +474,7 @@ function coverParticulars(
 ): [string, string][] {
   const v = (k: string) => (answers[k] ?? '').trim();
   /**
-   * ⚠️ THE ACTION IS NOT A CHOICE LABEL ON PAPER. "Semi-automatic
+   * âš ï¸ THE ACTION IS NOT A CHOICE LABEL ON PAPER. "Semi-automatic
    * (self-loading)" on the cover's identification row reads as two different
    * things listed under one heading; the SAPS 271's own word is what the row
    * should say. See displayAction.
@@ -478,9 +487,9 @@ function coverParticulars(
     if (value) rows.push([label, value]);
   };
   push('Firearm type and action', typeAndAction);
-  push('Make', v('firearm_make'));
-  push('Model', v('firearm_model'));
-  // ⚠️ THE SAME TIDIED STRING THE BODY USES. The card stores ".45-70
+  push('Make', displayMake(v('firearm_make')));
+  push('Model', displayModel(v('firearm_model')));
+  // âš ï¸ THE SAME TIDIED STRING THE BODY USES. The card stores ".45-70
   // GOVERNMENT"; the prose and the cartridge heading both say ".45-70
   // Government". A cover reading one way and a body the other is the
   // inconsistency this closes. (The consent annexure is a copy of the licence
@@ -501,7 +510,7 @@ function coverParticulars(
 /**
  * Heading -> subject mark, read off the stored structure plan.
  *
- * ⚠️ NOTHING IS INVENTED WHEN THE PLAN IS MISSING. Motivations written before
+ * âš ï¸ NOTHING IS INVENTED WHEN THE PLAN IS MISSING. Motivations written before
  * plans were stored, and any row whose JSON does not parse, simply get no
  * marks — the document renders exactly as it does today. Guessing a mark from
  * the heading text would put a trophy beside a self-defence section the first
@@ -529,13 +538,13 @@ function sectionMarksFor(
 /**
  * The heading of the battery section, as the renderer will print it.
  *
- * ⚠️ THE TABLE BELONGS UNDER THE ARGUMENT IT IS EVIDENCE FOR. It printed as a
+ * âš ï¸ THE TABLE BELONGS UNDER THE ARGUMENT IT IS EVIDENCE FOR. It printed as a
  * section of its own AFTER the summary and before the signature, which is
  * where a reviewer has already stopped reading — while the section three pages
  * earlier discussed the same firearms in prose with nothing to check them
  * against.
  *
- * ⚠️ READ OFF THE PLAN, NOT ASSUMED, EVEN THOUGH THE HEADINGS ARE FIXED NOW.
+ * âš ï¸ READ OFF THE PLAN, NOT ASSUMED, EVEN THOUGH THE HEADINGS ARE FIXED NOW.
  * The section is dropped entirely on a first application, and rows written
  * before the fixed skeleton carry the old `comparison` id and its wording — so
  * both ids are looked for, and a row with neither simply gets no table rather
@@ -548,7 +557,7 @@ function batteryHeadingOf(plan: unknown): string | undefined {
 /**
  * The printed heading of one section of the stored plan.
  *
- * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The wording is fixed today,
+ * âš ï¸ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The wording is fixed today,
  * but a section is dropped when the applicant's facts do not carry it, and
  * rows written before the fixed skeleton carry their own picked-by-seed
  * alternates — so a regex over "already hold" or "risk" would find nothing on
@@ -566,7 +575,7 @@ function headingOf(plan: unknown, id: string): string | undefined {
  * The plan's purpose heading — heading 3, whichever of the four ids the plan
  * chose (the_threat, the_quarry, the_discipline).
  *
- * ⚠️ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The three ids share number 3
+ * âš ï¸ READ OFF THE PLAN, NEVER MATCHED ON WORDS. The three ids share number 3
  * but not wording, and the renderer places the purpose exhibits when this
  * heading's section ends — the same rule `exposureHeading` and `batteryHeading`
  * already follow.
@@ -597,7 +606,7 @@ export class MotivationRenderService {
     private readonly shared: MotivationSharedService,
     private readonly news: NewsService,
     private readonly crimeStats: CrimeStatsService,
-    // ⚠️ RETIRED 2026-10-15 — no longer read. Kept so callers/specs that build
+    // âš ï¸ RETIRED 2026-10-15 — no longer read. Kept so callers/specs that build
     // this service positionally are untouched; the quarry line-up is gone.
     private readonly quarry: QuarryPlateService,
     // The purpose exhibits under heading 3 — read here, drawn at generation.
@@ -614,18 +623,18 @@ export class MotivationRenderService {
    * Decrypt every upload that can be reprinted into the pack, in annexure
    * order, and name the ones that cannot.
    *
-   * ⚠️ ONE MEMBER'S OWN DOCUMENTS, ALREADY OWNERSHIP-CHECKED. The rows are
+   * âš ï¸ ONE MEMBER'S OWN DOCUMENTS, ALREADY OWNERSHIP-CHECKED. The rows are
    * handed in from the motivation's own `findFirst`, which is scoped by
    * userId — this must never be called with rows fetched any other way.
    *
-   * ⚠️ IT NEVER THROWS. A pack is worth printing without one copy in it; it
+   * âš ï¸ IT NEVER THROWS. A pack is worth printing without one copy in it; it
    * is not worth failing to print at all. Every failure — purged, unreadable
    * on disk, a format pdfkit cannot take, a header we cannot measure — comes
    * back as a named line on the index telling the applicant to bring that one
    * themselves.
    */
   /**
-   * ⚠️ THE LETTERING IS PASSED IN, NOT RECOMPUTED. This method used to call
+   * âš ï¸ THE LETTERING IS PASSED IN, NOT RECOMPUTED. This method used to call
    * buildAnnexures itself, with the uploads only — while renderPdf called it
    * again WITH the generated prior-notice request. Two lists, two different
    * letterings, and the copies came out disagreeing with the index they are
@@ -652,7 +661,7 @@ export class MotivationRenderService {
         detailsEncrypted: string | null;
       } | null;
       /**
-       * ⚠️ THE CONTAINER, AND THE ONLY WAY AN EVIDENCE UPLOAD FINDS ITS LETTER.
+       * âš ï¸ THE CONTAINER, AND THE ONLY WAY AN EVIDENCE UPLOAD FINDS ITS LETTER.
        * Every evidence copy shares the kind EVIDENCE, so the kind-keyed map has
        * nothing to tell two of them apart; the container id does. Null on
        * everything that is not evidence.
@@ -664,7 +673,7 @@ export class MotivationRenderService {
     images: AnnexureImagePage[];
     notPrinted: { letter: string; label: string; why: string }[];
     /**
-     * ⚠️ ALWAYS EMPTY NOW, AND KEPT ONLY AS A SEAM. PDF annexures used to be
+     * âš ï¸ ALWAYS EMPTY NOW, AND KEPT ONLY AS A SEAM. PDF annexures used to be
      * handed to pdf-lib to splice into the finished pack; they are rasterised
      * to page images instead, so every annexure is one document type and the
      * planner, the captions and the letter order apply to all of them. The
@@ -679,14 +688,14 @@ export class MotivationRenderService {
       bytes: Buffer;
     }[];
   }> {
-    // ⚠️ RESOLVED THROUGH annexureByKind, WHICH KNOWS ABOUT THE GROUPS. A
+    // âš ï¸ RESOLVED THROUGH annexureByKind, WHICH KNOWS ABOUT THE GROUPS. A
     // map built straight off the entry list is keyed by each group's
     // REPRESENTATIVE kind, so an ajar-safe photograph or a good-standing
     // letter finds nothing and prints "Annexure ?" with the raw enum name as
     // its caption. That shipped.
     const byKind = annexureByKind(annexures);
     /**
-     * ⚠️ EVIDENCE RESOLVES BY CONTAINER, NOT BY KIND. Every evidence copy
+     * âš ï¸ EVIDENCE RESOLVES BY CONTAINER, NOT BY KIND. Every evidence copy
      * shares the kind EVIDENCE, so annexureByKind has nothing to tell two of
      * them apart and one letter would capture both. The container id — the
      * value of `evidenceType` — is the key. Evidence with no entry here is a
@@ -736,7 +745,7 @@ export class MotivationRenderService {
     }
 
     /**
-     * ⚠️ LETTER ORDER FIRST, THEN THE PROFICIENCY'S OWN ORDER. The copies must
+     * âš ï¸ LETTER ORDER FIRST, THEN THE PROFICIENCY'S OWN ORDER. The copies must
      * print in the sequence the index letters them — a DFO reads the list and
      * turns to the pages in that order, and a pack whose pages run C, A, B, D
      * is a pack they have to hunt through. The proficiency needs a SECOND sort
@@ -791,7 +800,7 @@ export class MotivationRenderService {
     });
 
     /**
-     * ⚠️ TWO PASSES, BECAUSE ONE UPLOAD IS NO LONGER ONE PAGE. A photographed
+     * âš ï¸ TWO PASSES, BECAUSE ONE UPLOAD IS NO LONGER ONE PAGE. A photographed
      * licence is a single picture; the same document uploaded as a PDF is one
      * image per page. The "(2 of 4)" caption counts PRINTED PAGES under the
      * letter, so the total cannot be known until every upload has been resolved
@@ -822,7 +831,7 @@ export class MotivationRenderService {
       // licence. Keep the vault row, but never duplicate it as an annexure.
       if (u.kind === MotivationUploadKind.SELLER_LICENCE) continue;
       /**
-       * ⚠️ A BODY-PLACED OR UNPLACED EVIDENCE COPY PRINTS ELSEWHERE. It takes
+       * âš ï¸ A BODY-PLACED OR UNPLACED EVIDENCE COPY PRINTS ELSEWHERE. It takes
        * no annexure letter, so it is skipped here rather than landing under
        * "Annexure ?" with the raw kind for a caption.
        */
@@ -848,7 +857,7 @@ export class MotivationRenderService {
         notPrinted.push({ letter, label, why: 'no longer stored' });
         continue;
       }
-      // ⚠️ A PDF IS NO LONGER A REASON TO LEAVE A DOCUMENT OUT, AND NO LONGER
+      // âš ï¸ A PDF IS NO LONGER A REASON TO LEAVE A DOCUMENT OUT, AND NO LONGER
       // A SECOND DOCUMENT TYPE EITHER. pdfkit cannot place a PDF page, so these
       // are rasterised to images and go through the same planner as a
       // photograph — see document-page-raster.service.ts. Read the bytes first,
@@ -873,7 +882,7 @@ export class MotivationRenderService {
           sha256: u.sha256 ?? '',
         });
         if (!rastered.length) {
-          // ⚠️ NOT "NOT A PDF" — WE COULD NOT RENDER IT. The rasteriser fails
+          // âš ï¸ NOT "NOT A PDF" — WE COULD NOT RENDER IT. The rasteriser fails
           // closed (a corrupt file, a crash in the helper, a cache miss it
           // could not fill), and the applicant is told to bring that one
           // themselves rather than the pack losing it silently.
@@ -902,11 +911,11 @@ export class MotivationRenderService {
         letter,
         label,
         safe: isSafeAnnexureKind(u.kind),
-        // ⚠️ EVIDENCE ONLY. An evidence annexure is a printed document that is
+        // âš ï¸ EVIDENCE ONLY. An evidence annexure is a printed document that is
         // reprinting its own possession, so it gets a whole sheet; an ordinary
         // copy keeps the pack-as-many-as-fit rule.
         solo: !!evidenceEntry,
-        // ⚠️ KEYED OFF THE KIND, NEVER THE LABEL. A licence card is small and
+        // âš ï¸ KEYED OFF THE KIND, NEVER THE LABEL. A licence card is small and
         // uncertified, so three pack a sheet with nothing a commissioner needs.
         // Operator, 2026-10-15: "we can fit 3 licenses per page." See the same
         // warning on `safe` above for why the label is not consulted.
@@ -953,7 +962,7 @@ export class MotivationRenderService {
    * Split this pack's evidence into what is lettered and what prints in the
    * body.
    *
-   * ⚠️ THE CONTAINER DECIDES, NOT THE MEMBER. A printed document — a permission
+   * âš ï¸ THE CONTAINER DECIDES, NOT THE MEMBER. A printed document — a permission
    * letter, an affidavit, a score sheet — is a reprint of possession and takes
    * its own annexure letter and page (`placement: 'annexure'`). An activity
    * photograph is argument and prints on the one "My Activities / Evidence"
@@ -961,7 +970,7 @@ export class MotivationRenderService {
    * is neither and is left out: `evidenceType === null` is "we could not
    * decide", and printing nothing beats a page titled from a wrong guess.
    *
-   * ⚠️ BOTH HALVES ARE CAPPED AGAIN HERE, DEFENSIVELY. The add path enforces
+   * âš ï¸ BOTH HALVES ARE CAPPED AGAIN HERE, DEFENSIVELY. The add path enforces
    * two annexures and four photographs, but the ledger is a live table: a row
    * brought in by an older route or a direct write must not push a third
    * letter into the pack or a fifth picture onto a page sized for four.
@@ -977,7 +986,7 @@ export class MotivationRenderService {
     const bodyUploads: EvidenceUploadForRender[] = [];
 
     /**
-     * ⚠️ THE CURATOR'S FOUR, IN ITS ORDER. A persisted selection is a decision
+     * âš ï¸ THE CURATOR'S FOUR, IN ITS ORDER. A persisted selection is a decision
      * for THIS pack; an id that has since been removed simply drops out. No
      * selection at all (an older row) keeps the previous first-four fallback.
      */
@@ -995,7 +1004,7 @@ export class MotivationRenderService {
         continue;
       }
       /**
-       * ⚠️ OPTIONAL DOCUMENTS ARE BODY EVIDENCE TOO (2026-10-28). An activity
+       * âš ï¸ OPTIONAL DOCUMENTS ARE BODY EVIDENCE TOO (2026-10-28). An activity
        * log, incident report, character reference, employment letter or
        * previous motivation is not DFO/CFR paperwork, so it prints with the
        * applicant's evidence and takes no annexure letter.
@@ -1013,7 +1022,7 @@ export class MotivationRenderService {
   /**
    * The member's own evidence, as one page of pictures in the body.
    *
-   * ⚠️ READ AT RENDER TIME, NEVER STORED — the same rule as the press
+   * âš ï¸ READ AT RENDER TIME, NEVER STORED — the same rule as the press
    * clippings: the pack is rebuilt from source on every download, so a picture
    * that fails to read back costs that one picture, never the page or the
    * pack. A photograph whose bytes are gone simply does not appear; there is
@@ -1039,7 +1048,7 @@ export class MotivationRenderService {
         continue;
       }
       /**
-       * ⚠️ A PRINTED BODY DOCUMENT IS RASTERISED TO ITS FIRST PAGE. The
+       * âš ï¸ A PRINTED BODY DOCUMENT IS RASTERISED TO ITS FIRST PAGE. The
        * Activities / Evidence page is a 2x2 picture block; a PDF has no image
        * bytes of its own, so its first page is rendered into one cell. A
        * document that cannot be rasterised is skipped, never a placeholder.
@@ -1125,7 +1134,7 @@ export class MotivationRenderService {
    * Operator, 2026-09-10: "Can we give them mock ups of each template which
    * costs nothing and generate the motivation from there on?"
    *
-   * ⚠️ IT IS THE REAL RENDERER, NOT A MOCK, AND THAT IS THE WHOLE POINT.
+   * âš ï¸ IT IS THE REAL RENDERER, NOT A MOCK, AND THAT IS THE WHOLE POINT.
    * The expensive half of a motivation is the PROSE — `motivation.generate` is
    * a model call. Rendering is a pure function over figures we already hold, so
    * a genuine cover costs nothing but the milliseconds. The picker this
@@ -1133,10 +1142,10 @@ export class MotivationRenderService {
    * was "sans-serif throughout" while every one of their packs came out serif.
    * A drawing of a document can drift from the document; this cannot.
    *
-   * ⚠️ AND IT CARRIES THE HERO, because the hero IS the cover now. A sample
+   * âš ï¸ AND IT CARRIES THE HERO, because the hero IS the cover now. A sample
    * without it would be honest about the colour and lying about the page.
    *
-   * ⚠️ THE BODY IS TWO CANNED LINES AND NEVER THE APPLICANT'S OWN. A draft
+   * âš ï¸ THE BODY IS TWO CANNED LINES AND NEVER THE APPLICANT'S OWN. A draft
    * exists only after generation, most people reach this screen before that,
    * and half a real argument shown as a sample is worse than none. What the
    * sample is FOR is the cover — the masthead, the mark, the tint, the hero and
@@ -1145,7 +1154,7 @@ export class MotivationRenderService {
   /**
    * The cover alone.
    *
-   * ⚠️ THE RENDERER HAS NO ONE-PAGE MODE, AND SHOULD NOT GROW ONE. Asking it
+   * âš ï¸ THE RENDERER HAS NO ONE-PAGE MODE, AND SHOULD NOT GROW ONE. Asking it
    * to stop after the cover would be a second code path through the thing the
    * sample exists to be honest about - and the first time the two diverged,
    * the sample would be the one nobody checked. So it draws the whole document
@@ -1202,7 +1211,7 @@ export class MotivationRenderService {
         at,
       ),
       /**
-       * ⚠️ FALLING BACK TO WHAT IS STORED, NOT TO THE DEFAULT. The picker
+       * âš ï¸ FALLING BACK TO WHAT IS STORED, NOT TO THE DEFAULT. The picker
        * sends one axis at a time — a colour swatch changes the colour and says
        * nothing about the layout — so an absent value means "leave that as it
        * is", never "reset it". asLayout/asScheme then validate.
@@ -1215,7 +1224,7 @@ export class MotivationRenderService {
       generatedAt: at,
       cartridgeDrawing: cartridge,
       /**
-       * ⚠️ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
+       * âš ï¸ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
        * 2026-09-10: "We don't need that bunch of dimensions, rather give the
        * history and good facts about the cartridge." The two lengths that
        * matter are called out on the drawing itself, which is where a
@@ -1242,6 +1251,7 @@ export class MotivationRenderService {
         userId: true,
         referenceNumber: true,
         licenceType: true,
+        outputMode: true,
         status: true,
         documentTextEncrypted: true,
         templateVersion: true,
@@ -1260,7 +1270,7 @@ export class MotivationRenderService {
         // The one column that records money, and so the only one the mark
         // reads. betaSeatNo used to be selected beside it; see isPaidFor.
         billedCents: true,
-        // ⚠️ ORDERED BY CREATION, and the bytes come with it now. The copies
+        // âš ï¸ ORDERED BY CREATION, and the bytes come with it now. The copies
         // are reprinted into the pack, so a stable order matters: "1 of 2"
         // and "2 of 2" have to mean the same two pages every download.
         uploads: {
@@ -1277,18 +1287,18 @@ export class MotivationRenderService {
             sourceCredential: {
               select: { otherSideId: true, detailsEncrypted: true },
             },
-            // ⚠️ EVIDENCE'S CONTAINER AND THE MEMBER'S WORDS. The container
+            // âš ï¸ EVIDENCE'S CONTAINER AND THE MEMBER'S WORDS. The container
             // decides whether a copy takes an annexure letter or prints on the
             // Activities page, and the description is the caption the member
             // wrote for it — encrypted at rest, decrypted for this render only.
             evidenceType: true,
             evidenceDescriptionEncrypted: true,
-            // ⚠️ THE SAPS 271 SENTINEL RIDES HERE. A page the member uploaded
+            // âš ï¸ THE SAPS 271 SENTINEL RIDES HERE. A page the member uploaded
             // that is a 271 form is read but never annexed; see buildAnnexures
             // filtering below and SAPS_271_MARKER.
             extractedFields: true,
             /**
-             * ⚠️ THE ANNEXURE INDEX NEEDS THE SECOND ROLE, NOT ONLY THE KIND.
+             * âš ï¸ THE ANNEXURE INDEX NEEDS THE SECOND ROLE, NOT ONLY THE KIND.
              * One membership certificate is both the association card and the
              * section 16 letter of good standing — the vault records the second
              * role in `coversKinds`. The index computes what is still missing
@@ -1313,6 +1323,7 @@ export class MotivationRenderService {
       throw new ConflictException('This document is not ready yet.');
     }
 
+    const motivationOnly = isMotivationOnly(row.outputMode);
     const body = tryDecryptText(row.documentTextEncrypted);
     if (!body) {
       throw new ConflictException(
@@ -1321,7 +1332,7 @@ export class MotivationRenderService {
     }
 
     /**
-     * ⚠️ THE PROFILE UNDERNEATH, THE SAME AS THE 271 AND THE WRITER.
+     * âš ï¸ THE PROFILE UNDERNEATH, THE SAME AS THE 271 AND THE WRITER.
      *
      * The BODY was written from merged answers, but everything this method
      * draws around it was not: the battery table, the cover particulars and
@@ -1348,7 +1359,7 @@ export class MotivationRenderService {
     // with you" half of the checklist is rendered onto the last page, with
     // boxes to tick with a pen, and the "your pack" half is not — that half is
     // what they are already holding.
-    // ⚠️ A SAPS 271 THE MEMBER UPLOADED IS READ, NEVER ANNEXED (2026-10-13).
+    // âš ï¸ A SAPS 271 THE MEMBER UPLOADED IS READ, NEVER ANNEXED (2026-10-13).
     // Operator: "271 just extracts the information and adds it where it needs
     // to be. any other document that serves as evidence becomes an annexure."
     // The sentinel rides on extractedFields; the row is dropped from everything
@@ -1357,7 +1368,7 @@ export class MotivationRenderService {
       (u) => !(u.extractedFields ?? []).includes(SAPS_271_MARKER),
     );
     const kinds = packUploads.map((u) => u.kind);
-    // ⚠️ THE CHECKLIST HAS PROMISED THIS SINCE THE MODULE SHIPPED AND NOTHING
+    // âš ï¸ THE CHECKLIST HAS PROMISED THIS SINCE THE MODULE SHIPPED AND NOTHING
     // PRODUCED IT. "Request for prior notice before refusal (PAJA)" sits under
     // "Your pack", owned by us, ticking itself green the moment the motivation
     // was written — and no code anywhere built the document. Found 2026-08-20.
@@ -1375,7 +1386,7 @@ export class MotivationRenderService {
     });
     // The SIGNED character witness statements.
     //
-    // ⚠️ WHAT EXISTS, AND NOTHING ELSE. This used to build two BLANK forms
+    // âš ï¸ WHAT EXISTS, AND NOTHING ELSE. This used to build two BLANK forms
     // unconditionally — ruled sheets for the applicant to print and hand out.
     // Operator, 2026-08-21: "Only use the link." A witness completes and signs
     // on their own phone now, so a slot nobody has completed contributes no
@@ -1393,16 +1404,16 @@ export class MotivationRenderService {
       return undefined;
     });
 
-    // ── Press clippings the member chose, self-defence only ──────────
+    // â”€â”€ Press clippings the member chose, self-defence only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
-    // ⚠️ FETCHED BEFORE buildAnnexures, NOT AFTER. Whether a PRESS_CLIPPINGS
+    // âš ï¸ FETCHED BEFORE buildAnnexures, NOT AFTER. Whether a PRESS_CLIPPINGS
     // annexure exists at all decides whether it takes a letter, and that has
     // to be known before the SAME lettering call the index and every reprint
     // caption below depend on. See the identical ordering in
     // MotivationGenerationService, which the writer's citation must agree
     // with.
     //
-    // ⚠️ FAIL-SOFT. A bad id, an empty answer or NewsService throwing all
+    // âš ï¸ FAIL-SOFT. A bad id, an empty answer or NewsService throwing all
     // collapse to "no clippings" — the pack renders exactly as it would have
     // before this feature existed, never a failed download.
     let pressIncidents: NewsIncident[] = [];
@@ -1422,26 +1433,26 @@ export class MotivationRenderService {
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
     /**
-     * ⚠️ NOTHING GENERATED TAKES A LETTER ANY MORE. Operator, 2026-09-09:
+     * âš ï¸ NOTHING GENERATED TAKES A LETTER ANY MORE. Operator, 2026-09-09:
      * "only paperwork required by the dfo are attached as annexures." An
      * annexure is a copy of a document the applicant possesses; the PAJA
      * request and the press cuttings are neither, so the first is its own
      * lodged page and the second prints inside the exposure section.
      */
     /**
-     * ⚠️ THE CONSENT TAKES A LETTER, so it has to be known here rather than
+     * âš ï¸ THE CONSENT TAKES A LETTER, so it has to be known here rather than
      * discovered later: this same call feeds the index, every "Refer to
      * Annexure X" the writer is given, and the captions on the pages
      * themselves. It is built above, so its presence is already settled.
      */
     /**
-     * ⚠️ EVIDENCE IS SPLIT BEFORE THE LETTERING, because the container decides
+     * âš ï¸ EVIDENCE IS SPLIT BEFORE THE LETTERING, because the container decides
      * which half of it takes a letter. The annexure-placed items are lettered
      * here with everything else; the body-placed photographs take no letter
      * and are built into the Activities page below. See evidenceForRender.
      */
     /**
-     * ⚠️ THE CURATOR'S SELECTION, WHEN THE PACK HAS ONE. An older row has no
+     * âš ï¸ THE CURATOR'S SELECTION, WHEN THE PACK HAS ONE. An older row has no
      * selection and keeps the first-four fallback. An empty selection means the
      * curator deliberately chose nothing.
      */
@@ -1459,13 +1470,26 @@ export class MotivationRenderService {
       }
     }
     const evidence = this.evidenceForRender(packUploads, selectedEvidenceIds);
-    const annexures = buildAnnexures(
-      kinds,
-      sellerConsent ? ['SELLER_CONSENT'] : [],
-      evidence.annexures,
-    );
     /**
-     * ⚠️ THE GAP IS PRINTED, NOT SILENT. Operator, 2026-09-20, on MO000002: the
+     * The motivation-only pack does not reprint the member's documents. It
+     * carries the index of the annexures this licence type REQUIRES and one
+     * blank lettered page for each, so the applicant can attach their own copy
+     * behind every tab. Nothing optional, nothing already uploaded.
+     */
+    const mandatoryKinds = motivationOnly
+      ? documentStatus(row.licenceType, [], answers).needs
+          .filter((need) => need.tier === 'required')
+          .map((need) => need.kind as MotivationUploadKind)
+      : [];
+    const annexures = motivationOnly
+      ? buildAnnexures(mandatoryKinds)
+      : buildAnnexures(
+          kinds,
+          sellerConsent ? ['SELLER_CONSENT'] : [],
+          evidence.annexures,
+        );
+    /**
+     * âš ï¸ THE GAP IS PRINTED, NOT SILENT. Operator, 2026-09-20, on MO000002: the
      * letter of good standing is a required section 16 document and the pack
      * simply had no trace of it when the upload was absent. Blocking the pack
      * would contradict the module's "SAPS requires it, we do not refuse to
@@ -1474,7 +1498,7 @@ export class MotivationRenderService {
      * withheld.
      */
     /**
-     * ⚠️ THE UNION, NOT THE KIND ALONE. `kinds` above is what LETTERS the
+     * âš ï¸ THE UNION, NOT THE KIND ALONE. `kinds` above is what LETTERS the
      * annexures and must stay kind-only (one document, one letter). What is
      * still MISSING is a different question and takes every role a row fills,
      * exactly as the sheet, the documents endpoint and the generation blocker
@@ -1484,17 +1508,18 @@ export class MotivationRenderService {
       u.kind,
       ...(u.coversKinds ?? []),
     ]);
-    const missingDocuments = documentStatus(
-      row.licenceType,
-      coveredKinds,
-      answers,
-    ).missingRequired.map((kind) => documentLabel(kind));
-    const printable = await this.annexureImages(packUploads, annexures);
+    const missingDocuments = motivationOnly
+      ? []
+      : documentStatus(row.licenceType, coveredKinds, answers)
+          .missingRequired.map((kind) => documentLabel(kind));
+    const printable = motivationOnly
+      ? { images: [], pdfs: [], notPrinted: [] }
+      : await this.annexureImages(packUploads, annexures);
     const pressClippings = await this.buildPressClippings(pressIncidents);
     const evidenceBody = await this.buildEvidenceBody(evidence.bodyUploads);
 
     /**
-     * ⚠️ ONE LOOKUP, TWO PLACES ON THE PAGE. The drawing is the cover's hero
+     * âš ï¸ ONE LOOKUP, TWO PLACES ON THE PAGE. The drawing is the cover's hero
      * and the figures go in the body beside the firearm, and both come off the
      * same matched sheet — built once so a round that matches for one can
      * never fail to match for the other.
@@ -1505,10 +1530,10 @@ export class MotivationRenderService {
     );
 
     /**
-     * ⚠️ BUILT ONCE AND SHARED — the cartridge text and the C.I.P. inset are
+     * âš ï¸ BUILT ONCE AND SHARED — the cartridge text and the C.I.P. inset are
      * both read from this one article.
      *
-     * ⚠️ NO QUARRY PHOTOGRAPH (retired 2026-10-15). The composite line-up that
+     * âš ï¸ NO QUARRY PHOTOGRAPH (retired 2026-10-15). The composite line-up that
      * used to print across the foot of this page is gone; each animal now has
      * its own picture under heading 3 (motivation-plates.ts). The page keeps
      * its cartridge text.
@@ -1522,7 +1547,7 @@ export class MotivationRenderService {
     const dimensionImage = cartridge?.dimension ?? standaloneCip;
 
     /**
-     * ⚠️ THE 5.2 ARGUMENT WRITTEN FOR THIS APPLICATION. It is stored on the
+     * âš ï¸ THE 5.2 ARGUMENT WRITTEN FOR THIS APPLICATION. It is stored on the
      * row by generation; a missing or unreadable blob falls back to the
      * research article below, exactly as before.
      */
@@ -1559,7 +1584,7 @@ export class MotivationRenderService {
       format: asFormat(row.templateFormat),
       colourway: asScheme(row.templateColourway),
       layout: asLayout(row.templateLayout),
-      // ⚠️ NO WATERMARK. Operator, 2026-10-15: "remove the watermark." The
+      // âš ï¸ NO WATERMARK. Operator, 2026-10-15: "remove the watermark." The
       // unpaid "NOT FOR USE" mark that used to stamp every un-paid pack is
       // gone from the product; the field is left in place (always false) so no
       // caller can turn it back on by accident, and the renderer no longer
@@ -1575,7 +1600,7 @@ export class MotivationRenderService {
         LICENCE_TYPE_LABELS[row.licenceType],
         row.completedAt ?? new Date(),
       ),
-      // ⚠️ ON THE COVER BECAUSE THE DFO FILES ON IT. Every professional pack
+      // âš ï¸ ON THE COVER BECAUSE THE DFO FILES ON IT. Every professional pack
       // identifies the applicant by ID number on its first page: it is the
       // key the Central Firearms Register runs on, and a folder that carries
       // it cannot be confused with another Gerhard Fourie.
@@ -1588,47 +1613,53 @@ export class MotivationRenderService {
       // first application" rather than dropping the section.
       ownedFirearms: existingFirearms(answers),
       annexures,
-      // ⚠️ THE GAP IS STATED ON THE INDEX PAGE. See the note where this is
+      annexurePlaceholders: motivationOnly
+        ? annexures.map((entry) => ({
+            letter: entry.letter,
+            label: entry.label,
+          }))
+        : undefined,
+      // âš ï¸ THE GAP IS STATED ON THE INDEX PAGE. See the note where this is
       // built: a required document that is absent is named, so the applicant
       // knows what to bring and the DFO sees it was not withheld.
       missingDocuments,
-      priorNotice,
+      priorNotice: motivationOnly ? undefined : priorNotice,
       pressClippings,
-      // ⚠️ THE MEMBER'S OWN EVIDENCE, IN THE BODY. Activity photographs are
+      // âš ï¸ THE MEMBER'S OWN EVIDENCE, IN THE BODY. Activity photographs are
       // argument rather than annexures, so they print on one page beside the
       // argument they support — the same posture as the press clippings under
       // the exposure section. Lettered evidence is NOT here; it went into the
       // annexure images above.
-      evidencePages: evidenceBody,
-      // ⚠️ THE FIGURES THE CUTTINGS ARE EXAMPLES OF. The body argues "eleven
+      evidencePages: motivationOnly ? [] : evidenceBody,
+      // âš ï¸ THE FIGURES THE CUTTINGS ARE EXAMPLES OF. The body argues "eleven
       // house robberies in the quarter, and here are three of them", and the
       // annexure carried only the three — so a reviewer checking the claim had
       // nowhere to turn. Empty for a non-S13, for a station we cannot place,
       // or when there are no cuttings to head.
-      // ⚠️ KEYED ON THE SELF-DEFENCE QUESTION, NOT ON WHETHER THERE ARE
+      // âš ï¸ KEYED ON THE SELF-DEFENCE QUESTION, NOT ON WHETHER THERE ARE
       // CUTTINGS. The body cites the SAPS quarterly figures on S13 AND S14;
       // gating this on press clippings dropped the table from every S14 pack
       // and from any S13 where the member picked no cuttings.
       precinctTables: isSelfDefence(row.licenceType)
         ? await this.precinctTablesFor(answers)
         : undefined,
-      // ⚠️ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —
+      // âš ï¸ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —
       // because that is the only string the renderer has when it draws one.
       // See sectionMarks on MotivationPdfInput for why this is built from the
       // stored plan rather than inferred from the words.
       sectionMarks: sectionMarksFor(row.structurePlan, answers.firearm_type),
-      // ⚠️ THE BATTERY TABLE GOES UNDER THE COMPARISON HEADING, not after the
+      // âš ï¸ THE BATTERY TABLE GOES UNDER THE COMPARISON HEADING, not after the
       // summary where a reviewer has stopped reading. Undefined on a plan with
       // no comparison section — a first application holds nothing to compare —
       // and the renderer then prints it as its own section as it always did.
       batteryHeading: batteryHeadingOf(row.structurePlan),
-      // ⚠️ THE PRECINCT FIGURES AND THE CUTTINGS PRINT UNDER THE EXPOSURE
+      // âš ï¸ THE PRECINCT FIGURES AND THE CUTTINGS PRINT UNDER THE EXPOSURE
       // SECTION, at the foot of the paragraphs that cite them. Operator,
       // 2026-09-09: they "must be in the body of the document itself and form
       // part of the flow, it must not be just placed there because it has to
       // be there."
       exposureHeading: headingOf(row.structurePlan, 'the_threat'),
-      // ⚠️ THE PURPOSE EXHIBITS PRINT UNDER HEADING 3, at the foot of the
+      // âš ï¸ THE PURPOSE EXHIBITS PRINT UNDER HEADING 3, at the foot of the
       // paragraphs that argue the purpose. One to two pages of pictures drawn
       // at generation; the heading comes off the plan, never matched on words.
       purposeHeading: purposeHeadingOf(row.structurePlan),
@@ -1639,25 +1670,25 @@ export class MotivationRenderService {
         description: p.description,
         image: { bytes: p.bytes, width: p.width, height: p.height },
       })),
-      // ⚠️ THE SAME WORDS THE EXHIBITS PRINT, so the suitability sheet can
+      // âš ï¸ THE SAME WORDS THE EXHIBITS PRINT, so the suitability sheet can
       // still argue the applicant's actual purpose when the calibre research
       // failed or predates the purpose-specific ask.
       purposeNotes: storedPlates.map((p) => `${p.title}: ${p.description}`),
-      // ⚠️ THE CARTRIDGE FEATURE FOLLOWS THE FIREARM SECTION. Operator,
+      // âš ï¸ THE CARTRIDGE FEATURE FOLLOWS THE FIREARM SECTION. Operator,
       // 2026-09-20: "move THE CARTRIDGE straight after THE FIREARM APPLIED FOR
       // AND WHY IT SUITS THE PURPOSE as they are very relevant to each other".
       // The renderer draws the feature when this heading's section ends; the
       // heading itself comes off the plan, never matched on words.
       firearmHeading: headingOf(row.structurePlan, 'the_firearm'),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
-      characterStatements,
-      sellerConsent,
+      characterStatements: motivationOnly ? [] : characterStatements,
+      sellerConsent: motivationOnly ? undefined : sellerConsent,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
       // Merged into the finished pack by pdf-lib after pdfkit has drawn the
       // body — these used to be listed as "bring your own copy".
       annexurePdfs: printable.pdfs,
-      // ⚠️ THE CARTRIDGE'S OWN DATASHEET, AS BODY CONTENT. Operator,
+      // âš ï¸ THE CARTRIDGE'S OWN DATASHEET, AS BODY CONTENT. Operator,
       // 2026-08-23: "i want to insert the full cartridge page into the
       // motivation. Showing the dimensions and everything on the page" and
       // "it not an annexure. Its part of the motivation itself."
@@ -1666,25 +1697,25 @@ export class MotivationRenderService {
       // matching is refused here. No match means no page, which costs nothing;
       // a WRONG datasheet would assert chamber dimensions and a maximum
       // pressure for another cartridge inside a document the applicant signs.
-      // ⚠️ THE C.I.P. DATASHEET IS NOW A FULL BODY PAGE, NOT A SPLICE. The
+      // âš ï¸ THE C.I.P. DATASHEET IS NOW A FULL BODY PAGE, NOT A SPLICE. The
       // renderer places it under its own numbered heading so the running
       // header, footer and page numbers stay with it. See dimensionSheet.
       cipSheet: undefined,
-      // ⚠️ AND THE DRAWING, WHICH TAKES PRECEDENCE OVER THAT PAGE. Operator,
+      // âš ï¸ AND THE DRAWING, WHICH TAKES PRECEDENCE OVER THAT PAGE. Operator,
       // 2026-09-09: "why arent we pulling in the dimension sheet of the
       // cartridge its using from The Bench?" Both are still built because the
       // spliced page is the fallback when we hold no figures for the round;
       // the renderer prints one or the other, never both.
       cartridgeDrawing: cartridge,
       /**
-       * ⚠️ THE FIGURES GO WHERE THE PICTURE NO LONGER IS. The drawing is the
+       * âš ï¸ THE FIGURES GO WHERE THE PICTURE NO LONGER IS. The drawing is the
        * cover's hero and carries two lengths; the set a reviewer checks a
        * chambering against belongs beside the prose describing the firearm.
        * Operator, 2026-09-09: "the CIP dimensions should be inside the
        * application where the firearm is described."
        */
       /**
-       * ⚠️ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
+       * âš ï¸ THE CARTRIDGE, WRITTEN UP RATHER THAN TABULATED. Operator,
        * 2026-09-10: "We don't need that bunch of dimensions, rather give the
        * history and good facts about the cartridge." The two lengths that
        * matter are called out on the drawing itself, which is where a
@@ -1693,7 +1724,7 @@ export class MotivationRenderService {
        */
       cartridgeArticle: article,
       /**
-       * ⚠️ THE TWO FULL CARTRIDGE SHEETS (2026-10-17). The first is the
+       * âš ï¸ THE TWO FULL CARTRIDGE SHEETS (2026-10-17). The first is the
        * dimension sheet — the C.I.P. page when we hold one, our own full-width
        * drawing otherwise. The second is why this round suits the applied-for
        * purpose. `cartridgeDrawing` above remains the cover hero.
@@ -1732,12 +1763,12 @@ export class MotivationRenderService {
       purposeKind: purposeFor(row.licenceType, answers) ?? undefined,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
-      // ⚠️ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
+      // âš ï¸ THE APPLICANT'S PAGE, NOT THE REGISTRAR'S. See MotivationPdfInput.
       warnings: applicationWarnings(row.licenceType, answers).map((w) => ({
         authority: w.authority,
         message: w.message,
       })),
-      // ⚠️ THE "TAKE THESE WITH YOU" END PAGES ARE GONE. Operator, 2026-10-15:
+      // âš ï¸ THE "TAKE THESE WITH YOU" END PAGES ARE GONE. Operator, 2026-10-15:
       // "remove the before you go pages at the end." Not passing `takeWithYou`
       // means the renderer draws neither the worksheet nor its continuation;
       // the annexure-insertion fallback already handles a null anchor.
@@ -1747,12 +1778,12 @@ export class MotivationRenderService {
   /**
    * The cartridge drawn from the figures we hold, or nothing.
    *
-   * ⚠️ FAIL-SOFT, like every other supplied fact in this pack. A cartridge we
+   * âš ï¸ FAIL-SOFT, like every other supplied fact in this pack. A cartridge we
    * have no sheet for simply arrives without a drawing; the writer's prose
    * still stands, and the rule against recalled ballistics still holds. The
    * absence costs a picture, never the document.
    *
-   * ⚠️ RASTERISED HERE, NOT IN THE RENDERER. pdfkit cannot place an SVG, and
+   * âš ï¸ RASTERISED HERE, NOT IN THE RENDERER. pdfkit cannot place an SVG, and
    * the density is chosen for PAPER rather than for a screen: the drawing is
    * 166 mm wide, so 300 dpi is a little under two thousand pixels across the
    * column and the leader lines stay hairlines when printed.
@@ -1853,7 +1884,7 @@ export class MotivationRenderService {
       const drawing = await raster({ hero: !!heroLine });
 
       /**
-       * ⚠️ THE DIMENSION SHEET IS THE C.I.P. PAGE WHEN WE HOLD ONE.
+       * âš ï¸ THE DIMENSION SHEET IS THE C.I.P. PAGE WHEN WE HOLD ONE.
        *
        * Operator, 2026-10-17: "the rendered cartridge shows on the first page
        * of the application. Currently it renders the cartridge on the cartridge
@@ -1877,13 +1908,13 @@ export class MotivationRenderService {
         heightMm: drawing.heightMm,
         texts: drawing.texts,
         /**
-         * ⚠️ NO SOURCE IN THE HEADING. This lands in the contents page, and
+         * âš ï¸ NO SOURCE IN THE HEADING. This lands in the contents page, and
          * CLAUDE.md's Bench rule is a copyright boundary rather than a style
          * note — the spliced page it replaces was captioned "(C.I.P. data)"
          * and printed straight into the table of contents.
          */
         /**
-         * ⚠️ THE HEADING USES THE DOCUMENT'S OWN CALIBRE, NOT THE REFERENCE
+         * âš ï¸ THE HEADING USES THE DOCUMENT'S OWN CALIBRE, NOT THE REFERENCE
          * NAME. It lands in the contents page beside prose that says ".45-70
          * Government", and the reference file files the round as "45-70 Govt."
          * — so the contents read one way and the body another. `displayCalibre`
@@ -1894,7 +1925,7 @@ export class MotivationRenderService {
         label: `The cartridge \u2014 ${displayCalibre(printed) || hit.name}`,
         name: hit.name,
         /**
-         * ⚠️ THE TABLE'S FIGURES ARE THE DRAWING'S FIGURES. Both read
+         * âš ï¸ THE TABLE'S FIGURES ARE THE DRAWING'S FIGURES. Both read
          * `completed`, and `cartridgeDimRows` refuses every derived letter, so
          * a cartridge with no shoulder prints no shoulder diameter — the same
          * rule the callouts follow. See motivation-cartridge-drawing.ts.
@@ -1905,7 +1936,7 @@ export class MotivationRenderService {
           label.pmaxBar,
         ),
         /**
-         * ⚠️ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
+         * âš ï¸ THE LABEL IS STILL BUILT ON A HERO PACK. It is the contents-page
          * entry and the fallback heading, and a later change that gives the
          * body its figure back must not have to remember to reinstate it.
          */
@@ -1925,12 +1956,12 @@ export class MotivationRenderService {
   /**
    * The SAPS quarterly figures for the precincts this pack cites, as tables.
    *
-   * ⚠️ THE HOME STATION AND THE ONES THEY TICKED, IN THAT ORDER, AND NO MORE
+   * âš ï¸ THE HOME STATION AND THE ONES THEY TICKED, IN THAT ORDER, AND NO MORE
    * THAN THREE ALTOGETHER. Twelve stations of quarterly tables is not evidence,
    * it is a spreadsheet — the same finding the fact-pack side already applies
    * to the precincts the writer is given.
    *
-   * ⚠️ FAIL-SOFT PER STATION. One precinct we cannot place costs its own table
+   * âš ï¸ FAIL-SOFT PER STATION. One precinct we cannot place costs its own table
    * and nothing else; the release name travels on every table, because a
    * figure whose release is not named is a figure a reviewer cannot check.
    */
@@ -1948,7 +1979,7 @@ export class MotivationRenderService {
       (answers.police_station_province ?? '').trim() || undefined;
 
     /**
-     * ⚠️ THE AREAS THEY TICKED, NOT A RADIUS WE DREW. `travelled_areas` is an
+     * âš ï¸ THE AREAS THEY TICKED, NOT A RADIUS WE DREW. `travelled_areas` is an
      * answer the member gave — which is exactly what makes another precinct's
      * numbers admissible about THIS applicant. The key is the area name, which
      * is what CrimeStatsService resolves a station from.
@@ -1973,7 +2004,7 @@ export class MotivationRenderService {
       if (out.length >= 3) break;
       try {
         /**
-         * ⚠️ A PROVINCE THAT DOES NOT MATCH MUST NOT COST THE TABLE. The
+         * âš ï¸ A PROVINCE THAT DOES NOT MATCH MUST NOT COST THE TABLE. The
          * figures were cited in the body from a lookup that resolved, and the
          * render then asks the same question with the same answer — so a table
          * that silently disappears between generation and download is either
@@ -1987,7 +2018,7 @@ export class MotivationRenderService {
           (await this.crimeStats.precinct(name, province)) ??
           (province ? await this.crimeStats.precinct(name) : null);
         if (!f) {
-          // ⚠️ THE HOME STATION IS THE LOAD-BEARING ONE and the one a reviewer
+          // âš ï¸ THE HOME STATION IS THE LOAD-BEARING ONE and the one a reviewer
           // checks against the address; a travelled area the workbook cannot
           // place is the member's tick, not a defect, so it stays quiet.
           if (name === home) {
@@ -2023,7 +2054,7 @@ export class MotivationRenderService {
   /**
    * The C.I.P. datasheet for a calibre, or nothing.
    *
-   * ⚠️ FAIL-SOFT AND FLAG-GATED. A pack must never fail to render because a
+   * âš ï¸ FAIL-SOFT AND FLAG-GATED. A pack must never fail to render because a
    * reference page could not be found, read or licensed. The flag exists
    * because reproducing C.I.P.'s own typeset page inside a document we sell is
    * republication of somebody else's work, and that question was still open
@@ -2032,7 +2063,7 @@ export class MotivationRenderService {
   /**
    * The C.I.P. datasheet for a round, rasterised for the feature's inset.
    *
-   * ⚠️ RASTER, BECAUSE THE BODY IS pdfkit AND pdfkit TAKES PNG OR JPEG. At
+   * âš ï¸ RASTER, BECAUSE THE BODY IS pdfkit AND pdfkit TAKES PNG OR JPEG. At
    * scale 4 an A4 sheet comes back about 2 450 px wide, which set into an
    * 82 mm column is roughly a thousand dots to the inch — crisp in print and
    * still real detail at 400% on screen. Vector through pdf-lib would be
@@ -2040,16 +2071,16 @@ export class MotivationRenderService {
    * threaded out of pdfkit and back in afterwards; that is the upgrade if the
    * small type ever disappoints, not the first attempt.
    *
-   * ⚠️ TRIMMED, BECAUSE `sheetFor` CENTRES US LETTER ONTO A4 and the white
+   * âš ï¸ TRIMMED, BECAUSE `sheetFor` CENTRES US LETTER ONTO A4 and the white
    * bands that leaves are inset height spent on nothing. `trim()` stops at the
    * sheet's own printed border, so what is placed is the frame and its
    * contents and no margin.
    *
-   * ⚠️ AND IT NEVER THROWS. Every failure here — no sheet for the round, the
+   * âš ï¸ AND IT NEVER THROWS. Every failure here — no sheet for the round, the
    * data directory absent, a page that will not rasterise — returns undefined
    * and the caller falls back to our own drawing.
    */
-  // ⚠️ THE QUARRY PHOTOGRAPH IS RETIRED (2026-10-15). The composite line-up on
+  // âš ï¸ THE QUARRY PHOTOGRAPH IS RETIRED (2026-10-15). The composite line-up on
   // the cartridge page was replaced by one animal per picture under heading 3;
   // there is nothing to read here any more. quarry-plate.service is left in
   // place but is no longer drawn or shown.
@@ -2065,7 +2096,7 @@ export class MotivationRenderService {
     const on = await this.settings.get(FLAGS.cipSheetEnabled).catch(() => true);
     if (!on) return undefined;
     /**
-     * ⚠️ THE RAW FILE, NOT THE A4-FITTED COPY. `sheetFor` re-embeds the page
+     * âš ï¸ THE RAW FILE, NOT THE A4-FITTED COPY. `sheetFor` re-embeds the page
      * as a Form XObject so it can be scaled onto A4; pdf.js cannot rasterise
      * that and threw out of `paintFormXObjectBegin` on every render since the
      * inset shipped. The trim below removes the margins the A4 fitting was for.
@@ -2074,7 +2105,7 @@ export class MotivationRenderService {
     if (!sheet) return undefined;
 
     /**
-     * ⚠️ RASTERISED IN A HELPER PROCESS, BECAUSE IT CAN KILL THE SERVER. See
+     * âš ï¸ RASTERISED IN A HELPER PROCESS, BECAUSE IT CAN KILL THE SERVER. See
      * pdf-raster.child.ts: inside a booted Nest process this render has crashed
      * node with an access violation, which no try/catch can see. A crash here
      * now costs one inset — the caller falls back to our own dimension drawing
@@ -2105,7 +2136,7 @@ export class MotivationRenderService {
       };
     } catch (err) {
       /**
-       * ⚠️ THE STACK, BECAUSE THE MESSAGE ALONE WAS NOT ENOUGH. This failed
+       * âš ï¸ THE STACK, BECAUSE THE MESSAGE ALONE WAS NOT ENOUGH. This failed
        * on every render in production on 2026-09-10 with "Value is none of
        * these types `String`, `Path`," and nothing else — a napi-level type
        * error with no indication of which library raised it. The same call
@@ -2142,7 +2173,7 @@ export class MotivationRenderService {
       return {
         bytes: sheet.bytes,
         /**
-         * ⚠️ NO SOURCE IN THE HEADING. It lands in the contents page, and
+         * âš ï¸ NO SOURCE IN THE HEADING. It lands in the contents page, and
          * CLAUDE.md's Bench rule is a copyright boundary rather than a style
          * note: nothing on any surface built from that corpus names where a
          * figure comes from. This label read "(C.I.P. data)" and printed it
@@ -2158,7 +2189,7 @@ export class MotivationRenderService {
   /**
    * The signed statements, ready to print.
    *
-   * ⚠️ THE SIGNATURE IS DECRYPTED FOR THIS RENDER AND NOT KEPT. It lives in
+   * âš ï¸ THE SIGNATURE IS DECRYPTED FOR THIS RENDER AND NOT KEPT. It lives in
    * the encrypted tree like the applicant's own documents — it is a third
    * party's handwriting, given to us on a favour — and it exists in the clear
    * only inside the buffer that becomes the PDF.
@@ -2166,7 +2197,7 @@ export class MotivationRenderService {
   /**
    * The previous owner's signed consent, as a sheet for the pack.
    *
-   * ⚠️ THIS DID NOT EXIST, AND THE APPLICANT WAS TOLD IT DID. consentFormFor()
+   * âš ï¸ THIS DID NOT EXIST, AND THE APPLICANT WAS TOLD IT DID. consentFormFor()
    * has built this sheet since the consent flow shipped and NOTHING EVER
    * CALLED IT — the module had zero callers. Meanwhile the panel on the
    * applicant's screen reads "their signed consent and a copy of their licence
@@ -2238,7 +2269,7 @@ export class MotivationRenderService {
   /**
    * The current owner's consent letter as a STANDALONE read-only PDF.
    *
-   * ⚠️ THE SAME SHEET THE PACK PRINTS, FROM THE SAME BUILDER. It is
+   * âš ï¸ THE SAME SHEET THE PACK PRINTS, FROM THE SAME BUILDER. It is
    * `buildSellerConsent` (above), so the view cannot disagree with the document
    * a DFO reads. Only the PRESENTATION differs: default scheme and no pack
    * chrome or annexure caption — operator, 2026-10-13: "Just show the consent
@@ -2251,7 +2282,7 @@ export class MotivationRenderService {
     applicantId: string,
     motivationId: string,
   ): Promise<{ pdf: Buffer; filename: string } | null> {
-    // ⚠️ OWNERSHIP FIRST, the same check deleteFor makes. The letter is a named
+    // âš ï¸ OWNERSHIP FIRST, the same check deleteFor makes. The letter is a named
     // third party's declaration and licence; serving it to anybody who guesses
     // an id would be handing over somebody else's paperwork.
     const owned = await this.prisma.motivation.findFirst({
@@ -2319,7 +2350,7 @@ export class MotivationRenderService {
     return out.length ? out : undefined;
   }
 
-  // ── The cover photograph ────────────────────────────────────────
+  // â”€â”€ The cover photograph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Three sources, in the order that puts the applicant's own decision ahead
   // of ours. See motivation-cover-photo.ts for why "none" has to be stored
@@ -2328,7 +2359,7 @@ export class MotivationRenderService {
   /**
    * Which bytes go on the cover of THIS render.
    *
-   * ⚠️ RESOLVED AT RENDER TIME, NOT STORED. The pack is rebuilt on every
+   * âš ï¸ RESOLVED AT RENDER TIME, NOT STORED. The pack is rebuilt on every
    * download, so a decision the applicant changed five minutes ago only takes
    * effect if the choice is read here rather than baked in anywhere earlier.
    */
@@ -2340,7 +2371,7 @@ export class MotivationRenderService {
     if (choice === 'NONE') return undefined;
 
     if (row.coverPhotoKey && choice !== 'STOCK') {
-      // ⚠️ FAIL SOFT. A cover photograph that will not decrypt must not take
+      // âš ï¸ FAIL SOFT. A cover photograph that will not decrypt must not take
       // the whole motivation down — the applicant would lose the document
       // over its decoration.
       const own = await this.files.read(row.coverPhotoKey).catch(() => null);
@@ -2385,7 +2416,9 @@ export class MotivationRenderService {
     return {
       choice: asCoverChoice(row.coverPhotoChoice),
       hasOwn: Boolean(row.coverPhotoKey),
-      firearmLine: [make, model].filter(Boolean).join(' ') || null,
+      firearmLine:
+        [displayMake(make), displayModel(model)].filter(Boolean).join(' ') ||
+        null,
       stock: stock
         ? {
             // The Commons file title, e.g. "File:Tikka-T3-Sporter.jpg", so the
@@ -2393,7 +2426,7 @@ export class MotivationRenderService {
             source: stock.source.split(/\s+/)[0] ?? '',
           }
         : null,
-      // ⚠️ SENT, NOT HARD-CODED IN THE BUNDLE. The trim box locks to this
+      // âš ï¸ SENT, NOT HARD-CODED IN THE BUNDLE. The trim box locks to this
       // ratio and the frame prints at this size; a copy in the frontend would
       // go stale the first time the cover layout moved, and the symptom would
       // be a red box that promises a crop the cover does not print.
@@ -2455,7 +2488,7 @@ export class MotivationRenderService {
       select: { id: true, coverPhotoKey: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
-    // ⚠️ "USE MY OWN" WITH NOTHING UPLOADED WOULD FALL THROUGH TO THE STOCK
+    // âš ï¸ "USE MY OWN" WITH NOTHING UPLOADED WOULD FALL THROUGH TO THE STOCK
     // PHOTOGRAPH, which is the opposite of what was asked for.
     if (wanted === 'OWN' && !row.coverPhotoKey) {
       throw new BadRequestException(
@@ -2486,7 +2519,7 @@ export class MotivationRenderService {
     const check = checkCoverPhoto(file.buffer, file.mimetype);
     if (!check.ok) throw new BadRequestException(check.problem);
 
-    // ⚠️ THE ENCRYPTED TREE, like every other document they give us. A
+    // âš ï¸ THE ENCRYPTED TREE, like every other document they give us. A
     // photograph the applicant took of their own firearm can show its serial
     // number; it is not the shared, git-tracked stock asset in assets/firearms
     // and must not be stored beside one.
@@ -2555,7 +2588,7 @@ export class MotivationRenderService {
    * whole point is that the form and the motivation are separate deliverables,
    * and leftBlank tells them exactly which boxes still need a pen.
    *
-   * ⚠️ EXCEPT THAT NOBODY IS TOLD ANYTHING YET, AND THE LINE ABOVE HAS BEEN
+   * âš ï¸ EXCEPT THAT NOBODY IS TOLD ANYTHING YET, AND THE LINE ABOVE HAS BEEN
    * WRONG FOR AS LONG AS IT HAS BEEN THERE. `leftBlank` is built, returned
    * from here — and DROPPED at motivations.controller.ts:415, which
    * destructures `{ pdf, filename }` and streams the PDF. The route returns a
@@ -2586,7 +2619,7 @@ export class MotivationRenderService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
-    // ⚠️ A RENEWAL IS A DIFFERENT FORM, AND THE ANSWER CANNOT OVERRIDE THAT.
+    // âš ï¸ A RENEWAL IS A DIFFERENT FORM, AND THE ANSWER CANNOT OVERRIDE THAT.
     //
     // This gate read the opt-in and nothing else, while saps271Map throws for
     // a section 24 further down ("the SAPS 271 is an application for a NEW
@@ -2603,16 +2636,16 @@ export class MotivationRenderService {
       );
     }
 
-    // ⚠️ NO OPT-IN GATE HERE ANY MORE. Until 2026-09-08 this is where a member
+    // âš ï¸ NO OPT-IN GATE HERE ANY MORE. Until 2026-09-08 this is where a member
     // who had answered "My dealer will fill it in" was turned away with a 409.
     // The 271 is no longer something the applicant elects to receive — every
     // pack ships one (D, G and H are always ours to complete; section F below
     // is filled or left blank by `firearm_source`, never by this choice) — so
-    // there is nothing left to check the answer against. Brief §2.5,
-    // `MOTIVATION-INTAKE-PLAN.md` §1. `fill_saps271` itself is retired in
+    // there is nothing left to check the answer against. Brief Â§2.5,
+    // `MOTIVATION-INTAKE-PLAN.md` Â§1. `fill_saps271` itself is retired in
     // motivation-fields.ts and kept only so an old draft still saves.
     /**
-     * ⚠️ THE PROFILE UNDERNEATH, OR HALF THE FORM PRINTS BLANK.
+     * âš ï¸ THE PROFILE UNDERNEATH, OR HALF THE FORM PRINTS BLANK.
      *
      * `readAnswers` opens THIS APPLICATION's blob and nothing else. Every
      * `scope: 'profile'` field — the safe, whether it is mounted and to what,
@@ -2642,7 +2675,7 @@ export class MotivationRenderService {
     });
 
     try {
-      // ⚠️ THE LETTER, NOT A GUESS AT IT. Items 68.1 and 69.1 are answered by
+      // âš ï¸ THE LETTER, NOT A GUESS AT IT. Items 68.1 and 69.1 are answered by
       // citing the photographs of the safe, so the citation has to carry the
       // letter this pack's index actually gives them — which moves with what
       // else was uploaded. annexureByKind rather than a find() over the
@@ -2652,13 +2685,13 @@ export class MotivationRenderService {
         buildAnnexures((row.uploads ?? []).map((u) => u.kind)),
       ).get(MotivationUploadKind.SAFE_PHOTOGRAPHS)?.letter;
 
-      // ⚠️ SECTION F, AT LAST. Twenty-two boxes were mapped, tested and
+      // âš ï¸ SECTION F, AT LAST. Twenty-two boxes were mapped, tested and
       // UNREACHABLE: this call never passed a seller, so the current owner's
       // half of the form went to every DFO blank while the coverage panel
       // told the applicant it was done. Operator, 2026-08-28: "F should be
       // filled, type A."
       //
-      // ⚠️ NULL ON EVERY ROUTE BUT A SIGNED PRIVATE SALE, and that is the
+      // âš ï¸ NULL ON EVERY ROUTE BUT A SIGNED PRIVATE SALE, and that is the
       // point: sectionF() returns nothing until the seller has actually
       // completed and signed, and saps271-map refuses to fill the block
       // unless the applicant said the route was private. Two independent
@@ -2686,3 +2719,4 @@ export class MotivationRenderService {
     }
   }
 }
+

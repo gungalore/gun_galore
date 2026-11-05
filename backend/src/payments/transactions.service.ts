@@ -21,6 +21,10 @@ import {
   sellerBreakdown,
 } from './fee-presentation';
 import { OzowService, OzowPaymentResult, ozowErrorDetail } from './ozow.service';
+import { PeachService } from './peach.service';
+import { PaymentRailsService } from './payment-rails.service';
+import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
+import { decryptSaIdNumber } from '../common/id-crypto';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
@@ -45,7 +49,7 @@ import {
   assertNoDuplicateListings,
   OrderLineBreakdown,
 } from '../orders/order-math';
-import { DeliveryOption, ListingStatus, Prisma, Province, ShippingMethod } from '@prisma/client';
+import { DeliveryOption, ListingStatus, PaymentProvider, Prisma, Province, ShippingMethod } from '@prisma/client';
 import { KycService } from '../kyc/kyc.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
@@ -163,7 +167,47 @@ export class TransactionsService {
     // existing positional test harnesses keep working.
     @Optional()
     private readonly dealerPortal?: DealerPortalService,
+    // Provider router + Peach adapter. Optional so existing positional test
+    // harnesses keep compiling; production always has both (@Global modules).
+    @Optional()
+    private readonly rails?: PaymentRailsService,
+    @Optional()
+    private readonly peach?: PeachService,
   ) {}
+
+  /**
+   * True only when a gateway result proves the payment can no longer settle.
+   *
+   * `isSuccess === false` is NOT enough: Ozow reports an in-flight EFT as
+   * "Incomplete" and Peach reports "pending". Deleting either is how a paid
+   * order loses its transaction row. A non-success result is only terminal
+   * once the payment deadline has passed (Ozow) or when the provider says the
+   * payment was rejected/cancelled/failed. Peach "pending" is never terminal:
+   * its checkout can still settle, so we keep the row and let the webhook or a
+   * later poll claim it.
+   */
+  private gatewayFailureIsTerminal(
+    provider: PaymentProvider | null | undefined,
+    status: { resultCode: string; isSuccess: boolean } | null,
+    deadlinePassed: boolean,
+  ): boolean {
+    if (!status) return deadlinePassed;
+    if (status.isSuccess) return false;
+    const p = provider ?? PaymentProvider.OZOW;
+    if (p === PaymentProvider.PEACH) {
+      const code = String(status.resultCode ?? '');
+      // Only explicit declines/cancellations/not-found are terminal. An
+      // unknown Peach code is NOT proof that a payment failed; deleting it
+      // could orphan a real capture.
+      if (code === 'NOT_FOUND') return true;
+      if (/^(800\.|100\.|900\.)/.test(code)) return true;
+      if (/^000\.400\.3/.test(code)) return true;
+      return false;
+    }
+    const code = String(status.resultCode ?? '').toLowerCase();
+    if (code === 'incomplete' || code === 'pending') return deadlinePassed;
+    return true;
+  }
 
   // ------------------------------------------------------------------
   // Create a transaction and an Ozow checkout session
@@ -256,7 +300,7 @@ export class TransactionsService {
     // TAKE_A_SHOT is retired but accepted here as a LEGACY completion path:
     // offers already accepted on old rows must still be payable after the
     // listing-type retirement. New offers are made on BUY_NOW and AUCTION.
-    let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string } | null = null;
+    let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string; expiresAt: Date } | null = null;
     // P0.2 - auction-winner checkout takes a different validation +
     // reservation path (the listing is ALREADY reserved for the winner).
     // An accepted offer on an auction is promoted to this same state by
@@ -292,6 +336,11 @@ export class TransactionsService {
         );
       }
       offerRecord = rawOffer;
+      if (rawOffer.expiresAt.getTime() <= Date.now()) {
+        throw new BadRequestException(
+          'The payment window for this accepted offer has lapsed.',
+        );
+      }
       if (listing.listingType === 'AUCTION') {
         // Same winner-only gate as the direct auction checkout below. The
         // seller's accept closed the auction and promoted this buyer to the
@@ -357,6 +406,29 @@ export class TransactionsService {
     }
     // ----
 
+    // A multi-unit listing stays ACTIVE while one unit is held, so the legacy
+    // PAYMENT_PENDING gate cannot stop a second checkout. Reuse the existing
+    // attempt instead of minting another payable link for the same buyer.
+    if (!dto.offerId && !auctionWin && listing.trackInventory) {
+      const existingAttempt = await this.prisma.transaction.findFirst({
+        where: {
+          buyerId,
+          listingId: listing.id,
+          paidAt: null,
+          paymentStatus: 'HELD',
+          gatewayCheckoutId: { not: null },
+          orderId: null,
+          swapId: null,
+        },
+        select: { id: true },
+      });
+      if (existingAttempt) {
+        throw new ConflictException(
+          'You already have a payment in progress for this item. Resume it from My Orders instead of starting another.',
+        );
+      }
+    }
+
     // Enforce shipping routing rules: legal class (firearm vs not) AND
     // the seller's offered methods (a subset of the legal options).
     this.validateShipping(
@@ -366,17 +438,6 @@ export class TransactionsService {
       dto.shippingMethod,
     );
 
-    // M33 — 18+/competency attestation on firearm checkouts. Required
-    // by the audit + SAPS regulatory framework. Refuse the transaction
-    // server-side if the flag is not explicitly true on a firearm
-    // listing — the frontend gate is convenience UX, this is the
-    // authoritative check. Non-firearm checkouts ignore the flag.
-    if (listing.isFirearm && dto.firearmAttestation18Plus !== true) {
-      throw new BadRequestException(
-        'You must confirm you are over 18 and (where applicable) hold the relevant SAPS competency before buying a firearm.',
-      );
-    }
-
     // P3 — collection papers acknowledgement (trailers / off-road caravans).
     // Mirror the firearm attestation: the flag must be explicitly true when
     // the listing requires papers. The frontend gate is UX; this is the
@@ -384,18 +445,6 @@ export class TransactionsService {
     if (listing.requiresPapers && dto.collectionPapersAccepted !== true) {
       throw new BadRequestException(
         'You must confirm you will collect this item in person and receive the registration / roadworthy papers from the seller at handover.',
-      );
-    }
-
-    // UNCONDITIONAL — every class of purchase, including an ordinary couriered
-    // parcel. The buyer confirms they have seen where the item is and that
-    // location and travel distance are not refund grounds. The tick in the UI
-    // is convenience; this is the authoritative check, and it also covers the
-    // SMS action-token buyers who reach POST /transactions through
-    // AuthOrTokenGuard rather than the checkout form.
-    if (dto.buyerTermsAccepted !== true) {
-      throw new BadRequestException(
-        'You must confirm you have seen where this item is and that we do not refund an order because of its location or the distance to it.',
       );
     }
 
@@ -413,6 +462,23 @@ export class TransactionsService {
         ? (listing.currentBid ?? 0)
         : (listing.price ?? 0);
     if (!agreedPrice) throw new BadRequestException('Could not determine listing price');
+
+    // The absolute deadline this payment attempt may be paid by. It is stored
+    // on the transaction so the reconciler never has to infer a window from
+    // the listing type (which previously cut accepted Buy Now offers from
+    // 24h down to 15m).
+    const now = new Date();
+    const payByAt = offerRecord
+      ? offerRecord.expiresAt
+      : auctionWin
+        ? (listing.expiresAt ??
+          new Date(now.getTime() + 24 * 60 * 60 * 1000))
+        : new Date(now.getTime() + CHECKOUT_HOLD_MS);
+    if (payByAt.getTime() <= now.getTime()) {
+      throw new BadRequestException(
+        'The payment window for this checkout has lapsed.',
+      );
+    }
 
     const isAuctionListing = listing.listingType === 'AUCTION';
 
@@ -710,7 +776,11 @@ export class TransactionsService {
     if (listing.trackInventory) {
       await this.prisma.listing
         .updateMany({
-          where: { id: listing.id, quantityAvailable: { lte: 0 } },
+          where: {
+            id: listing.id,
+            status: { in: [ListingStatus.ACTIVE, ListingStatus.PAYMENT_PENDING] },
+            quantityAvailable: { lte: 0 },
+          },
           data: { status: ListingStatus.PAYMENT_PENDING },
         })
         .catch(() => undefined);
@@ -746,6 +816,9 @@ export class TransactionsService {
       feeModel,
       buyerTotal,
       sellerPayout,
+      // Reused as the gateway attempt's absolute pay-by deadline. The manual
+      // EFT rail is retired; the column is already indexed for the sweeps.
+      manualPayByAt: payByAt,
       shippingMethod: dto.shippingMethod,
       deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
       dealerId: dto.dealerId,
@@ -778,9 +851,15 @@ export class TransactionsService {
       // string rendered above the tick. Listing.publicLocality stays editable
       // after the sale, so a join would show what the listing says today
       // rather than what this buyer was shown.
-      buyerTermsAckAt: new Date(),
-      buyerTermsAckVersion: REFUND_TERMS_VERSION,
-      buyerLocationShown: vicinityLabel(listing),
+      buyerTermsAckAt:
+        dto.buyerTermsAccepted === true ? new Date() : null,
+      buyerTermsAckVersion:
+        dto.buyerTermsAccepted === true ? REFUND_TERMS_VERSION : null,
+      buyerLocationShown:
+        dto.buyerTermsAccepted === true ? vicinityLabel(listing) : null,
+      // LOCKED AT CHECKOUT. The payment step and every later refund/payout
+      // read this column; it is never changed.
+      paymentProvider: dto.paymentProvider ?? PaymentProvider.OZOW,
     };
     const persistTx = async () => {
       if (!checkoutHold) {
@@ -879,6 +958,7 @@ export class TransactionsService {
       processingFee,
       buyerTotal,
       sellerPayout,
+      payByAt,
     };
   }
 
@@ -941,6 +1021,7 @@ export class TransactionsService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        paymentProvider: true,
         gatewayCheckoutId: true,
         quantity: true,
         listing: { select: { trackInventory: true } },
@@ -948,9 +1029,12 @@ export class TransactionsService {
     });
     if (!tx?.gatewayCheckoutId) return false;
 
-    let status: OzowPaymentResult | null;
+    let status: Awaited<ReturnType<TransactionsService['getGatewayStatus']>>;
     try {
-      status = await this.ozow.getPaymentStatus(tx.gatewayCheckoutId);
+      status = await this.getGatewayStatus(
+        tx.paymentProvider ?? PaymentProvider.OZOW,
+        tx.gatewayCheckoutId,
+      );
     } catch (err) {
       this.logger.warn(
         `reclaimBuyerAbandonedCheckout: status fetch failed for ${tx.id}: ${(err as Error).message}`,
@@ -967,6 +1051,31 @@ export class TransactionsService {
       );
     }
 
+    // An accepted offer has its own checkout. Reclaiming it through the
+    // generic Buy Now hold would either lose the agreed price or delete the
+    // only transaction that carries it.
+    const linkedOffer = await this.prisma.offer.findFirst({
+      where: { transactionId: tx.id },
+      select: { id: true },
+    });
+    if (linkedOffer) {
+      throw new ConflictException(
+        'This payment belongs to an accepted offer. Resume it from My Offers.',
+      );
+    }
+
+    if (
+      !this.gatewayFailureIsTerminal(
+        tx.paymentProvider,
+        status,
+        false,
+      )
+    ) {
+      throw new ConflictException(
+        'Your previous payment is still being processed. Do not pay again — return to the payment page or check My Orders.',
+      );
+    }
+
     try {
       await this.prisma.$transaction(async (txc) => {
         // Delete first, conditional on the money still being unpaid. If a
@@ -980,27 +1089,41 @@ export class TransactionsService {
             'This payment is already being processed.',
           );
         }
-        const updated = tx.listing.trackInventory
-          ? await txc.listing.updateMany({
-              where: {
-                id: listingId,
-                status: ListingStatus.PAYMENT_PENDING,
-              },
-              data: {
-                status: ListingStatus.ACTIVE,
-                quantityAvailable: { increment: tx.quantity },
-                quantityReserved: { decrement: tx.quantity },
-              },
-            })
-          : await txc.listing.updateMany({
-              where: {
-                id: listingId,
-                status: ListingStatus.PAYMENT_PENDING,
-              },
-              data: { status: ListingStatus.ACTIVE },
-            });
-        if (updated.count === 0) {
-          throw new ConflictException('This item is no longer available.');
+        if (tx.listing.trackInventory) {
+          const restored = await txc.listing.updateMany({
+            where: {
+              id: listingId,
+              quantityReserved: { gte: tx.quantity },
+            },
+            data: {
+              quantityAvailable: { increment: tx.quantity },
+              quantityReserved: { decrement: tx.quantity },
+            },
+          });
+          if (restored.count === 0) {
+            throw new ConflictException(
+              'This item’s reservation is no longer valid.',
+            );
+          }
+          // Only a listing that was hidden by the last unit should become
+          // visible again. A seller-cancelled/expired listing stays down.
+          await txc.listing.updateMany({
+            where: { id: listingId, status: ListingStatus.PAYMENT_PENDING },
+            data: { status: ListingStatus.ACTIVE },
+          });
+        } else {
+          const updated = await txc.listing.updateMany({
+            where: {
+              id: listingId,
+              status: ListingStatus.PAYMENT_PENDING,
+            },
+            data: { status: ListingStatus.ACTIVE },
+          });
+          if (updated.count === 0) {
+            this.logger.warn(
+              `reclaimBuyerAbandonedCheckout: ${listingId} was no longer PAYMENT_PENDING; transaction ${tx.id} deleted without relisting`,
+            );
+          }
         }
       });
     } catch (err) {
@@ -1105,7 +1228,11 @@ export class TransactionsService {
       // the row.
       await this.prisma.listing
         .updateMany({
-          where: { id: listing.id, quantityAvailable: { lte: 0 } },
+          where: {
+            id: listing.id,
+            status: { in: [ListingStatus.ACTIVE, ListingStatus.PAYMENT_PENDING] },
+            quantityAvailable: { lte: 0 },
+          },
           data: { status: ListingStatus.PAYMENT_PENDING },
         })
         .catch(() => undefined);
@@ -1147,6 +1274,12 @@ export class TransactionsService {
             },
           })
           .catch(() => undefined);
+        await this.prisma.listing
+          .updateMany({
+            where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+            data: { status: ListingStatus.ACTIVE },
+          })
+          .catch(() => undefined);
       } else {
         await this.prisma.listing
           .updateMany({
@@ -1183,18 +1316,30 @@ export class TransactionsService {
       if (!listing) return true;
 
       if (listing.trackInventory) {
-        const available = listing.quantityAvailable + hold.quantity;
-        await txc.listing.update({
-          where: { id: hold.listingId },
+        const restored = await txc.listing.updateMany({
+          where: {
+            id: hold.listingId,
+            quantityReserved: { gte: hold.quantity },
+          },
           data: {
-            // Only show it again if there is stock left after other holds.
-            status:
-              available > 0
-                ? ListingStatus.ACTIVE
-                : ListingStatus.PAYMENT_PENDING,
             quantityAvailable: { increment: hold.quantity },
             quantityReserved: { decrement: hold.quantity },
           },
+        });
+        if (restored.count === 0) {
+          this.logger.warn(
+            `releaseCheckoutHoldRow: ${hold.listingId} had no reserved unit to release for hold ${hold.id}`,
+          );
+          return true;
+        }
+        // Only unhide a listing the hold itself hid. Never resurrect a
+        // seller-cancelled/expired listing just because a stale hold lapsed.
+        await txc.listing.updateMany({
+          where: {
+            id: hold.listingId,
+            status: ListingStatus.PAYMENT_PENDING,
+          },
+          data: { status: ListingStatus.ACTIVE },
         });
       } else {
         await txc.listing.updateMany({
@@ -1263,12 +1408,11 @@ export class TransactionsService {
       auctionWin,
       offerReserved,
       listingPrice,
-      shippingCost,
-      shippingHandlingCents,
       commissionZar,
       processingFee,
       buyerTotal,
       sellerPayout,
+      payByAt,
     } = await this.reserveAndCreateLine(buyerId, dto);
 
     // The manual-EFT pay-in branch has been removed. checkout is gated by
@@ -1280,22 +1424,53 @@ export class TransactionsService {
     // registered URL; the txId rides back via the browser (localStorage) and,
     // once the webhook lands, via merchantReference. The buyer's own name is
     // fine to send to the gateway (it's their payment, not exposed to others).
-    const resultUrl = `${frontendUrl}/checkout/complete`;
-    const payerName =
-      [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') ||
-      buyer.username ||
-      undefined;
+    // Carry the tx id in the return URL as well as localStorage. The id in the
+    // query survives a return to a different host (Peach rejects bare
+    // localhost, and a tunnel or loopback alias has its own storage).
+    const resultUrl = `${frontendUrl}/checkout/complete?transactionId=${tx.id}`;
+
+    // Claim the accepted offer BEFORE creating a gateway checkout. Without
+    // this, two tabs could both read ACCEPTED, both create a transaction, and
+    // both mint a payable link. The tx id is the one-time claim.
+    if (offerRecord) {
+      const offerClaim = await this.prisma.offer.updateMany({
+        where: {
+          id: offerRecord.id,
+          status: 'ACCEPTED',
+          transactionId: null,
+        },
+        data: { status: 'CONVERTED', transactionId: tx.id },
+      });
+      if (offerClaim.count === 0) {
+        if (auctionWin && listing.expiresAt) {
+          await this.prisma.listing
+            .updateMany({
+              where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+              data: { expiresAt: listing.expiresAt },
+            })
+            .catch(() => undefined);
+        }
+        await this.prisma.transaction
+          .delete({ where: { id: tx.id } })
+          .catch(() => undefined);
+        throw new ConflictException(
+          'This offer is already being paid or has moved on. Refresh My Offers.',
+        );
+      }
+    }
+
     let gatewayCheckout;
     try {
-      gatewayCheckout = await this.ozow.createPayment({
+      gatewayCheckout = await this.createGatewayCheckout(tx.paymentProvider, {
         amountZarCents: buyerTotal,
         merchantTransactionId: tx.id,
         returnUrl: resultUrl,
-        // A plain Buy Now gets the same 15-minute window as its hold. Auction
-        // wins and offer checkouts keep their existing longer windows.
-        ...(!auctionWin && !offerRecord
-          ? { expirySeconds: CHECKOUT_HOLD_MINUTES * 60 }
-          : {}),
+        // Every attempt gets the REMAINING time to its absolute deadline, so
+        // starting checkout at hour 23 cannot buy another full 24 hours.
+        expirySeconds: Math.max(
+          60,
+          Math.floor((payByAt.getTime() - Date.now()) / 1000),
+        ),
       });
     } catch (err) {
       // Roll back the listing reservation if the gateway call fails.
@@ -1311,26 +1486,71 @@ export class TransactionsService {
       // An accepted offer is different: its reservation must SURVIVE a gateway
       // failure so the buyer can retry and no third party can buy the item in
       // the meantime. Leave the listing exactly as the acceptance left it.
-      if (!offerReserved) {
-        await this.prisma.listing.update({
-          where: { id: listing.id },
-          data: auctionWin
-            ? {
-                status: ListingStatus.PAYMENT_PENDING,
-                expiresAt: listing.expiresAt ?? undefined,
-              }
-            : listing.trackInventory
-              ? {
-                  status: ListingStatus.ACTIVE,
-                  quantityAvailable: { increment: quantity },
-                  quantityReserved: { decrement: quantity },
-                }
-              : { status: ListingStatus.ACTIVE },
-        });
+      // Delete ONLY if the row is still unpaid. A gateway timeout can hide a
+      // create that actually succeeded, and a webhook may already have marked
+      // the sale paid. Deleting unconditionally would erase the paid order.
+      const deleted = await this.prisma.transaction
+        .deleteMany({ where: { id: tx.id, paidAt: null } })
+        .catch(() => ({ count: 0 }));
+      if (deleted.count === 0) {
+        this.logger.error(
+          `${tx.paymentProvider} createPayment failed for tx ${tx.id}, but the row is no longer unpaid — leaving it intact for reconciliation`,
+        );
+        throw new BadRequestException(
+          'We could not finish setting up payment. Check My Orders before trying again.',
+        );
       }
-      await this.prisma.transaction.delete({ where: { id: tx.id } });
+
+      if (offerRecord) {
+        await this.prisma.offer
+          .updateMany({
+            where: {
+              id: offerRecord.id,
+              transactionId: tx.id,
+              status: 'CONVERTED',
+            },
+            data: { status: 'ACCEPTED', transactionId: null },
+          })
+          .catch(() => undefined);
+      }
+      if (!offerReserved) {
+        if (auctionWin) {
+          await this.prisma.listing
+            .updateMany({
+              where: {
+                id: listing.id,
+                status: ListingStatus.PAYMENT_PENDING,
+              },
+              data: { expiresAt: listing.expiresAt ?? undefined },
+            })
+            .catch(() => undefined);
+        } else if (listing.trackInventory) {
+          await this.prisma.listing
+            .updateMany({
+              where: { id: listing.id },
+              data: {
+                quantityAvailable: { increment: quantity },
+                quantityReserved: { decrement: quantity },
+              },
+            })
+            .catch(() => undefined);
+          await this.prisma.listing
+            .updateMany({
+              where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+              data: { status: ListingStatus.ACTIVE },
+            })
+            .catch(() => undefined);
+        } else {
+          await this.prisma.listing
+            .updateMany({
+              where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+              data: { status: ListingStatus.ACTIVE },
+            })
+            .catch(() => undefined);
+        }
+      }
       this.logger.error(
-        `Ozow createPayment failed for tx ${tx.id} (amount R${(
+        `${tx.paymentProvider} createPayment failed for tx ${tx.id} (amount R${(
           buyerTotal / 100
         ).toFixed(2)} / ${buyerTotal}c): ${ozowErrorDetail(
           (err as Error).message,
@@ -1342,12 +1562,10 @@ export class TransactionsService {
       );
     }
 
-    // Persist the Ozow payment id (gatewayCheckoutId — the primary webhook
-    // match) + the minted merchant ref (fallback match) and mark the offer
-    // CONVERTED if this was an offer checkout.
-    // An auction offer can also be paid from the listing page's winner CTA,
-    // which carries no offerId. Resolve that offer here so it does not stay
-    // ACCEPTED (and keep showing a "pay now" card) after the sale is paid.
+    // Persist the gateway checkout id (primary webhook match) + the minted
+    // merchant ref (fallback match). An offer checkout was already claimed
+    // CONVERTED before the gateway call; only the auction-win-without-offer
+    // path still needs to convert a matching accepted offer.
     let auctionOffer: { id: string } | null = null;
     if (auctionWin && !offerRecord) {
       try {
@@ -1367,21 +1585,19 @@ export class TransactionsService {
       this.prisma.transaction.update({
         where: { id: tx.id },
         data: {
-          gatewayCheckoutId: gatewayCheckout.paymentId,
+          gatewayCheckoutId: gatewayCheckout.checkoutId,
           gatewayMerchantRef: gatewayCheckout.merchantReference,
+          gatewayRedirectUrl: gatewayCheckout.redirectUrl || null,
         },
       }),
-      ...(offerRecord
-        ? [this.prisma.offer.update({
-            where: { id: offerRecord.id },
-            data: { status: 'CONVERTED', transactionId: tx.id },
-          })]
-        : auctionOffer
-          ? [this.prisma.offer.update({
+      ...(auctionOffer
+        ? [
+            this.prisma.offer.update({
               where: { id: auctionOffer.id },
               data: { status: 'CONVERTED', transactionId: tx.id },
-            })]
-          : []),
+            }),
+          ]
+        : []),
     ]);
 
     return {
@@ -1389,9 +1605,9 @@ export class TransactionsService {
       // Generic fields the frontend redirects on. paymentId carries the
       // `mock-` prefix when Ozow isn't configured (dev), which the UI
       // uses to render the test-mode card instead of redirecting.
-      paymentId: gatewayCheckout.paymentId,
+      paymentId: gatewayCheckout.checkoutId,
       redirectUrl: gatewayCheckout.redirectUrl,
-      provider: 'ozow' as const,
+      provider: (tx.paymentProvider ?? PaymentProvider.OZOW).toLowerCase(),
       breakdown: { listingPrice, commissionZar, processingFee, buyerTotal, sellerPayout },
     };
   }
@@ -1846,16 +2062,27 @@ export class TransactionsService {
     }
 
     try {
-      const status = await this.ozow.getPaymentStatus(checkoutId);
+      const status = await this.getGatewayStatus(tx.paymentProvider, checkoutId);
       if (status && status.isSuccess) {
-        // Map the Ozow result into the gateway-result shape markPaid binds on.
-        // merchantTransactionId is set to tx.id (bound by construction — see
-        // above) so a missing merchantReference echo can't break a genuine
-        // capture; the amount is the real guard. status.transactionId is
-        // Ozow's refundable transaction id, stored as gatewayPaymentId.
+        // The status query was bound to THIS transaction's stored checkout id.
+        // For Peach, also require the echoed merchant reference to match the
+        // one minted at create (an empty echo is tolerated; the amount and
+        // checkout id remain the hard guards).
+        if (
+          tx.paymentProvider === PaymentProvider.PEACH &&
+          status.merchantReference &&
+          status.merchantReference !== tx.gatewayMerchantRef
+        ) {
+          throw new BadRequestException(
+            'Payment reference does not match this transaction.',
+          );
+        }
+        // merchantTransactionId is set to tx.id by construction so markPaid's
+        // binding guard holds for both providers. status.paymentId is the
+        // refundable id stored as gatewayPaymentId.
         const result: GatewayPaymentResult = {
-          paymentId: status.transactionId,
-          resultCode: status.status,
+          paymentId: status.paymentId,
+          resultCode: status.resultCode,
           amount: status.amountCents,
           currency: 'ZAR',
           merchantTransactionId: tx.id,
@@ -1870,12 +2097,12 @@ export class TransactionsService {
           await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
         } catch (err) {
           this.logger.error(
-            `Ozow verify markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+            `${tx.paymentProvider} verify markPaid rejected for ${tx.id}: ${(err as Error).message}`,
           );
           await this.prisma.adminAlert
             .create({
               data: {
-                type: 'OZOW_VERIFY_MARKPAID_REJECTED',
+                type: `${tx.paymentProvider}_VERIFY_MARKPAID_REJECTED`,
                 referenceId: tx.id,
                 urgent: true,
                 context: `Verify-result success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c, expected=${tx.buyerTotal}c.`,
@@ -1889,11 +2116,219 @@ export class TransactionsService {
         return { success: true };
       }
       // Not captured (yet) — leave the listing reserved; do not revert.
-      return { success: false, resultCode: status?.status ?? 'Incomplete' };
+      return { success: false, resultCode: status?.resultCode ?? 'Incomplete' };
     } catch (err) {
-      this.logger.error('Ozow verify failed', err);
+      this.logger.error(`${tx.paymentProvider} verify failed`, err);
       throw new BadRequestException('Payment verification failed');
     }
+  }
+
+  /**
+   * Safe resume for an interrupted checkout. It never creates a second
+   * transaction and never discards a pending payment:
+   *   - already paid → report paid, do not charge again
+   *   - provider still pending → tell the buyer to return to that page
+   *   - provider terminal failure → mint ONE fresh checkout for the SAME row
+   *   - past the absolute deadline → refuse
+   */
+  async resumeCheckout(
+    transactionId: string,
+    buyerId: string,
+    frontendUrl: string,
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: { listing: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyerId !== buyerId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (tx.paidAt) {
+      return { paid: true as const, transactionId: tx.id };
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        `This order is no longer awaiting payment (status: ${tx.paymentStatus}).`,
+      );
+    }
+    if (tx.listing.status !== 'ACTIVE' && tx.listing.status !== 'PAYMENT_PENDING') {
+      throw new BadRequestException(
+        'This item is no longer available. Start a fresh checkout from the listing if it is still live.',
+      );
+    }
+
+    const linkedOffer = await this.prisma.offer.findFirst({
+      where: { transactionId: tx.id },
+      select: { id: true, status: true, expiresAt: true },
+    });
+    if (
+      linkedOffer &&
+      linkedOffer.status !== 'ACCEPTED' &&
+      linkedOffer.status !== 'CONVERTED'
+    ) {
+      throw new BadRequestException(
+        'This accepted offer is no longer payable. Start a fresh offer or checkout.',
+      );
+    }
+    const fallbackDeadline = new Date(
+      tx.createdAt.getTime() +
+        (tx.listing.listingType === 'AUCTION'
+          ? 24 * 60 * 60 * 1000
+          : CHECKOUT_HOLD_MS),
+    );
+    const deadline =
+      tx.manualPayByAt ?? linkedOffer?.expiresAt ?? fallbackDeadline;
+    if (deadline.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'The payment window for this order has lapsed. Start a fresh checkout from the listing or offer.',
+      );
+    }
+
+    if (tx.gatewayCheckoutId) {
+      let status: Awaited<ReturnType<TransactionsService['getGatewayStatus']>>;
+      try {
+        status = await this.getGatewayStatus(
+          tx.paymentProvider,
+          tx.gatewayCheckoutId,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `resumeCheckout: status fetch failed for ${tx.id}: ${(err as Error).message}`,
+        );
+        throw new ConflictException(
+          'We could not confirm the previous payment yet. Please try again in a minute.',
+        );
+      }
+      if (status?.isSuccess) {
+        await this.markPaid(
+          tx.id,
+          {
+            paymentId: status.paymentId,
+            resultCode: status.resultCode,
+            amount: status.amountCents,
+            currency: 'ZAR',
+            merchantTransactionId: tx.id,
+            isSuccess: true,
+          },
+          tx.listing,
+          tx.buyerTotal,
+        );
+        return { paid: true as const, transactionId: tx.id };
+      }
+      if (
+        !this.gatewayFailureIsTerminal(tx.paymentProvider, status, false)
+      ) {
+        // The original hosted page is still live. Send the buyer back to the
+        // SAME session; minting another link would risk a double charge.
+        if (tx.gatewayRedirectUrl) {
+          return {
+            transactionId: tx.id,
+            redirectUrl: tx.gatewayRedirectUrl,
+            provider: (tx.paymentProvider ?? PaymentProvider.OZOW).toLowerCase(),
+          };
+        }
+        throw new ConflictException(
+          'The previous payment is still being processed. Do not pay again — return to the payment page or check My Orders shortly.',
+        );
+      }
+    }
+
+    const remainingSeconds = Math.max(
+      60,
+      Math.floor((deadline.getTime() - Date.now()) / 1000),
+    );
+    const checkout = await this.createGatewayCheckout(tx.paymentProvider, {
+      amountZarCents: tx.buyerTotal,
+      merchantTransactionId: tx.id,
+      returnUrl: `${frontendUrl}/checkout/complete?transactionId=${tx.id}`,
+      expirySeconds: remainingSeconds,
+    });
+    await this.prisma.transaction.update({
+      where: { id: tx.id },
+      data: {
+        gatewayCheckoutId: checkout.checkoutId,
+        gatewayMerchantRef: checkout.merchantReference,
+        gatewayRedirectUrl: checkout.redirectUrl || null,
+      },
+    });
+    return {
+      transactionId: tx.id,
+      redirectUrl: checkout.redirectUrl,
+      provider: (tx.paymentProvider ?? PaymentProvider.OZOW).toLowerCase(),
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Provider seam helpers. Production always injects PaymentRailsService +
+  // PeachService; the direct-Ozow fallbacks keep positional test harnesses
+  // and any boot path that has not yet resolved the globals working.
+  // ------------------------------------------------------------------
+  private async createGatewayCheckout(
+    provider: PaymentProvider,
+    params: {
+      amountZarCents: number;
+      merchantTransactionId: string;
+      returnUrl: string;
+      expirySeconds?: number;
+    },
+  ) {
+    const p = provider ?? PaymentProvider.OZOW;
+    if (this.rails) return this.rails.createCheckout(p, params);
+    if (p !== PaymentProvider.OZOW) {
+      throw new BadRequestException('Peach payments are not configured.');
+    }
+    const checkout = await this.ozow.createPayment(params);
+    return {
+      provider: p,
+      checkoutId: checkout.paymentId,
+      redirectUrl: checkout.redirectUrl,
+      merchantReference: checkout.merchantReference,
+    };
+  }
+
+  private async getGatewayStatus(
+    provider: PaymentProvider,
+    checkoutId: string,
+  ): Promise<import('./payment-rails.service').NormalizedPaymentStatus | null> {
+    // Legacy/mock rows can omit the enum at runtime; the DB default is OZOW.
+    const p = provider ?? PaymentProvider.OZOW;
+    if (this.rails) return this.rails.getPaymentStatus(p, checkoutId);
+    if (p !== PaymentProvider.OZOW) return null;
+    const status = await this.ozow.getPaymentStatus(checkoutId);
+    if (!status) return null;
+    return {
+      provider: p,
+      paymentId: status.transactionId,
+      merchantReference: status.merchantReference,
+      resultCode: status.status,
+      amountCents: status.amountCents,
+      currency: 'ZAR',
+      isSuccess: status.isSuccess,
+    };
+  }
+
+  /**
+   * Refund on the rail that captured the payment. Used by the seller-reject,
+   * buyer-cancel, dispatch-SLA and admin refund paths. A missing provider is
+   * a legacy Ozow row. CALLERS MUST HAVE ALREADY CHECKED gatewayPaymentId.
+   */
+  async refundOnRail(
+    tx: { paymentProvider?: PaymentProvider | null; gatewayPaymentId: string },
+    amountZarCents: number,
+  ): Promise<{ success: boolean; resultCode?: string; message?: string }> {
+    const provider = tx.paymentProvider ?? PaymentProvider.OZOW;
+    if (this.rails) {
+      return this.rails.refund(provider, tx.gatewayPaymentId, amountZarCents);
+    }
+    if (provider !== PaymentProvider.OZOW) {
+      return {
+        success: false,
+        resultCode: 'PEACH_NOT_CONFIGURED',
+        message: 'Peach is not configured on this instance.',
+      };
+    }
+    return this.ozow.refundPayment(tx.gatewayPaymentId, amountZarCents);
   }
 
   // ------------------------------------------------------------------
@@ -1909,6 +2344,31 @@ export class TransactionsService {
   /** Validate the AccessToken header on the payout verification webhook. */
   ozowPayoutAccessTokenValid(token: string | undefined): boolean {
     return this.ozow.isPayoutAccessTokenValid(token);
+  }
+
+  /** Checkout-result / checkout-webhook signature. Fail-closed in prod. */
+  verifyPeachWebhook(
+    rawBody: string,
+    body: Record<string, unknown>,
+    headers: { id?: string; timestamp?: string; signature?: string },
+    url: string,
+  ): boolean {
+    return (
+      this.peach?.verifyWebhookSignature(rawBody, body, headers, url) ?? false
+    );
+  }
+
+  /** Payout + BANV webhooks use the Payouts product's signing secret. */
+  verifyPeachPayoutWebhook(
+    rawBody: string,
+    body: Record<string, unknown>,
+    headers: { id?: string; timestamp?: string; signature?: string },
+    url: string,
+  ): boolean {
+    return (
+      this.peach?.verifyPayoutWebhookSignature(rawBody, body, headers, url) ??
+      false
+    );
   }
 
   // Raise a deduped admin alert when a webhook signature fails to verify.
@@ -2010,12 +2470,15 @@ export class TransactionsService {
       return;
     }
     const tx = await this.prisma.transaction.findFirst({
-      where: { gatewayMerchantRef: evt.merchantReference },
+      where: {
+        gatewayMerchantRef: evt.merchantReference,
+        paymentProvider: PaymentProvider.OZOW,
+      },
       include: { listing: true },
     });
     if (!tx) {
       this.logger.warn(
-        `Ozow webhook: no transaction for merchantReference ${evt.merchantReference}`,
+        `Ozow webhook: no Ozow transaction for merchantReference ${evt.merchantReference}`,
       );
       return;
     }
@@ -2038,13 +2501,17 @@ export class TransactionsService {
       this.logger.error(
         `Ozow webhook: status fetch failed for ${checkoutId}: ${(err as Error).message}`,
       );
-      return;
+      // The delivery claimed success; let Ozow retry rather than swallowing
+      // the only notification on a transient status failure.
+      throw err;
     }
     if (!status || !status.isSuccess) {
       this.logger.warn(
         `Ozow webhook: ${checkoutId} not successful on re-fetch (status ${status?.status ?? 'none'})`,
       );
-      return;
+      throw new Error(
+        `Ozow webhook success not confirmed by status re-fetch (${status?.status ?? 'none'})`,
+      );
     }
 
     // markPaid binds the amount; merchantTransactionId = tx.id (bound by
@@ -2079,6 +2546,450 @@ export class TransactionsService {
         })
         .catch(() => undefined);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Peach checkout webhook / shopper-result POST. Match the transaction by
+  // its stored checkout id first, then the minted merchant reference, and
+  // NEVER trust the delivered amount: re-fetch the authoritative status.
+  // ------------------------------------------------------------------
+  async handlePeachWebhook(body: Record<string, unknown>) {
+    if (!this.peach) {
+      this.logger.warn('Peach webhook received but PeachService is unavailable');
+      return;
+    }
+    const evt = this.peach.parseWebhookEvent(body);
+    if (!evt.checkoutId && !evt.merchantReference) {
+      this.logger.warn('Peach webhook: no checkoutId/merchantReference');
+      return;
+    }
+    const tx = await this.prisma.transaction.findFirst({
+      where: {
+        paymentProvider: PaymentProvider.PEACH,
+        ...(evt.checkoutId
+          ? { gatewayCheckoutId: evt.checkoutId }
+          : { gatewayMerchantRef: evt.merchantReference }),
+      },
+      include: { listing: true },
+    });
+    if (!tx) {
+      this.logger.warn(
+        `Peach webhook: no transaction for ${evt.checkoutId ?? evt.merchantReference}`,
+      );
+      return;
+    }
+    if (tx.paidAt) {
+      this.logger.log(`Peach webhook: transaction ${tx.id} already processed`);
+      return;
+    }
+    const checkoutId = tx.gatewayCheckoutId;
+    if (!checkoutId) {
+      this.logger.warn(`Peach webhook: transaction ${tx.id} has no checkout id`);
+      return;
+    }
+    let status: Awaited<ReturnType<TransactionsService['getGatewayStatus']>>;
+    try {
+      status = await this.getGatewayStatus(PaymentProvider.PEACH, checkoutId);
+    } catch (err) {
+      this.logger.error(
+        `Peach webhook: status fetch failed for ${checkoutId}: ${(err as Error).message}`,
+      );
+      throw err; // let the controller return 500 so Peach retries
+    }
+    if (!status || !status.isSuccess) {
+      this.logger.warn(
+        `Peach webhook: ${checkoutId} not successful on re-fetch (status ${status?.resultCode ?? 'none'})`,
+      );
+      if (evt.bucket === 'success') {
+        // The delivery says success but the status API has not caught up.
+        // Retry so the success is not consumed as a 200 no-op.
+        throw new Error(
+          `Peach webhook success not confirmed by status re-fetch (${status?.resultCode ?? 'none'})`,
+        );
+      }
+      return;
+    }
+    if (
+      status.merchantReference &&
+      status.merchantReference !== tx.gatewayMerchantRef
+    ) {
+      this.logger.error(
+        `Peach webhook: merchant reference mismatch for ${tx.id} (got ${status.merchantReference}, expected ${tx.gatewayMerchantRef})`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_WEBHOOK_REFERENCE_MISMATCH',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Peach webhook status for ${tx.id} returned merchant reference ${status.merchantReference}, expected ${tx.gatewayMerchantRef}. Payment NOT applied.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    try {
+      await this.markPaid(
+        tx.id,
+        {
+          paymentId: status.paymentId,
+          resultCode: status.resultCode,
+          amount: status.amountCents,
+          currency: 'ZAR',
+          merchantTransactionId: tx.id,
+          isSuccess: true,
+        },
+        tx.listing,
+        tx.buyerTotal,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Peach webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_WEBHOOK_MARKPAID_REJECTED',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Peach webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c.`,
+          },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Peach payout status webhook: { payoutId, status, resultCode }.
+  // Successful settles; processing logs; failed/cancelled/reversed clears
+  // paidOutAt and holds the row for review. Unmatched deliveries alert and
+  // never mutate a transaction.
+  // ------------------------------------------------------------------
+  async handlePeachPayoutWebhook(body: Record<string, unknown>) {
+    if (!this.peach) return;
+    const evt = this.peach.parsePayoutWebhook(body);
+    if (!evt.payoutId) {
+      this.logger.warn('Peach payout webhook: no payoutId');
+      return;
+    }
+    const attempt = await this.prisma.peachPayoutAttempt.findUnique({
+      where: { payoutId: evt.payoutId },
+      include: { transaction: { select: { id: true, paymentProvider: true } } },
+    });
+    if (!attempt) {
+      this.logger.warn(
+        `Peach payout webhook: no attempt for payout ${evt.payoutId}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_UNMATCHED',
+            referenceId: evt.payoutId,
+            urgent: true,
+            context: `Peach payout webhook for ${evt.payoutId} (${evt.status}) does not match any payout attempt. Reconcile in the Peach dashboard; no transaction was changed.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    if (attempt.transaction.paymentProvider !== PaymentProvider.PEACH) {
+      this.logger.error(
+        `Peach payout webhook: attempt ${attempt.id} points at a non-Peach transaction ${attempt.transaction.id}`,
+      );
+      return;
+    }
+    const status = evt.status.toLowerCase();
+    const now = new Date();
+    if (status === 'processing' || status === 'pending') {
+      await this.prisma.peachPayoutAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: evt.status,
+          resultCode: evt.code,
+          lastStatusCheckedAt: now,
+        },
+      });
+      return;
+    }
+    if (status === 'successful' || status === 'success') {
+      await this.prisma.$transaction([
+        this.prisma.peachPayoutAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: evt.status,
+            resultCode: evt.code,
+            lastStatusCheckedAt: now,
+            completedAt: attempt.completedAt ?? now,
+            terminalAt: now,
+          },
+        }),
+        this.prisma.transaction.updateMany({
+          where: { id: attempt.transactionId, paidOutAt: null },
+          data: { paidOutAt: now },
+        }),
+      ]);
+      await settleSellerChargeRecoveries(this.prisma, attempt.transactionId);
+      this.logger.log(
+        `Peach payout SUCCESS for ${attempt.transactionId} (${evt.payoutId})`,
+      );
+      return;
+    }
+
+    // failed | cancelled | reversed — the money did not stick (or came back).
+    const reversed = status === 'reversed';
+    await this.prisma.$transaction([
+      this.prisma.peachPayoutAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: evt.status,
+          resultCode: evt.code,
+          errorMessage: evt.error ?? evt.code ?? evt.status,
+          lastStatusCheckedAt: now,
+          terminalAt: now,
+        },
+      }),
+      this.prisma.transaction.updateMany({
+        where: { id: attempt.transactionId },
+        data: {
+          paidOutAt: null,
+          payoutRequestedAt: null,
+          gatewayPayoutId: null,
+          payoutHeldAt: now,
+          payoutHoldReason: `Peach payout ${status}: ${evt.error ?? evt.code ?? 'no detail'}`.slice(0, 500),
+          payoutHeldById: null,
+        },
+      }),
+    ]);
+    await releaseSellerChargeRecoveries(this.prisma, attempt.transactionId);
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: reversed ? 'PEACH_PAYOUT_REVERSED' : 'PEACH_PAYOUT_FAILED',
+          referenceId: attempt.transactionId,
+          urgent: true,
+          context: `Peach payout ${status.toUpperCase()} for ${attempt.transactionId} (payout ${attempt.payoutId}, code ${evt.code ?? '?'}). The row is held for review${reversed ? ' — funds RETURNED after an earlier success; reconcile before re-running' : ''}.`,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  // ------------------------------------------------------------------
+  // Peach BANV result webhook. Matches the user on the verification id we
+  // stored when the check was requested. Pass stamps bankVerifiedAt; a
+  // mismatch/failure clears it and raises an alert so payouts stay held.
+  // ------------------------------------------------------------------
+  async handlePeachBanvWebhook(body: Record<string, unknown>) {
+    if (!this.peach) return;
+    const evt = this.peach.parseBanvWebhook(body);
+    if (!evt.bankVerificationId) {
+      this.logger.warn('Peach BANV webhook: no bankVerificationId');
+      return;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { bankVerificationId: evt.bankVerificationId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        firstName: true,
+        phone: true,
+      },
+    });
+    if (!user) {
+      this.logger.warn(
+        `Peach BANV webhook: no user for ${evt.bankVerificationId}`,
+      );
+      return;
+    }
+    if (evt.status === 'pending' || evt.status === 'processing') {
+      this.logger.log(`Peach BANV ${evt.status} for user ${user.id}`);
+      return;
+    }
+    const flags = banvFlagsSummary(evt.matches);
+    if (evt.status === 'successful') {
+      const outcome = evaluateBanvMatches(evt.matches);
+      if (outcome === 'passed') {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            bankVerifiedAt: new Date(),
+            bankAvsResult: `PASS:${evt.resultCode ?? ''}:${flags}`,
+          },
+        });
+        void this.notifications
+          .bankVerificationPassed({ email: user.email, userId: user.id })
+          .catch(() => undefined);
+        this.logger.log(`Peach BANV PASSED for user ${user.id} (${flags})`);
+        return;
+      }
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          bankVerifiedAt: null,
+          bankAvsResult: `MISMATCH:${evt.resultCode ?? ''}:${flags}`,
+        },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'BANK_VERIFY_MISMATCH',
+            referenceId: user.id,
+            urgent: true,
+            context: `Bank account verification MISMATCH for ${user.username ?? user.id} (${flags}). The account-exists / ID-ownership check did not pass — payouts stay held. Ask the seller to correct their banking details (account must be in their own name).`,
+          },
+        })
+        .catch(() => undefined);
+      void this.notifications
+        .bankVerificationFailed({
+          email: user.email,
+          name: user.firstName ?? user.username ?? 'member',
+          phone: user.phone,
+          userId: user.id,
+          kind: 'mismatch',
+        })
+        .catch(() => undefined);
+      this.logger.warn(`Peach BANV MISMATCH for user ${user.id} (${flags})`);
+      return;
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        bankVerifiedAt: null,
+        bankAvsResult: `FAILED:${evt.resultCode ?? ''}`,
+      },
+    });
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'BANK_VERIFY_FAILED',
+          referenceId: user.id,
+          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. Re-run from the user dossier or ask the seller to re-check their details.`,
+        },
+      })
+      .catch(() => undefined);
+    void this.notifications
+      .bankVerificationFailed({
+        email: user.email,
+        name: user.firstName ?? user.username ?? 'member',
+        phone: user.phone,
+        userId: user.id,
+        kind: 'failed',
+      })
+      .catch(() => undefined);
+  }
+
+  // ------------------------------------------------------------------
+  // Peach chargeback / dispute. The bank has already reversed the money, so
+  // this MUST NOT refund again. Hold any payout and alert for investigation.
+  // ------------------------------------------------------------------
+  async handlePeachDispute(body: Record<string, unknown>) {
+    const payoutId =
+      typeof body.payoutId === 'string' ? body.payoutId : undefined;
+    const checkoutId =
+      typeof body.checkoutId === 'string' ? body.checkoutId : undefined;
+    const paymentId =
+      typeof body.paymentId === 'string'
+        ? body.paymentId
+        : typeof body.id === 'string'
+          ? body.id
+          : undefined;
+    const merchantReference =
+      typeof body.merchantTransactionId === 'string'
+        ? body.merchantTransactionId
+        : undefined;
+    const refs: Prisma.TransactionWhereInput[] = [
+      ...(checkoutId ? [{ gatewayCheckoutId: checkoutId }] : []),
+      ...(paymentId
+        ? [
+            { gatewayPaymentId: paymentId },
+            // Some Peach payloads use `id` for the checkout id instead.
+            { gatewayCheckoutId: paymentId },
+          ]
+        : []),
+      ...(merchantReference ? [{ gatewayMerchantRef: merchantReference }] : []),
+      ...(payoutId
+        ? [{ peachPayoutAttempts: { some: { payoutId } } }]
+        : []),
+    ];
+    const tx =
+      refs.length === 0
+        ? null
+        : await this.prisma.transaction.findFirst({
+            where: {
+              paymentProvider: PaymentProvider.PEACH,
+              OR: refs,
+            },
+            select: {
+              id: true,
+              paymentStatus: true,
+              paidOutAt: true,
+            },
+          });
+    if (!tx) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'CHARGEBACK_UNMATCHED',
+            referenceId:
+              checkoutId ?? paymentId ?? merchantReference ?? payoutId ?? 'peach',
+            urgent: true,
+            context: `Peach dispute/chargeback could not be matched to a transaction. Investigate in the Peach dashboard; do not refund manually until the case is understood.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    if (tx.paymentStatus === 'REFUNDED') {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'CHARGEBACK_AFTER_REFUND',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Peach dispute/chargeback opened for ${tx.id}, but the order was already REFUNDED. Contest the chargeback with the bank; do NOT refund again.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    if (tx.paymentStatus === 'RELEASED' && tx.paidOutAt) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'CHARGEBACK_AFTER_PAYOUT',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Peach dispute/chargeback opened for ${tx.id} AFTER the seller payout completed. Manual recovery required.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    // Never move a REFUNDED row back to DISPUTED: the reversal already
+    // happened, and a second refund would double-pay the buyer.
+    await this.prisma.transaction.updateMany({
+      where: {
+        id: tx.id,
+        paymentStatus: { in: ['HELD', 'PENDING_ADMIN_VERIFICATION', 'RELEASED'] },
+      },
+      data: {
+        paymentStatus: 'DISPUTED',
+        payoutHeldAt: new Date(),
+        payoutHoldReason: 'Peach chargeback/dispute — investigate before payout',
+        payoutHeldById: null,
+      },
+    });
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'CHARGEBACK_OPENED',
+          referenceId: tx.id,
+          urgent: true,
+          context: `Peach chargeback/dispute opened for ${tx.id}. The payout is held. Contest or concede in the Peach dashboard; do NOT issue a second refund.`,
+        },
+      })
+      .catch(() => undefined);
   }
 
   // ------------------------------------------------------------------
@@ -2386,6 +3297,103 @@ export class TransactionsService {
         }).catch(() => undefined);
       }
     }
+  }
+
+  /** Poll Peach for payout attempts whose status webhook never arrived. */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async reconcileUnnotifiedPeachPayouts(): Promise<{
+    checked: number;
+    settled: number;
+  }> {
+    if (!this.peach?.isPayoutsConfigured()) return { checked: 0, settled: 0 };
+    const now = new Date();
+    const eligibleBefore = new Date(now.getTime() - 3 * 60_000);
+    const attempts = await this.prisma.peachPayoutAttempt.findMany({
+      where: {
+        terminalAt: null,
+        OR: [
+          { lastStatusCheckedAt: null },
+          { lastStatusCheckedAt: { lte: eligibleBefore } },
+        ],
+        createdAt: { lte: eligibleBefore },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+    let settled = 0;
+    for (const attempt of attempts) {
+      try {
+        const status = await this.peach.getPayoutStatus(attempt.payoutId);
+        if (!status) {
+          // Peach does not know this payoutId. If it is still young, keep
+          // waiting for propagation; after 15 minutes it never reached Peach,
+          // so release the in-flight claim and hold it for the operator.
+          const terminalCutoff = new Date(now.getTime() - 15 * 60_000);
+          if (attempt.createdAt <= terminalCutoff) {
+            await this.prisma.$transaction([
+              this.prisma.peachPayoutAttempt.update({
+                where: { id: attempt.id },
+                data: {
+                  status: 'NOT_FOUND',
+                  errorMessage: 'Peach has no record of this payoutId',
+                  lastStatusCheckedAt: now,
+                  terminalAt: now,
+                },
+              }),
+              this.prisma.transaction.updateMany({
+                where: { id: attempt.transactionId, paidOutAt: null },
+                data: {
+                  payoutRequestedAt: null,
+                  gatewayPayoutId: null,
+                  payoutHeldAt: now,
+                  payoutHoldReason:
+                    'Peach has no record of the payout — reconcile before retrying',
+                  payoutHeldById: null,
+                },
+              }),
+            ]);
+            await releaseSellerChargeRecoveries(
+              this.prisma,
+              attempt.transactionId,
+            );
+            await this.prisma.adminAlert
+              .create({
+                data: {
+                  type: 'PEACH_PAYOUT_FAILED',
+                  referenceId: attempt.transactionId,
+                  urgent: true,
+                  context: `Peach has no record of payout ${attempt.payoutId} after 15 minutes. The row is held and its seller-charge reservation released; check the Peach dashboard before retrying.`,
+                },
+              })
+              .catch(() => undefined);
+          } else {
+            await this.prisma.peachPayoutAttempt.update({
+              where: { id: attempt.id },
+              data: { lastStatusCheckedAt: now },
+            });
+          }
+          continue;
+        }
+        await this.handlePeachPayoutWebhook({
+          payoutId: status.payoutId,
+          status: status.status,
+          resultCode: status.resultCode,
+          error: status.error,
+        });
+        if (status.status.toLowerCase() === 'successful') settled += 1;
+      } catch (err) {
+        this.logger.warn(
+          `Peach payout status check failed for ${attempt.payoutId}: ${(err as Error).message}`,
+        );
+        await this.prisma.peachPayoutAttempt
+          .update({
+            where: { id: attempt.id },
+            data: { lastStatusCheckedAt: now },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return { checked: attempts.length, settled };
   }
 
   private async reconcileOzowPayoutByReference(attempt: {
@@ -3105,11 +4113,23 @@ export class TransactionsService {
       );
     }
     if (tx.rejectedAt) {
-      // Idempotent — already-rejected is a successful no-op.
-      return tx;
+      // Idempotent only once the refund has actually settled. A row that is
+      // still HELD is a rejection in flight; do not report success early.
+      if (tx.paymentStatus === 'REFUNDED') return tx;
+      throw new ConflictException(
+        'A rejection/refund for this sale is already being processed.',
+      );
     }
     if (tx.dispatchedAt) {
       throw new BadRequestException('Already dispatched — cannot reject.');
+    }
+    // A buyer cancellation request freezes the sale. The seller must not be
+    // able to bypass the fee-retained cancellation decision with a full
+    // rejection refund.
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'The buyer has requested a cancellation. Wait for support to resolve it before rejecting the sale.',
+      );
     }
     // Reject is only legal while the money is still HELD. Without this a
     // seller could tap an old accept/reject link after release and flip a
@@ -3130,16 +4150,13 @@ export class TransactionsService {
       );
     }
 
-    // Fire the Ozow refund first — only stamp rejectedAt if it
-    // succeeded, so an admin can retry on failure rather than the buyer
-    // being stuck without a refund AND the listing reactivated.
-    // gatewayPaymentId holds the gateway transaction id.
-    //
-    // PAY-8 — if the tx has NO stored payment id we MUST NOT silently
-    // flip to REFUNDED (the buyer was charged; no payment was reversed).
-    // This previously diverged from the safer admin path. Treat it as a
-    // hard failure that raises an admin alert for manual reconciliation.
-    if (!tx.gatewayPaymentId) {
+    // A prior partial refund means only the remaining balance is still owed.
+    // Refunding buyerTotal again would over-pay the buyer.
+    const refundableCents = Math.max(0, tx.buyerTotal - tx.refundedAmount);
+
+    // PAY-8 — if money still needs to move and there is no stored payment id,
+    // do NOT silently flip to REFUNDED. Raise an alert for manual recovery.
+    if (refundableCents > 0 && !tx.gatewayPaymentId) {
       this.logger.error(
         `Reject failed for ${transactionId}: paid tx has NO payment id — cannot refund; raising admin alert`,
       );
@@ -3155,21 +4172,67 @@ export class TransactionsService {
         'Refund could not be issued automatically — support has been alerted and will resolve manually within 24h.',
       );
     }
-    const refundRes = await this.ozow.refundPayment(
-      tx.gatewayPaymentId,
-      tx.buyerTotal,
-    );
+
+    // Claim the rejection BEFORE the gateway call. rejectedAt is the CAS lock:
+    // two taps / an overlapping request cannot both refund. A failure clears
+    // it so the seller or support can retry.
+    const rejectClaim = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        paidAt: { not: null },
+        paymentStatus: 'HELD',
+        acceptedAt: null,
+        rejectedAt: null,
+        dispatchedAt: null,
+        cancellationRequestedAt: null,
+        refundedAmount: tx.refundedAmount,
+      },
+      data: {
+        rejectedAt: new Date(),
+        rejectedReason: trimmedReason,
+      },
+    });
+    if (rejectClaim.count === 0) {
+      throw new ConflictException(
+        'Sale rejection could not be claimed — its state changed. Reload and try again.',
+      );
+    }
+
+    const clearRejectClaim = async () => {
+      await this.prisma.transaction
+        .updateMany({
+          where: {
+            id: transactionId,
+            paymentStatus: 'HELD',
+            rejectedAt: { not: null },
+          },
+          data: { rejectedAt: null, rejectedReason: null },
+        })
+        .catch(() => undefined);
+    };
+
+    const refundRes =
+      refundableCents === 0
+        ? { success: true as const, resultCode: 'ALREADY_REFUNDED' }
+        : await this.refundOnRail(
+            {
+              paymentProvider: tx.paymentProvider,
+              gatewayPaymentId: tx.gatewayPaymentId!,
+            },
+            refundableCents,
+          );
 
     if (!refundRes.success) {
+      await clearRejectClaim();
       this.logger.warn(
-        `Reject failed for ${transactionId}: Ozow refund failed (${refundRes.resultCode}) — raising admin alert`,
+        `Reject failed for ${transactionId}: ${tx.paymentProvider} refund failed (${refundRes.resultCode}) — raising admin alert`,
       );
       await this.prisma.adminAlert.create({
         data: {
           type: 'SALE_REJECT_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Seller tried to reject sale; Ozow refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Seller tried to reject sale; ${tx.paymentProvider} refund failed: ${refundRes.resultCode}. Buyer still owed ${refundableCents} cents.`,
         },
       });
       throw new BadRequestException(
@@ -3177,32 +4240,50 @@ export class TransactionsService {
       );
     }
 
-    // Atomic state change — only after refund succeeded. Phase 8a:
-    // restock a tracked listing (legacy → plain ACTIVE reactivation).
+    // State change + listing reversal only after the refund succeeded.
     const rejLi = await this.prisma.listing.findUnique({
       where: { id: tx.listingId },
       select: { trackInventory: true, listingType: true },
     });
-    await this.prisma.$transaction([
-      this.prisma.transaction.update({
-        where: { id: transactionId },
-        data: {
-          rejectedAt: new Date(),
-          rejectedReason: trimmedReason,
-          paymentStatus: 'REFUNDED',
-          releasedAt: null,
-        },
-      }),
-      this.prisma.listing.update({
-        where: { id: tx.listingId },
-        // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
-        data: reversalListingData(
-          rejLi?.trackInventory ?? false,
-          tx.quantity ?? 1,
-          rejLi?.listingType,
-        ),
-      }),
-    ]);
+    try {
+      await this.prisma.$transaction([
+        this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: {
+            paymentStatus: 'REFUNDED',
+            refundedAmount: { increment: refundableCents },
+            releasedAt: null,
+          },
+        }),
+        this.prisma.listing.update({
+          where: { id: tx.listingId },
+          // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
+          data: reversalListingData(
+            rejLi?.trackInventory ?? false,
+            tx.quantity ?? 1,
+            rejLi?.listingType,
+          ),
+        }),
+      ]);
+    } catch (err) {
+      // The money has already been returned; surface the state mismatch.
+      this.logger.error(
+        `Reject refund succeeded for ${transactionId} but the state update failed: ${(err as Error).message}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'SALE_REJECT_STATE_UPDATE_FAILED',
+            referenceId: transactionId,
+            urgent: true,
+            context: `Refund of ${refundableCents}c succeeded for ${transactionId}, but the transaction/listing state update failed. Manual reconciliation required.`,
+          },
+        })
+        .catch(() => undefined);
+      throw new BadRequestException(
+        'Refund succeeded but the order state could not be updated — support has been alerted.',
+      );
+    }
 
     // P5.2: if the seller had already accepted (booking fires on accept),
     // cancel any live carrier shipment so a rejected sale doesn't leave a
@@ -3238,7 +4319,7 @@ export class TransactionsService {
         transactionId,
         kind: 'SELLER_CANCELLED',
         reason: trimmedReason.slice(0, 500),
-        refundedTotalCents: tx.buyerTotal,
+        refundedTotalCents: refundableCents,
         shipmentCommitted: isShipmentCommitted(tx),
         shippingCost: tx.shippingCost,
       }).catch((err) =>
@@ -3261,7 +4342,7 @@ export class TransactionsService {
       listingTitle: tx.listing.title,
       listingId: tx.listingId,
       transactionId: tx.id,
-      buyerTotal: tx.buyerTotal,
+      buyerTotal: refundableCents,
       reason: trimmedReason,
       // FLOW-F2 — rail-aware copy: EFT refund via the FNB batch, and flag
       // when we can't pay it until the buyer adds bank details.
@@ -3337,6 +4418,19 @@ export class TransactionsService {
         'Already dispatched — it can no longer be cancelled. If there is a problem, raise a dispute instead.',
       );
     }
+    // Non-courier rails have no dispatchedAt. Once the seller has handed the
+    // item over (Private Arrangement) or the buyer has collected it, a
+    // cancellation is a dispute, not a pre-delivery change of mind.
+    if (tx.privateArrangeDeliveredAt || tx.privateArrangeReceivedAt) {
+      throw new BadRequestException(
+        'This handover has already progressed — raise a dispute instead of cancelling.',
+      );
+    }
+    if (tx.collectedAt) {
+      throw new BadRequestException(
+        'This item has already been collected — raise a dispute instead of cancelling.',
+      );
+    }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(
         `Order is no longer cancellable (status: ${tx.paymentStatus}).`,
@@ -3354,6 +4448,9 @@ export class TransactionsService {
         rejectedAt: null,
         cancelledByBuyerAt: null,
         cancellationRequestedAt: null,
+        privateArrangeDeliveredAt: null,
+        privateArrangeReceivedAt: null,
+        collectedAt: null,
         paymentStatus: 'HELD',
       },
       data: {
@@ -3534,8 +4631,8 @@ export class TransactionsService {
       );
     }
 
-    const refundRes = await this.ozow.refundPayment(
-      tx.gatewayPaymentId,
+    const refundRes = await this.refundOnRail(
+      { paymentProvider: tx.paymentProvider, gatewayPaymentId: tx.gatewayPaymentId },
       tx.buyerTotal,
     );
     if (!refundRes.success) {
@@ -4305,8 +5402,39 @@ export class TransactionsService {
       );
     }
     if (tx.buyer.id !== buyerId) throw new ForbiddenException('Only the buyer can confirm delivery');
+    // `paymentStatus` defaults to HELD at row creation, so it is NOT proof of
+    // payment. Releasing on HELD alone let a buyer create an unpaid checkout
+    // and immediately release the seller's payout.
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'Payment has not been confirmed yet — there is nothing to release.',
+      );
+    }
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
+    if (tx.rejectedAt) {
+      throw new BadRequestException(
+        'This sale is being rejected/refunded — delivery cannot be confirmed.',
+      );
+    }
+    if (!tx.acceptedAt) {
+      throw new BadRequestException(
+        'The seller has not accepted this sale yet. Delivery cannot be confirmed before acceptance.',
+      );
+    }
+    if (tx.shippingMethod === 'COURIER' && !tx.dispatchedAt) {
+      throw new BadRequestException(
+        'The seller has not marked this item dispatched yet.',
+      );
+    }
+    if (
+      tx.shippingMethod === 'PRIVATE_ARRANGE' &&
+      !tx.privateArrangeDeliveredAt
+    ) {
+      throw new BadRequestException(
+        'The seller has not marked this item delivered yet.',
+      );
+    }
     // Frozen for a buyer cancellation request — no release while support
     // reviews it.
     if (tx.cancellationRequestedAt) {
@@ -4344,8 +5472,17 @@ export class TransactionsService {
         where: {
           id: transactionId,
           paymentStatus: 'HELD',
+          paidAt: { not: null },
+          acceptedAt: { not: null },
           confirmedDeliveryAt: null,
           cancellationRequestedAt: null,
+          rejectedAt: null,
+          ...(tx.shippingMethod === 'COURIER'
+            ? { dispatchedAt: { not: null } }
+            : {}),
+          ...(tx.shippingMethod === 'PRIVATE_ARRANGE'
+            ? { privateArrangeDeliveredAt: { not: null } }
+            : {}),
         },
         data: {
           paymentStatus: 'RELEASED',
@@ -4377,6 +5514,7 @@ export class TransactionsService {
           OR: [{ id: carrierId }, { shipsWithId: carrierId }],
           id: { not: transactionId },
           paymentStatus: 'HELD',
+          paidAt: { not: null },
           confirmedDeliveryAt: null,
           swapId: null,
         },
@@ -4389,6 +5527,7 @@ export class TransactionsService {
           where: {
             id: { in: siblingIds },
             paymentStatus: 'HELD',
+            paidAt: { not: null },
             confirmedDeliveryAt: null,
           },
           data: {
@@ -4495,6 +5634,11 @@ export class TransactionsService {
     if (!tx.paidAt) {
       throw new BadRequestException(
         'This order has not been paid yet, so there is nothing to dispute.',
+      );
+    }
+    if (tx.rejectedAt) {
+      throw new BadRequestException(
+        'A seller rejection/refund is already being processed for this order.',
       );
     }
     if (tx.paymentStatus !== 'HELD') {
@@ -4724,7 +5868,7 @@ export class TransactionsService {
     // SAME interactive transaction so we can never end up with a paid
     // transaction whose listing is still PAYMENT_PENDING (a process crash
     // between the two writes previously left that inconsistency).
-    const claimed = await this.prisma.$transaction(async (txc) => {
+    const claimResult = await this.prisma.$transaction(async (txc) => {
       const claim = await txc.transaction.updateMany({
         where: { id: txId, paidAt: null },
         data: {
@@ -4735,7 +5879,9 @@ export class TransactionsService {
           acceptDeadlineAt,
         },
       });
-      if (claim.count === 0) return false;
+      if (claim.count === 0) {
+        return { claimed: false, unavailable: false, reservationShort: false };
+      }
       // Phase 8a: branch on the listing's own trackInventory (loaded fresh
       // here so it's correct regardless of what the caller included).
       // Legacy = the exact SOLD flip. Tracked = release the in-flight
@@ -4744,14 +5890,34 @@ export class TransactionsService {
       // SOLD only when stock AND in-flight reservations are both exhausted.
       const L = await txc.listing.findUnique({
         where: { id: listing.id },
-        select: { trackInventory: true, quantityAvailable: true, quantityReserved: true },
+        select: {
+          status: true,
+          trackInventory: true,
+          quantityAvailable: true,
+          quantityReserved: true,
+        },
       });
-      if (L?.trackInventory) {
+      if (!L) {
+        return { claimed: true, unavailable: true, reservationShort: false };
+      }
+      if (L.status === 'CANCELLED' || L.status === 'EXPIRED') {
+        // Never resurrect a listing the seller/administrator took down. The
+        // money is captured; alert and let a human fulfil or refund it.
+        return { claimed: true, unavailable: true, reservationShort: false };
+      }
+      if (L.trackInventory) {
         const txRow = await txc.transaction.findUnique({
           where: { id: txId },
           select: { quantity: true },
         });
         const qty = txRow?.quantity ?? 1;
+        if (L.quantityReserved < qty) {
+          return {
+            claimed: true,
+            unavailable: false,
+            reservationShort: true,
+          };
+        }
         const newReserved = L.quantityReserved - qty;
         const soldOut = L.quantityAvailable <= 0 && newReserved <= 0;
         await txc.listing.update({
@@ -4771,16 +5937,44 @@ export class TransactionsService {
           data: { status: 'SOLD', soldAt: new Date() },
         });
       }
-      return true;
+      return { claimed: true, unavailable: false, reservationShort: false };
     });
-    if (!claimed) {
+    if (!claimResult.claimed) {
       this.logger.log(
         `markPaid: transaction ${txId} was already claimed by another path — skipping`,
       );
       return;
     }
+    if (claimResult.unavailable) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PAID_LISTING_NOT_AVAILABLE',
+            referenceId: txId,
+            urgent: true,
+            context: `Payment ${result.paymentId} succeeded for ${txId}, but listing ${listing.id} is no longer available (cancelled/expired/missing). The buyer is paid up; fulfil or refund manually.`,
+          },
+        })
+        .catch(() => undefined);
+    }
+    if (claimResult.reservationShort) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PAID_LISTING_RESERVATION_MISMATCH',
+            referenceId: txId,
+            urgent: true,
+            context: `Payment ${result.paymentId} succeeded for ${txId}, but listing ${listing.id} has fewer reserved units than the sale quantity. Inventory was not decremented; reconcile manually.`,
+          },
+        })
+        .catch(() => undefined);
+    }
 
-    this.logger.log(`Transaction ${txId} paid — listing ${listing.id} marked SOLD`);
+    this.logger.log(
+      `Transaction ${txId} paid — listing ${listing.id} ${
+        claimResult.unavailable ? 'NOT updated (unavailable)' : 'updated'
+      }`,
+    );
 
     // The item is now SOLD — reject every still-open offer on this
     // listing from OTHER buyers (TAKE_A_SHOT can have several ACCEPTED
@@ -4942,10 +6136,18 @@ export class TransactionsService {
     recovered: number;
     released: number;
   }> {
-    const linkTtlMs = 25 * 60 * 60 * 1000; // 24h Ozow link + 1h slack
-    const cutoff = new Date(Date.now() - linkTtlMs);
-    const buyNowCutoff = new Date(
-      Date.now() - CHECKOUT_HOLD_MINUTES * 60_000 - CHECKOUT_RECONCILE_SLACK_MS,
+    const now = new Date();
+    const releaseCutoff = new Date(
+      now.getTime() - CHECKOUT_RECONCILE_SLACK_MS,
+    );
+    // Rows created before manualPayByAt was written still need a fallback.
+    const legacyAuctionCutoff = new Date(
+      now.getTime() - 25 * 60 * 60 * 1000,
+    );
+    const legacyBuyNowCutoff = new Date(
+      now.getTime() -
+        CHECKOUT_HOLD_MINUTES * 60_000 -
+        CHECKOUT_RECONCILE_SLACK_MS,
     );
     const stale = await this.prisma.transaction.findMany({
       where: {
@@ -4957,25 +6159,31 @@ export class TransactionsService {
         orderId: null,
         swapId: null,
         OR: [
-          // Plain Buy Now: 15-minute payment link.
+          // New attempts store the absolute deadline at checkout create.
+          { manualPayByAt: { not: null, lt: releaseCutoff } },
+          // Legacy BUY_NOW rows with no deadline: keep the old 15m+slack TTL.
           {
+            manualPayByAt: null,
             listing: { listingType: 'BUY_NOW' },
-            createdAt: { lt: buyNowCutoff },
+            createdAt: { lt: legacyBuyNowCutoff },
           },
-          // Auction wins / offer checkouts keep the 24h link.
+          // Legacy auction/offer rows: 24h link + 1h slack.
           {
+            manualPayByAt: null,
             listing: { listingType: { not: 'BUY_NOW' } },
-            createdAt: { lt: cutoff },
+            createdAt: { lt: legacyAuctionCutoff },
           },
         ],
       },
       select: {
         id: true,
         buyerTotal: true,
+        paymentProvider: true,
         gatewayCheckoutId: true,
         quantity: true,
         listingId: true,
         buyerId: true,
+        manualPayByAt: true,
         listing: {
           select: {
             id: true,
@@ -4995,12 +6203,25 @@ export class TransactionsService {
       const checkoutId = s.gatewayCheckoutId;
       if (!checkoutId) continue;
 
-      let status: OzowPaymentResult | null;
+      let status: Awaited<
+        ReturnType<TransactionsService['getGatewayStatus']>
+      >;
       try {
-        status = await this.ozow.getPaymentStatus(checkoutId);
+        status = await this.getGatewayStatus(
+          s.paymentProvider ?? PaymentProvider.OZOW,
+          checkoutId,
+        );
       } catch (err) {
         this.logger.warn(
           `reconcileStaleGatewayCheckouts: status fetch failed for ${s.id}: ${(err as Error).message}`,
+        );
+        continue;
+      }
+
+      if (!status && (s.paymentProvider ?? PaymentProvider.OZOW) === PaymentProvider.PEACH) {
+        // A missing Peach status is not proof of failure.
+        this.logger.warn(
+          `reconcileStaleGatewayCheckouts: no Peach status for ${s.id}; leaving it in place`,
         );
         continue;
       }
@@ -5011,8 +6232,8 @@ export class TransactionsService {
           await this.markPaid(
             s.id,
             {
-              paymentId: status.transactionId,
-              resultCode: status.status,
+              paymentId: status.paymentId,
+              resultCode: status.resultCode,
               amount: status.amountCents,
               currency: 'ZAR',
               merchantTransactionId: s.id,
@@ -5033,43 +6254,92 @@ export class TransactionsService {
         continue;
       }
 
-      // Not paid and the link has expired — release the reservation.
+      // The deadline has passed for every row this query returns. A pending
+      // Peach payment is still not safe to delete: its checkout can settle.
+      if (
+        !this.gatewayFailureIsTerminal(
+          s.paymentProvider,
+          status,
+          true,
+        )
+      ) {
+        this.logger.warn(
+          `reconcileStaleGatewayCheckouts: ${s.id} is past its deadline but ${s.paymentProvider ?? 'OZOW'} still reports a live/failed-status-unknown payment — keeping the row`,
+        );
+        continue;
+      }
+
+      // Release only if the row is STILL unpaid at write time. A success
+      // webhook can land between the status read and this transaction; the
+      // conditional delete loses that race and releases nothing.
       try {
-        if (s.listing.listingType === 'AUCTION') {
-          // Hand back to the auction lifecycle with a LAPSED window; the
-          // every-minute sweepUnpaidWins flips EXPIRED + strikes + runner-up.
-          // Never ACTIVE (ended-auction zombie).
-          await this.prisma.$transaction([
-            this.prisma.listing.updateMany({
+        const didRelease = await this.prisma.$transaction(async (txc) => {
+          const deleted = await txc.transaction.deleteMany({
+            where: { id: s.id, paidAt: null },
+          });
+          if (deleted.count === 0) return false;
+
+          // The transaction is gone; a CONVERTED offer must not point at it.
+          await txc.offer.updateMany({
+            where: { transactionId: s.id, status: 'CONVERTED' },
+            data: { status: 'EXPIRED', transactionId: null },
+          });
+
+          if (s.listing.listingType === 'AUCTION') {
+            // Hand back to the auction lifecycle with a LAPSED window; the
+            // every-minute sweepUnpaidWins flips EXPIRED + strikes + runner-up.
+            // Never ACTIVE (ended-auction zombie).
+            await txc.listing.updateMany({
               where: { id: s.listingId, status: 'PAYMENT_PENDING' },
               data: { expiresAt: new Date(Date.now() - 1000) },
-            }),
-            this.prisma.transaction.delete({ where: { id: s.id } }),
-          ]);
-        } else if (s.listing.trackInventory) {
-          await this.prisma.$transaction([
-            this.prisma.listing.update({
-              where: { id: s.listingId },
+            });
+          } else if (s.listing.trackInventory) {
+            const restored = await txc.listing.updateMany({
+              where: {
+                id: s.listingId,
+                quantityReserved: { gte: s.quantity },
+              },
               data: {
-                status: 'ACTIVE',
                 quantityAvailable: { increment: s.quantity },
                 quantityReserved: { decrement: s.quantity },
               },
-            }),
-            this.prisma.transaction.delete({ where: { id: s.id } }),
-          ]);
-        } else {
-          await this.prisma.$transaction([
-            this.prisma.listing.updateMany({
+            });
+            if (restored.count === 0) {
+              await txc.adminAlert
+                .create({
+                  data: {
+                    type: 'STALE_CHECKOUT_STOCK_MISMATCH',
+                    referenceId: s.id,
+                    urgent: true,
+                    context: `Released abandoned checkout ${s.id}, but listing ${s.listingId} had fewer reserved units than ${s.quantity}. Inventory was NOT restored; reconcile manually.`,
+                  },
+                })
+                .catch(() => undefined);
+            }
+            await txc.listing.updateMany({
+              where: {
+                id: s.listingId,
+                status: 'PAYMENT_PENDING',
+              },
+              data: { status: 'ACTIVE' },
+            });
+          } else {
+            await txc.listing.updateMany({
               where: { id: s.listingId, status: 'PAYMENT_PENDING' },
               data: { status: 'ACTIVE' },
-            }),
-            this.prisma.transaction.delete({ where: { id: s.id } }),
-          ]);
+            });
+          }
+          return true;
+        });
+        if (!didRelease) {
+          this.logger.log(
+            `reconcileStaleGatewayCheckouts: ${s.id} became paid before release — skipped`,
+          );
+          continue;
         }
         released += 1;
         this.logger.warn(
-          `reconcileStaleGatewayCheckouts: released abandoned checkout ${s.id} — listing ${s.listingId} re-sellable`,
+          `reconcileStaleGatewayCheckouts: released expired checkout ${s.id} — listing ${s.listingId} re-sellable`,
         );
       } catch (err) {
         this.logger.warn(
@@ -5147,6 +6417,9 @@ export class TransactionsService {
       where: {
         id: txId,
         paymentStatus: 'HELD',
+        paidAt: { not: null },
+        // A cancellation request freezes the order while support reviews it.
+        cancellationRequestedAt: null,
         // A dispute (DISPUTED) blocks release; the HELD guard already excludes it.
       },
       data: { paymentStatus: 'RELEASED', releasedAt: now },
@@ -5238,6 +6511,11 @@ export class TransactionsService {
     if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
       throw new BadRequestException('Not a Private Arrangement order.');
     }
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'Payment has not been confirmed yet — there is nothing to release.',
+      );
+    }
     if (tx.paymentStatus === 'RELEASED') {
       return { released: true, alreadyReleased: true };
     }
@@ -5254,6 +6532,11 @@ export class TransactionsService {
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(
         `This order cannot be confirmed right now (status: ${tx.paymentStatus}).`,
+      );
+    }
+    if (tx.cancellationRequestedAt) {
+      throw new BadRequestException(
+        'A cancellation request is under review — payment cannot be released until it is resolved.',
       );
     }
     await this.prisma.transaction.update({
@@ -5281,8 +6564,13 @@ export class TransactionsService {
     if (tx.shippingMethod !== 'PRIVATE_ARRANGE') {
       throw new BadRequestException('Not a Private Arrangement order.');
     }
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'This order has not been paid yet, so there is nothing to dispute.',
+      );
+    }
     const claim = await this.prisma.transaction.updateMany({
-      where: { id: transactionId, paymentStatus: 'HELD' },
+      where: { id: transactionId, paymentStatus: 'HELD', paidAt: { not: null } },
       data: { paymentStatus: 'DISPUTED' },
     });
     if (claim.count === 0) {
@@ -5319,6 +6607,7 @@ export class TransactionsService {
       where: {
         shippingMethod: 'PRIVATE_ARRANGE',
         paymentStatus: 'HELD',
+        cancellationRequestedAt: null,
         privateArrangeDeliveredAt: { not: null, lt: new Date(now.getTime() - 24 * 3600_000) },
         privateArrangeReceivedAt: null,
         privateArrangeRemindedAt: null,
@@ -5341,6 +6630,7 @@ export class TransactionsService {
       where: {
         shippingMethod: 'PRIVATE_ARRANGE',
         paymentStatus: 'HELD',
+        cancellationRequestedAt: null,
         paidAt: { not: null, lt: new Date(now.getTime() - 5 * 86400_000) },
         // Never auto-release a sale the seller never accepted.
         acceptedAt: { not: null },

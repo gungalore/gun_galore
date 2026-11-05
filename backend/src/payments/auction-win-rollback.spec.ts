@@ -75,6 +75,7 @@ function makeService(listing: Record<string, unknown>) {
           Promise.resolve({ id: 'TX1', ...args.data }),
         ),
       delete: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
   };
   const ozow = {
@@ -129,12 +130,17 @@ describe('auction-win Ozow-failure rollback', () => {
       'Payment processing failed',
     );
 
-    expect(prisma.listing.update).toHaveBeenCalledTimes(1);
-    const data = prisma.listing.update.mock.calls[0][0].data;
-    expect(data.status).toBe('PAYMENT_PENDING');
-    expect(data.expiresAt).toEqual(EXPIRES);
-    expect(prisma.transaction.delete).toHaveBeenCalledWith({
-      where: { id: 'TX1' },
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'L1',
+          status: 'PAYMENT_PENDING',
+        }),
+        data: { expiresAt: EXPIRES },
+      }),
+    );
+    expect(prisma.transaction.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'TX1', paidAt: null },
     });
   });
 
@@ -156,8 +162,9 @@ describe('auction-win Ozow-failure rollback', () => {
       'Payment processing failed',
     );
 
-    expect(prisma.listing.update.mock.calls[0][0].data).toEqual({
-      status: 'ACTIVE',
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'L1', status: 'PAYMENT_PENDING' },
+      data: { status: 'ACTIVE' },
     });
   });
 });

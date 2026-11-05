@@ -12,6 +12,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { CredentialKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultLogService, readingShape } from '../common/vault-log.service';
+import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { WANTED as WANTED_FIELDS } from './licence-centre-extract.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
@@ -355,6 +356,8 @@ export class LicenceCentreService {
     // Cached OCR text for the same bytes. Optional for the same reason as
     // pageRaster; forgetting is best effort and never fails a deletion.
     private readonly readCache?: DocumentReadCacheService,
+    /** Jev-backed document engine; optional for positional specs. */
+    @Optional() private readonly engine?: DocumentEngineService,
   ) {}
 
   /**
@@ -1362,6 +1365,10 @@ export class LicenceCentreService {
      */
     opts: { identifyId?: string; description?: string } = {},
   ) {
+    await this.engine?.assertAvailable({
+      userId,
+      action: 'VAULT_UPLOAD',
+    });
     await this.quota.assertEnabled();
     const user = await this.requireUser(userId);
 
@@ -2531,6 +2538,10 @@ export class LicenceCentreService {
       description?: string;
     }[],
   ): Promise<CommitResult[]> {
+    await this.engine?.assertAvailable({
+      userId,
+      action: 'VAULT_UPLOAD',
+    });
     await this.quota.assertEnabled();
     const user = await this.requireUser(userId);
 

@@ -1,5 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { answerValue } from '../common/card-placeholder';
+import { isProfileKey } from './motivation-profile-keys';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT WE ALREADY READ OFF THIS MEMBER'S DOCUMENTS, LAST TIME.
@@ -230,7 +231,8 @@ const SAFE_ANSWERS = [
 export function carriesForwardAsAnswer(key: string): boolean {
   return (
     key.startsWith('history_') ||
-    (SAFE_ANSWERS as readonly string[]).includes(key)
+    (SAFE_ANSWERS as readonly string[]).includes(key) ||
+    isProfileKey(key)
   );
 }
 

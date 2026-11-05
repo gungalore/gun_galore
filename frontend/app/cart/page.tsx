@@ -13,7 +13,7 @@ import { NumberStepper } from '@/components/number-stepper';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { BuyerTermsAck } from '@/components/buyer-terms-ack';
+import { DEFAULT_PAYMENT_METHODS } from '@/lib/payment-methods';
 import { vicinityLabel } from '@/lib/vicinity';
 import { useWishlist } from '@/lib/use-wishlist';
 import {
@@ -26,10 +26,6 @@ import {
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
-import {
-  FirearmAttestation,
-  DealerTransferConsent,
-} from '@/components/firearm-consents';
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
@@ -52,8 +48,6 @@ type GoodsRoute = 'COURIER' | 'PRIVATE_ARRANGE';
 // before the firearm is checkout-ready.
 interface FirearmState {
   route: FirearmRoute;
-  attestationAccepted: boolean;
-  consentAccepted: boolean;
 }
 
 // UX-M24 — live stock for one cart line, read from the PUBLIC listing payload
@@ -252,22 +246,14 @@ export default function CartPage() {
   const goodsPaItems = items.filter((i) => isGoodsPa(i));
   const firearmItems = items.filter((i) => i.isFirearm);
 
-  // The per-firearm state for a listing, defaulting to DEALER_TRANSFER with
-  // nothing accepted yet. Kept as a pure read so render + the checkout gate
-  // agree without mutating state during render.
+  // The per-firearm route for a listing, defaulting to DEALER_TRANSFER.
   const stateFor = (listingId: string): FirearmState =>
-    firearmState[listingId] ?? {
-      route: 'DEALER_TRANSFER',
-      attestationAccepted: false,
-      consentAccepted: false,
-    };
+    firearmState[listingId] ?? { route: 'DEALER_TRANSFER' };
 
   const setFirearm = (listingId: string, patch: Partial<FirearmState>) =>
     setFirearmState((prev) => {
       const cur = prev[listingId] ?? {
         route: 'DEALER_TRANSFER' as FirearmRoute,
-        attestationAccepted: false,
-        consentAccepted: false,
       };
       return { ...prev, [listingId]: { ...cur, ...patch } };
     });
@@ -334,22 +320,8 @@ export default function CartPage() {
           0,
         );
 
-  // Every firearm must have its 18+ attestation, plus the consent for the
-  // chosen route where that route has one. In-person handover has no
-  // checkout consent: those terms are accepted with the Terms at sign-up.
-  const firearmsReady = firearmItems.every((i) => {
-    const s = stateFor(i.listingId);
-    return s.attestationAccepted && (s.route === 'PRIVATE_ARRANGE' || s.consentAccepted);
-  });
-
-  // One acknowledgement for the whole cart — the buyer ticks once, over a list
-  // naming each item's town. It rides on CreateOrderDto, not per line.
-  const [buyerTermsAck, setBuyerTermsAck] = useState(false);
-
   const shippingReady =
-    buyerTermsAck &&
     courierReady &&
-    firearmsReady &&
     collectionItems.length === 0 &&
     // UX-M24 — a sold-out line poisons the whole order server-side, so gate on
     // it here. Only ever true off a SUCCESSFUL stock read; a failed fetch
@@ -386,7 +358,6 @@ export default function CartPage() {
           return {
             listingId: i.listingId,
             shippingMethod: s.route,
-            firearmAttestation18Plus: true,
             ...(s.route === 'PRIVATE_ARRANGE'
               ? { privateArrangeConsent: true }
               : {}),
@@ -441,7 +412,7 @@ export default function CartPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ buyerTermsAccepted: buyerTermsAck, lines }),
+        body: JSON.stringify({ lines }),
       });
       const data = await res.json().catch(() => ({}));
       // Payment gate: the API returns 503 "card payments are launching soon"
@@ -927,7 +898,7 @@ export default function CartPage() {
                         onClick={() =>
                           // Switching route clears the previous route's consent —
                           // each route has its own gate.
-                          setFirearm(i.listingId, { route, consentAccepted: false })
+                          setFirearm(i.listingId, { route })
                         }
                         className="flex-1 py-2.5 rounded-[6px] text-xs"
                         style={{
@@ -946,28 +917,19 @@ export default function CartPage() {
                   )}
                 </div>
 
-                {/* 18+/competency attestation — required for every firearm. */}
-                <FirearmAttestation
-                  accepted={s.attestationAccepted}
-                  onChange={(v) => setFirearm(i.listingId, { attestationAccepted: v })}
-                />
-
-                {/* Route-specific consent. In-person handover has none at
-                    checkout — its terms are accepted at sign-up. */}
-                {s.route === 'DEALER_TRANSFER' ? (
-                  <DealerTransferConsent
-                    accepted={s.consentAccepted}
-                    onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
-                  />
-                ) : null}
               </div>
             );
           })}
         </>
       )}
 
-      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
-      <PaymentMethodSection />
+      {/* Cart checkout is still gated off; show the live rail read-only. */}
+      <PaymentMethodSection
+        methods={DEFAULT_PAYMENT_METHODS}
+        value="OZOW"
+        onChange={() => undefined}
+        disabled
+      />
 
       </div>
 
@@ -1016,16 +978,6 @@ export default function CartPage() {
         </p>
       )}
 
-      <BuyerTermsAck
-        variant="courier"
-        location=""
-        items={items.map((i) => ({
-          title: i.title,
-          location: stock[i.listingId]?.vicinity ?? 'the seller’s area',
-        }))}
-        checked={buyerTermsAck}
-        onChange={setBuyerTermsAck}
-      />
 
       <button
         type="button"
@@ -1043,13 +995,9 @@ export default function CartPage() {
           ? 'Creating your order…'
           : shippingReady
             ? 'Continue to payment'
-            : !buyerTermsAck
-              ? 'Tick the acknowledgement to continue'
             : soldOutItems.length > 0
               ? 'Remove the sold-out item to continue'
-              : !firearmsReady
-                ? 'Confirm the firearm details to continue'
-                : collectionItems.length > 0
+              : collectionItems.length > 0
                   ? 'Remove the collection-only item to continue'
                   : !addrComplete
                     ? 'Enter a delivery address to continue'

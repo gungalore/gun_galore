@@ -83,7 +83,7 @@ export default function RefundPolicyPage() {
         upheld and refunded, the buyer is refunded the item price only — the
         Platform Fee is non-refundable on this option. See our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
-        paragraph 7 for the binding text. Additional terms apply to
+        section 7 for the binding text. Additional terms apply to
         regulated categories. See the{' '}
         <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items Annex

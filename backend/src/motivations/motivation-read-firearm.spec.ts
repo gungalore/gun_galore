@@ -1,4 +1,7 @@
-import { MotivationUploadKind } from '@prisma/client';
+import {
+  MotivationLicenceType,
+  MotivationUploadKind,
+} from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { answerValue } from '../common/card-placeholder';
@@ -71,13 +74,30 @@ describe('which kinds get a firearm read', () => {
     for (const k of [
       'FIREARM_SOURCE_PROOF',
       'SELLER_LICENCE',
-      'CURRENT_LICENCE',
       'OTHER',
     ]) {
       expect(
         MotivationExtractService.readsFirearm(k as MotivationUploadKind),
       ).toBe(true);
     }
+  });
+
+  it('does not read an already-held licence as the firearm being applied for', () => {
+    expect(
+      MotivationExtractService.readsFirearm(
+        MotivationUploadKind.CURRENT_LICENCE,
+        MotivationLicenceType.S16_DEDICATED_HUNTER,
+      ),
+    ).toBe(false);
+  });
+
+  it('does read the existing licence on a section 24 renewal', () => {
+    expect(
+      MotivationExtractService.readsFirearm(
+        MotivationUploadKind.CURRENT_LICENCE,
+        MotivationLicenceType.S24_RENEWAL,
+      ),
+    ).toBe(true);
   });
 
   it('⚠️ does NOT read a safe photograph, an ID or a proof of address', () => {

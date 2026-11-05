@@ -723,6 +723,13 @@ export class AdminUsersController {
 
   // Clear seller reject-strikes + lift the offers suspension (after
   // reviewing a SELLER_REJECT_STRIKE alert). Also resolves those alerts.
+  // Re-run Peach bank-account verification after a mismatch/failure alert.
+  @Post(':id/verify-bank')
+  @HttpCode(200)
+  verifyBank(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
+    return this.adminService.rerunBankVerification(id, admin.sub);
+  }
+
   @Post(':id/clear-reject-strikes')
   @HttpCode(200)
   clearRejectStrikes(

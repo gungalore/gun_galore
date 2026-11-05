@@ -264,7 +264,10 @@ describe('LlmService', () => {
     await svc.complete({ messages: [], maxTokens: 10, purpose: 'vault.read' });
     // The firearm-listing serial + licence verifier is an OCR job too.
     await svc.complete({ messages: [], maxTokens: 10, purpose: 'listing.licence-read' });
+    // The guided interview is a short, cheap conversation, not a writer call.
+    await svc.complete({ messages: [], maxTokens: 10, purpose: 'motivation.interview' });
     expect(gemini.calls.map((c) => c.model)).toEqual([
+      'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite',
@@ -282,6 +285,24 @@ describe('LlmService', () => {
       model: 'gemini-3.8-flash',
     });
     expect(gemini.calls[0].model).toBe('gemini-3.8-flash');
+  });
+
+  it('runs the motivation agent on 3.1-flash-lite', async () => {
+    const { svc, gemini } = build();
+    for (const purpose of [
+      'motivation.interview',
+      'motivation.interview.agent',
+      'motivation.research.firearm',
+      'motivation.research.case',
+      'motivation.generate',
+      'motivation.verify',
+      'motivation.gate',
+    ]) {
+      await svc.complete({ messages: [], maxTokens: 10, purpose });
+    }
+    expect(gemini.calls.map((c) => c.model)).toEqual(
+      Array(7).fill('gemini-3.1-flash-lite'),
+    );
   });
 
   it('lets a call site override the model for one call', async () => {

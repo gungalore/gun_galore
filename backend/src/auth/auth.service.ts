@@ -257,6 +257,15 @@ export class AuthService {
       this.logger.error(
         `Verification email failed for ${email}: ${(err as Error).message}`,
       );
+      // Local development must not be blocked by an unverified Resend domain.
+      // In production this stays a hard failure; never log a live code there.
+      if (process.env.NODE_ENV !== 'production') {
+        this.devCodes.set(email, code);
+        this.logger.warn(
+          `EMAIL SEND FAILED — verification code for ${email} is ${code} (development only)`,
+        );
+        return;
+      }
       throw new BadRequestException(
         'We could not send the code right now. Please try again shortly.',
       );

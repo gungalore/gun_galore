@@ -501,7 +501,7 @@ export function BottomTabBar() {
       }
     }
     poll();
-    const t = setInterval(poll, 60_000);
+    const t = setInterval(poll, 15_000);
     // Mobile OSes suspend timers while the PWA is backgrounded — without
     // these, a user reopening the installed app sees a STALE badge until
     // the next tick. Re-poll the moment the app becomes visible/focused.
@@ -511,7 +511,7 @@ export function BottomTabBar() {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     // Dismissing a notification elsewhere in the app must drop the badge NOW,
-    // not up to 60s later — a badge still showing "3" after the user cleared
+    // not up to 15s later — a badge still showing "3" after the user cleared
     // the last item reads as broken. notifications-list fires this event on
     // both the optimistic dismiss and its rollback, so the count re-syncs
     // either way. Repolling (rather than decrementing locally) keeps this the

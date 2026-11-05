@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsString,
   IsEnum,
   IsOptional,
@@ -14,10 +14,10 @@ import {
   IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DeliveryOption, ShippingMethod } from '@prisma/client';
+import { DeliveryOption, PaymentProvider, ShippingMethod } from '@prisma/client';
 
 export class DeliveryAddressDto {
-  // Optional complex / unit / building identifier — same as ManualAddressFields.
+  // Optional complex / unit / building identifier â€” same as ManualAddressFields.
   @IsOptional()
   @IsString()
   building?: string;
@@ -47,13 +47,13 @@ export class DeliveryAddressDto {
   @MinLength(4)
   postalCode: string;
 
-  // Contact name + phone deliberately NOT collected on this DTO — the
+  // Contact name + phone deliberately NOT collected on this DTO â€” the
   // backend pulls them from User.firstName/lastName + User.phone when
   // building the carrier shipment request. This keeps the checkout form
   // smaller and means the buyer can't accidentally ship to a typo'd
   // phone number.
 
-  // Coords are optional here — they're not required to BOOK a shipment,
+  // Coords are optional here â€” they're not required to BOOK a shipment,
   // only to QUOTE one (and the quote-time call passes them separately).
   @IsOptional()
   lat?: number;
@@ -66,6 +66,13 @@ export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
   listingId: string;
+
+  // Which gateway receives the buyer's money. Optional for backward
+  // compatibility (defaults to Ozow); once set on the Transaction it is
+  // immutable and every refund/payout follows it.
+  @IsOptional()
+  @IsEnum(PaymentProvider)
+  paymentProvider?: PaymentProvider;
 
   // When checking out from an accepted offer on a Buy Now or Auction
   // listing. (TAKE_A_SHOT is accepted only for legacy rows.)
@@ -95,7 +102,7 @@ export class CreateTransactionDto {
   @Min(1)
   pickupPointLocationId?: number;
 
-  // Dealer transfer: buyer's chosen receiving dealer. OPTIONAL — the
+  // Dealer transfer: buyer's chosen receiving dealer. OPTIONAL â€” the
   // dealer dropdown was removed from checkout (the buyer nominates any
   // SAPS-licensed dealer after the sale, and payout is gated by
   // DealerVerificationService on the SAPS 534 stock-in, not by a
@@ -121,11 +128,11 @@ export class CreateTransactionDto {
   })
   privateArrangeConsent?: boolean;
 
-  // M33 — 18+/competency attestation for firearm checkouts. The flag
+  // M33 â€” 18+/competency attestation for firearm checkouts. The flag
   // must be explicitly `true` (not `undefined`, not `false`) when the
   // listing is a firearm. The service re-checks `listing.isFirearm`
   // server-side and refuses the transaction if the flag isn't true on
-  // a firearm listing — defence in depth against the frontend gate
+  // a firearm listing â€” defence in depth against the frontend gate
   // being bypassed. Stored as `firearmAttestationAcceptedAt` on the
   // Transaction so we have durable evidence the buyer affirmed at
   // checkout (dispute defence + SAPS audit trail).
@@ -133,7 +140,7 @@ export class CreateTransactionDto {
   @IsBoolean()
   firearmAttestation18Plus?: boolean;
 
-  // P3 — collection papers acknowledgement for trailer / caravan checkouts.
+  // P3 â€” collection papers acknowledgement for trailer / caravan checkouts.
   // Must be explicitly `true` when the listing has requiresPapers. The
   // service re-checks `listing.requiresPapers` server-side and refuses the
   // transaction without it (defence in depth). Persisted as
@@ -142,20 +149,11 @@ export class CreateTransactionDto {
   @IsBoolean()
   collectionPapersAccepted?: boolean;
 
-  // UNCONDITIONAL — required on every checkout, not just a class of them. The
-  // buyer confirms they have seen where the item is and that location and
-  // travel distance are not refund grounds.
-  //
-  // @Equals(true) rather than @IsOptional (the privateArrangeConsent shape,
-  // not the firearmAttestation shape) because there is no listing class this
-  // does not apply to: a couriered parcel has an origin too, and the seller is
-  // the one who set it.
+  // Location / no-refund terms are accepted in the Terms of Service at
+  // registration. This stays optional for older clients.
+  @IsOptional()
   @IsBoolean()
-  @Equals(true, {
-    message:
-      'You must confirm you have seen where this item is and that location is not a refund ground.',
-  })
-  buyerTermsAccepted!: boolean;
+  buyerTermsAccepted?: boolean;
 
   // Units to buy (Phase 8a). Only honoured for inventory-tracked BUY_NOW
   // listings; ignored (resolved to 1) for every other listing. Defaults
@@ -172,11 +170,11 @@ export class CreateTransactionDto {
   @IsString()
   holdId?: string;
 
-  // ─── Hunting Packages / Experiences (EXP-E1) buyer attestations ──────
+  // â”€â”€â”€ Hunting Packages / Experiences (EXP-E1) buyer attestations â”€â”€â”€â”€â”€â”€
   // Five booleans the buyer must tick at experience checkout. The service
   // re-checks listing.isExperience server-side and HARD-refuses the
   // transaction unless every one is explicitly `true` (defence in depth over
-  // the frontend gate), persisting a *At evidence stamp for each — mirrors the
+  // the frontend gate), persisting a *At evidence stamp for each â€” mirrors the
   // firearm 18+ attestation. @IsOptional here so non-experience checkouts are
   // unaffected; the experience branch enforces presence + truthiness.
   @IsOptional()
@@ -199,7 +197,7 @@ export class CreateTransactionDto {
   @IsBoolean()
   experienceRisksAccepted?: boolean;
 
-  // The specific date the buyer booked — one of the dates the outfitter
+  // The specific date the buyer booked â€” one of the dates the outfitter
   // offered. ISO date-time string. The service validates it falls within the
   // listing's eventStartDate..(eventEndDate ?? eventStartDate) window and is in
   // the future, then persists it as Transaction.eventDate. Required by the
@@ -209,7 +207,7 @@ export class CreateTransactionDto {
   @IsDateString()
   eventDate?: string;
 
-  // Guests / hunters on this booking. The service validates 1 ≤ partySize ≤
+  // Guests / hunters on this booking. The service validates 1 â‰¤ partySize â‰¤
   // listing.capacitySlots and persists it as Transaction.partySize.
   @IsOptional()
   @IsInt()

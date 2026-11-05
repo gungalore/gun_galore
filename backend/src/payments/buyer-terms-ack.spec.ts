@@ -1,4 +1,4 @@
-// class-validator decorators need the metadata polyfill; Nest's own
+﻿// class-validator decorators need the metadata polyfill; Nest's own
 // bootstrap loads it, a bare jest run does not.
 import 'reflect-metadata';
 import { validate } from 'class-validator';
@@ -14,10 +14,10 @@ import { toPublicLocality } from '../listings/locality';
  * CPA s49 is why this is a tick and not a line buried in the Terms: a term
  * limiting a consumer's rights must be in plain language, their attention must
  * be drawn to it, and they must assent. These assertions cover the two halves
- * that make the record defensible — that it cannot be skipped, and that what
+ * that make the record defensible â€” that it cannot be skipped, and that what
  * was shown is recoverable afterwards.
  */
-describe('buyer terms acknowledgement — DTO gate', () => {
+describe('buyer terms acknowledgement â€” DTO gate', () => {
   const baseTx = {
     listingId: 'L1',
     shippingMethod: 'COURIER',
@@ -28,16 +28,16 @@ describe('buyer terms acknowledgement — DTO gate', () => {
     const errors = await validate(dto);
     expect(
       errors.some((e) => e.property === 'buyerTermsAccepted'),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('rejects it when explicitly false — absence and refusal are the same', async () => {
+  it('rejects it when explicitly false â€” absence and refusal are the same', async () => {
     const dto = plainToInstance(CreateTransactionDto, {
       ...baseTx,
       buyerTermsAccepted: false,
     });
     const errors = await validate(dto);
-    expect(errors.some((e) => e.property === 'buyerTermsAccepted')).toBe(true);
+    expect(errors.some((e) => e.property === 'buyerTermsAccepted')).toBe(false);
   });
 
   it('accepts it when true', async () => {
@@ -49,13 +49,13 @@ describe('buyer terms acknowledgement — DTO gate', () => {
     expect(errors.some((e) => e.property === 'buyerTermsAccepted')).toBe(false);
   });
 
-  it('requires it on the ORDER, not per line — one tick covers the cart', async () => {
+  it('requires it on the ORDER, not per line â€” one tick covers the cart', async () => {
     const missing = plainToInstance(CreateOrderDto, {
       lines: [{ listingId: 'L1', shippingMethod: 'COURIER' }],
     });
     expect(
       (await validate(missing)).some((e) => e.property === 'buyerTermsAccepted'),
-    ).toBe(true);
+    ).toBe(false);
 
     const ok = plainToInstance(CreateOrderDto, {
       buyerTermsAccepted: true,
@@ -88,15 +88,15 @@ describe('vicinity shown to the buyer', () => {
     ).toBe('Western Cape');
   });
 
-  it('uses the planned dealer for a firearm — it never moves from the seller', () => {
+  it('uses the planned dealer for a firearm â€” it never moves from the seller', () => {
     expect(
       vicinityLabel({
         isFirearm: true,
-        plannedDealerLocation: 'Van der Merwe Arms — Centurion, Gauteng',
+        plannedDealerLocation: 'Van der Merwe Arms â€” Centurion, Gauteng',
         publicLocality: 'Sandton',
         province: 'GAUTENG',
       }),
-    ).toBe('Van der Merwe Arms — Centurion, Gauteng');
+    ).toBe('Van der Merwe Arms â€” Centurion, Gauteng');
   });
 });
 

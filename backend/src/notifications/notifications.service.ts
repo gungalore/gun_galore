@@ -1551,9 +1551,9 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   // Buyer: seller REJECTED the sale, refund issued (TOK-7 Phase 2)
   // ---------------------------------------------------------------
-  // The seller declined to fulfil — refund has already been fired via
-  // Peach by TransactionsService.rejectTransaction before this method
-  // runs, so we just need to inform the buyer. Reason is surfaced so
+  // The seller declined to fulfil — refund has already been fired via the
+  // sale's captured rail by TransactionsService.rejectTransaction before
+  // this method runs, so we just need to inform the buyer. Reason is surfaced so
   // they understand WHY (sold elsewhere, can't ship, etc.).
   async saleRejectedBuyer(d: {
     buyerEmail: string;
@@ -4784,8 +4784,20 @@ export class NotificationsService {
       throw new Error('RESEND_API_KEY is not set — cannot send auth email');
     }
     try {
-      await this.resend.emails.send({ from: FROM, to, subject, html });
-      this.logger.debug(`Auth email sent → ${to} "${subject}"`);
+      const { data, error } = await this.resend.emails.send({
+        from: FROM,
+        to,
+        subject,
+        html,
+      });
+      // The Resend SDK reports API failures in `error` rather than throwing.
+      // Ignoring it logged "sent" for mail that never left the account.
+      if (error) {
+        throw new Error(error.message || 'Resend rejected the email');
+      }
+      this.logger.debug(
+        `Auth email sent → ${to} "${subject}" (id ${data?.id ?? 'unknown'})`,
+      );
     } catch (err) {
       this.logger.error(
         `Auth email FAILED → ${to} "${subject}": ${(err as Error).message}`,
@@ -5251,6 +5263,63 @@ export class NotificationsService {
           : `${d.referenceNumber} needs a bit more detail`,
     });
     await this.send(d.email, `${headline} — ${d.referenceNumber}`, html);
+  }
+
+  /**
+   * The Jev-backed document engine is back.
+   *
+   * One email per user per outage, however many attempts they made. The link
+   * goes to the application when there is one; otherwise to the licence
+   * centre, where the member can re-upload.
+   */
+  async documentEngineResumed(d: {
+    userId: string;
+    email: string;
+    name: string;
+    items: { motivationId: string | null; action: string }[];
+  }): Promise<void> {
+    const ids = [
+      ...new Set(
+        d.items
+          .map((item) => item.motivationId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const path =
+      ids.length === 1 ? `/licence-centre/${ids[0]}` : '/licence-centre';
+    const url = `${this.appUrl}${path}`;
+    const uploads = d.items.some((item) => item.action !== 'GENERATE');
+    const generations = d.items.some((item) => item.action === 'GENERATE');
+
+    const what = [
+      uploads ? 'upload your documents again' : '',
+      generations ? 'continue preparing your motivation' : '',
+    ]
+      .filter(Boolean)
+      .join(' and ');
+
+    const headline = 'Document preparation is available again';
+    await this.persist({
+      userId: d.userId,
+      category: 'ACCOUNT',
+      type: 'document_engine_resumed',
+      title: headline,
+      body: `The document engine is back. You can ${what}.`,
+      url: path,
+      iconKey: 'account',
+      dismissible: true,
+    });
+
+    const html = this.email({
+      status: { tone: 'success', label: 'Available again' },
+      headline,
+      body: `Hi ${b(d.name)}, the document engine is working again. You can ${b(
+        what,
+      )}. Nothing you already entered was lost.`,
+      cta: { label: 'Continue', url },
+      preheader: 'You can continue with your firearm motivation',
+    });
+    await this.send(d.email, `${headline} — ALL Outdoor`, html);
   }
 
   // Wrap SmsService so each shipping-notification call site doesn't

@@ -4,6 +4,7 @@
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -14,6 +15,7 @@ import { SmsService } from '../sms/sms.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { DiditService } from '../didit/didit.service';
+import { BanvService } from '../payments/banv.service';
 import { DiditError, type DiditDecision } from '../didit/didit.types';
 import {
   saIdLuhnValid,
@@ -130,6 +132,10 @@ export class KycService {
     // a Prisma cascade cannot reach the filesystem — purgeKycFiles is what
     // stops an erasure leaving them orphaned.
     private files: SecureFileStorageService,
+    // @Global PeachModule. Sellers who saved banking before their identity
+    // was verified get BANV re-run the moment KYC flips to VERIFIED.
+    @Optional()
+    private banv?: BanvService,
   ) {}
 
   /**
@@ -695,6 +701,9 @@ export class KycService {
     }
 
     await this.announceVerdict(user, finalStatus, mismatch);
+    if (finalStatus === 'VERIFIED') {
+      void this.banv?.request(user.id).catch(() => undefined);
+    }
     return { applied: true, status: finalStatus };
   }
 
