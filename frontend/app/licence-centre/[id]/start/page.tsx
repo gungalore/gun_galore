@@ -457,7 +457,7 @@ export default function IntakeStartPage() {
             style={{ borderColor: 'var(--red)', background: 'var(--red-wash)' }}
           >
             <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              Start the interview
+              {busy ? 'Starting…' : 'Start the interview'}
             </span>
             <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
               Upload whatever documentation you have first to eliminate repetitive questions, then answer only what’s still needed.

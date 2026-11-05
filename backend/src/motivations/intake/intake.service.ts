@@ -1271,7 +1271,24 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       previousAnswer: previousAnswer ?? undefined,
       previousFieldKey: previousFieldKey ?? undefined,
     };
-    const agentReply = await this.agent.phrase(agentContext);
+    /**
+     * ⚠️ THE TOOL-USING AGENT IS OPT-IN, BECAUSE IT MADE THE BUTTON LOOK DEAD.
+     *
+     * Measured on the dev box on 2026-11-05: every `motivation.interview.agent`
+     * turn took 12–19 s, and several returned twelve output tokens — a tool
+     * call and no question — so the turn then paid the one-shot phrasing as
+     * well. The member clicked "Start the interview", saw nothing for twenty
+     * seconds, and reported the button as not responding.
+     *
+     * The one-shot path is ~1.2 s and, since the chips work, returns the same
+     * three-to-five tap answers. Set `INTERVIEW_AGENT_PHRASING=on` to put the
+     * tool loop back while its round handling is being tuned; nothing else
+     * changes.
+     */
+    const agentReply =
+      process.env.INTERVIEW_AGENT_PHRASING === 'on'
+        ? await this.agent.phrase(agentContext)
+        : null;
     if (agentReply) {
       /**
        * ⚠️ A QUESTION THE MEMBER CAN ONLY TYPE IS A REGRESSION, NOT A FALLBACK.
