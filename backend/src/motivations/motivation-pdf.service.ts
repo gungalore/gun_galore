@@ -1046,6 +1046,26 @@ export interface MotivationPdfInput {
    */
   sectionMarks?: Record<string, MarkName>;
   /**
+   * The plan's headings, in order — which numbered lines are sections.
+   *
+   * ⚠️ NOT EVERY NUMBERED LINE IS A SECTION. The writer quotes the Act's own
+   * heading verbatim under the statutory section ("15. LICENCE TO POSSESS
+   * FIREARM FOR OCCASIONAL HUNTING AND SPORTS-SHOOTING"), and MO000073 printed
+   * it as a section band with a contents line between 10 and 11. A line that
+   * matches one of these is a section; anything else numbered prints as a
+   * quote. Absent means "trust the shape", which is what a row with no stored
+   * plan still does.
+   */
+  planHeadings?: string[];
+  /**
+   * The statutory section's heading — "Section 15 applied to my application".
+   *
+   * ⚠️ BY WORDS, NOT BY NUMBER. The quoted subsections of the Act are set in
+   * their own style inside this section, and the check was hard-coded to the
+   * old spine's "11.", which no longer exists on a plan numbered 14.
+   */
+  statutoryHeading?: string;
+  /**
    * Stamp every page as a preview.
    *
    * ⚠️ THE MARK IS THE ONLY THING STANDING BETWEEN AN UNPAID PACK AND A
@@ -1485,6 +1505,26 @@ function isHeading(line: string): boolean {
   const t = line.trim();
   if (t.length === 0 || t.length > 80) return false;
   return /^\d{1,2}\.\s/.test(t) || t.endsWith(':');
+}
+
+/**
+ * A heading's words: number, case and trailing colon removed.
+ *
+ * ⚠️ THE PLAN'S NUMBER AND THE PRINTED NUMBER CAN DIFFER ON A STORED DRAFT.
+ * Rows written before the fixed skeleton, and any draft the writer renumbered,
+ * carry their own numbers — MO000073 printed 1..12 against a plan of
+ * 1,3,4,6,7,8,9,10,12,14,15,16. Matching on the full line would have dropped
+ * every section band on every existing pack, which is rendered afresh on each
+ * download. Matching on the words places the exhibits, the battery and the
+ * cartridge where they belong whichever numbering the draft carries.
+ */
+function headingKey(value: string): string {
+  return value
+    .trim()
+    .replace(/^\d{1,2}(?:\.\d+)?\.?\s+/, '')
+    .replace(/:\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 }
 
 /**
@@ -3745,10 +3785,19 @@ export class MotivationPdfService {
       doc.addPage();
       doc.x = MARGIN;
       doc.y = bodyTop;
+      /**
+       * ⚠️ THE QUESTION IS THE HEADING, AND A QUESTION CAN OUTRUN THE BAND.
+       * "Why is the MOSSBERG 500, chambered in 12 GAUGE, suited for hunting for
+       * Rock pigeon, Egyptian goose" ran off the right edge of MO000073's page
+       * 10 and was clipped mid-word. The argument underneath still carries the
+       * full question; the band gets a readable stub.
+       */
+      const label =
+        input.suitabilitySheet?.label ??
+        `Why ${article?.title ?? 'this cartridge'} suits this purpose`;
       renderHeading(
         cartridgeSubHeading(
-          input.suitabilitySheet?.label ??
-            `Why ${article?.title ?? 'this cartridge'} suits this purpose`,
+          label.length > 82 ? `${label.slice(0, 81).trimEnd()}…` : label,
           '2',
         ),
       );
@@ -4078,9 +4127,20 @@ export class MotivationPdfService {
         (input.cartridgeDrawing || input.dimensionSheet) &&
         !cartridgeDrawn
       ) {
-        // The feature takes a page of its own here too — see the body loop.
-        if (doc.y > bodyTop + K.mm(1)) doc.addPage();
-        renderHeading(cartridgeHeading);
+        /**
+         * ⚠️ THE NEW SHEETS OWN THEIR PAGE AND THEIR HEADING.
+         *
+         * This drew an outer "6.1 The cartridge" band and then called
+         * `drawCartridge`, whose dimension sheet opens a page of its own — so
+         * the band landed alone on a sheet with a rule down the left and
+         * nothing under it (MO000073, page 8), and the contents page listed the
+         * cartridge twice. The legacy single-feature path is the only caller
+         * that still needs a heading here.
+         */
+        if (!input.dimensionSheet) {
+          if (doc.y > bodyTop + K.mm(1)) doc.addPage();
+          renderHeading(cartridgeHeading);
+        }
         drawCartridge();
       }
 
@@ -4156,7 +4216,33 @@ export class MotivationPdfService {
         featureBreakPending = false;
         doc.addPage();
       }
-      if (isHeading(block)) {
+      /**
+       * ⚠️ A NUMBERED LINE THAT IS NOT ONE OF THE PLAN'S HEADINGS IS A QUOTE.
+       *
+       * The statutory section reproduces the Act's own heading — "15. LICENCE
+       * TO POSSESS FIREARM FOR OCCASIONAL HUNTING AND SPORTS-SHOOTING" — which
+       * MO000073 printed as a full section band, took a contents line for, and
+       * drew between sections 10 and 11. It is a quoted heading inside the
+       * section that quotes it, so it is set as a sub-heading: no band, no
+       * contents line, no page rule.
+       */
+      const numberedLine = isHeading(block);
+      const isPlanHeading =
+        !input.planHeadings?.length ||
+        input.planHeadings.some((h) => headingKey(h) === headingKey(block));
+
+      if (numberedLine && !isPlanHeading) {
+        if (doc.y > K.BODY_BOTTOM - mmGap(26)) doc.addPage();
+        if (doc.y > bodyTop + 1) doc.y += mmGap(4);
+        const subX = MARGIN + K.SECTION_INDENT;
+        doc.font(B.bodySemi).fontSize(K.px(10.5)).fillColor(C.sub);
+        doc.text(block.replace(/:\s*$/, '').toUpperCase(), subX, doc.y, {
+          width: contentWidth - K.SECTION_INDENT,
+          characterSpacing: K.px(10.5) * 0.06,
+        });
+        doc.x = MARGIN;
+        doc.y += K.mm(2);
+      } else if (numberedLine) {
         if (pendingCrime) {
           drawCrimeEvidence();
           pendingCrime = false;
@@ -4203,7 +4289,7 @@ export class MotivationPdfService {
           !!feat.ownedTable &&
           !!input.batteryHeading &&
           !batteryDrawn &&
-          block.replace(/:\s*$/, '').toUpperCase() === input.batteryHeading;
+          headingKey(block) === headingKey(input.batteryHeading);
         /**
          * ⚠️ THE EVIDENCE GOES WHERE THE ARGUMENT IS. The precinct figures and
          * the cuttings print under the exposure heading, after the paragraphs
@@ -4214,7 +4300,7 @@ export class MotivationPdfService {
           !!input.exposureHeading &&
           !crimeDrawn &&
           hasCrimeEvidence() &&
-          block.replace(/:\s*$/, '').toUpperCase() === input.exposureHeading;
+          headingKey(block) === headingKey(input.exposureHeading);
 
         /**
          * ⚠️ THE EXHIBITS GO WHERE THE PURPOSE IS ARGUED. Matched on the plan's
@@ -4227,7 +4313,7 @@ export class MotivationPdfService {
           !!input.purposeHeading &&
           !purposePlatesDrawn &&
           (input.purposePlates?.length ?? 0) > 0 &&
-          block.replace(/:\s*$/, '').toUpperCase() === input.purposeHeading;
+          headingKey(block) === headingKey(input.purposeHeading);
 
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
@@ -4353,7 +4439,14 @@ export class MotivationPdfService {
           drawBattery();
         }
         renderHeading(block.replace(/:\s*$/, ''));
-        inStatutorySection = /^11\.\s/.test(block.trim());
+        /**
+         * ⚠️ THE STATUTORY SECTION IS FOUND BY ITS WORDS. This tested `/^11\./`
+         * — the old spine's number — so on a plan numbered 14 the quoted
+         * subsections were set as ordinary prose.
+         */
+        inStatutorySection = input.statutoryHeading
+          ? headingKey(block) === headingKey(input.statutoryHeading)
+          : /^11\.\s/.test(block.trim());
         if (wantsCartridge) drawCartridge();
         if (wantsBattery) drawBattery();
         /**
@@ -4363,7 +4456,7 @@ export class MotivationPdfService {
          */
         if (
           input.firearmHeading &&
-          block.replace(/:\s*$/, '').toUpperCase() === input.firearmHeading
+          headingKey(block) === headingKey(input.firearmHeading)
         ) {
           cartridgeAfterFirearm = true;
         }

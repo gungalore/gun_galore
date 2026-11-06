@@ -536,6 +536,25 @@ function sectionMarksFor(
 }
 
 /**
+ * THE PLAN'S OWN HEADINGS, IN ORDER.
+ *
+ * ⚠️ THE RENDERER NEEDS THE LIST, NOT JUST THE MARKS. Any body line that starts
+ * "15." was drawn as a section band with its own contents line, so a statute
+ * heading quoted verbatim inside the statutory section ("15. LICENCE TO POSSESS
+ * FIREARM FOR OCCASIONAL HUNTING AND SPORTS-SHOOTING", MO000073) printed as a
+ * section of its own and appeared between 10 and 11 on the contents page. A
+ * numbered line that is not one of these is a quote, and prints as one.
+ */
+function planHeadingsOf(plan: unknown): string[] | undefined {
+  const sections = (plan as { sections?: { heading?: string }[] })?.sections;
+  if (!Array.isArray(sections)) return undefined;
+  const out = sections
+    .map((s) => (s?.heading ?? '').trim())
+    .filter((h): h is string => Boolean(h));
+  return out.length ? out : undefined;
+}
+
+/**
  * The heading of the battery section, as the renderer will print it.
  *
  * âš ï¸ THE TABLE BELONGS UNDER THE ARGUMENT IT IS EVIDENCE FOR. It printed as a
@@ -1664,6 +1683,12 @@ export class MotivationRenderService {
       // See sectionMarks on MotivationPdfInput for why this is built from the
       // stored plan rather than inferred from the words.
       sectionMarks: sectionMarksFor(row.structurePlan, answers.firearm_type),
+      /**
+       * ⚠️ WHICH NUMBERED LINES ARE SECTIONS. The plan's headings, so a quoted
+       * statute heading inside the statutory section is not mistaken for one.
+       */
+      planHeadings: planHeadingsOf(row.structurePlan),
+      statutoryHeading: headingOf(row.structurePlan, 'statutory_application'),
       // âš ï¸ THE BATTERY TABLE GOES UNDER THE COMPARISON HEADING, not after the
       // summary where a reviewer has stopped reading. Undefined on a plan with
       // no comparison section — a first application holds nothing to compare —

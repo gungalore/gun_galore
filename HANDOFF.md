@@ -7,6 +7,50 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (AUDIT) - MO000073: WHY THE EXHIBITS VANISHED AND A PAGE WAS BLANK
+
+Audited the operator's live pack (17 pages, Section 15, 12-gauge Mossberg 500).
+Five faults, four of them render-side:
+
+**1. The writer renumbered the sections, and everything keyed on headings broke.**
+The plan said 1, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16; the document came back
+1..12. `followsPlan` caught it and nothing acted on it (structure is never
+fatal). The purpose exhibits are placed by comparing the body heading to the
+plan's — "3. MY HUNTING" never matched "4. MY HUNTING" — so **the quarry page
+was never drawn at all**. Fixed in code, not in the prompt: `alignHeadingsToPlan`
+snaps each heading back to the plan's number by title, before anything reads the
+draft.
+
+**2. Rock pigeon was not in the quarry catalogue.** "Rock pigeon, Egyptian goose"
+matched only the goose, so one plate was made for two named species. Pigeon and
+Cape turtle dove added, with their field notes.
+
+**3. Page 8 was a blank sheet with a heading.** The deferred cartridge path drew
+an outer "6.1 The cartridge" band and then called a feature whose dimension sheet
+opens its own page — the band sat alone. The new sheets own their heading now.
+
+**4. The Act's own heading printed as a section.** "15. LICENCE TO POSSESS
+FIREARM…", quoted inside the statutory section, was drawn as a band, given a
+contents line and numbered between 10 and 11. A numbered line that is not one of
+the plan's headings now prints as a quote.
+
+**5. The 6.2 question ran off the page.** The suitability question is the band's
+heading and a long one clipped mid-word; it is capped at 82 characters.
+
+⚠️ Heading and matter placement now match on WORDS, not full strings, so packs
+already generated (which carry their own numbering) still render their bands,
+exhibits and battery.
+
+⚠️ **This pack needs regenerating to pick up 1, 2 and 5.** The stored document
+text and the single stored plate are what they were; re-downloading only fixes
+3 and 4.
+
+**Left open, for the operator:** the shooting history in this pack reads as
+generic club prose because the answer was two ticked chips — a real answer of a
+sentence or two is what makes section 3 worth reading. The five annexure divider
+pages are by design in motivation-only (the applicant files their copies behind
+them) and were not changed.
+
 ## 2026-11-06 (LATER) - THE INTERVIEW ASKS WHAT THE DOCUMENT NEEDS
 
 Deployed `ebdbfe8e` (full; rollback `alloutdoor-20261106-063030.dump`,

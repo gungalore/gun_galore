@@ -592,6 +592,62 @@ export function expectedHeadings(plan: StructurePlan): string[] {
 }
 
 /**
+ * The heading's words, with any leading number and trailing colon removed.
+ *
+ * ⚠️ THIS IS HOW A HEADING IS RECOGNISED WHEN THE WRITER RENUMBERS IT. The
+ * titles are fixed and unique per licence type; the number in front of them is
+ * the only part a model gets wrong.
+ */
+function headingWords(value: string): string {
+  return value
+    .trim()
+    .replace(/^\d{1,2}(?:\.\d+)?\.?\s+/, '')
+    .replace(/:\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * ⚠️ THE NUMBER IN FRONT OF A HEADING IS OURS, NOT THE WRITER'S.
+ *
+ * The spine is the book's Part 4.2 and it does not re-sequence when a section is
+ * omitted — a lean Section 15 runs 1, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16. The
+ * prompt says so twice and the writer renumbers to 1..N anyway: MO000073 came
+ * back 1..12, which failed `followsPlan` (silently — structure is never fatal)
+ * and, far worse, broke every renderer feature keyed on the plan's own heading.
+ * The purpose exhibits never printed (the plan says heading 4, the body said 3),
+ * and the cartridge sub-number read "6.1" under a section printed as "4".
+ *
+ * So the numbers are snapped back here, by title, once, before anything reads
+ * the document. A heading whose words do not match the plan is left exactly as
+ * it is — that is how a quoted statute line ("15. LICENCE TO POSSESS…") stays a
+ * quote instead of becoming a section.
+ */
+export function alignHeadingsToPlan(
+  documentText: string,
+  plan: StructurePlan,
+): string {
+  const byWords = new Map<string, string>();
+  for (const section of plan.sections) {
+    byWords.set(headingWords(section.heading), section.heading);
+  }
+  if (!byWords.size) return documentText;
+
+  return documentText
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length > 120) return line;
+      if (!/^\d{1,2}(?:\.\d+)?\.?\s+\S/.test(trimmed)) return line;
+      const canonical = byWords.get(headingWords(trimmed));
+      if (!canonical) return line;
+      return line.replace(trimmed, canonical);
+    })
+    .join('\n');
+}
+
+/**
  * Did the model actually follow the plan?
  *
  * We ask for a structure and then VERIFY it, rather than trusting the

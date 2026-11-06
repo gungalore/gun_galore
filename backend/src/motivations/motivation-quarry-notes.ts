@@ -256,4 +256,16 @@ export const SPECIES_BRIEFS: Readonly<Record<string, SpeciesBrief>> = {
     demand:
       'a dense shotgun pattern with enough pellet energy for a big, tough bird',
   },
+  rock_pigeon: {
+    nature:
+      'is a fast, flocking bird of farmland and grain fields, usually taken on the wing as the flock crosses a treeline or comes to decoys',
+    demand:
+      'an even shotgun pattern that opens quickly and reaches a crossing bird at ordinary wingshooting range',
+  },
+  turtle_dove: {
+    nature:
+      'is a small, quick dove of dry thornveld and farmland, often shot on the wing over water or along a flight line',
+    demand:
+      'a close, even pattern rather than a tight one, because the bird is small and the shot is usually quick',
+  },
 };

@@ -60,6 +60,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import {
   planFor,
   followsPlan,
+  alignHeadingsToPlan,
   fingerprint,
   maxSimilarity,
   SIMILARITY_REGENERATE_THRESHOLD,
@@ -1700,7 +1701,16 @@ export class MotivationGenerationService {
        */
       const write = async (retryIssues?: readonly string[]) => {
         const r = await this.model.generate(pack, plan, retryIssues);
-        return { ...r, text: southAfricanise(r.text) };
+        /**
+         * ⚠️ THE HEADING NUMBERS ARE PUT BACK BEFORE ANYTHING READS THE DRAFT.
+         * The writer renumbered MO000073 to 1..12 against the plan's
+         * 1,3,4,6,7,8,9,10,12,14,15,16, which silently broke the purpose
+         * exhibits and the cartridge sub-numbering. See alignHeadingsToPlan.
+         */
+        return {
+          ...r,
+          text: alignHeadingsToPlan(southAfricanise(r.text), plan),
+        };
       };
       /**
        * âš ï¸ A RE-GENERATION IS NOT BLIND TO THE GATE'S OWN FINDINGS ANY MORE.

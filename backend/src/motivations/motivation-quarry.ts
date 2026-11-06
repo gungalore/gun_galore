@@ -123,6 +123,17 @@ export const QUARRY: readonly QuarrySpecies[] = [
   { key: 'sandgrouse', name: 'Sandgrouse', subject: 'an adult Namaqua sandgrouse', klass: 'wingshooting' },
   { key: 'yellowbill_duck', name: 'Yellow-billed duck', subject: 'an adult yellow-billed duck', klass: 'wingshooting', aliases: ['yellow-billed duck', 'yellowbill'] },
   { key: 'egyptian_goose', name: 'Egyptian goose', subject: 'an adult Egyptian goose', klass: 'wingshooting', aliases: ['egyptian goose', 'spurwing goose'] },
+  /**
+   * ⚠️ THE BIRD MOST SOUTH AFRICAN SHOTGUN OWNERS ACTUALLY SHOOT. Rock pigeon
+   * and the doves were missing from the catalogue entirely, so an applicant who
+   * named them got no exhibit at all: `quarriesFor` matched only the Egyptian
+   * goose in "Rock pigeon, Egyptian goose" and the pack printed one plate for
+   * two species (MO000073). A named quarry with no catalogue entry is the one
+   * case where a missing picture is not fail-soft — it is a species the
+   * applicant stated, silently dropped.
+   */
+  { key: 'rock_pigeon', name: 'Rock pigeon', subject: 'an adult rock pigeon in flight over open farmland', klass: 'wingshooting', setting: 'open farmland and grain fields in the South African highveld', aliases: ['rock pigeon', 'feral pigeon', 'pigeon'] },
+  { key: 'turtle_dove', name: 'Cape turtle dove', subject: 'an adult Cape turtle dove', klass: 'wingshooting', setting: 'dry thornveld and farmland in the South African bushveld', aliases: ['turtle dove', 'ring-necked dove', 'cape turtle dove'] },
 ];
 
 const byKey = new Map(QUARRY.map((q) => [q.key, q]));

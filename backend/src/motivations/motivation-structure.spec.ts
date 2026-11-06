@@ -4,6 +4,7 @@ import {
   headingFor,
   expectedHeadings,
   followsPlan,
+  alignHeadingsToPlan,
   fingerprint,
   similarity,
   maxSimilarity,
@@ -409,6 +410,26 @@ describe('plan verification', () => {
       h.replace(/^\d{1,2}\./, `${i + 1}.`),
     );
     expect(followsPlan(docFromPlan(renumbered), plan).ok).toBe(false);
+  });
+
+  it('⚠️ RENUMBERING IS REPAIRED BY TITLE, NOT BY POSITION', () => {
+    // MO000073 came back 1..12 against a plan of 1,3,4,6,7,8,9,10,12,14,15,16.
+    // The exhibits and the cartridge sub-numbers are keyed on the plan's own
+    // headings, so the numbers are put back before anything reads the draft.
+    const renumbered = expectedHeadings(plan).map((h, i) =>
+      h.replace(/^\d{1,2}\./, `${i + 1}.`),
+    );
+    const fixed = alignHeadingsToPlan(docFromPlan(renumbered), plan);
+    expect(fixed).toBe(docFromPlan(expectedHeadings(plan)));
+    expect(followsPlan(fixed, plan).ok).toBe(true);
+  });
+
+  it('leaves a quoted heading alone, because its words are not the plan’s', () => {
+    const quoted =
+      '10. Section 15 applied to my application\n\n' +
+      '15. LICENCE TO POSSESS FIREARM FOR OCCASIONAL HUNTING AND SPORTS-SHOOTING\n\n' +
+      '(1) A firearm in respect of which a licence may be issued…';
+    expect(alignHeadingsToPlan(quoted, plan)).toBe(quoted);
   });
 });
 
