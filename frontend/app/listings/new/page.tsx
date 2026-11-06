@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import Link from 'next/link';
@@ -11,6 +11,13 @@ import {
   auctionFloorViolation,
   formatAuctionFloor,
 } from '@/lib/auction-minimums';
+import {
+  PLATFORM_FEE_BANDS as COMMISSION_BANDS,
+  MIN_PLATFORM_FEE_CENTS as MIN_COMMISSION_CENTS,
+  AUCTION_SPLIT_RATE,
+  platformFeeCents,
+  platformFeeUnflooredCents,
+} from '@/lib/platform-fee';
 import { CategoryPicker } from '@/components/category-picker';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
@@ -53,24 +60,11 @@ import { MediaNoticeModal } from '@/components/media/media-notice-modal';
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─────────────────────────── Fee math ───────────────────────────────
-// Client-side mirror of backend/src/payments/fee.calculator.ts so we can
-// show the seller a live "you receive" preview without round-tripping
-// to the API on every keystroke. Keep this in sync with the BANDS +
-// MIN_COMMISSION_CENTS constants on the backend.
-
-const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
-  { limit: 2_500_000, rate: 0.10, label: 'First R25,000 at 10%' },
-  { limit: 2_500_000, rate: 0.09, label: 'R25,001–R50,000 at 9%' },
-  { limit: 2_500_000, rate: 0.08, label: 'R50,001–R75,000 at 8%' },
-  { limit: Infinity, rate: 0.07, label: 'Above R75,000 at 7%' },
-];
-// R10 floor — see backend fee.calculator.ts. The fee is charged to the buyer
-// on (item + delivery); the floor never exceeds the amount it is charged on.
-const MIN_COMMISSION_CENTS = 1_000;
-
-// The auction split: the buyer pays 5% of (hammer + delivery), the seller
-// pays 5% of the hammer.
-const AUCTION_SPLIT_RATE = 0.05;
+// ⚠️ THE SCHEDULE LIVES IN lib/platform-fee.ts. This file carried its own copy
+// of the bands, the R10 floor and the auction split; the aliases below keep the
+// local names the rest of this 5,000-line form reads, but there is only one set
+// of numbers now, and `scripts/fee-sync.cjs` fails the build if it drifts from
+// backend/src/payments/fee.calculator.ts.
 
 // The two ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Take a
@@ -120,23 +114,8 @@ const RELISTABLE_DURATIONS = ['3', '5', '7', '14'];
 // same numbers. See that file for why the floor is on the reserve / typed
 // starting bid and never on the derived 30%-under starting bid.
 function calcCommissionCents(priceCents: number): number {
-  let commission = 0;
-  let remaining = priceCents;
-  for (const band of COMMISSION_BANDS) {
-    if (remaining <= 0) break;
-    const chunk = isFinite(band.limit)
-      ? Math.min(remaining, band.limit)
-      : remaining;
-    commission += chunk * band.rate;
-    remaining -= chunk;
-  }
-  const rounded = Math.max(0, Math.round(commission));
-  // R10 minimum Platform Fee — surfaced in the breakdowns below so the
-  // seller knows up-front. Floor never exceeds the amount it applies to.
-  if (priceCents > 0 && rounded < MIN_COMMISSION_CENTS) {
-    return Math.min(MIN_COMMISSION_CENTS, priceCents);
-  }
-  return rounded;
+  // Delegates to the one copy — see the note on the aliases above.
+  return platformFeeCents(priceCents);
 }
 
 // MARKETPLACE — the seller's ask IS the listed price. The buyer-paid Platform
@@ -5398,17 +5377,7 @@ function SellerAskBreakdown({ askCents }: { askCents: number }) {
 // surface "R10 minimum" instead of a percentage label that looks weird
 // for tiny listings).
 function calcUnflooredCommissionCents(priceCents: number): number {
-  let commission = 0;
-  let remaining = priceCents;
-  for (const band of COMMISSION_BANDS) {
-    if (remaining <= 0) break;
-    const chunk = isFinite(band.limit)
-      ? Math.min(remaining, band.limit)
-      : remaining;
-    commission += chunk * band.rate;
-    remaining -= chunk;
-  }
-  return Math.max(0, Math.round(commission));
+  return platformFeeUnflooredCents(priceCents);
 }
 
 function BreakdownRow({

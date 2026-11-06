@@ -1,8 +1,9 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../../../lib/auth';
 import { formatPrice } from '@/lib/utils';
+import { platformFeeForCents } from '@/lib/platform-fee';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { usePaymentMethods } from '@/lib/payment-methods';
@@ -50,37 +51,10 @@ const inputStyle: React.CSSProperties = {
 //
 // Presentation only; the amount actually charged is recomputed server-side on
 // POST /transactions.
-const PLATFORM_BANDS: { limit: number; rate: number }[] = [
-  { limit: 2_500_000, rate: 0.1 },
-  { limit: 2_500_000, rate: 0.09 },
-  { limit: 2_500_000, rate: 0.08 },
-  { limit: Infinity, rate: 0.07 },
-];
-const MIN_PLATFORM_FEE_CENTS = 1_000;
-
-function platformFeeCents(baseZarCents: number, isAuction: boolean): number {
-  if (baseZarCents <= 0) return 0;
-  if (isAuction) {
-    return Math.max(
-      MIN_PLATFORM_FEE_CENTS,
-      Math.round(baseZarCents * 0.05),
-    );
-  }
-  let fee = 0;
-  let remaining = baseZarCents;
-  for (const band of PLATFORM_BANDS) {
-    if (remaining <= 0) break;
-    const chunk = isFinite(band.limit)
-      ? Math.min(remaining, band.limit)
-      : remaining;
-    fee += chunk * band.rate;
-    remaining -= chunk;
-  }
-  const rounded = Math.max(0, Math.round(fee));
-  return rounded < MIN_PLATFORM_FEE_CENTS
-    ? Math.min(MIN_PLATFORM_FEE_CENTS, baseZarCents)
-    : rounded;
-}
+//
+// ⚠️ THE MATHS LIVES IN lib/platform-fee.ts. This file carried its own copy of
+// the bands, the R10 floor and the auction 5%; `scripts/fee-sync.cjs` now fails
+// the build if that module and backend/src/payments/fee.calculator.ts disagree.
 
 // FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
 // The backend DeliveryAddressDto requires `province` (@IsNotEmpty), so an
@@ -197,7 +171,7 @@ export function OfferCheckoutForm({
   // A dealer transfer has no courier leg and no waybill, so its total is
   // knowable in full: agreed price + Platform Fee, nothing else.
   const isCourier = effectiveMethod === 'COURIER';
-  const feeOnAgreedPrice = platformFeeCents(
+  const feeOnAgreedPrice = platformFeeForCents(
     settledAmount,
     listingType === 'AUCTION',
   );

@@ -3694,11 +3694,27 @@ export class TransactionsService {
     merchantReference?: string;
     type?: string;
   }) {
-    const tx = await this.prisma.transaction.findFirst({
-      where: evt.paymentId
-        ? { gatewayCheckoutId: evt.paymentId }
-        : { gatewayMerchantRef: evt.merchantReference },
-    });
+    // ⚠️ MATCH ON EVERY REFERENCE WE HOLD, NOT ONE. Ozow carries two ids that
+    // are easy to confuse — the PAYMENT id (stored as gatewayCheckoutId) and
+    // the TRANSACTION id (stored as gatewayPaymentId) — and its chargeback
+    // envelope is undocumented, so which of the two arrives as `PaymentId` is
+    // not something to bet a frozen payout on. The Peach handler below has
+    // always built an OR-list for exactly this reason; this one matched a
+    // single column and fell back to the merchant reference only when the
+    // payment id was absent entirely. A miss here is not silent (it alerts),
+    // but it is a chargeback the order never reacts to.
+    const refs: Prisma.TransactionWhereInput[] = [
+      ...(evt.paymentId
+        ? [{ gatewayCheckoutId: evt.paymentId }, { gatewayPaymentId: evt.paymentId }]
+        : []),
+      ...(evt.merchantReference
+        ? [{ gatewayMerchantRef: evt.merchantReference }]
+        : []),
+    ];
+    const tx =
+      refs.length === 0
+        ? null
+        : await this.prisma.transaction.findFirst({ where: { OR: refs } });
     if (!tx) {
       this.logger.warn(
         `Chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
@@ -3742,10 +3758,19 @@ export class TransactionsService {
       return;
     }
 
-    // Payout already released to the seller — we can't auto-reverse their
+    // Payout already paid out to the seller — we can't auto-reverse their
     // funds. This is the dangerous case: raise an URGENT alert so the
     // operator can recover from the seller / decide. Status stays RELEASED.
-    if (tx.paymentStatus === 'RELEASED') {
+    //
+    // ⚠️ `paidOutAt` IS THE LINE, NOT `RELEASED`. A released sale waits in the
+    // payout queue — with auto-payouts switched off that can be days — and the
+    // money has not moved yet in that window. This used to alert and return on
+    // any RELEASED row, so a chargeback arriving before the payout went out
+    // froze nothing and the payout was sent anyway; the operator then recovered
+    // a loss that was still avoidable. The Peach handler below has always made
+    // the distinction (RELEASED && paidOutAt = loss, otherwise hold it), and
+    // this now matches it.
+    if (tx.paymentStatus === 'RELEASED' && tx.paidOutAt) {
       await this.prisma.adminAlert
         .create({
           data: {
@@ -3762,15 +3787,28 @@ export class TransactionsService {
       return;
     }
 
-    // Funds still held (HELD or PENDING_ADMIN_VERIFICATION) — flip to
-    // DISPUTED so confirm-delivery / payout are blocked until an admin
-    // resolves it. Atomic guard prevents racing a confirm-delivery release.
+    // Funds still held — or released but NOT yet paid out — flip to DISPUTED so
+    // confirm-delivery / the payout queue are blocked until an admin resolves
+    // it. Atomic guard prevents racing a confirm-delivery release or a payout
+    // sweep picking the row up between the read above and this write.
     const claim = await this.prisma.transaction.updateMany({
       where: {
         id: tx.id,
-        paymentStatus: { in: ['HELD', 'PENDING_ADMIN_VERIFICATION'] },
+        paymentStatus: {
+          in: ['HELD', 'PENDING_ADMIN_VERIFICATION', 'RELEASED'],
+        },
       },
-      data: { paymentStatus: 'DISPUTED' },
+      data: {
+        paymentStatus: 'DISPUTED',
+        ...(tx.paymentStatus === 'RELEASED'
+          ? {
+              payoutHeldAt: new Date(),
+              payoutHoldReason:
+                'Ozow chargeback/dispute — received before payout, hold it',
+              payoutHeldById: null,
+            }
+          : {}),
+      },
     });
     if (claim.count === 0) {
       // Status changed out from under us (e.g. released between read and
@@ -3802,7 +3840,10 @@ export class TransactionsService {
           type: 'CHARGEBACK_INITIATED',
           referenceId: tx.id,
           urgent: true,
-          context: `Chargeback/dispute (${evt.type}) on ${tx.id}. Funds were held → moved to DISPUTED, payout blocked. Investigate + resolve (release to seller or concede the chargeback). Do NOT issue a separate refund.`,
+          context:
+            `Chargeback/dispute (${evt.type}) on ${tx.id}. Funds were ` +
+            `${tx.paymentStatus === 'RELEASED' ? 'released but not yet paid out' : 'held'} ` +
+            `→ moved to DISPUTED, payout blocked. Investigate + resolve (release to seller or concede the chargeback). Do NOT issue a separate refund.`,
         },
       })
       .catch(() => undefined);

@@ -209,10 +209,14 @@ export class OffersService {
     }
 
     // Lowball filter — at/below the seller's auto-decline threshold the
-    // offer is recorded as instantly REJECTED (it still consumes an
-    // attempt, so threshold-probing burns the 5-offer cap) and the buyer
-    // is notified. The seller is deliberately NOT notified — sparing
-    // them lowball noise is the whole point of the threshold.
+    // offer is recorded as instantly REJECTED (it still consumes the buyer's
+    // one attempt, so threshold-probing burns it) and the buyer is notified.
+    // The seller is deliberately NOT notified — sparing them lowball noise is
+    // the whole point of the threshold.
+    //
+    // ⚠️ ONE ATTEMPT, NOT FIVE. MAX_OFFER_ATTEMPTS is 1 (see the top of this
+    // file); this comment said "5-offer cap" for months after the cap changed,
+    // which reads as a five-strike allowance that does not exist.
     const autoDecline =
       listing.autoDeclineThreshold !== null &&
       dto.offerAmount <= listing.autoDeclineThreshold;

@@ -31,8 +31,17 @@ import { ShippingService } from './shipping.service';
  *    widened only from strings we have actually observed.
  *
  * Nothing here throws. Bob Go retries on non-2xx, and a retry storm caused by
- * our own bug would be worse than a dropped event we can recover by polling —
- * the poll still runs and remains the backstop.
+ * our own bug would be worse than a dropped event.
+ *
+ * ⚠️ THERE IS NO POLL BEHIND THIS ANY MORE (corrected 2026-11-06). This said
+ * "we can recover by polling — the poll still runs and remains the backstop".
+ * It does not: the Pudo tracking poll was retired on 2026-09-24 with the move
+ * to Bob Go, and nothing replaced it. So a webhook that never arrives is not
+ * recovered within ten minutes by a sweep — the only automatic follow-up is
+ * `resolvePendingBobGoBookings` (every 5 minutes), and that resolves BOOKINGS,
+ * not tracking scans. What is left as a backstop is the event log below plus a
+ * human: every unrecognised payload is stored whole, and every unknown status
+ * is logged loudly, so widening the map from evidence stays possible.
  */
 @Injectable()
 export class BobGoWebhookService {
@@ -179,6 +188,26 @@ export class BobGoWebhookService {
    * weight had already been rounded 2.5 -> 3 kg. If a re-weigh pushes the
    * parcel across a rate band, this event is the only notice we get, and the
    * difference comes out of margin unless someone sees it.
+   *
+   * ⚠️ SO IT HAS TO END SOMEWHERE A PERSON LOOKS. This used to log the amount
+   * and return — "the reconciliation rail", reconciling nothing: no stored
+   * figure, no comparison with what the buyer paid, no alert. The only place
+   * the difference appeared was the application log, which no screen in the
+   * Desk reads. The buyer's Delivery line and the courier's actual charge
+   * quietly disagreed, and the Books freight journal kept posting the quoted
+   * figure.
+   *
+   * Now the amount is compared with `Transaction.shippingCost` — the quote
+   * snapshotted at checkout — and any difference raises an urgent Desk alert
+   * naming both figures. It is still not an automatic re-bill: deciding
+   * whether a R30 carrier increase is absorbed, passed to the buyer, or taken
+   * off the seller's payout is a commercial call, and this platform does not
+   * make those silently.
+   *
+   * ⚠️ UNITS. Bob Go prices in RAND (`total_price: 114.95`), every figure we
+   * store is CENTS, so the conversion happens here. The alert prints the raw
+   * payload value as well, so if the two ever disagree the first alert says so
+   * instead of hiding a 100x error.
    */
   private async onCharge(
     topic: string,
@@ -190,6 +219,74 @@ export class BobGoWebhookService {
       `Bob Go ${topic} for shipment ${shipmentId ?? '?'}: ` +
         `amount=${JSON.stringify(body.charged_amount)} weight=${JSON.stringify(body.charged_weight_kg)}`,
     );
+
+    const chargedCents = randToCentsOrNull(body.charged_amount);
+    // The weight topic carries no money, and an unrecognised payload shape must
+    // not be guessed at. Both are recorded above and stop here.
+    if (!shipmentId || chargedCents === null) return { handled: true };
+
+    const tx = await this.prisma.transaction.findFirst({
+      where: { carrierShipmentId: shipmentId },
+      select: { id: true, shippingCost: true },
+    });
+    if (!tx) {
+      // Booked outside the platform, or an id we never stored. Recorded above.
+      this.logger.warn(
+        `Bob Go ${topic}: no transaction carries shipment ${shipmentId}`,
+      );
+      return { handled: true };
+    }
+
+    const quotedCents = Math.max(0, tx.shippingCost ?? 0);
+    const varianceCents = chargedCents - quotedCents;
+    if (varianceCents === 0) {
+      this.logger.log(
+        `Bob Go ${topic}: shipment ${shipmentId} charged exactly the quote (${quotedCents}c)`,
+      );
+      return { handled: true };
+    }
+
+    const sign = varianceCents > 0 ? 'MORE' : 'LESS';
+    const context =
+      `Bob Go ${topic} for shipment ${shipmentId} (tx ${tx.id}): the carrier billed ` +
+      `${formatCents(chargedCents)} where the buyer was charged ${formatCents(quotedCents)} — ` +
+      `${sign} than quoted by ${formatCents(Math.abs(varianceCents))}. ` +
+      `Raw charged_amount=${JSON.stringify(body.charged_amount)}. ` +
+      `Decide whether to absorb it, re-bill, or recover it; the freight journal and the ` +
+      `buyer's Delivery line still carry the quoted figure.`;
+
+    // One alert per sale, kept current. A re-weigh can deliver more than one
+    // event, and an operator staring at three rows in a queue reads the oldest.
+    const existing = await this.prisma.adminAlert
+      .findFirst({
+        where: {
+          type: 'SHIPPING_CHARGE_VARIANCE',
+          referenceId: tx.id,
+          resolved: false,
+        },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (existing) {
+      await this.prisma.adminAlert
+        .update({
+          where: { id: existing.id },
+          data: { context, urgent: true },
+        })
+        .catch(() => undefined);
+    } else {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'SHIPPING_CHARGE_VARIANCE',
+            referenceId: tx.id,
+            urgent: true,
+            context,
+          },
+        })
+        .catch(() => undefined);
+    }
+    this.logger.warn(context);
     return { handled: true };
   }
 
@@ -242,4 +339,42 @@ export class BobGoWebhookService {
         this.logger.warn(`Bob Go webhook not recorded: ${e.message}`),
       );
   }
+}
+
+/**
+ * Bob Go's rand figure → our cents, or null when the payload does not carry a
+ * recognisable amount.
+ *
+ * ⚠️ THE SHAPE IS NOT PINNED BY A DOCUMENT. `charged_amount` has been seen as a
+ * bare number in the sandbox payloads; the other money fields in this API arrive
+ * as `{ amount, currency }`-shaped objects on some endpoints, so every plausible
+ * spelling is read and anything unrecognised returns null. The caller then
+ * records the payload and stops rather than inventing a variance from a value it
+ * did not understand.
+ */
+function randToCentsOrNull(raw: unknown): number | null {
+  let value: unknown = raw;
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    value = o.amount ?? o.value ?? o.total ?? o.total_price ?? o.price;
+  }
+  const n =
+    typeof value === 'string'
+      ? Number(value)
+      : typeof value === 'number'
+        ? value
+        : Number.NaN;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100);
+}
+
+/** R1 234,56 — the desk reads sums of money, not integer cents. */
+function formatCents(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(cents));
+  const rand = Math.floor(abs / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const rest = (abs % 100).toString().padStart(2, '0');
+  return `${sign}R${rand},${rest}`;
 }

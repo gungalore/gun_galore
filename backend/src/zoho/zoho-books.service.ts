@@ -1165,41 +1165,67 @@ export class ZohoBooksService {
     if (!this.isEnabled()) return;
     try {
       const staleFloor = new Date(Date.now() - 3_600_000);
-      const failedInvoices = await this.prisma.transaction.findMany({
+      /**
+       * ⚠️ THESE THREE ARE KEYED ON THE MISSING DOCUMENT, NOT ON zohoSyncStatus.
+       *
+       * `zohoSyncStatus` is ONE column shared by four documents (the seller
+       * commission invoice, the buyer invoice, and the handling and freight
+       * journals), and every writer sets it unconditionally — `markFailed`
+       * writes FAILED, a success writes OK. The two invoice calls are fired in
+       * PARALLEL (`void createCommissionInvoice(); void createBuyerInvoice()`),
+       * so the ordinary failure mode is:
+       *
+       *   commission invoice FAILS → markFailed(FAILED)
+       *   buyer invoice SUCCEEDS   → status OK
+       *
+       * The row now reads OK with `zohoCommissionInvoiceId` null, and the old
+       * predicate — `id null AND status FAILED` — could never select it again.
+       * The platform's own commission went uninvoiced, permanently, with a green
+       * sync status on the Desk.
+       *
+       * Keying on the id closes it by construction: a document that does not
+       * exist is retried whatever any other document last wrote. The id is set
+       * on success, so a healthy row stops matching and costs nothing.
+       *
+       * The age floor keeps a burst from re-firing the same row on every tick;
+       * `null` is included because a crash between `paidAt` and the first
+       * `markPending` leaves no attempt stamp at all, and `{ lt }` alone does
+       * not match NULL in SQL.
+       */
+      const retryWindow = [
+        { zohoSyncLastAttemptAt: { lt: staleFloor } },
+        { zohoSyncLastAttemptAt: null },
+      ] as const;
+
+      // Seller commission invoice. `commissionZar > 0` mirrors the method's own
+      // guard — a Buy Now sale pays no seller fee, so there is no document to
+      // raise and retrying it would be a wasted query forever.
+      const missingCommission = await this.prisma.transaction.findMany({
         where: {
+          paidAt: { not: null },
+          commissionZar: { gt: 0 },
           zohoCommissionInvoiceId: null,
-          OR: [
-            { zohoSyncStatus: 'FAILED' },
-            {
-              zohoSyncStatus: 'PENDING',
-              zohoSyncLastAttemptAt: { lt: staleFloor },
-            },
-          ],
+          OR: [...retryWindow],
         },
         select: { id: true },
         take: limit,
       });
-      for (const t of failedInvoices) {
+      for (const t of missingCommission) {
         await this.createCommissionInvoice(t.id);
       }
 
-      // Same self-heal for buyer invoices (the platform's own supplies to the
-      // buyer). Guarded on zohoBuyerInvoiceId, so re-firing is a no-op.
-      const failedBuyerInvoices = await this.prisma.transaction.findMany({
+      // Buyer invoice — the platform's supplies to the buyer. Guarded on
+      // zohoBuyerInvoiceId inside the method, so re-firing is a no-op.
+      const missingBuyerInvoices = await this.prisma.transaction.findMany({
         where: {
+          paidAt: { not: null },
           zohoBuyerInvoiceId: null,
-          OR: [
-            { zohoSyncStatus: 'FAILED' },
-            {
-              zohoSyncStatus: 'PENDING',
-              zohoSyncLastAttemptAt: { lt: staleFloor },
-            },
-          ],
+          OR: [...retryWindow],
         },
         select: { id: true },
         take: limit,
       });
-      for (const t of failedBuyerInvoices) {
+      for (const t of missingBuyerInvoices) {
         await this.createBuyerInvoice(t.id);
       }
 
@@ -1224,22 +1250,20 @@ export class ZohoBooksService {
         await this.finalizeExistingBuyerInvoice(t.id);
       }
 
-      // Carrier bills that never reached Books.
-      const failedShippingExpenses = await this.prisma.transaction.findMany({
+      // Carrier freight that never reached Books. Same id-keyed rule as the two
+      // invoices above, with `shippingCost > 0` matching the method's own guard
+      // (no waybill → no journal).
+      const missingShippingJournals = await this.prisma.transaction.findMany({
         where: {
+          paidAt: { not: null },
+          shippingCost: { gt: 0 },
           zohoShippingJournalId: null,
-          OR: [
-            { zohoSyncStatus: 'FAILED' },
-            {
-              zohoSyncStatus: 'PENDING',
-              zohoSyncLastAttemptAt: { lt: staleFloor },
-            },
-          ],
+          OR: [...retryWindow],
         },
         select: { id: true },
         take: limit,
       });
-      for (const t of failedShippingExpenses) {
+      for (const t of missingShippingJournals) {
         await this.createShippingCostJournal(t.id);
       }
 
@@ -1275,15 +1299,15 @@ export class ZohoBooksService {
       }
 
       if (
-        failedInvoices.length ||
-        failedBuyerInvoices.length ||
+        missingCommission.length ||
+        missingBuyerInvoices.length ||
         unsettledBuyerInvoices.length ||
-        failedShippingExpenses.length ||
+        missingShippingJournals.length ||
         unemailedBuyer.length ||
         unemailedSeller.length
       ) {
         this.logger.log(
-          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission + ${failedBuyerInvoices.length} new buyer + ${unsettledBuyerInvoices.length} unsettled buyer + ${failedShippingExpenses.length} carrier expense(s) + ${unemailedBuyer.length} buyer email(s) + ${unemailedSeller.length} seller email(s)`,
+          `retryFailedRevenueDocs: re-fired ${missingCommission.length} commission + ${missingBuyerInvoices.length} new buyer + ${unsettledBuyerInvoices.length} unsettled buyer + ${missingShippingJournals.length} carrier expense(s) + ${unemailedBuyer.length} buyer email(s) + ${unemailedSeller.length} seller email(s)`,
         );
       }
     } catch (err) {

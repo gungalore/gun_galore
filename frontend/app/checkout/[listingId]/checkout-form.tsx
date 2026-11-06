@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
@@ -14,6 +14,7 @@ import {
   CheckoutHold,
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
+import { platformFeeForCents } from '@/lib/platform-fee';
 import { useCountdown } from '@/lib/use-countdown';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
@@ -704,35 +705,17 @@ export function CheckoutForm({
     return false;
   }
 
-  // ─── Fee preview (mirrors the backend FeeCalculator) ──────────────
+  // ─── Fee preview ──────────────────────────────────────────────────
   // Operator 2026-10: the listing price is the seller's raw ask. The buyer
   // pays ONE Platform Fee, calculated LAST on (item + delivery). Marketplace
   // fees are marginal 10/9/8/7; auctions are a flat 5% buyer share.
   // The actual numbers are re-computed server-side on Pay; this is display.
-  const PLATFORM_BANDS = [
-    { limit: 2_500_000, rate: 0.1 },
-    { limit: 2_500_000, rate: 0.09 },
-    { limit: 2_500_000, rate: 0.08 },
-    { limit: Infinity, rate: 0.07 },
-  ] as const;
-  const MIN_PLATFORM_FEE_CENTS = 1_000;
-  function platformFeeCents(baseCents: number): number {
-    if (baseCents <= 0) return 0;
-    let fee = 0;
-    let remaining = baseCents;
-    for (const band of PLATFORM_BANDS) {
-      if (remaining <= 0) break;
-      const chunk = isFinite(band.limit)
-        ? Math.min(remaining, band.limit)
-        : remaining;
-      fee += chunk * band.rate;
-      remaining -= chunk;
-    }
-    const rounded = Math.max(0, Math.round(fee));
-    return rounded < MIN_PLATFORM_FEE_CENTS
-      ? Math.min(MIN_PLATFORM_FEE_CENTS, baseCents)
-      : rounded;
-  }
+  //
+  // ⚠️ THE MATHS LIVES IN lib/platform-fee.ts NOW, NOT HERE. It was copied
+  // into this file, the offer checkout, the listing page and the sell form;
+  // they agreed by luck rather than by construction, and this copy had already
+  // drifted from the backend on the auction floor. `scripts/fee-sync.cjs` fails
+  // the build if the shared copy and fee.calculator.ts ever disagree.
   function previewBreakdown(): {
     listing: number;
     shipping: number;
@@ -747,15 +730,12 @@ export function CheckoutForm({
     // Delivery is quoted at the courier's live rate (no margin since 2026-10-23).
     const handling = 0;
     const delivery = shipping + handling;
-    // Auctions: 5% of (hammer + delivery), floored at R10.
-    // Marketplace: marginal bands on (item + delivery), floored at R10.
-    const platform =
-      listing.listingType === 'AUCTION'
-        ? Math.max(
-            MIN_PLATFORM_FEE_CENTS,
-            Math.round((item + delivery) * 0.05),
-          )
-        : platformFeeCents(item + delivery);
+    // Auctions: 5% of (hammer + delivery), floored at R10 and capped at the
+    // base. Marketplace: marginal bands on (item + delivery), floored at R10.
+    const platform = platformFeeForCents(
+      item + delivery,
+      listing.listingType === 'AUCTION',
+    );
     return {
       listing: item,
       shipping,

@@ -1,4 +1,4 @@
-﻿import { notFound } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
@@ -18,6 +18,7 @@ import {
   LISTING_TYPE_LABELS,
   discountPercent,
 } from '@/lib/utils';
+import { platformFeePctOfItem } from '@/lib/platform-fee';
 import { vicinityLabel } from '@/lib/vicinity';
 import ListingDistance from '@/components/listing-distance';
 import SellerControls from './seller-controls';
@@ -35,36 +36,10 @@ import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
 import { VerificationBadges } from '@/components/verification-badges';
 
-// Marketplace Platform Fee bands — mirrors backend/src/payments/fee.calculator.ts.
-// The fee is marginal and is charged last at checkout on (item + delivery); the
-// percentage shown beside the price is the effective rate on the item alone.
-const PLATFORM_BANDS: { limit: number; rate: number }[] = [
-  { limit: 2_500_000, rate: 0.1 },
-  { limit: 2_500_000, rate: 0.09 },
-  { limit: 2_500_000, rate: 0.08 },
-  { limit: Infinity, rate: 0.07 },
-];
-const MIN_PLATFORM_FEE_CENTS = 1_000;
-
-function platformFeePctOnItem(priceCents: number): number {
-  if (!priceCents || priceCents <= 0) return 0;
-  let fee = 0;
-  let remaining = priceCents;
-  for (const band of PLATFORM_BANDS) {
-    if (remaining <= 0) break;
-    const chunk = isFinite(band.limit)
-      ? Math.min(remaining, band.limit)
-      : remaining;
-    fee += chunk * band.rate;
-    remaining -= chunk;
-  }
-  const rounded = Math.max(0, Math.round(fee));
-  const charged =
-    rounded < MIN_PLATFORM_FEE_CENTS
-      ? Math.min(MIN_PLATFORM_FEE_CENTS, priceCents)
-      : rounded;
-  return (charged / priceCents) * 100;
-}
+// Marketplace Platform Fee — the effective percentage shown beside the price.
+// ⚠️ THE SCHEDULE LIVES IN lib/platform-fee.ts, NOT HERE. This file carried its
+// own copy of the bands and the R10 floor; `scripts/fee-sync.cjs` fails the
+// build if that module and backend/src/payments/fee.calculator.ts disagree.
 import { ShareListingButton } from '@/components/share-listing-button';
 import { ReportButton } from '@/components/report-button';
 import { LiveListingStats } from '@/components/live-listing-stats';
@@ -349,7 +324,7 @@ export default async function ListingDetailPage({
   // charged on that too.
   const platformFeePct =
     listing.listingType === 'BUY_NOW' && listing.price
-      ? platformFeePctOnItem(listing.price)
+      ? platformFeePctOfItem(listing.price)
       : null;
 
   // Product/Offer structured data so Google can show rich price/availability
