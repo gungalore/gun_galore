@@ -9,6 +9,11 @@ Last updated: **2026-11-06**.
 
 ## 2026-11-06 - THE HISTORY IS TAPS, NOT A SIXTY-WORD WALL
 
+Deployed `cc6c3d3b` (full; rollback `alloutdoor-20261106-061637.dump`,
+33,625,592 bytes). Backend 407 suites / 6,053 tests, frontend 161 files /
+1,844 tests, production build OK, both health checks twice, public 200 twice,
+three pm2 services online.
+
 **What triggered it.** The operator answered the shooting history in nineteen
 words, ticked two chips, and was shown `"shooting_history": Please give us a
 little more — about 60 words, and you have 19.` He asked why, and asked for more
