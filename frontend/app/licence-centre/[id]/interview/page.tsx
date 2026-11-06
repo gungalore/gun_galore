@@ -755,7 +755,7 @@ export default function IntakeInterviewPage() {
               </button>
             </div>
           </div>
-        ) : !group && q ? (
+        ) : group ? null : q ? (
           <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <p className="m-0 text-[15px] font-medium leading-6 text-[var(--text-primary)]">
               {q.label}

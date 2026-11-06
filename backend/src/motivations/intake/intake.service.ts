@@ -493,6 +493,27 @@ export class MotivationIntakeService {
   }): Promise<Record<string, string>> {
     const { row, sheet, answers, current, key, field, body } = args;
 
+    /**
+     * ⚠️ A THIN HISTORY IS REJECTED AT THE DOOR, NOT SILENTLY KEPT PENDING.
+     *
+     * Keeping it pending made the next group return the same question, and the
+     * card reads a returning question as "we could not save that answer" — the
+     * member is told the save failed when it worked and the answer was simply
+     * too short. A rejection carries the real reason instead.
+     */
+    if (key === 'shooting_history') {
+      const words = (body.message ?? body.value ?? '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean).length;
+      if (words > 0 && words < 60) {
+        throw new BadRequestException(
+          `Please give us a little more — about 60 words, and you have ${words}. ` +
+            'How you came to shooting, who introduced you, what you shoot and how often, and what you hunt or compete in.',
+        );
+      }
+    }
+
 const sourceText = (body.message ?? body.value ?? '').trim();
     let extracted: Record<string, string> = {};
     if (
@@ -1438,7 +1459,15 @@ const sourceText = (body.message ?? body.value ?? '').trim();
             ? 'Or type your own answer…'
             : base.customPlaceholder,
         },
-        acknowledgement: parsed?.acknowledgement,
+        /**
+         * ⚠️ NO GENERATED ACKNOWLEDGEMENT. It is filler, and it invents.
+         *
+         * A live member was told "It is great that you are keeping up the
+         * tradition of hunting you learned from your father" — a father they
+         * never mentioned. An acknowledgement that adds facts is worse than
+         * none, and nothing downstream needs one.
+         */
+        acknowledgement: undefined,
         correction: correctionFor(previousFieldKey, parsed),
       };
     } catch (err) {
