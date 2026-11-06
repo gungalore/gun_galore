@@ -159,9 +159,52 @@ describe('the grouped interview card', () => {
 
     expect(onStuck).not.toHaveBeenCalled();
   });
+
+  // ?? Operator, 2026-11-06: a ticked chip and a typed sentence are the same
+  // answer, and the card used to send only the ticks.
+  it('sends the typed answer together with the ticked ones', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const history = question({
+      fieldKey: 'shooting_history',
+      id: 'shooting_history',
+      label: 'How you came to shooting, and what you shoot',
+      kind: 'long',
+      multi: true,
+      choices: [
+        { value: 'I shoot clay targets at a club', label: 'Clay targets at a club' },
+        { value: 'I hunt birds and small game', label: 'Birds and small game' },
+      ],
+    });
+
+    render(
+      <IntakeGroupCard
+        group={group([history])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clay targets at a club' }),
+    );
+    await user.type(
+      screen.getByPlaceholderText('Or type your own answerâ€¦'),
+      'since 2019',
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([
+      {
+        fieldKey: 'shooting_history',
+        values: ['I shoot clay targets at a club'],
+        message: 'since 2019',
+      },
+    ]);
+  });
 });
 
-describe('the grouped interview card — closed choices', () => {
+describe('the grouped interview card - closed choices', () => {
   /**
    * ?? A CLOSED CHOICE HAS NO TYPED ANSWER. "Type of firearm" accepts four
    * values and nothing else; a box under it invites an answer the sheet will

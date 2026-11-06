@@ -69,16 +69,24 @@ export default function IntakeGroupCard({
     }
   }, [question]);
 
+  /**
+   * ⚠️ A TICKED ANSWER AND A TYPED ONE ARE BOTH THE MEMBER'S ANSWER.
+   *
+   * This returned the ticks and dropped the text the moment a chip was on,
+   * which is how a history answered by tapping "Clay targets at a club" and
+   * then typing the rest arrived with the rest missing. Both are sent; the
+   * server joins them and counts them together.
+   */
   function answer(): GroupAnswer | null {
     if (!question) return null;
     const text = typed.trim();
+    const out: GroupAnswer = { fieldKey: question.fieldKey };
     if (picked.length) {
-      return question.multi
-        ? { fieldKey: question.fieldKey, values: picked }
-        : { fieldKey: question.fieldKey, value: picked[0] };
+      if (question.multi) out.values = picked;
+      else out.value = picked[0];
     }
-    if (text) return { fieldKey: question.fieldKey, message: text };
-    return null;
+    if (text) out.message = text;
+    return out.values?.length || out.value || out.message ? out : null;
   }
 
   function toggle(value: string) {

@@ -6,6 +6,7 @@ import {
   type MotivationField,
 } from '../motivation-fields';
 import { resolveSportingPurpose } from '../motivation-purpose';
+import { MIN_HISTORY_WORDS } from '../motivation-completeness';
 import { huntGameClassOptions } from '../motivation-hunt-classes';
 import type { SheetItem, SheetResponse } from '../motivation-sheet.service';
 import {
@@ -287,13 +288,18 @@ function isPending(
   if (!existing) return true;
   /**
    * ⚠️ ANSWERED IS NOT THE SAME AS ENOUGH. The shooting history is the one
-   * field whose gate demands substance (60 words), so a one-line answer used
-   * to satisfy the planner, end the interview and then fail at write time.
-   * An answer below the floor stays pending, which keeps the interview open
-   * and re-asks it — the alternative is telling somebody they are finished and
-   * then refusing to write.
+   * field whose gate demands substance, so a one-word answer used to satisfy
+   * the planner, end the interview and then fail at write time. An answer below
+   * the floor stays pending, which keeps the interview open and re-asks it —
+   * the alternative is telling somebody they are finished and then refusing to
+   * write.
+   *
+   * The floor is low (a sentence or two, ticks included) because the section is
+   * written from these facts rather than from their length.
    */
-  if (key === 'shooting_history' && wordCount(existing) < 60) return true;
+  if (key === 'shooting_history' && wordCount(existing) < MIN_HISTORY_WORDS) {
+    return true;
+  }
   const confirmThisApplication =
     key === 'intended_quarry' || key === 'firearm_use_kind';
   const source = provenance?.[key]?.source;
@@ -302,7 +308,7 @@ function isPending(
   );
 }
 
-/** Same counting rule the completeness gate uses for the 60-word floor. */
+/** Same counting rule the completeness gate uses for the history floor. */
 function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }

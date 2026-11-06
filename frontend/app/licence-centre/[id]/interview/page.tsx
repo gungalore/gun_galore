@@ -611,6 +611,12 @@ export default function IntakeInterviewPage() {
             onSubmit={sendBatch}
             onStuck={(message) => setError(message)}
           />
+          {/* The reason belongs under the question it is about, not at the foot of the page. */}
+          {error ? (
+            <p className="mt-2 text-[13px] leading-5 text-[var(--red)]">
+              {error}
+            </p>
+          ) : null}
           <div className="mt-3">
             <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
               Have a document for this?
@@ -1260,7 +1266,9 @@ export default function IntakeInterviewPage() {
         </section>
       ) : null}
 
-      {error ? <p className="mt-3 text-[13px] text-[var(--red)]">{error}</p> : null}
+      {error && !(group && group.questions.length) ? (
+        <p className="mt-3 text-[13px] text-[var(--red)]">{error}</p>
+      ) : null}
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t px-4 py-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-page)' }}>
         <div className="mx-auto flex max-w-[720px] items-center justify-between gap-3">

@@ -1,4 +1,4 @@
-﻿import { MotivationLicenceType } from '@prisma/client';
+import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import {
   pendingFields,
@@ -252,9 +252,9 @@ describe('planGroup', () => {
       answers,
       sheet: EMPTY_SHEET,
     })) {
-      // ⚠️ THE HISTORY HAS A SIXTY-WORD FLOOR. A one-character answer keeps it
-      // pending on purpose (see isPending), so this test fills it properly
-      // rather than pretending a stub settles it.
+      // ⚠️ THE HISTORY HAS A FLOOR. A one-character answer keeps it pending on
+      // purpose (see isPending), so this test fills it properly rather than
+      // pretending a stub settles it.
       answers[key] =
         key === 'shooting_history'
           ? Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ')
@@ -306,10 +306,12 @@ describe('shooting history stays pending until it is substantial', () => {
   // ?? Operator, 2026-11-05: "I should not stop the interview until it has all
   // the required information." A one-line answer satisfied the planner, ended
   // the interview, and then the write step refused it.
-  it('re-asks a history below the sixty-word floor', () => {
+  // ?? And 2026-11-06: the floor is a sentence or two, not sixty words - the
+  // section is written from the facts, and chips count toward them.
+  it('re-asks a history below the floor', () => {
     const pending = pendingFields({
       type: MotivationLicenceType.S16_DEDICATED_SPORT,
-      answers: { shooting_history: history(12) },
+      answers: { shooting_history: history(4) },
       sheet: EMPTY_SHEET,
     }).map((p) => p.key);
     expect(pending).toContain('shooting_history');
@@ -319,6 +321,19 @@ describe('shooting history stays pending until it is substantial', () => {
     const group = planGroup({
       type: MotivationLicenceType.S16_DEDICATED_SPORT,
       answers: { shooting_history: history(60) },
+      sheet: EMPTY_SHEET,
+    });
+    expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');
+  });
+
+  it('accepts a history made of ticked statements', () => {
+    // Two chips are the member's own words, so they settle the question.
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_SPORT,
+      answers: {
+        shooting_history:
+          'I was taught to shoot by a family member, I shoot clay targets at a club',
+      },
       sheet: EMPTY_SHEET,
     });
     expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');

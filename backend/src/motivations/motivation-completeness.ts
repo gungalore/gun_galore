@@ -40,14 +40,20 @@ const GAP = (
 ): DetailGap => ({ code, label, hint });
 
 /**
- * A shooting history of fewer than sixty words is a stub, not a history.
+ * A shooting history of fewer than a dozen words is a stub, not a history.
  *
- * Measured against the three professional documents: their experience pages
- * run 250–400 words. Sixty is the floor at which something is being described
- * rather than acknowledged, and it is deliberately well under what a motivated
- * applicant writes so it never becomes a word-count exercise.
+ * ⚠️ SIXTY WAS A WALL, NOT A FLOOR. The interview asked for a paragraph in a
+ * single box, and a member who had said where he started, what he shoots and
+ * how often - in nineteen words - was refused and told he needed sixty. The
+ * experience pages of the professional documents run 250-400 words, but those
+ * are WRITTEN from the facts; the facts are what the member has to supply, and
+ * a sentence or two supplies them.
+ *
+ * So the floor only separates "I like shooting" from a real answer, and the
+ * interview's chips ("A friend introduced me", "Clay targets at a club") count
+ * toward it because they are the member's own statements.
  */
-export const MIN_HISTORY_WORDS = 60;
+export const MIN_HISTORY_WORDS = 12;
 
 const HUNTING_TYPES: readonly MotivationLicenceType[] = [
   MotivationLicenceType.S15_OCCASIONAL_HUNTER,

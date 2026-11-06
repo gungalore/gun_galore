@@ -118,10 +118,57 @@ export function exerciseChoices(
     seen.add(title.toLowerCase());
     out.push({
       value: title,
-      label: exercise.code ? `${exercise.code} � ${title}` : title,
+      label: exercise.code ? `${exercise.code} - ${title}` : title,
     });
     // A wall of 61 buttons is not a shortlist either.
     if (out.length >= 15) break;
   }
   return out;
+}
+
+/**
+ * THE HISTORY, AS TAPS.
+ *
+ * ⚠️ A BLANK BOX BESIDE A WORD FLOOR IS A TRAP, AND IT SPRUNG.
+ *
+ * The question asked for a whole shooting life in one paragraph and the gate
+ * refused anything under sixty words. A live member described where he started,
+ * what he shoots and how often in nineteen words, was told he needed sixty, and
+ * asked why we refused an answer we had just invited. The two chips he could
+ * tick were the model's topic labels ("Clay pigeon shooting", "Bird hunting"),
+ * which name a discipline but never say who introduced him or how often he
+ * shoots - so tapping them looks like answering while the floor still refuses.
+ *
+ * So the facts the section actually writes from are chips, in the member's own
+ * voice: who introduced them, what they shoot, how often. They are statements,
+ * not topics, so a tick reads as a sentence in the sheet and two ticks clear
+ * the floor without typing a word.
+ */
+export const HISTORY_CHOICES: readonly IntakeChoice[] = [
+  {
+    value: 'I was taught to shoot by a family member',
+    label: 'A family member taught me',
+  },
+  { value: 'I grew up with firearms on a farm', label: 'I grew up on a farm' },
+  { value: 'A friend introduced me to the sport', label: 'A friend introduced me' },
+  { value: 'I learned to shoot at a club', label: 'I learned at a club' },
+  { value: 'I shoot clay targets at a club', label: 'Clay targets at a club' },
+  { value: 'I hunt birds and small game', label: 'Birds and small game' },
+  { value: 'I hunt plains game', label: 'Plains game' },
+  { value: 'I am at the range most weekends', label: 'At the range most weekends' },
+];
+
+/**
+ * HOW MUCH WAS SAID, TICKS INCLUDED.
+ *
+ * ⚠️ THE TICKS ARE THE ANSWER, SO THEY ARE COUNTED. The gate read only the
+ * typed text, so ticked statements scored zero and a member who had answered by
+ * tapping was told he had said nothing at all.
+ */
+export function historyAnswerWords(
+  values: readonly string[] | undefined,
+  message: string | undefined,
+): number {
+  const said = [...(values ?? []), message ?? ''].join(' ').trim();
+  return said ? said.split(/\s+/).filter(Boolean).length : 0;
 }

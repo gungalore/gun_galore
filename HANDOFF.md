@@ -5,7 +5,34 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-05**.
+Last updated: **2026-11-06**.
+
+## 2026-11-06 - THE HISTORY IS TAPS, NOT A SIXTY-WORD WALL
+
+**What triggered it.** The operator answered the shooting history in nineteen
+words, ticked two chips, and was shown `"shooting_history": Please give us a
+little more — about 60 words, and you have 19.` He asked why, and asked for more
+buttons.
+
+**What was wrong - three things in that one refusal.**
+- The floor was sixty words, in an interview built on taps. The section is
+  WRITTEN from the facts; sixty words of typing is not what supplies them.
+- Only the typed text was counted, so two ticked statements scored zero.
+- The batch wrapped every refusal in the raw field key, and the chips the model
+  offered were its own topic labels ("Clay pigeon shooting", "Bird hunting") -
+  a discipline, never who introduced him or how often he shoots.
+
+**What it is now.** `MIN_HISTORY_WORDS = 12`, one constant used by the door and
+by the completeness gate; the ticks count toward it; and the question carries
+eight pinned statement chips ("A family member taught me", "Clay targets at a
+club") instead of a model round-trip. A typed sentence now joins the ticks
+instead of replacing them - in the service and in the card, which used to send
+only the ticks. The refusal, when it comes, is one sentence with no field key,
+and it renders under the question it is about.
+
+⚠️ The 60-word floor was not protecting quality: every professional experience
+page is written from a handful of facts, and the writer expands them. What it
+protected was a word count.
 
 ## 2026-11-05 (LATE) - THE PROFESSIONAL SPINE, ASSOCIATION RULEBOOKS, DETAIL GATE
 
@@ -45,8 +72,9 @@ An omitted section leaves its number absent — a lean S15 runs 1,3,4,6,7,9,12,
 **The gate.** `motivation-completeness.ts` refuses generation with
 `motivation-needs-detail` until the document's arguments exist — identity,
 competency, association and dedicated status (S16), the named exercise (S16
-sport, S15 sport), a shooting history of at least 60 words, the alternative
-considered, safe detail and purpose. It runs AFTER the form and eligibility
+sport, S15 sport), a shooting history of at least 12 words (a sentence or two,
+and the interview's chips count toward it), the alternative considered, safe
+detail and purpose. It runs AFTER the form and eligibility
 checks so an empty form hears "answers missing" rather than "history too
 short", and it is surfaced on `IntakeState.needsDetail` so the member is sent
 back to the right interview group instead of getting an SMS afterwards.

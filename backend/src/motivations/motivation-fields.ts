@@ -3357,7 +3357,12 @@ const SHOOTING_LIFE_FIELDS: readonly MotivationField[] = [
     kind: 'long',
     section: 'Activities',
     required: true,
-    help: 'Who introduced you, what you shoot and how often, what you hunt or compete in. Four or five sentences is plenty.',
+    /**
+     * ⚠️ THE HELP ASKS FOR A SENTENCE, NOT FOR SIXTY WORDS. It used to say
+     * "four or five sentences is plenty", which read as a word count beside a
+     * blank box; the chips now carry most of the answer.
+     */
+    help: 'Tick what is true for you, or add a sentence or two: who introduced you, what you shoot and how often.',
     maxLength: 3000,
   },
   {

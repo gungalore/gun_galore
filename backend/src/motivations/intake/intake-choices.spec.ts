@@ -1,10 +1,13 @@
 import {
+  HISTORY_CHOICES,
   MAX_CHOICE_LENGTH,
   MAX_INTERVIEW_CHOICES,
   addCustomChoice,
   exerciseChoices,
+  historyAnswerWords,
   normaliseChoices,
 } from './intake-choices';
+import { MIN_HISTORY_WORDS } from '../motivation-completeness';
 
 describe('normaliseChoices', () => {
   it('turns a plain list of strings into value/label pairs', () => {
@@ -91,6 +94,49 @@ describe('addCustomChoice', () => {
 
   it('leaves the list alone when the typed answer is blank', () => {
     expect(addCustomChoice('kudu', '   ')).toBe('kudu');
+  });
+});
+
+describe('historyAnswerWords', () => {
+  // ?? Operator, 2026-11-06: "Why the error?" - nineteen words of a real
+  // history were refused for not being sixty. The floor is now reachable by
+  // tapping, and the ticks count.
+  it('counts the typed answer and the ticked statements together', () => {
+    expect(
+      historyAnswerWords(['I grew up on a farm'], 'I shoot most weekends'),
+    ).toBe(10);
+  });
+
+  it('says nothing was given when nothing was', () => {
+    expect(historyAnswerWords(undefined, undefined)).toBe(0);
+    expect(historyAnswerWords([], '   ')).toBe(0);
+  });
+
+  it('is reachable by tapping alone', () => {
+    const ticked = [HISTORY_CHOICES[0].value, HISTORY_CHOICES[1].value];
+    expect(historyAnswerWords(ticked, undefined)).toBeGreaterThanOrEqual(
+      MIN_HISTORY_WORDS,
+    );
+  });
+
+  it('does not accept one chip as a whole history', () => {
+    expect(
+      historyAnswerWords([HISTORY_CHOICES[7].value], undefined),
+    ).toBeLessThan(MIN_HISTORY_WORDS);
+  });
+});
+
+describe('HISTORY_CHOICES', () => {
+  it('offers more than the model ever did, and never duplicates a value', () => {
+    expect(HISTORY_CHOICES.length).toBeGreaterThan(MAX_INTERVIEW_CHOICES);
+    const values = HISTORY_CHOICES.map((choice) => choice.value.toLowerCase());
+    expect(new Set(values).size).toBe(values.length);
+  });
+
+  it('reads as a sentence in the sheet, not as a topic label', () => {
+    for (const choice of HISTORY_CHOICES) {
+      expect(choice.value.split(/\s+/).length).toBeGreaterThan(3);
+    }
   });
 });
 

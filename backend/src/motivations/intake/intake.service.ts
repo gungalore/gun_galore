@@ -47,6 +47,7 @@ import {
   type MotivationOutputMode,
 } from '../motivation-output';
 import {
+  MIN_HISTORY_WORDS,
   missingDetail,
   missingDetailMessage,
 } from '../motivation-completeness';
@@ -55,7 +56,13 @@ import {
   type InterviewAgentContext,
 } from './intake-agent.service';
 import type { FactCandidate } from './intake-agent.prompts';
-import { addCustomChoice, exerciseChoices, normaliseChoices } from './intake-choices';
+import {
+  HISTORY_CHOICES,
+  addCustomChoice,
+  exerciseChoices,
+  historyAnswerWords,
+  normaliseChoices,
+} from './intake-choices';
 import {
   correctionFor,
   isCorrectableField,
@@ -500,16 +507,19 @@ export class MotivationIntakeService {
      * card reads a returning question as "we could not save that answer" — the
      * member is told the save failed when it worked and the answer was simply
      * too short. A rejection carries the real reason instead.
+     *
+     * ⚠️ AND THE TICKS COUNT. Only the typed text used to be measured, so two
+     * ticked statements scored zero; a member who answered by tapping was told
+     * he had said nothing. The floor is now twelve words, not sixty, because
+     * the section is WRITTEN from these facts — sixty words of typing is not
+     * what supplies them.
      */
     if (key === 'shooting_history') {
-      const words = (body.message ?? body.value ?? '')
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean).length;
-      if (words > 0 && words < 60) {
+      const words = historyAnswerWords(body.values, body.message ?? body.value);
+      if (words > 0 && words < MIN_HISTORY_WORDS) {
         throw new BadRequestException(
-          `Please give us a little more — about 60 words, and you have ${words}. ` +
-            'How you came to shooting, who introduced you, what you shoot and how often, and what you hunt or compete in.',
+          'Please give us a little more — who introduced you, what you shoot and how often. ' +
+            'Tick what is true for you, or add a sentence.',
         );
       }
     }
@@ -581,7 +591,13 @@ const sourceText = (body.message ?? body.value ?? '').trim();
     const message = (body.message ?? '').trim();
     if (message) {
       if (field.kind === 'short' || field.kind === 'long') {
-        patch[key] = message;
+        /**
+         * ⚠️ A TYPED ANSWER ADDS TO THE BUTTONS HERE TOO. This branch used to
+         * assign the typed text over the ticked values, so on the one long
+         * field that carries chips - the shooting history - ticking "A friend
+         * introduced me" and then typing the rest threw the tick away.
+         */
+        patch[key] = patch[key] ? addCustomChoice(patch[key], message) : message;
       } else {
         const matched = this.matchChoices(current.choices, message);
         if (matched.length) {
@@ -857,25 +873,22 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         );
       }
       seen.add(key);
-      try {
-        const own = await this.patchForAnswer({
-          row,
-          sheet,
-          answers: { ...answers, ...patch },
-          current,
-          key,
-          field,
-          body: item,
-        });
-        Object.assign(patch, own);
-      } catch (err) {
-        if (err instanceof BadRequestException) {
-          throw new BadRequestException(
-            `"${key}": ${(err as Error).message}`,
-          );
-        }
-        throw err;
-      }
+      /**
+       * ⚠️ NO FIELD KEY IN FRONT OF THE REASON. The batch used to wrap every
+       * refusal as `"shooting_history": Please give us a little more…`, and
+       * that raw key was the first thing a member read on screen. One question
+       * is on screen at a time now, so the message can speak for itself.
+       */
+      const own = await this.patchForAnswer({
+        row,
+        sheet,
+        answers: { ...answers, ...patch },
+        current,
+        key,
+        field,
+        body: item,
+      });
+      Object.assign(patch, own);
     }
     if (!Object.keys(patch).length) {
       throw new BadRequestException('Choose an answer or type one in.');
@@ -1279,6 +1292,21 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         provenance: parseProvenance(row.answerProvenance),
       });
     if (!base) return null;
+
+    /**
+     * ⚠️ THE HISTORY HAS ITS OWN CHIPS, AND THEY ARE NOT THE MODEL'S TO REPLACE.
+     *
+     * The one-shot phrasing answered this question with two topic buttons
+     * ("Clay pigeon shooting", "Bird hunting") - disciplines a member can tick
+     * without ever saying who introduced him or how often he shoots, which is
+     * exactly what the section needs. The set below is pinned, so it is served
+     * as written and this question costs no model round-trip.
+     */
+    if (base.fieldKey === 'shooting_history' && !base.sensitive) {
+      return {
+        question: { ...base, choices: [...HISTORY_CHOICES], multi: true },
+      };
+    }
 
     /**
      * THE CALIBRE IS THE RESEARCH. When the interview reaches "what do you
