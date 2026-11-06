@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (REVIEW) - WHAT MO000074 STILL GETS WRONG
+
+A read of the operator's second rendered pack, before and after the annexure
+tab. Three defects fixed here; the rest are listed for a decision.
+
+**Fixed — a citation that sent the DFO to the wrong tab.** The competency page
+said "(Refer to Annexure C: Proficiency / training certificate)" and C was the
+proof of residential address. The writer gets its letters at generation time;
+the pack re-letters every time it is assembled, and a motivation-only pack never
+carries the proficiency at all. `repointAnnexureRefs` now drops the letter from
+any citation whose title is not in the pack — "(Refer to my proficiency /
+training certificate)" — instead of leaving a stale one.
+
+**Fixed — the contents explained a gap it did not name.** The note counted to
+twelve (the old skeleton) and read "A gap — 2, 5 and 11" on a pack that also
+omits 13. It counts to sixteen now, the spine's last heading.
+
+**Fixed — a retired form named on the contents page.** "Headings are numbered to
+the SAPS 271" survived the 271's removal; it now says the headings keep their
+fixed numbers.
+
+**Fixed — "SECTION 15 SECTION 15 APPLIED"** across the top of the statutory
+page: the banner's left half already names the section, so the running label for
+the five statutory headings is just "Applied to my application".
+
+**Still open, for the operator to decide:**
+- The association section names nothing — "I am a member of a shooting
+  association, accredited by SAPS", with no name, number or date. S15 does not
+  gate on it; a DFO will want it.
+- The 6.2 heading still clips mid-word at the page edge (the cap is 82
+  characters and the band takes fewer).
+- The sport exhibits print "IPSC Practical Shotgun" for an applicant who never
+  named IPSC. They are chosen by firearm class, and the lead sentence calls them
+  "the purpose exhibits in this application".
+- The history section is still generic club prose, because the answer behind it
+  is two ticked chips.
+
 ## 2026-11-06 (EVENING) - THE APPLIED-FOR FIREARM GETS AN ANNEXURE TAB
 
 Operator, on a rendered Section 15 pack: "We need to add a annexure for the

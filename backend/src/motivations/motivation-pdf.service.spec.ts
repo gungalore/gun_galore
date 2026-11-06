@@ -245,28 +245,43 @@ describe('the running head', () => {
 
 describe('gapNumbers — what the contents explains', () => {
   it('⚠️ NAMES THE HEADINGS THIS PACK ACTUALLY OMITS', () => {
-    // A section 15 prints 1, 3, 5, 6, 7, 8, 9, 11, 12 — no circumstances (2),
-    // no existing measures (4), nothing to declare (10).
+    // MO000074: a section 15 that runs 1, 3, 4, 6, 7, 8, 9, 10, 12, 14, 15, 16.
+    // Its contents said "A gap — 2, 5 and 11", and 13 was missing from the
+    // sentence that exists to explain it.
     expect(
-      gapNumbers(new Set(['1', '3', '5', '6', '7', '8', '9', '11', '12'])),
-    ).toEqual([2, 4, 10]);
+      gapNumbers(
+        new Set([
+          '1',
+          '3',
+          '4',
+          '6',
+          '7',
+          '8',
+          '9',
+          '10',
+          '12',
+          '14',
+          '15',
+          '16',
+        ]),
+      ),
+    ).toEqual([2, 5, 11, 13]);
   });
 
-  it('⚠️ AND THE SECTION 13 GAPS, WHICH THE HARD-CODED LIST GOT WRONG', () => {
-    // A section 13 prints 1, 2, 3, 4, 5, 6, 7, 9, 11, 12 and omits 8 and 10.
-    // The contents used to say "A gap — 2, 4 or 10 — …" on exactly this pack:
-    // two headings it prints, and only one of the two it omits.
+  it('⚠️ COUNTS TO SIXTEEN, BECAUSE THE SPINE DOES', () => {
+    // The count stopped at twelve, from the twelve-heading skeleton the spine
+    // replaced. Anything the register asks for beyond 12 was invisible here.
     expect(
       gapNumbers(
         new Set(['1', '2', '3', '4', '5', '5.1', '6', '7', '9', '11', '12']),
       ),
-    ).toEqual([8, 10]);
+    ).toEqual([8, 10, 13, 14, 15, 16]);
   });
 
   it('says nothing when every number was printed', () => {
     expect(
       gapNumbers(
-        new Set(Array.from({ length: 12 }, (_, i) => String(i + 1))),
+        new Set(Array.from({ length: 16 }, (_, i) => String(i + 1))),
       ),
     ).toEqual([]);
   });

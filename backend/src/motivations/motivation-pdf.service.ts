@@ -1394,11 +1394,17 @@ const RUNNING_LABELS: Record<string, string> = {
   'Association membership and dedicated status': 'Association membership',
   'My competency and training': 'Competency and training',
   'Safe storage and transport': 'Safe storage',
-  'Section 13 applied to my application': 'Section 13 applied',
-  'Section 14 applied to my application': 'Section 14 applied',
-  'Section 15 applied to my application': 'Section 15 applied',
-  'Section 16 applied to my application': 'Section 16 applied',
-  'Section 24 applied to my application': 'Section 24 applied',
+  /**
+   * ⚠️ "SECTION 15 APPLIED" READS TWICE. The left of the banner is already
+   * "MOTIVATION · SECTION 15" (built from the licence type), so the statutory
+   * pages carried "SECTION 15 SECTION 15 APPLIED" across the top — on exactly
+   * the page that quotes the Act. The section is named once, on the left.
+   */
+  'Section 13 applied to my application': 'Applied to my application',
+  'Section 14 applied to my application': 'Applied to my application',
+  'Section 15 applied to my application': 'Applied to my application',
+  'Section 16 applied to my application': 'Applied to my application',
+  'Section 24 applied to my application': 'Applied to my application',
   'Why I need a firearm for self-defence': 'Why a firearm is needed',
   'Why a section 13 firearm will not provide sufficient protection':
     'Why section 13 is not enough',
@@ -1465,13 +1471,16 @@ const RUNNING_LABELS_BY_UPPER = new Map(
  * the page. A note explaining a gap that is not there, and omitting the ones
  * that are, reads as a template nobody checked.
  *
- * The skeleton's numbers are the book's own twelve (motivation-structure.ts)
- * and do not re-sequence when a section is omitted, so the gaps are simply the
- * numbers between 1 and 12 that never appeared.
+ * ⚠️ AND THE RANGE IS SIXTEEN, NOT TWELVE. This counted to twelve from the days
+ * of the twelve-heading skeleton; the spine the register now uses runs to 16,
+ * so a pack that omits 13 printed "A gap — 2, 5 and 11" and quietly left 13 out
+ * of the very sentence that explains it (MO000074).
  */
+const SPINE_HEADINGS = 16;
+
 export function gapNumbers(printed: ReadonlySet<string>): number[] {
   const out: number[] = [];
-  for (let n = 1; n <= 12; n++) {
+  for (let n = 1; n <= SPINE_HEADINGS; n++) {
     if (!printed.has(String(n))) out.push(n);
   }
   return out;
@@ -6000,8 +6009,8 @@ export class MotivationPdfService {
           .fontSize(K.px(9.5))
           .fillColor(C.mut)
           .text(
-            'Headings are numbered to the SAPS 271 and do not renumber when a part ' +
-              `does not apply. A gap — ${gaps} — means that part is not required ` +
+            'Headings keep their fixed numbers and are not renumbered when a ' +
+              `part does not apply. A gap — ${gaps} — means that part is not required ` +
               'for this application.',
             MARGIN,
             doc.y,

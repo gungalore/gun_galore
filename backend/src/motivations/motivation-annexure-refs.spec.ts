@@ -30,11 +30,25 @@ describe('repointAnnexureRefs', () => {
     );
   });
 
-  // ⚠️ A title this pack does not carry must be left exactly as written: the
-  // re-pointer corrects a known pair, it never invents an annexure.
-  it('leaves a citation whose title is not in the pack untouched', () => {
+  // ⚠️ A TITLE THIS PACK DOES NOT CARRY LOSES ITS LETTER. It used to be left
+  // exactly as written, on the reasoning that the re-pointer corrects a known
+  // pair and never invents an annexure. MO000074 showed the other half of that:
+  // "(Refer to Annexure C: Proficiency / training certificate)" printed with C
+  // being the proof of residential address. Pointing at no tab is honest;
+  // pointing at the wrong one is not.
+  it('drops the letter from a citation whose title is not in the pack', () => {
     const text = '(Refer to Annexure C: Endorsement letter)';
-    expect(repointAnnexureRefs(text, PACK)).toBe(text);
+    expect(repointAnnexureRefs(text, PACK)).toBe(
+      '(Refer to my Endorsement letter)',
+    );
+  });
+
+  it('drops a stale letter left by an earlier lettering', () => {
+    const text =
+      '(Refer to Annexure C: Proficiency / training certificate) and (Refer to Annexure D: Photographs of the safe).';
+    expect(repointAnnexureRefs(text, PACK)).toBe(
+      '(Refer to my Proficiency / training certificate) and (Refer to Annexure D: Photographs of the safe).',
+    );
   });
 
   it('leaves a bare letter with no title untouched', () => {

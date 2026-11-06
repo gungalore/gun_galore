@@ -55,7 +55,19 @@ export function repointAnnexureRefs(
   return text.replace(REFERENCE, (whole, letter, title) => {
     if (!title) return whole;
     const match = byTitle.get(key(title));
-    if (!match) return whole;
-    return `(Refer to Annexure ${match.letter}: ${match.label})`;
+    if (match) return `(Refer to Annexure ${match.letter}: ${match.label})`;
+    /**
+     * ⚠️ A CITATION TO SOMETHING THE PACK DOES NOT CARRY LOSES ITS LETTER.
+     *
+     * MO000074 cited "(Refer to Annexure C: Proficiency / training
+     * certificate)" on the page a DFO reads most closely — and C was the proof
+     * of residential address. The writer was given its letters at generation
+     * time; the pack re-letters every time it is assembled from what is
+     * actually attached, and a motivation-only pack never carries an uploaded
+     * proficiency at all. A stale letter sends the reader to the wrong tab with
+     * the applicant's signature under it, which is worse than pointing at no
+     * tab: the document is still named, so nothing is lost but the error.
+     */
+    return `(Refer to my ${title.trim()})`;
   });
 }
