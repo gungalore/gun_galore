@@ -417,6 +417,25 @@ describe('the sport plates are the courses of fire for the firearm', () => {
     }
   });
 
+  it('⚠️ PICTURES ONLY THE DISCIPLINES THE APPLICANT NAMED (MO000074)', () => {
+    // He shoots clay targets. The class fallback filled the page and "IPSC
+    // Practical Shotgun" printed as one of "the purpose exhibits in this
+    // application" — a discipline he never mentioned, on a document he signs.
+    const plates = buildPlateSpecs({
+      licenceType: S16_SPORT,
+      answers: {
+        firearm_type: 'Shotgun',
+        firearm_calibre: '12 GAUGE',
+        // A shotgun with no hunting battery resolves to the hunting route;
+        // this application says sport, which is where the fallback bit.
+        firearm_use_kind: 'sport',
+        shooting_history:
+          'I shoot clay targets at a club, I learned to shoot at a club',
+      },
+    }).map((p) => p.title);
+    expect(plates).toEqual(['Clay Pigeon / Trap / Skeet']);
+  });
+
   it('⚠️ MINES THE GENERATED USES TO PUT THE RIGHT COURSE FIRST', () => {
     const plates = buildPlateSpecs({
       licenceType: S16_SPORT,

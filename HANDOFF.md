@@ -7,6 +7,31 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (CONTENT) - NO ASSOCIATION, NO ASSOCIATION SECTION; NO NAMED DISCIPLINE, NO EXHIBIT
+
+Operator, on the same review: "do it, but if no association is given then it
+should not be included in the section 15 at all."
+
+**The association section.** `planFor` already omits heading 10 for a section 15
+with no association, but MO000074's stored plan still carried it and the pack
+argued "I am a member of a shooting association" — no name, number or date —
+on a document the applicant signs. `dropSection()` now removes that block from
+the body on the way to paper, for S15 and S24, whenever `association_name` is
+empty. The contents then lists 10 as a gap, which is the honest reading.
+
+⚠️ Deliberately a *render* rule, not a generation one: a stored plan (and a
+document written months ago) can predate the omission, and a re-download has to
+be right too.
+
+**The sport exhibits.** They were chosen by firearm class and topped up from a
+ranked list, so MO000074 — a man who shoots clay targets — got "IPSC Practical
+Shotgun" printed as one of "the purpose exhibits in this application". `coursesFor`
+now takes the applicant's own words; when they name a discipline, only those
+courses are pictured, and the class fallback runs only when they named none.
+
+**Still open:** the 6.2 heading clips at the page edge, and the history section
+reads as generic club prose when the answer is two ticked chips.
+
 ## 2026-11-06 (REVIEW) - WHAT MO000074 STILL GETS WRONG
 
 A read of the operator's second rendered pack, before and after the annexure

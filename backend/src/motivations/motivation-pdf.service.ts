@@ -1527,7 +1527,7 @@ function isHeading(line: string): boolean {
  * download. Matching on the words places the exhibits, the battery and the
  * cartridge where they belong whichever numbering the draft carries.
  */
-function headingKey(value: string): string {
+export function headingKey(value: string): string {
   return value
     .trim()
     .replace(/^\d{1,2}(?:\.\d+)?\.?\s+/, '')

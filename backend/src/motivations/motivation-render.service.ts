@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  MotivationLicenceType,
   MotivationStatus,
   MotivationUploadKind,
 } from '@prisma/client';
@@ -33,6 +34,7 @@ import { consentFormFor } from './motivation-consent-statement';
 import {
   AnnexureImagePage,
   MotivationPdfService,
+  headingKey,
   type PressClippingPage,
   asScheme,
   asFormat,
@@ -41,7 +43,7 @@ import { NewsService } from '../news/news.service';
 import { CrimeStatsService } from '../crime-stats/crime-stats.service';
 import { parseTravelledAreas } from './motivation-danger-areas';
 import { SAPS_271_MARKER } from '../common/document-markers';
-import { TRAVELLED_AREAS_KEY } from './motivation-fields';
+import { TRAVELLED_AREAS_KEY, isAssociationMember } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { documentLabel, documentStatus, mandatoryAnnexureKinds } from './motivation-documents';
@@ -605,6 +607,48 @@ function purposeHeadingOf(plan: unknown): string | undefined {
     headingOf(plan, 'the_quarry') ??
     headingOf(plan, 'the_discipline')
   );
+}
+
+/**
+ * REMOVE ONE SECTION FROM THE STORED BODY.
+ *
+ * ⚠️ THE PLAN DECIDES, AND A STORED PLAN CAN BE STALE. `planFor` omits the
+ * association section for a section 15 with no association — but MO000074 was
+ * written from a stored plan that still carried it, and the pack then argued
+ * "I am a member of a shooting association" with no name, number or date
+ * behind it. Operator, 2026-11-06: "if no association is given then it should
+ * not be included in the section 15 at all." This enforces that on the way to
+ * the paper, whichever plan the row was written from.
+ *
+ * It removes exactly one block: from the heading line to the next heading the
+ * plan names. Nothing else in the document moves.
+ */
+export function dropSection(
+  body: string,
+  heading: string,
+  planHeadings: readonly string[],
+): string {
+  if (!body || !heading) return body;
+  const lines = body.split('\n');
+  const target = headingKey(heading);
+  const start = lines.findIndex(
+    (line) => line.trim() && headingKey(line) === target,
+  );
+  if (start < 0) return body;
+
+  const keys = new Set(planHeadings.map((h) => headingKey(h)));
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (/^\d{1,2}(?:\.\d+)?\.?\s/.test(line) && keys.has(headingKey(line))) {
+      end = i;
+      break;
+    }
+  }
+
+  const kept = [...lines.slice(0, start), ...lines.slice(end)];
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 @Injectable()
@@ -1598,13 +1642,28 @@ export class MotivationRenderService {
      * rulebook.
      */
     const rulebook = rulebookForAnswers(answers);
+    /**
+     * ⚠️ NO ASSOCIATION GIVEN, NO ASSOCIATION SECTION. See dropSection: planFor
+     * already omits it, but a stored plan from an earlier run can still carry
+     * it, and the pack would then argue membership nobody supplied.
+     */
+    const bodyForPaper =
+      !isAssociationMember(answers) &&
+      (row.licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+        row.licenceType === MotivationLicenceType.S24_RENEWAL)
+        ? dropSection(
+            body,
+            headingFor(row.licenceType, 'association'),
+            planHeadingsOf(row.structurePlan) ?? [],
+          )
+        : body;
     const printableBody = rulebook
       ? appendRulebook(
-          body,
+          bodyForPaper,
           headingFor(row.licenceType, 'association_rules'),
           rulebook,
         )
-      : body;
+      : bodyForPaper;
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,

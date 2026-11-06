@@ -499,6 +499,18 @@ export function coursesFor(args: {
   action?: string;
   /** The generated uses for this firearm, joined. */
   usesText?: string;
+  /**
+   * The applicant's OWN words about what they shoot — activity, discipline,
+   * competition record.
+   *
+   * ⚠️ WHAT THEY NAMED IS THE WHOLE LINE-UP. Without this the fallback below
+   * fills the page from the class, and MO000074 — a man who shoots clay birds
+   * with a shotgun — got "IPSC Practical Shotgun" printed as one of "the
+   * purpose exhibits in this application". He never mentioned IPSC. An exhibit
+   * is a claim about what the applicant does, so the class may only choose the
+   * pictures when the applicant named no discipline at all.
+   */
+  applicantText?: string;
   limit: number;
 }): CourseSpec[] {
   const cls = args.weaponClass;
@@ -529,6 +541,19 @@ export function coursesFor(args: {
     chosen.push(c);
   };
   for (const c of allowed) if (c.match.some((k) => text.includes(k))) add(c);
+  /**
+   * ⚠️ A NAMED DISCIPLINE ENDS THE LIST — see `applicantText`. Falling through
+   * to the class fallback afterwards is what put IPSC on a clay shooter's page.
+   */
+  const applicant = (args.applicantText ?? '').toLowerCase();
+  if (applicant) {
+    const named = allowed.filter((c) =>
+      c.match.some((k) => applicant.includes(k)),
+    );
+    if (named.length) {
+      return named.slice(0, args.limit);
+    }
+  }
   // The fallback prefers the common courses (rank 0) over the niche ones.
   const byRank = [...allowed].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   for (const c of byRank) add(c);

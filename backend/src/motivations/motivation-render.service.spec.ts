@@ -1,6 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
 import sharp from 'sharp';
-import { MotivationRenderService } from './motivation-render.service';
+import { MotivationRenderService, dropSection } from './motivation-render.service';
 import { buildAnnexures } from './motivation-checklist';
 
 /**
@@ -202,5 +202,53 @@ describe('a PDF annexure, which is the same document type as a photograph', () =
     expect(out.images).toEqual([]);
     expect(out.notPrinted).toHaveLength(1);
     expect(out.notPrinted[0]).toMatchObject({ letter: 'A' });
+  });
+});
+
+describe('dropping a section the answers do not support', () => {
+  // ?? Operator, 2026-11-06: "if no association is given then it should not be
+  // included in the section 15 at all." planFor already omits the heading, but
+  // MO000074 was written from a stored plan that still carried it and printed
+  // "I am a member of a shooting association" with nothing behind it.
+  const PLAN = [
+    '1. Introduction',
+    '3. My history with firearms',
+    '10. Association membership',
+    '12. Safe storage and transport',
+    '16. Declaration and request',
+  ];
+
+  const BODY = [
+    '1. Introduction',
+    '',
+    'I am applying for a shotgun.',
+    '',
+    '10. Association membership',
+    '',
+    'I am a member of a shooting association, which is accredited by SAPS.',
+    '',
+    '12. Safe storage and transport',
+    '',
+    'I keep it in a wall-mounted safe.',
+  ].join('\n');
+
+  it('removes the heading and its paragraphs, and nothing else', () => {
+    const out = dropSection(BODY, '10. Association membership', PLAN);
+    expect(out).not.toContain('shooting association');
+    expect(out).not.toContain('10. Association membership');
+    expect(out).toContain('I am applying for a shotgun.');
+    expect(out).toContain('12. Safe storage and transport');
+    expect(out).toContain('I keep it in a wall-mounted safe.');
+  });
+
+  it('leaves the body alone when the section was never there', () => {
+    expect(dropSection(BODY, '11. Administrative justice', PLAN)).toBe(BODY);
+  });
+
+  it('trims a section that runs to the end of the body', () => {
+    const tail = '1. Introduction\n\nFirst.\n\n16. Declaration and request\n\nI declare.';
+    const out = dropSection(tail, '16. Declaration and request', PLAN);
+    expect(out).toContain('First.');
+    expect(out).not.toContain('I declare.');
   });
 });

@@ -680,6 +680,19 @@ function sportSpecs(ctx: PlateContext, limit: number) {
     ]
       .filter(Boolean)
       .join(' '),
+    /**
+     * ⚠️ AND THE APPLICANT'S OWN DISCIPLINES OUTRANK ALL OF IT. MO000074 never
+     * mentioned IPSC; the class fallback put it on his exhibits page anyway.
+     */
+    applicantText: [
+      ctx.answers.competition_record,
+      ctx.answers.discipline_exercise,
+      ctx.answers.shooting_history,
+      ctx.answers.firearm_fit_reason,
+      ctx.answers.sport_formats,
+    ]
+      .filter(Boolean)
+      .join(' '),
     limit,
   }).map(coursePlate);
 }
