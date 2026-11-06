@@ -1471,13 +1471,25 @@ const sourceText = (body.message ?? body.value ?? '').trim();
        * reply that still arrives without chips keeps the pair the planner
        * already had rather than losing every button.
        *
+       * ⚠️ AND TWO BUTTONS IS NOT A SHORTLIST. The planner arrives with the
+       * field's own suggestions (seven species, six disciplines), and a model
+       * reply offering two of them replaced the lot — which is how "Clay pigeon
+       * shooting / Bird hunting" became the only answers on a question with a
+       * dozen viable ones. Operator, 2026-11-06: "If there is viable answers
+       * more than two it should be given to the user." A reply with fewer than
+       * three keeps the richer list.
+       *
        * ⚠️ AND IT CARRIES THE SPELLING CORRECTION. MO000063 stored `mosberg`
        * and `12 gayge` because this path answered without correcting, and the
        * writer's corrected prose was then refused against the raw strings. The
        * whitelist is checked here, and `spellingFix` still decides whether the
        * edit is small enough to be a typo in stateInternal.
        */
-      const choices = normaliseChoices(parsed?.choices);
+      const asked = normaliseChoices(parsed?.choices);
+      const choices =
+        asked.length >= 3 || base.choices.length <= asked.length
+          ? asked
+          : base.choices;
       return {
         question: {
           ...base,

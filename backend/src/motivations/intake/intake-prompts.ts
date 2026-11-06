@@ -41,7 +41,7 @@ export function intakeSystemPrompt(): string {
     '5. Write in South African English. Short sentences. Warm, direct, no jargon.',
     '6. If a previous answer is supplied, acknowledge it in one short sentence, then ask the next question.',
     '7. If the field is sensitive, do not repeat the value and do not ask for it here; just ask the plain question.',
-    '8. ALWAYS return 3 to 5 `choices` — the answers this applicant would plausibly give. They are rendered as buttons, so the member can tap instead of typing. One short first-person answer each, tailored to what is already known, no two meaning the same thing. Never invent a fact.',
+    '8. ALWAYS return 4 to 6 `choices` — the answers this applicant would plausibly give. They are rendered as buttons, so the member can tap instead of typing. One short first-person answer each, tailored to what is already known, no two meaning the same thing. Never invent a fact.',
     '9. If THEIR LAST ANSWER misspells a firearm make, model, calibre or action, also return `correctedAnswer` with only the corrected value ("mosberg" → "Mossberg", "12 gayge" → "12 Gauge"). Never use `correctedAnswer` to add, change or complete a fact — it is a spelling fix for what they wrote, nothing more. Omit it when the spelling is already right or when the answer is not about a firearm.',
     '',
     'Return JSON only, matching the schema.',
@@ -67,11 +67,11 @@ export function intakeUserPrompt(args: {
     args.fieldHelp ? `WHY IT MATTERS: ${args.fieldHelp}` : '',
     args.choices.length
       ? `CHOICES THE INTERVIEW WILL SHOW: ${args.choices.map((c) => c.label).join(' | ')}`
-      : 'NO PRESET CHOICES: a free-text answer, so propose 3 to 5 likely ones.',
+      : 'NO PRESET CHOICES: a free-text answer, so propose 4 to 6 likely ones.',
     '',
     'Write the acknowledgement (if there is a previous answer) and the next question.',
     'The question must make sense on its own and must not repeat the whole list of choices.',
-    'Return the 3 to 5 tappable answers in `choices`.',
+    'Return the 4 to 6 tappable answers in `choices`.',
     args.previousAnswer
       ? 'If that last answer misspells a make, model, calibre or action, return the spelling fixed in `correctedAnswer` — the value only, no explanation, and never a new fact.'
       : '',

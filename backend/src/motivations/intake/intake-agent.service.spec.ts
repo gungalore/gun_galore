@@ -4,6 +4,7 @@ import {
   MotivationIntakeAgentService,
   type InterviewAgentContext,
 } from './intake-agent.service';
+import { MAX_INTERVIEW_CHOICES } from './intake-choices';
 
 function context(): InterviewAgentContext {
   return {
@@ -99,7 +100,7 @@ describe('the interview agent', () => {
     });
   });
 
-  it('parses dynamically generated choices and caps at 5', async () => {
+  it('parses dynamically generated choices and caps at the ceiling', async () => {
     const llm = fakeLlm(async () => ({
       text: JSON.stringify({
         question: 'What is your primary risk for self-defence?',
@@ -109,6 +110,7 @@ describe('the interview agent', () => {
           { value: 'Isolated home', label: 'Isolated smallholding with dependants' },
           { value: 'High crime area', label: 'High-crime residential area' },
           { value: 'Recent robbery', label: 'Recent break-in attempt' },
+          { value: 'Stock theft', label: 'Stock theft on the farm' },
           { value: 'Excess choice', label: 'Should be dropped by cap' },
         ],
       }),
@@ -123,7 +125,7 @@ describe('the interview agent', () => {
     const reply = await new MotivationIntakeAgentService(llm).phrase(context());
 
     expect(reply).not.toBeNull();
-    expect(reply?.choices).toHaveLength(5);
+    expect(reply?.choices).toHaveLength(MAX_INTERVIEW_CHOICES);
     expect(reply?.choices?.[0]).toEqual({
       value: 'Late travel',
       label: 'Late-night travel on rural roads',

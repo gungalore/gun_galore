@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (LATER) - THE INTERVIEW ASKS WHAT THE DOCUMENT NEEDS
+
+**What triggered it.** The end-of-interview panel listed "what the firearm is
+for" and "the species you intend to hunt" as missing, with "the interview stays
+open". It had never asked either. Operator: "It never asked these questions."
+
+**Why.** `planGroup()` filtered on the registry's `required === true`.
+`firearm_use_kind` and `intended_quarry` are `internal` and not required — the
+sheet never printed them — but `missingDetail()` refuses to write without both.
+So the walk finished every box it knew about and the gate then named two
+questions the walk did not have. The same latent bug covered
+`discipline_exercise` on every dedicated-sport application.
+
+**What it is now.** `planGroup()` asks anything the detail gate names, computed
+from the stored answers so it cannot disagree with the gate. The group's
+question count uses a stable, purpose-aware set so "Question 3 of 3" does not
+become "Question 3 of 2" once a detail question is answered.
+
+**And more taps, everywhere.** `MAX_INTERVIEW_CHOICES` is 6, both phrasing
+prompts ask for 4 to 6, and a model reply offering fewer than three answers no
+longer replaces the planner's own suggestions — which is how two topic chips
+became the only answers on a question with a dozen viable ones. Operator:
+"If there is viable answers more than two it should be given to the user."
+
 ## 2026-11-06 - THE HISTORY IS TAPS, NOT A SIXTY-WORD WALL
 
 Deployed `cc6c3d3b` (full; rollback `alloutdoor-20261106-061637.dump`,

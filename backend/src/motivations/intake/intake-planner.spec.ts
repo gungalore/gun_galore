@@ -339,3 +339,51 @@ describe('shooting history stays pending until it is substantial', () => {
     expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');
   });
 });
+
+describe('the document gate decides what the conversation asks', () => {
+  // ?? Operator, 2026-11-06: "It never asked these questions" - the completion
+  // screen named the purpose and the quarry, and no card had ever shown them.
+  const history = () =>
+    Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
+
+  function filled(type: MotivationLicenceType): Record<string, string> {
+    const answers: Record<string, string> = {};
+    for (const { key } of pendingFields({ type, answers, sheet: EMPTY_SHEET })) {
+      answers[key] = key === 'shooting_history' ? history() : 'x';
+    }
+    return answers;
+  }
+
+  it('asks the quarry even though the registry does not mark it required', () => {
+    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
+    delete answers.intended_quarry;
+    const group = planGroup({
+      type: MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      answers,
+      sheet: EMPTY_SHEET,
+    });
+    expect(group!.questions.map((q) => q.key)).toContain('intended_quarry');
+  });
+
+  it('asks the exercise a dedicated sport application has to attach', () => {
+    const answers = filled(MotivationLicenceType.S16_DEDICATED_SPORT);
+    delete answers.discipline_exercise;
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_SPORT,
+      answers,
+      sheet: EMPTY_SHEET,
+    });
+    expect(group!.questions.map((q) => q.key)).toContain('discipline_exercise');
+  });
+
+  it('still ends when the gate has nothing left to name', () => {
+    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
+    expect(
+      planGroup({
+        type: MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+        answers,
+        sheet: EMPTY_SHEET,
+      }),
+    ).toBeNull();
+  });
+});

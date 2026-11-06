@@ -6,7 +6,7 @@ import {
   type MotivationField,
 } from '../motivation-fields';
 import { resolveSportingPurpose } from '../motivation-purpose';
-import { MIN_HISTORY_WORDS } from '../motivation-completeness';
+import { MIN_HISTORY_WORDS, missingDetail } from '../motivation-completeness';
 import { huntGameClassOptions } from '../motivation-hunt-classes';
 import type { SheetItem, SheetResponse } from '../motivation-sheet.service';
 import {
@@ -406,6 +406,29 @@ export function planGroup(
 ): PlannedGroup | null {
   const { merged, items, fields } = plannerContext(input);
   /**
+   * ⚠️ THE DOCUMENT'S OWN GATE DECIDES WHAT THE CONVERSATION ASKS.
+   *
+   * This filtered on `required === true` alone, and the registry does not mark
+   * `firearm_use_kind` or `intended_quarry` required — the sheet never printed
+   * them, so nobody had to tick them. `missingDetail()` refuses generation
+   * without both, which meant the interview could walk every required box, end
+   * itself, and then tell the member "a few more details before I can write it"
+   * about two questions it had never asked. Operator, 2026-11-06: "It never
+   * asked these questions."
+   *
+   * Anything the detail gate names is asked, whether or not the registry calls
+   * it required. Computed from the stored answers rather than the merged view,
+   * because that is what the gate itself reads.
+   */
+  const detailKeys = new Set(
+    missingDetail(input.answers, input.type).map((gap) =>
+      gap.code.slice(gap.code.indexOf(':') + 1),
+    ),
+  );
+  const asked = (entry: { key: string; field: MotivationField }): boolean =>
+    entry.field.required === true || detailKeys.has(entry.key);
+
+  /**
    * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED IN THE CONVERSATION.
    *
    * The card shows one question at a time and Continue needs an answer, so an
@@ -416,9 +439,7 @@ export function planGroup(
    * "It should keep things minimal."
    */
   const pending = fields.filter(
-    ({ key, field }) =>
-      field.required === true &&
-      isPending(key, merged, items, input.provenance),
+    (entry) => asked(entry) && isPending(entry.key, merged, items, input.provenance),
   );
   if (!pending.length) return null;
 
@@ -436,8 +457,26 @@ export function planGroup(
   const order = TOPIC_ORDER.filter((id) => byTopic.has(id));
   const id = order[0];
   const groupPending = byTopic.get(id) ?? [];
+  /**
+   * ⚠️ THE COUNTER MUST NOT SHRINK WHEN A DETAIL QUESTION IS ANSWERED.
+   * `detailKeys` is what is missing right now, so counting the group's total
+   * from it turned "Question 3 of 3" into "Question 3 of 2" the moment the last
+   * detail question landed. This set is the same gate with every value blanked
+   * — what this type and this purpose could ask — so the total is stable and
+   * still never counts a question the walk will not put.
+   */
+  const purpose =
+    (merged.firearm_use_kind ?? '').trim() ||
+    resolveSportingPurpose(merged);
+  const countedDetail = new Set(
+    missingDetail({ firearm_use_kind: purpose }, input.type).map((gap) =>
+      gap.code.slice(gap.code.indexOf(':') + 1),
+    ),
+  );
   const inTopic = fields.filter(
-    (f) => topicForField(f.key) === id && f.field.required === true,
+    (f) =>
+      topicForField(f.key) === id &&
+      (f.field.required === true || countedDetail.has(f.key)),
   );
   return {
     id,

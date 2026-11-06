@@ -4,11 +4,12 @@ import type { IntakeChoice } from './intake.types';
 /**
  * HOW MANY TAPS A QUESTION MAY OFFER.
  *
- * Five is the point where a row of chips stops being a shortlist and starts
- * being a form. The prompt asks the model for 3-5; this is the hard ceiling
- * that holds even when it ignores that.
+ * ⚠️ SIX, BECAUSE FIVE WAS LEAVING REAL ANSWERS OUT. Operator, 2026-11-06:
+ * "If there is viable answers more than two it should be given to the user."
+ * The hard ceiling only exists so a model cannot turn a question into a form;
+ * it is not a target, and six still fits a card without wrapping into a wall.
  */
-export const MAX_INTERVIEW_CHOICES = 5;
+export const MAX_INTERVIEW_CHOICES = 6;
 
 /**
  * The longest a single answer may be before it is a paragraph, not a button.
