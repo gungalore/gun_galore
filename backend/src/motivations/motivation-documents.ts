@@ -683,6 +683,43 @@ export function documentLabel(kind: MotivationUploadKind): string {
 }
 
 /**
+ * Every annexure tab a motivation-only pack must carry, in a stable order.
+ *
+ * ⚠️ THE APPLIED-FOR FIREARM'S OWN PAPERWORK IS A TAB, NOT AN OPTION.
+ *
+ * Operator, 2026-11-06, on a rendered Section 15 pack: "We need to add a
+ * annexure for the Applied for firearm license." The pack listed identity,
+ * competency, address, safe and the licence already held — and nothing at all
+ * about the firearm it is actually asking for. A DFO cannot process an
+ * application whose provenance is unstated: it is coming out of a dealer's
+ * stock or from a named licence holder, and the paper that says so is a dealer
+ * invoice, a stock printout, or the current owner's licence.
+ *
+ * ⚠️ ADDED HERE, NOT PROMOTED TO `required`. `documentStatus` keeps it on the
+ * EXPECTED tier because the Act never names it and a member mid-purchase may
+ * not hold it yet — making it required would refuse to write a motivation
+ * somebody cannot finish buying. The pack carries the tab; the applicant files
+ * the paper behind it.
+ *
+ * ⚠️ NOT FOR A RENEWAL. A renewal transfers nothing: the applicant already
+ * holds the firearm, so asking where it is coming from would demand proof of a
+ * transfer that is not happening. Same rule EXPECTED follows above.
+ */
+export function mandatoryAnnexureKinds(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string> = {},
+): MotivationUploadKind[] {
+  const required = documentStatus(licenceType, [], answers)
+    .needs.filter((need) => need.tier === 'required')
+    .map((need) => need.kind as MotivationUploadKind);
+  const kinds = new Set<MotivationUploadKind>(required);
+  if (licenceType !== MotivationLicenceType.S24_RENEWAL) {
+    kinds.add('FIREARM_SOURCE_PROOF');
+  }
+  return [...kinds];
+}
+
+/**
  * Kinds RETIRED from the picker: they exist only so a row written before the
  * kind was retired keeps a label and an annexure letter. Postgres cannot drop
  * an enum value, so "retired" has to mean "never offered" rather than "gone".

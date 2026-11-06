@@ -44,7 +44,7 @@ import { SAPS_271_MARKER } from '../common/document-markers';
 import { TRAVELLED_AREAS_KEY } from './motivation-fields';
 import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
-import { documentLabel, documentStatus } from './motivation-documents';
+import { documentLabel, documentStatus, mandatoryAnnexureKinds } from './motivation-documents';
 import {
   suitabilityPageLines,
   type SuitabilityArgument,
@@ -1492,11 +1492,14 @@ export class MotivationRenderService {
      * carries the index of the annexures this licence type REQUIRES and one
      * blank lettered page for each, so the applicant can attach their own copy
      * behind every tab. Nothing optional, nothing already uploaded.
+     *
+     * ⚠️ PLUS THE APPLIED-FOR FIREARM'S OWN PAPERWORK. See
+     * `mandatoryAnnexureKinds`: the source document is what names where the
+     * firearm is coming from, and a pack that lists everything else but not
+     * that reads as though the firearm has no provenance.
      */
     const mandatoryKinds = motivationOnly
-      ? documentStatus(row.licenceType, [], answers).needs
-          .filter((need) => need.tier === 'required')
-          .map((need) => need.kind as MotivationUploadKind)
+      ? mandatoryAnnexureKinds(row.licenceType, answers)
       : [];
     const annexures = motivationOnly
       ? buildAnnexures(mandatoryKinds)

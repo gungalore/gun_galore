@@ -768,6 +768,14 @@ const ANNEXURE_TITLES: Partial<Record<MotivationUploadKind, string>> = {
   SAFE_PHOTOGRAPHS: 'Photographs of the safe',
   SAFE_PHOTO: 'Photographs of the safe (earlier upload)',
   SHOOTING_ACTIVITY_LOG: 'Record of shooting activities',
+  /**
+   * ⚠️ NAMED AFTER THE FIREARM, NOT AFTER THE PAGE. The drawer says "Where this
+   * firearm is coming from", which is the question the member answers; the
+   * index is read by a DFO who is looking for the paper that names the firearm
+   * and the person transferring it. "Where this firearm is coming from" on an
+   * annexure tab reads like a note rather than a document.
+   */
+  FIREARM_SOURCE_PROOF: 'Proof of where the applied-for firearm comes from',
 };
 
 /** How an annexure is titled inside the document itself. */

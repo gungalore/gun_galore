@@ -1,5 +1,9 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { documentStatus, pickableKinds } from './motivation-documents';
+import {
+  documentStatus,
+  mandatoryAnnexureKinds,
+  pickableKinds,
+} from './motivation-documents';
 
 // The point of this module is to name what is missing instead of saying
 // "some documents are missing", because the alternative to naming them is a
@@ -594,5 +598,47 @@ describe('the source-proof row, per route', () => {
     ]) {
       expect(row(firearm_source)).toBeDefined();
     }
+  });
+});
+
+describe('the annexures a motivation-only pack must carry', () => {
+  // ?? Operator, 2026-11-06, on a rendered Section 15 pack: "We need to add a
+  // annexure for the Applied for firearm license." The pack listed identity,
+  // competency, address, safe and the licence already held - and nothing about
+  // the firearm it is actually asking for.
+  it('carries the applied-for firearm paperwork on every acquiring type', () => {
+    for (const type of [
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ]) {
+      expect(mandatoryAnnexureKinds(type)).toContain(K.FIREARM_SOURCE_PROOF);
+    }
+  });
+
+  it('leaves a renewal alone, because nothing is being transferred', () => {
+    expect(
+      mandatoryAnnexureKinds(MotivationLicenceType.S24_RENEWAL),
+    ).not.toContain(K.FIREARM_SOURCE_PROOF);
+  });
+
+  it('never lists a document twice', () => {
+    const kinds = mandatoryAnnexureKinds(
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      { existing_firearm_1_calibre: '.30-06' },
+    );
+    expect(new Set(kinds).size).toBe(kinds.length);
+  });
+
+  it('still carries what SAPS will not process without', () => {
+    const kinds = mandatoryAnnexureKinds(
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+    );
+    expect(kinds).toContain(K.IDENTITY_DOCUMENT);
+    expect(kinds).toContain(K.COMPETENCY_CERTIFICATE);
+    expect(kinds).toContain(K.ADDRESS_CONFIRMATION);
+    expect(kinds).toContain(K.SAFE_PHOTOGRAPHS);
   });
 });

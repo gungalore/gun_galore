@@ -7,6 +7,28 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (EVENING) - THE APPLIED-FOR FIREARM GETS AN ANNEXURE TAB
+
+Operator, on a rendered Section 15 pack: "We need to add a annexure for the
+Applied for firearm license." The index listed identity, competency, address,
+safe and the licence already held — and nothing at all about the firearm the
+application is actually for.
+
+**Why it was missing.** `FIREARM_SOURCE_PROOF` ("where this firearm is coming
+from" — dealer invoice, stock printout, or the current owner's licence) sits on
+the EXPECTED tier, not REQUIRED, because the Act never names it; the
+motivation-only pack letters only the REQUIRED tier, so the tab never printed.
+
+**What changed.** `mandatoryAnnexureKinds()` in `motivation-documents.ts` now
+adds it to the tabs for every acquiring type (S13, S14, S15, both S16) and never
+for a renewal — a renewal transfers nothing, so there is no source document to
+demand. Deliberately NOT promoted to `required`: that would refuse to write a
+motivation for somebody whose dealer has not issued the invoice yet. The pack
+carries the tab; the applicant files the paper behind it.
+
+The annexure is titled "Proof of where the applied-for firearm comes from", so
+the index reads as a document rather than the question the drawer asks.
+
 ## 2026-11-06 (AUDIT) - MO000073: WHY THE EXHIBITS VANISHED AND A PAGE WAS BLANK
 
 Audited the operator's live pack (17 pages, Section 15, 12-gauge Mossberg 500).
