@@ -3,7 +3,7 @@ import localFont from 'next/font/local';
 /**
  * The site's typefaces — League Spartan (display) + Montserrat (body).
  *
- * Both are SIL OFL, self-hosted as variable woff2 via localFont. No
+ * Both are SIL OFL, self-hosted as SUBSET variable woff2 via localFont. No
  * next/font/google dependency — production builds never reach the network.
  * Latin subset covers English and Afrikaans diacritics. One request each
  * covers every weight we use; next/font emits stable class names so there
@@ -13,10 +13,32 @@ import localFont from 'next/font/local';
  *                    shapes. Weight range 500-800 covers H1-H4 headings.
  *   MONTSERRAT      body/UI — legible at 13px in dense listing cards.
  *                    Weight range 300-700 covers regular through semibold.
+ *
+ * ⚠️ THE .woff2 FILES ARE THE SERVED ONES AND THE .ttf FILES ARE THEIR SOURCE.
+ * Until 2026-11-06 these three pointed at the raw .ttf — next/font/local does
+ * NOT transcode, it copies what it is given — so every cold start downloaded
+ * 1.42 MB of TrueType (672 + 685 + 92) where 141 KB of woff2 says the same
+ * thing. With `display: 'swap'` the visible cost was text painting in Arial,
+ * then reflowing when a 672 KB face landed. The Desk's two faces were already
+ * woff2, which is what made the original comment ("self-hosted as variable
+ * woff2") true of half the repo and false of the half users actually see.
+ *
+ * Regenerate (needs `pip install fonttools brotli`):
+ *
+ *   pyftsubset app/fonts/montserrat-variable.ttf \
+ *     --output-file=app/fonts/montserrat-variable.woff2 \
+ *     --flavor=woff2 --layout-features='*' \
+ *     --unicodes=U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD
+ *
+ * ⚠️ THAT UNICODE LIST IS THE SUBSET. It is Google's "latin" range plus the
+ * punctuation a document-led product needs (en/em dash, curly quotes,
+ * ellipsis, the euro sign). Dropping U+2000-206F silently breaks every
+ * apostrophe in the copy; widening it to `*` puts the Cyrillic and Greek the
+ * original carried back into the download.
  */
 
 export const fontDisplay = localFont({
-  src: [{ path: './fonts/league-spartan-variable.ttf', weight: '500 800', style: 'normal' }],
+  src: [{ path: './fonts/league-spartan-variable.woff2', weight: '500 800', style: 'normal' }],
   variable: '--font-display',
   display: 'swap',
   // Brand pack fallbacks: Arial Black for headings.
@@ -26,8 +48,8 @@ export const fontDisplay = localFont({
 
 export const fontBody = localFont({
   src: [
-    { path: './fonts/montserrat-variable.ttf', weight: '300 700', style: 'normal' },
-    { path: './fonts/montserrat-italic-variable.ttf', weight: '300 700', style: 'italic' },
+    { path: './fonts/montserrat-variable.woff2', weight: '300 700', style: 'normal' },
+    { path: './fonts/montserrat-italic-variable.woff2', weight: '300 700', style: 'italic' },
   ],
   variable: '--font-body',
   display: 'swap',

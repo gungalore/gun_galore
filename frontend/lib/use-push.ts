@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth, useUser } from './auth';
 import { useStandalone } from './use-standalone';
+import { urlBase64ToUint8Array } from './vapid-key';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -48,22 +49,9 @@ interface PushState {
   disable: () => Promise<void>;
 }
 
-// Standard Base64 (URL-safe) → Uint8Array. Required because the
-// PushManager.subscribe applicationServerKey expects a raw key, not
-// a base64 string. Sourced from the W3C push spec example.
-//
-// Returns an ArrayBuffer-backed Uint8Array (explicitly NOT a
-// SharedArrayBuffer-backed one) so it satisfies the DOM lib's
-// BufferSource constraint without a cast.
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const norm = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(norm);
-  const buf = new ArrayBuffer(raw.length);
-  const out = new Uint8Array(buf);
-  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
-  return out;
-}
+// The Base64 → bytes conversion lives in lib/vapid-key.ts: app/sw.ts needs the
+// identical conversion when it re-subscribes after the browser rotates a
+// subscription, and the worker cannot import this hook. See that file.
 
 /**
  * `/push/me` answers for the ACCOUNT, not this browser. A member can be
@@ -161,6 +149,94 @@ export function usePush(): PushState {
       cancelled = true;
     };
   }, [supported, isLoaded, isSignedIn, getToken]);
+
+  /**
+   * Hand the application server key to the service worker.
+   *
+   * The worker needs it to re-subscribe after the browser rotates a
+   * subscription (app/sw.ts's `pushsubscriptionchange`), and it has no way to
+   * fetch it: the key comes from the API origin, and the worker holds no auth
+   * token. This is the only channel that can carry it.
+   *
+   * ⚠️ IT CAN MISS THE FIRST LOAD. `controller` is null until a worker is
+   * active and controlling this page, which on a first-ever visit is a moment
+   * after this effect runs. The next load posts it again, so the window in
+   * which the worker could be woken without a key is narrow — and the
+   * `pushsubscriptionchange` handler treats "no key" as "ask the page" rather
+   * than failing silently. Do not turn this into a retry loop.
+   */
+  useEffect(() => {
+    if (!vapidPublicKey) return;
+    try {
+      navigator.serviceWorker?.controller?.postMessage({
+        type: 'PUSH_VAPID_KEY',
+        key: vapidPublicKey,
+      });
+    } catch {
+      /* no controller yet — the next load posts it */
+    }
+  }, [vapidPublicKey]);
+
+  /**
+   * Re-register a subscription the browser replaced, on the worker's request.
+   *
+   * The backend upserts on `endpoint`, so re-posting an unchanged subscription
+   * is a no-op and posting a new one repairs the row. `subscription` is null
+   * when the worker had no key of its own and is telling us to redo the whole
+   * thing — in that case we read whatever this device currently holds.
+   */
+  const resubscribe = useCallback(
+    async (subscription: unknown): Promise<void> => {
+      if (!isSignedIn) return;
+      try {
+        const token = await getToken();
+        if (!token) return;
+        let json = subscription as {
+          endpoint?: string;
+          keys?: { p256dh?: string; auth?: string };
+        } | null;
+        if (!json?.endpoint) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          const sub = await reg?.pushManager.getSubscription();
+          if (!sub) return;
+          json = sub.toJSON();
+        }
+        if (!json?.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+        const r = await fetch(`${API_URL}/push/subscribe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            endpoint: json.endpoint,
+            keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+            userAgent: navigator.userAgent,
+          }),
+        });
+        if (r.ok) setEnabled(true);
+      } catch {
+        /* Silent on purpose: the shape of this failure is "push stays off",
+           and the opt-in is still visible on /settings and /notifications. */
+      }
+    },
+    [getToken, isSignedIn],
+  );
+
+  useEffect(() => {
+    const sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker;
+    if (!sw || typeof sw.addEventListener !== 'function') return;
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as
+        | { type?: string; subscription?: unknown }
+        | undefined;
+      if (data?.type === 'PUSH_RESUBSCRIBE') {
+        void resubscribe(data.subscription ?? null);
+      }
+    };
+    sw.addEventListener('message', onMessage);
+    return () => sw.removeEventListener('message', onMessage);
+  }, [resubscribe]);
 
   const enable = useCallback(async (): Promise<boolean> => {
     if (!supported || busy || !vapidPublicKey || !isSignedIn) return false;

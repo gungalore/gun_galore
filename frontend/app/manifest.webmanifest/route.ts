@@ -18,7 +18,12 @@ import { SITE_URL } from '@/lib/brand';
  * The content is otherwise unchanged: id/start_url/scope are `/`, and
  * scripts/theme-sync.cjs still reads the two colour literals below.
  */
-const manifest: MetadataRoute.Manifest & { colors?: string[] } = {
+const manifest: MetadataRoute.Manifest & {
+  colors?: string[];
+  /** Not in Next's MetadataRoute.Manifest yet. Valid W3C manifest members. */
+  launch_handler?: { client_mode?: string | string[] };
+  handle_links?: string;
+} = {
   id: '/',
   name: 'ALL Outdoor',
   short_name: 'ALL Outdoor',
@@ -28,6 +33,23 @@ const manifest: MetadataRoute.Manifest & { colors?: string[] } = {
   scope: '/',
   display: 'standalone',
   orientation: 'portrait',
+  // ⚠️ TWO APP-FEEL MEMBERS THAT WERE MISSING, and both are one line each.
+  //
+  // `launch_handler` — without it, every launch from the home-screen icon
+  // opens a NEW window even when the app is already running underneath, so a
+  // member who left the app on a listing and taps the icon gets a second
+  // shrine to the homepage stacked on the first. `navigate-existing` focuses
+  // the window they left. Chromium honours this; others ignore it, which is
+  // the same no-op they already had.
+  //
+  // `handle_links` — 'preferred' lets an in-scope link opened from another
+  // app (an SMS, WhatsApp, a mail client) come to the INSTALLED app instead of
+  // a browser tab. Without it the install buys the member nothing on the exact
+  // surface most of our links arrive on: /a/<token> action links and listing
+  // shares. Chromium-only and behind a member-visible setting, so it is a
+  // suggestion rather than a hijack.
+  launch_handler: { client_mode: 'navigate-existing' },
+  handle_links: 'preferred',
   // ⚠️ KEEP BOTH EQUAL TO --bg IN app/globals.css. Three places name this
   // colour (globals.css, here, and layout.tsx's viewport themeColor) and
   // scripts/theme-sync.cjs fails the build when they drift.

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { use, useCallback, useEffect, useState } from 'react';
 import WitnessStepper from '@/components/witness-stepper';
@@ -629,7 +629,16 @@ function Shell({ children }: { children: React.ReactNode }) {
     // explanation is the whole of what they need: who we are, and why they are
     // looking at this.
     <div className="min-h-screen bg-[var(--bg)]">
-      <header className="border-b border-[var(--border)]">
+      {/* ⚠️ THE STATUS-BAR INSET IS ON THE MASTHEAD, NOT ON THE WRAPPER.
+          This page is chromeless (lib/shell-routes.ts), so nothing above it
+          pads for the notch — and in the installed app the wordmark landed
+          under the clock. Padding the wrapper would add 47px to a
+          `min-h-screen` box and make the page scroll; padding the header keeps
+          the box at 100vh and simply moves the two lines down. */}
+      <header
+        className="border-b border-[var(--border)]"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="mx-auto w-full max-w-2xl px-4 py-4">
           <p className="text-sm font-semibold tracking-wide">ALL OUTDOOR</p>
           <p className="text-xs text-[var(--text-secondary)]">

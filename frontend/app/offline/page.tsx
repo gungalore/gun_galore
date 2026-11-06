@@ -1,4 +1,4 @@
-﻿import Link from 'next/link';
+import Link from 'next/link';
 import { Logo } from '@/components/brand/Logo';
 
 // Offline fallback — the service worker serves this page in place of a
@@ -27,7 +27,13 @@ export default function OfflinePage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
+        // ⚠️ THIS PAGE HAS NO SHELL, so nothing else pads it: it is served by
+        // the service worker into a chromeless route, in the installed app,
+        // with the member's thumb on the home indicator and the notch over the
+        // top edge. `max()` rather than a bare env() so the 24px breathing room
+        // survives on devices with no inset at all (where env() is 0).
+        padding:
+          'max(24px, env(safe-area-inset-top, 0px)) 24px max(24px, env(safe-area-inset-bottom, 0px))',
       }}
     >
       <div style={{ maxWidth: 400, textAlign: 'center' }}>

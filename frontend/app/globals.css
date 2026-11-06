@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -1362,6 +1362,26 @@ html[data-standalone='true'] .gg-shell-chrome {
   display: flex;
 }
 
+/* ── The landscape notch ──────────────────────────────────────────────
+   Every safe-area rule in this repo handled the top and the bottom, and
+   nothing handled the sides — so a notched iPhone held sideways put the
+   header's first icon and the tab bar's left tab UNDER the notch, half a
+   tap target each.
+
+   ⚠️ THE MANIFEST SAYS `orientation: portrait`, AND THAT IS NOT A GUARD HERE.
+   Chrome on Android honours it; iOS ignores the member entirely, and the
+   installed app on an iPhone rotates. Landscape also has to work for the
+   devices that never had a notch and simply have a wider window.
+
+   The background still spans the full width (padding is inside the box), so
+   the header and the bar keep their edge-to-edge fill and only their CONTENTS
+   insets. `0px` fallbacks because env() is unsupported on older engines and an
+   unresolved var in a padding shorthand voids the declaration. */
+html[data-standalone='true'] .gg-shell-chrome {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
 html[data-standalone='true'] .gg-shell {
   display: flex;
   flex-direction: column;
@@ -1405,6 +1425,25 @@ html[data-standalone='true'] .gg-shell-pane {
      document, which in this mode is not what moves. */
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  /* ⚠️ NOBODY OWNED THE BOTTOM INSET ON THE ROUTES WITHOUT A TAB BAR.
+     The tab bar pads itself for the home indicator, and
+     `html:not([data-standalone]) body` pads the browser-mode document — which
+     left the installed app on /checkout, /cart, /settings, /notifications,
+     the two Centres and every other non-tab screen with its last row flush
+     under the indicator. The listing page only escaped it because it re-pads
+     its own buy bar.
+
+     Padding on the scrollport is the right place: it lengthens the scrollable
+     content, so the final row can be scrolled clear instead of being
+     permanently clipped, and nothing reflows.
+
+     The rule below removes it again where the tab bar is present, because
+     there the bar IS the safe-area padding — adding this too would leave a
+     strip of empty page colour between the content and the bar. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html[data-standalone='true'] body:has([data-shell-tabs]) .gg-shell-pane {
+  padding-bottom: 0;
 }
 
 /* ── The service-worker update banner, when it lands on the Desk ────────

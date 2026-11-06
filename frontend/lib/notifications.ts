@@ -5,6 +5,8 @@
 // without errors. Once the backend is live the same helpers populate
 // the inbox without any frontend change.
 
+import { stripToAppPath } from './app-url';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export type NotificationCategory = 'BUYER' | 'SELLER' | 'ACCOUNT';
@@ -145,28 +147,17 @@ export async function dismissNotifications(
  * dies leaves the in-app row pointing at a dead origin. Notification rows
  * belong to the app, so resolve them against the host the member is already
  * on. Genuinely external links are left untouched.
+ *
+ * ⚠️ THE RULE ITSELF IS IN lib/app-url.ts, NOT HERE. The service worker has to
+ * make the same decision when a notification is TAPPED, and it cannot import
+ * this module (no `window`, no inbox fetch helpers). Two copies of "which
+ * hostnames are ours" is how the inbox and the lock screen end up disagreeing.
  */
 export function appRelativeUrl(url: string): string {
-  if (!url || url.startsWith('/') || url.startsWith('#')) return url;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return url;
-    const host = parsed.hostname.toLowerCase();
-    const local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const appHost =
-      host === 'alloutdoor.co.za' ||
-      host.endsWith('.alloutdoor.co.za') ||
-      host === 'gungalore.co.za' ||
-      host.endsWith('.gungalore.co.za') ||
-      host === 'trycloudflare.com' ||
-      host.endsWith('.trycloudflare.com');
-    const sameOrigin =
-      typeof window !== 'undefined' && parsed.origin === window.location.origin;
-    if (!local && !appHost && !sameOrigin) return url;
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return url;
-  }
+  return stripToAppPath(
+    url,
+    typeof window !== 'undefined' ? window.location.origin : undefined,
+  );
 }
 
 /**

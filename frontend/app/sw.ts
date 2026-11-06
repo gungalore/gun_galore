@@ -1,4 +1,4 @@
-﻿// Service worker source — compiled by @serwist/next during `next build`
+// Service worker source — compiled by @serwist/next during `next build`
 // into /sw.js at the project root and registered automatically by the
 // Serwist runtime.
 //
@@ -43,6 +43,13 @@ import {
 // written inline in this file can never go red. See lib/sw-offline.spec.ts;
 // this file is the adapter that hands serwist what that module decides.
 import { SHOP_OFFLINE_URL, shopOfflineFallbackApplies } from '../lib/sw-offline';
+// ⚠️ lib/app-url.ts IS COMPILED INTO THE WORKER TOO. It must stay free of
+// `window` / `document` — see its header. The alternative was a second copy of
+// "which hostnames are ours" here, and the two would drift the first time a
+// domain changed, with the symptom being a tapped push that opens the wrong
+// place. This is the same rule the inbox uses.
+import { stripToAppPath } from '../lib/app-url';
+import { urlBase64ToUint8Array } from '../lib/vapid-key';
 
 // Tell TypeScript this is the service worker's global scope.
 declare global {
@@ -208,7 +215,23 @@ const serwist = new Serwist({
   // webpack plugin rewrites, and it counts occurrences in the SOURCE. Naming
   // it twice fails the build outright: "Multiple instances ... were found in
   // your SW source. Include it only once."
-  precacheEntries: self.__SW_MANIFEST,
+  //
+  // ⚠️ AND THE OFFLINE DOCUMENT HAS TO BE ADDED HERE BY HAND. `fallbacks` below
+  // names /offline, but in injectManifest mode that only tells the runtime
+  // WHICH URL to answer a failed navigation with — it does not put the document
+  // in the precache. Verified against the built worker on 2026-11-06: /offline
+  // appeared twice, as its own JS chunk and as the fallbacks entry, and never
+  // as a precache entry. So the first time a member opened the installed app
+  // with no signal, the fallback fetched /offline, failed, and the browser's
+  // own error page came back — the stand-in was unreachable by definition.
+  //
+  // A revision string rather than `null`: null means "never revalidate", which
+  // would pin the first copy of this page's build-specific chunk list forever.
+  // Bump it when the offline page's markup changes materially.
+  precacheEntries: [
+    ...(self.__SW_MANIFEST ?? []),
+    { url: '/offline', revision: 'offline-v1' },
+  ],
   // Controlled "prompt-to-update" — deliberately NOT auto-activating.
   // With skipWaiting/clientsClaim TRUE, a freshly deployed SW seizes an
   // already-open PWA mid-session; the old page then lazy-loads a chunk
@@ -254,24 +277,33 @@ const serwist = new Serwist({
 
 serwist.addEventListeners();
 
-// Controlled-update handshake. The update banner posts this message to
-// the WAITING service worker when the user taps "Reload"; we then
-// activate (skipWaiting was false, so the worker was parked). Activation
-// fires `controllerchange` in the page, which the banner uses to reload
-// into the new bundle. Any other message is ignored.
+// Controlled-update handshake, plus the VAPID key handshake.
 //
-// NOTE: Serwist v9 also registers its own SKIP_WAITING message handler
-// internally, so this listener is technically redundant on the current
-// version. It's kept as an explicit, self-documenting backstop that
-// stays correct if that internal behaviour changes across upgrades —
-// both call self.skipWaiting(), which is idempotent, so there is no
-// conflict or double-activation.
+// The update banner posts SKIP_WAITING to the WAITING service worker when the
+// user taps "Reload"; we then activate (skipWaiting was false, so the worker
+// was parked). Activation fires `controllerchange` in the page, which the
+// banner uses to reload into the new bundle.
+//
+// ⚠️ PUSH_VAPID_KEY is the other direction, and it exists because a service
+// worker CANNOT re-subscribe to push without the application server key — and
+// it has no way to obtain it: the key comes from GET /push/vapid-public-key,
+// which is a different origin from the worker's in this deployment, and the
+// worker holds no auth token anyway. So the page hands it over on every load
+// (lib/use-push.ts). A worker woken by `pushsubscriptionchange` before any
+// page has run in this browser session has no key and asks the page instead —
+// see that handler below for what that does and does not cover.
+let vapidPublicKey: string | null = null;
+
 self.addEventListener('message', (event) => {
   const data = (event as ExtendableMessageEvent).data as
-    | { type?: string }
+    | { type?: string; key?: unknown }
     | undefined;
   if (data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  if (data?.type === 'PUSH_VAPID_KEY' && typeof data.key === 'string') {
+    vapidPublicKey = data.key;
   }
 });
 
@@ -306,8 +338,42 @@ type AppBadgeNavigator = WorkerNavigator & {
   clearAppBadge?: () => Promise<void>;
 };
 
+/**
+ * ⚠️ TWO WRITERS, ONE ICON — SO ONE OF THEM HAS TO STAND DOWN.
+ *
+ * The tab bar polls /notifications/me/active-count every 15s and mirrors THAT
+ * number onto the app icon (components/bottom-tab-bar.tsx). This file used to
+ * mirror a different number onto the same icon: the count of notifications
+ * sitting in the OS shade. While the app was open the two fought, and the icon
+ * flipped between "3 unread" and "1 in the shade" depending on which wrote
+ * last — a badge that changes number while the member is looking at it reads as
+ * broken.
+ *
+ * The rule now is ownership by visibility: while a window of this app is
+ * VISIBLE the page owns the icon (its number is the true unread count), and the
+ * worker owns it only when nothing is on screen — which is exactly the case the
+ * page cannot cover, because its 15s poll is suspended in the background.
+ *
+ * Consequence, stated plainly: a push that lands while the member is in the app
+ * updates the notification list but not the icon, until the page's own poll
+ * fires (≤15s). That is the correct trade — one authoritative number, slightly
+ * late, instead of two sources alternating.
+ */
+async function appHasVisibleWindow(): Promise<boolean> {
+  try {
+    const windows = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    });
+    return windows.some((c) => (c as WindowClient).visibilityState === 'visible');
+  } catch {
+    return false;
+  }
+}
+
 async function syncAppBadge(): Promise<void> {
   try {
+    if (await appHasVisibleWindow()) return;
     const notifications = await self.registration.getNotifications();
     const nav = self.navigator as AppBadgeNavigator;
     if (notifications.length > 0) {
@@ -338,10 +404,23 @@ self.addEventListener('push', (event) => {
   }
   const title = payload.title ?? 'ALL Outdoor';
   const body = payload.body ?? '';
-  const url = payload.url ?? '/';
+  // ⚠️ NORMALISED HERE, NOT IN THE BACKEND. Rows written on a tunnel or a dev
+  // host keep that absolute URL forever (see lib/app-url.ts), and a tap that
+  // follows one leaves the installed app for a dead domain. Reducing it to a
+  // path means the tap resolves against whatever host the member is on.
+  const target = stripToAppPath(payload.url ?? '/', self.location.origin);
   e.waitUntil(
     (async () => {
-      await self.registration.showNotification(title, {
+      // ⚠️ TYPED AS AN INTERSECTION, NOT A LITERAL. `renotify` and `timestamp`
+      // are valid NotificationOptions members in the push spec and in every
+      // shipping engine, but TypeScript's lib.dom has never declared either —
+      // so passing the object inline is an excess-property error. Widening the
+      // variable keeps both properties (which is the whole point) without a
+      // cast that would also silence real mistakes.
+      const options: NotificationOptions & {
+        renotify?: boolean;
+        timestamp?: number;
+      } = {
         body,
         icon: '/icon-192.png',
         // Monochrome white-on-transparent glyph - Android renders the badge
@@ -349,9 +428,20 @@ self.addEventListener('push', (event) => {
         // grey blob in the status bar.
         badge: '/notification-icon.png',
         tag: payload.tag,
-        data: { url },
+        // ⚠️ renotify IS THE DIFFERENCE BETWEEN "OUTBID AGAIN" AND SILENCE.
+        // `tag` replaces the previous notification for the same entity, and a
+        // replacement that does not renotify makes no sound and does not buzz:
+        // the second outbid on an auction — the one that actually costs the
+        // member the item — arrives in total silence. `renotify` is only valid
+        // alongside a tag (Chrome throws without one), hence the guard.
+        renotify: Boolean(payload.tag),
+        // Without this the shade shows no time on the notification, and iOS
+        // sorts it by when the push service happened to deliver it.
+        timestamp: Date.now(),
+        data: { url: target },
         requireInteraction: false,
-      });
+      };
+      await self.registration.showNotification(title, options);
       await syncAppBadge();
     })(),
   );
@@ -363,10 +453,21 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   const e = event as NotificationEvent;
   e.notification.close();
-  const url = (e.notification.data as { url?: string } | undefined)?.url ?? '/';
+  const target = stripToAppPath(
+    (e.notification.data as { url?: string } | undefined)?.url ?? '/',
+    self.location.origin,
+  );
   e.waitUntil(
     (async () => {
       await syncAppBadge();
+      // A path can be handed to an existing window; a URL on somebody else's
+      // origin cannot (WindowClient.navigate rejects cross-origin), so it goes
+      // to openWindow and lands wherever the member's browser decides.
+      if (!target.startsWith('/')) {
+        await self.clients.openWindow(target);
+        return;
+      }
+      const absolute = new URL(target, self.location.origin).href;
       const allClients = await self.clients.matchAll({
         type: 'window',
         includeUncontrolled: true,
@@ -376,7 +477,7 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of allClients) {
         if ('focus' in client) {
           try {
-            await (client as WindowClient).navigate(url);
+            await (client as WindowClient).navigate(absolute);
             await (client as WindowClient).focus();
             return;
           } catch {
@@ -385,7 +486,7 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       // Nothing to focus → open fresh.
-      await self.clients.openWindow(url);
+      await self.clients.openWindow(absolute);
     })(),
   );
 });
@@ -394,4 +495,56 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('notificationclose', (event) => {
   const e = event as NotificationEvent;
   e.waitUntil(syncAppBadge());
+});
+
+// ─── Re-subscription ────────────────────────────────────────────────
+//
+// The day the browser rotates a push subscription, every push addressed to this
+// device starts failing at the push service. Nothing on the sending side hears
+// about it in a way it can act on: our backend only prunes a row on 404/410
+// (a rotated subscription answers 401/403), so the row survives, looks healthy,
+// and the member simply stops receiving notifications — for good, and without
+// a single error the operator can see.
+//
+// This is the recovery path, in two arms:
+//
+//   1. WE HOLD THE VAPID KEY (the page posted it on this load). Re-subscribe
+//      here, then hand the new subscription to every open window, which has the
+//      auth token this worker does not and POSTs it to /push/subscribe.
+//
+//   2. WE DO NOT (the worker was woken cold). Ask the windows to redo the
+//      subscription themselves; lib/use-push.ts owns that handler.
+//
+// ⚠️ WHAT NEITHER ARM COVERS: the app closed, the worker cold, the key unknown.
+// That case cannot be recovered from inside the worker — persisting a
+// subscription needs the member's token — and it is why the opt-in UI must stay
+// visible on /settings rather than assuming push works. Do not "fix" this by
+// having the worker POST without auth.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const e = event as ExtendableEvent & { newSubscription?: PushSubscription };
+  e.waitUntil(
+    (async () => {
+      let next: PushSubscription | null = e.newSubscription ?? null;
+      if (!next && vapidPublicKey) {
+        try {
+          next = await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+          });
+        } catch {
+          next = null;
+        }
+      }
+      const windows = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      if (windows.length === 0) return;
+      const subscription = next ? next.toJSON() : null;
+      for (const client of windows) {
+        // A null subscription is the "you do it" instruction.
+        client.postMessage({ type: 'PUSH_RESUBSCRIBE', subscription });
+      }
+    })(),
+  );
 });

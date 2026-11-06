@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // The mobile header, in the design's two archetypes.
 //
@@ -377,6 +377,21 @@ export function ShellHeader() {
         style={{
           height: 'var(--shell-header-h)',
           background: 'var(--bg-card)',
+          // ⚠️ THE BACKGROUND STOPS AT THE CONTENT BOX, SO THE STATUS-BAR STRIP
+          // IS THE PAGE COLOUR, NOT THE HEADER COLOUR.
+          //
+          // In the installed app the padding above this row is exactly the
+          // notch/status-bar band, and iOS paints the clock and battery over it
+          // in a tint taken from theme_color — which is --bg (the page cream),
+          // not --bg-card (white). Painting --bg-card through the padding, as
+          // this did, gave every launched app a white band with a cream
+          // status-bar tint on top of it: a seam at the top of every screen on
+          // the one surface where nothing may look misaligned.
+          //
+          // content-box means the 54px row keeps its white fill and the inset
+          // band above it is transparent, showing .gg-shell's --bg behind it —
+          // the same colour iOS is painting the status bar with.
+          backgroundClip: 'content-box',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
           // In the installed app the translucent status bar is layered over the

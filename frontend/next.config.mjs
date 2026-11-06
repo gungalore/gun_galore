@@ -203,40 +203,58 @@ const nextConfig = {
 const withSerwist = withSerwistInit({
   swSrc: 'app/sw.ts',
   swDest: 'public/sw.js',
-  // 🚨 KEEP THE DOCUMENT-SCANNER MODEL OUT OF THE INSTALL-TIME PRECACHE.
+  // 🚨 THIS IS AN ALLOWLIST NOW, NOT AN EXCLUSION PATTERN. Read the next
+  // paragraph before adding anything back to it.
   //
-  // Serwist's default is globPublicPatterns: ['**/*'] — every file under
-  // public/. When this was written public/ was 27 MB, and 23 MB of that was
-  // two files: scan/v1/docquad.ort (12.8 MB) and scan/v1/ort-wasm-simd.wasm
-  // (10.1 MB), the DocQuadNet256 weights and the ONNX runtime. (Now
-  // scan/v2/: DocCornerNet at 1.9 MB and ORT 1.29 at 13.3 MB — still the
-  // bulk of public/, and still only wanted by the scanner.) Both were in the LIVE
-  // sw.js precache manifest, so every visitor whose service worker installed
-  // downloaded ~23 MB before seeing a single listing — for a scanner that only
-  // ever runs inside KYC / motivation document capture, which most shoppers
-  // never open. On the mobile data this marketplace is built for, that is the
-  // whole install budget spent on a feature the visitor has not asked for.
+  // It used to read ['*', '!(scan)/**/*'] — "everything under public/ except
+  // the scanner". That kept the 13 MB ONNX model out, which was the problem it
+  // was written for, and then quietly precached everything ELSE that landed in
+  // public/: measured on 2026-11-06, 85 files totalling 8.2 MB, on top of
+  // 5.7 MB of build assets. 14 MB of install-time download before the app is
+  // allowed to be an app. The individual offenders:
   //
-  // ⚠️ THE PATTERN LOOKS ODD BECAUSE `!` NEGATION DOES NOT WORK HERE. Serwist
-  // calls globSync(patterns, {cwd: 'public'}) and modern glob has no negation
-  // in the pattern list — it takes an `ignore` option, which serwist hard-codes
-  // and does not expose. Verified empirically: ['**/*', '!scan/v1/**'] returns
-  // the identical 61 files, model included. This extglob form was checked by
-  // set-comparison against ['**/*'] minus the two model files and matches it
-  // EXACTLY — 59 files, nothing else added or dropped.
+  //   • hero-video.mp4            2.49 MB — and app/sw.ts's own NetworkOnly
+  //                               rule means the SW will never SERVE it from
+  //                               cache. Downloaded, stored, unreachable.
+  //   • pdfjs/…/pdf.worker.min.mjs 1.35 MB — the PDF preview worker, used only
+  //                               inside the licence centre.
+  //   • splash/ + splash-dark/    1.38 MB — 46 iOS launch images; any one
+  //                               device matches exactly one of them.
+  //   • install-steps/            0.38 MB — the iOS "Add to Home Screen" help.
+  //   • swop.*, take-a-shot.*     retired features (see AGENTS.md), referenced
+  //                               by nothing.
+  //   • admin-mockup.html         a 90 KB design mockup, served to anyone at a
+  //                               guessable path. Deleted from public/ on the
+  //                               same day; the canonical copy is
+  //                               docs/design/admin-pwa/mockup.html.
   //
-  // The obvious-looking alternative — listing the wanted directories — was
-  // wrong in a way worth recording: it silently ADDED .well-known/security.txt,
-  // because glob skips dotfiles under `**/*` but not under an explicit
-  // `.well-known/**`.
+  // ⚠️ AN EXCLUSION LIST CAN ONLY EVER BE AS GOOD AS THE PERSON WHO REMEMBERS
+  // TO EXTEND IT. `!(scan|…)` grows by default; an allowlist grows only when
+  // somebody deliberately adds a line here. That is the whole reason for the
+  // change: the failure mode of the old form was silent and unbounded.
   //
-  // ⚠️ A NEW TOP-LEVEL DIRECTORY IN public/ IS STILL PRECACHED by this pattern.
-  // Only `scan` is excluded. If another large asset tree lands, exclude it here
-  // too — `!(scan|whatever)/**/*`.
+  // ⚠️ `!` NEGATION DOES NOT WORK IN THIS OPTION, which is why the old form
+  // used extglob. Serwist calls globSync(patterns, {cwd: 'public'}) and modern
+  // glob has no negation in the pattern list — it takes an `ignore` option,
+  // which serwist hard-codes and does not expose.
   //
-  // The scanner still works: nothing here stops it being fetched on demand when
-  // the capture flow opens, it is simply no longer downloaded up front.
-  globPublicPatterns: ['*', '!(scan)/**/*'],
+  // Everything listed here is small, same-origin, and wanted on the very first
+  // run: the install icon set, the monochrome notification glyph, the brand
+  // marks, and the hero poster (the LCP image on desktop). Nothing else in
+  // public/ needs to be on the device before it is asked for — the scanner
+  // models, the PDF worker, the launch images and the listing photos are all
+  // fetched on demand, which is what the runtime caches in app/sw.ts are for.
+  globPublicPatterns: [
+    'icon-192.png',
+    'icon-512.png',
+    'icon-maskable-192.png',
+    'icon-maskable-512.png',
+    'apple-icon-180.png',
+    'favicon.ico',
+    'notification-icon.png',
+    'hero-outdoor.webp',
+    'brand/**/*',
+  ],
   // H7 — DO NOT hard-reload on reconnect. Serwist's `online` listener
   // would trigger a full `location.reload()` the instant signal returns,
   // wiping in-progress React state — KYC selfie/ID capture, checkout
