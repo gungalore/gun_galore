@@ -1727,15 +1727,25 @@ export class TasksService {
     const to = new Date();
     const from = new Date(to.getTime() - 2 * 24 * 60 * 60 * 1000);
     try {
-      // 0) Resolve hot-path events that only carried a raw userId to a
-      //    User.id, so they count in the per-user rollup. Deliberately NOT
-      //    windowed: if the cron misses a night, older unresolved rows are
-      //    still swept up (cheap — the predicate matches few rows).
-      await this.prisma.$executeRaw`
-        UPDATE "UserEvent" e SET "userId" = u.id
-        FROM "User" u
-        WHERE e."userId" IS NULL AND e."userId" IS NOT NULL
-          AND u."userId" = e."userId"`;
+      // ⚠️ THE "RESOLVE RAW userId" STEP THAT USED TO SIT HERE IS GONE, AND IT
+      // IS WHY THIS JOB FAILED EVERY NIGHT. It read:
+      //
+      //   UPDATE "UserEvent" e SET "userId" = u.id FROM "User" u
+      //   WHERE e."userId" IS NULL AND e."userId" IS NOT NULL
+      //     AND u."userId" = e."userId"
+      //
+      // Three separate faults: `User` has no `userId` column (that is the
+      // 42703 this died on), the predicate contradicts itself (`IS NULL AND IS
+      // NOT NULL`, so it could never match), and `UserEvent` has had no raw
+      // identity column since the Clerk retirement — the hot path writes
+      // `userId` directly. It was a leftover from a rename applied with a blunt
+      // search-and-replace, and because it ran FIRST it took the whole rollup
+      // down with it: `DailyUserStats` and `HourlyPlatformStats` were never
+      // written at all, every night, for as long as it has been in here.
+      //
+      // Nothing needs replacing. If a raw identity column ever returns, resolve
+      // it in its own statement and give it a test — this job's failure mode is
+      // silent empty charts, not an error a page shows.
 
       // 1) Per-user daily activity.
       await this.prisma.$executeRaw`
@@ -1766,10 +1776,16 @@ export class TasksService {
         ON CONFLICT ("day","userId") DO UPDATE SET "logins" = EXCLUDED."logins"`;
 
       // 3) Platform activity by hour + event type (drives the heatmaps).
+      //
+      // `COALESCE("userId","userId","deviceId")` listed `"userId"` twice — the
+      // same blunt rename, harmless to Postgres (the first non-null wins) but
+      // it means the fallback to `deviceId` for anonymous traffic was never
+      // really expressed. Signed-in and device-only visits are both counted,
+      // once each.
       await this.prisma.$executeRaw`
         INSERT INTO "HourlyPlatformStats" ("id","hour","eventType","count","uniqueUsers")
         SELECT gen_random_uuid()::text, date_trunc('hour', "createdAt"), "eventType",
-          COUNT(*), COUNT(DISTINCT COALESCE("userId","userId","deviceId"))
+          COUNT(*), COUNT(DISTINCT COALESCE("userId","deviceId"))
         FROM "UserEvent"
         WHERE "createdAt" >= ${from} AND "createdAt" < ${to}
         GROUP BY 2, 3

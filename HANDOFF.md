@@ -7,6 +7,297 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (ADMIN) - THE ONE ALERT IN THE QUEUE, AND THE NIGHTLY JOB NOBODY HEARD DIE
+
+The Desk's alert queue held exactly one unresolved row:
+
+    CRON_STALE | "Shipping tracking poll" | since 2026-09-29 | raised 2026-11-02
+
+Two separate faults behind it, and a third that the queue could never show.
+
+**The watched job had been deleted five weeks earlier.** The **Pudo tracking
+poll** was retired on 2026-09-24 when the courier rail moved to Bob Go. The cron
+and its `pollPudoShipments()` client went; the row in
+`AdminHealthService.cronStatuses()` stayed. A watched job that no longer exists
+cannot go stale, it can only ever BE stale — so `cronWatchdog` raised one urgent
+alert and, correctly, never cleared it, because the condition never changed.
+Row removed, with the reason written where the next person will read it. The
+watchdog's existing "no longer monitored" branch resolves the open alert by
+itself on its next pass.
+
+⚠️ The `cron:lastrun:shipping-poll` Setting row is still there and inert, like
+the deal-* and swap-* rows beside it. Do not "clean up" heartbeats by deleting
+rows — the registry is what decides what is watched.
+
+**`rollupInsights` had been failing every night, and the board showed green.**
+Its first statement was this:
+
+    UPDATE "UserEvent" e SET "userId" = u.id FROM "User" u
+    WHERE e."userId" IS NULL AND e."userId" IS NOT NULL
+      AND u."userId" = e."userId"
+
+`User` has no `userId` column (42703), the predicate contradicts itself, and
+`UserEvent` has had no raw identity column since the Clerk retirement. It is a
+rename applied with a blunt search-and-replace, and because it ran FIRST it took
+the whole rollup with it: `DailyUserStats` and `HourlyPlatformStats` have never
+been written. Deleted — there is nothing left to resolve — and
+`COALESCE("userId","userId","deviceId")` in step 3 became
+`COALESCE("userId","deviceId")`.
+
+⚠️ **WHY NOBODY KNEW.** Every cron wraps its work in try/catch with
+`recordCronRun` in `finally`. That is deliberate (the heartbeat proves the
+scheduler is alive) but it means a job that throws every night still stamps a
+fresh heartbeat, so the cron board stays green and no alert is raised. This job
+died in silence for as long as that statement has existed. The fix for the
+class is a `CRON_FAILED` alert type raised in the catch and resolved on the next
+success — see the follow-up note at the end. Do not remove the `finally`
+heartbeat; add the failure signal beside it.
+
+**Verified against the production schema**, inside a transaction that was rolled
+back: the two INSERTs ran clean (2 daily rows, 43 hourly rows for the 2-day
+window). Historical buckets before the fix are missing; the job only ever looks
+back two days, so it starts from tonight.
+
+### What else was checked and was fine
+
+- **Ozow webhook secret is set** (38 chars). An earlier read of this looked like
+  it was empty because `grep -oE '^KEY='` prints only the name — the value was
+  never in that output. `verifyWebhookSignature` is not rejecting in production.
+- **Peach is genuinely unconfigured** (all five vars empty) and its pay-in flag
+  is off, so the `Peach checkout not configured — MOCK mode` WARN on boot is
+  correct. The 130 `PEACH_SECRET is not set` **ERROR** lines in the pm2 error log
+  are historic (September), from a build where that check was unconditional.
+- **The Zoho failure is Zoho's, not ours**: the buyer invoice exists, only the
+  email failed — `6039 "Email address gerhard.fourie@gungalore.co.za is not
+  confirmed"`. One transaction (2026-10-29), no longer retrying. Ops action:
+  confirm the sender address in Zoho Books, then re-send from the Desk.
+- Backend `/api/health` 200, warden process online and configured.
+
+### Follow-up not done here
+
+`CRON_FAILED` does not exist as an alert type, so *any* cron that throws is
+invisible on the board. Recommended shape: raise a one-shot `AdminAlert` in the
+catch, resolve it in the same key's success path (the pattern `cronWatchdog`
+already uses for `CRON_STALE`), and add the type to the Desk's alert labels.
+
+## 2026-11-06 (MONEY) - THE FIVE THINGS THE COMMERCE AUDIT FOUND
+
+Two audit passes over listing → Buy Now / auction / offer → checkout → gateway
+→ fulfilment → payout → Zoho. Five fixes; four product decisions left with the
+operator (listed at the end, deliberately not coded).
+
+### The Books retry was keyed on the wrong thing
+
+`zohoSyncStatus` is ONE column shared by four documents, and every writer sets
+it unconditionally. Both invoices are raised in parallel, so the ordinary
+failure — commission FAILS, buyer invoice SUCCEEDS — left the row reading `OK`
+with `zohoCommissionInvoiceId` null, and the hourly sweep only selected
+`FAILED`/stale-`PENDING`. The commission was never retried and the Desk showed
+green. `retryFailedRevenueDocs` now keys on the **missing document id** (plus a
+1-hour floor and `paidAt`), so a document that does not exist is retried
+whatever any other document last wrote; the id is set on success, so a healthy
+row stops matching and costs nothing.
+
+### Bob Go's "reconciliation rail" reconciled nothing
+
+`onCharge` logged `charged_amount` and returned. The buyer is charged the quote
+at checkout and the carrier bills the actual days later (the 2.5 → 3 kg
+re-weigh is documented in that very file); the difference came out of margin
+with no record and no alert — the log line was the only trace, and no Desk
+screen reads it. It now resolves the transaction by `carrierShipmentId`,
+compares the charge with `Transaction.shippingCost`, and raises ONE urgent
+`SHIPPING_CHARGE_VARIANCE` alert per sale (updated in place on a second event)
+naming both figures and the raw payload. **Still not an automatic re-bill** —
+absorb / re-bill / recover from the payout is a commercial call, not a cron's.
+
+### A chargeback could not hold a payout that had not gone out yet
+
+The Ozow handler treated every `RELEASED` row as "paid out" and only alerted.
+With `auto_payouts_enabled` false the gap between release and payout is days, so
+a chargeback in that window froze nothing and the payout went anyway. Now
+`RELEASED && paidOutAt` is the loss case, and released-but-unpaid flips to
+`DISPUTED` with `payoutHeldAt` — exactly what the Peach handler has always done.
+
+Chargeback matching also went from one column (`gatewayCheckoutId`) to an
+OR-list over checkout id, payment id and merchant reference, mirroring Peach.
+Ozow carries both a payment id and a transaction id and its chargeback envelope
+is undocumented; a miss was alerted but never froze the order.
+
+### The fee schedule had five copies, and one had already drifted
+
+`backend/src/payments/fee.calculator.ts` charges the money; the browser drew the
+same number from four separate copies (listing page, both checkout forms, sell
+form). They agreed by luck. One had **already** drifted: the auction buyer fee
+was previewed as `max(R10, 5%)` while the backend charges `min(R10, base)`.
+
+`frontend/lib/platform-fee.ts` is now the only copy, every consumer imports it,
+and `scripts/fee-sync.cjs` (wired into `npm run build` beside theme-sync) parses
+both files and **fails the build** on any band, floor or auction-rate
+difference. Verified by deliberately breaking a rate: the gate named the band
+and exited 1. `lib/platform-fee.spec.ts` pins the behaviour (12 cases).
+
+### Also
+
+- `offers.service.ts` said a rejected lowball "burns the 5-offer cap";
+  `MAX_OFFER_ATTEMPTS` is **1**. Comment corrected.
+
+### Left for a decision, not coded
+
+1. **Auto payouts are off** (`auto_payouts_enabled` defaults false, no production
+   row). If that stays, the Desk needs a payout queue with age + SLA.
+2. **No auto-release on a courier sale** (operator decision, documented). Same
+   queue problem: a quiet buyer parks the money until someone looks.
+3. **Auction starting bid is derived at 70% of the reserve**
+   (`listings.service.ts:1670`) — opens the auction suppressing bids, and half
+   publishes the reserve.
+4. **Dealer transfer ends the buyer's protection at dealer stock-in.** Correct
+   for inter-dealer custody; needs its own sentence in the buyer's checkout copy
+   so it is not read as the same "held until you confirm" promise as courier.
+5. **VAT on the shipping figure is unresolved in the code's own words**
+   (`bobgo-adapter.ts:64-66`). Harmless pre-VAT; wrong the day you register.
+
+⚠️ **PRODUCTION HAS RUN ONE SALE.** 12 listings, 1 transaction, 1 payout
+attempt, **0 bids and 0 offers** — the one auction expired without a bid. Buy
+Now has a single data point; the auction and offer engines have never carried
+money. Rehearse both with two accounts before a campaign leans on them.
+
+## 2026-11-06 (PWA) - A NINE-MEGABYTE DIET, AND FOUR THINGS THAT WERE BROKEN
+
+The PWA worked. It also downloaded 13.9 MB before it was allowed to be an app,
+left a third of the phone to chrome, and could not show its own offline page
+offline. Measured, fixed, measured again.
+
+### The precache was 278 entries / 13.9 MB. It is 206 / 4.5 MB.
+
+`globPublicPatterns: ['*', '!(scan)/**/*']` was written to keep the 13 MB ONNX
+scanner model out, and it did — while precaching everything else that had ever
+landed in `public/`. The offenders, all of which the allowlist now excludes:
+
+- `hero-video.mp4` **2.49 MB** — and `app/sw.ts` makes video NetworkOnly at
+  runtime, so the cached copy could never be served. Downloaded, stored,
+  unreachable.
+- `pdfjs/…/pdf.worker.min.mjs` **1.35 MB** — licence-centre PDF preview only.
+- `splash/` + `splash-dark/` **1.38 MB** — 46 iOS launch images; a device
+  matches exactly one.
+- `install-steps/` **0.38 MB**, plus ~0.7 MB of retired-feature and orphaned
+  images (`swop.*`, `take-a-shot.*`, `icon-source.png`, `icons-check.png`,
+  `badge-72.png`) and `admin-mockup.html`.
+
+⚠️ **It is an allowlist now, on purpose.** An exclusion list can only be as good
+as the person who remembers to extend it; this one had grown to 8.2 MB of
+public/ by default. Eleven named files: the icon set, the notification glyph,
+the brand marks and the hero poster. A new top-level directory in `public/` is
+no longer downloaded by every visitor on sight.
+
+`admin-mockup.html` is **deleted** rather than merely excluded — the canonical
+mockup is `docs/design/admin-pwa/mockup.html`, and a design document was sitting
+in a production web root at a guessable URL.
+
+### The fonts were 1.42 MB of raw TTF
+
+`next/font/local` does not transcode; it copies. So every cold start fetched
+`montserrat-italic-variable.ttf` (685 KB), `montserrat-variable.ttf` (672 KB)
+and `league-spartan-variable.ttf` (92 KB) — while the comment above them claimed
+"variable woff2", which was true of the Desk's two faces and false of the three
+users actually download. Subset to Latin (Google's range + `U+2000-206F` for
+dashes and curly quotes) and re-encoded: **141 KB total**, `wght` axis intact.
+The exact `pyftsubset` command is in `app/fonts.ts`, next to the warning that
+dropping `U+2000-206F` breaks every apostrophe in the copy.
+
+### `/offline` was not in the precache, so the offline page did not exist offline
+
+`fallbacks.entries` names the URL, but in injectManifest mode that only tells
+the runtime *which* document to answer a failed navigation with — it does not
+put it on the device. Verified in the built worker: `/offline` appeared twice,
+as its own JS chunk and as the fallbacks entry, and never as a precache entry.
+The first offline navigation fetched `/offline`, failed, and got the browser's
+dinosaur. Now added to `precacheEntries` beside `__SW_MANIFEST` with a revision
+string (not `null`, which would pin the page's build-specific chunk list).
+
+### Notifications
+
+- **`renotify`** — `tag` dedupe replaces the previous notification for the same
+  entity, and a replacement that does not renotify is silent. The second outbid
+  on an auction, the one that actually costs the member the item, arrived with
+  no sound and no buzz. `renotify: Boolean(tag)` now (Chrome throws on renotify
+  without a tag). `timestamp` added so the shade shows a time.
+- **Push URLs are normalised before they are opened.** Rows written on a tunnel
+  or a dev host keep that absolute URL forever; `WindowClient.navigate` rejects
+  cross-origin, so the tap fell through to `openWindow` and left the installed
+  app for a dead domain. `lib/app-url.ts` is now the single rule, imported by
+  both the inbox (`lib/notifications.ts`) and the worker.
+- **One owner for the app-icon badge.** The worker was mirroring "notifications
+  in the shade" while the tab bar mirrored "unread inbox count", every 15s, onto
+  the same icon — a badge that changed number while the member looked at it. The
+  page owns it while a window is visible; the worker only when nothing is on
+  screen (its poll is suspended in the background, so it cannot).
+- **`pushsubscriptionchange`** — the browser rotating a subscription used to
+  silence the device permanently. Our backend only prunes on 404/410; a rotated
+  subscription answers 401/403, so the row survived, looked healthy, and no push
+  ever arrived again. The worker now re-subscribes (the page hands it the VAPID
+  key on every load, since it cannot fetch the key or hold a token) and asks a
+  window to re-POST `/push/subscribe`. **Known limit, documented in the
+  handler:** app closed + worker cold + key unknown cannot be repaired from
+  inside the worker, which is why the opt-in must stay visible on `/settings`.
+
+⚠️ **THE AUDIT'S OWN CLAIM ABOUT PUSH WAS WRONG, AND THIS IS THE CORRECTION.**
+It said informational events cannot push because `persist()` only pushes
+non-dismissible rows. It does: `!dismissible || forcePush`, and `forcePush: true`
+is **already set at 13 call sites**, including `motivation_ready` — the single
+event the applicant is sitting and waiting for. The local database was
+misleading (40 inbox rows, 1 push, because the operator's local runs are mostly
+motivations written before that flag existed, with no live subscription). Do not
+"fix" this again; check `grep -r "forcePush: true" backend/src` first.
+
+### The notch and the screen estate
+
+The top strip was already right (`paddingTop: env(safe-area-inset-top)`, content
+box, so the inset adds to the 54px). Everything else was missing:
+
+- **Landscape had no side insets at all** — the header's first icon and the tab
+  bar's left tab sat under the notch, half a tap target each. `.gg-shell-chrome`
+  now pads `safe-area-inset-left/right`. The manifest's `orientation: portrait`
+  is not a guard: iOS ignores it.
+- **Non-tab shell routes had no bottom inset.** The tab bar pads itself and
+  browser mode pads the body, which left `/checkout`, `/cart`, `/settings`,
+  `/notifications` and both Centres with their last row flush under the home
+  indicator. `.gg-shell-pane` now carries it, removed again where the tab bar is
+  present (`body:has([data-shell-tabs])`).
+- **The status-bar strip was a different colour from the row beneath it** — iOS
+  tints the band from `theme_color` (`--bg`, cream) while the header painted
+  `--bg-card` (white) through its padding. `backgroundClip: 'content-box'` on
+  the header row leaves the inset band transparent, so it reads as the page.
+- The witness masthead and `/offline` had no insets at all; both fixed in place.
+  Sign-in/sign-up/forgot/reset/verify are vertically centred with their own
+  padding and were left alone — a blanket `body` rule would have made each of
+  them scroll by the inset and lose its centring.
+
+### Manifest
+
+`launch_handler: { client_mode: 'navigate-existing' }` — tapping the home-screen
+icon no longer stacks a second window on the one the member left.
+`handle_links: 'preferred'` — an in-scope link opened from an SMS or WhatsApp can
+come to the installed app instead of a browser tab, which is the surface most of
+our links arrive on.
+
+### Still to check on a device
+
+- The status-bar tint against the new transparent strip, in both themes.
+- 46 `apple-touch-startup-image` `<link>` tags still go into every document
+  (~9 KB of HTML). Left alone deliberately: a `media` gate on `display-mode`
+  risks losing the splash entirely, and a lost iOS splash is worse than 9 KB.
+- The precache allowlist is a **budget**, not a setting. 4.5 MB is 3.7 MB of
+  route chunks — worth it, because precached chunks make every client-side
+  navigation instant — plus 0.4 MB of fonts/CSS and 0.14 MB of public assets.
+  If it climbs again, find what added it rather than widening the list.
+- `frontend/public/sw.js` is a **local build artifact and is correctly ignored**
+  (`frontend/.gitignore:42`); the source is `app/sw.ts` and the artefact is
+  regenerated by every build. A build on Windows writes backslashes into the
+  manifest URLs (`/splash-dark\…`) where a Linux one writes slashes; the URL
+  parser normalises them on both, and deploys build on Linux, so this is a
+  local-only curiosity. The first draft of this note claimed the file was
+  tracked in git and should be untracked — it was not; `git ls-files` says so.
+
 ## 2026-11-06 (POLISH) - THE LAST THREE FROM THE MO000074 READ
 
 **The 6.2 heading still clipped.** Capping it at 82 characters was a guess and
@@ -4767,8 +5058,13 @@ whose row says otherwise — the new select simply was not deployed yet.
 **NOTHING DEPLOYED.** Same session, same branch, working tree only.
 
 The Desk's replacement is built as a from-scratch dark neon PWA. Design mockup
-and spec live at `docs/design/admin-pwa/` (+ a live copy at
-`frontend/public/admin-mockup.html`); the real panel is under `frontend/app/admin/`.
+and spec live at `docs/design/admin-pwa/`; the real panel is under
+`frontend/app/admin/`.
+
+(The mockup used to be mirrored to `frontend/public/admin-mockup.html` so it
+could be opened over HTTP. That put a 90 KB design document in the web root of a
+production marketplace, and it was being downloaded by every visitor inside the
+service-worker precache. Removed 2026-11-06; open it from `docs/design/`.)
 
 **What exists now**
 

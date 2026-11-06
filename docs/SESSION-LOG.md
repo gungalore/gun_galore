@@ -63,7 +63,7 @@ What each session did, found, and changed — so the next one does not re-derive
 
 - New `/admin` PWA: `app/admin/{layout.tsx,admin.css}`, `(protected)/{layout,page}.tsx` + `warden|money|people|operate|insights/page.tsx`, `login/page.tsx`, `manifest.webmanifest/route.ts`.
 - Components: `components/admin/{admin-ui,admin-chrome,admin-drawer,admin-confirm,admin-session}.tsx`; libs `lib/admin-api.ts`, `lib/use-admin-poll.ts`.
-- Design mockup + spec: `docs/design/admin-pwa/` (live copy `frontend/public/admin-mockup.html`).
+- Design mockup + spec: `docs/design/admin-pwa/`. (The live mirror at `frontend/public/admin-mockup.html` was removed on 2026-11-06 — it was in the web root and in the PWA precache.)
 - Dark neon theme scoped to `.admin-os`; own PWA manifest (scope `/admin/`); Bearer-token store with single-flight refresh; polling only; role-gated writes with reason dialogs.
 - ⚠️ `WardenDaemonCard` probes `/admin/warden/board` once and shows "NOT WIRED" — the `warden/` daemon's backend proxy is still to be rebuilt.
 - ⚠️ The Insights flag board was **removed the same session, on the operator's call** — those flags are decided rules, not operator controls. Insights is analytics only (KPIs, velocity, by-category, top makes/models); `PATCH /admin/settings/:key` stays for deploy-time changes but has no UI. Do not re-add it.

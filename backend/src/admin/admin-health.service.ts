@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 
@@ -332,12 +332,26 @@ export class AdminHealthService {
       schedule: string;
       expectedIntervalSec: number;
     }> = [
+      // ⚠️ `shipping-poll` WAS REMOVED FROM THIS LIST ON 2026-11-06, and this
+      // note is the record of why. It watched a Pudo tracking poll that was
+      // retired on 2026-09-24 when the courier rail moved to Bob Go — the cron
+      // and the `pollPudoShipments()` client went with it (see the note in
+      // tasks.service.ts), but this row stayed. A watched job that no longer
+      // exists cannot go stale, it can only ever BE stale: the watchdog raised
+      // one urgent CRON_STALE on 2026-11-02 and, correctly, never cleared it,
+      // because the condition never changed. It sat in the alert queue for four
+      // days pointing at a heartbeat from 2026-09-29.
+      //
+      // The Setting row `cron:lastrun:shipping-poll` is still in the database
+      // and is inert, exactly like the deal-* rows above it. Bob Go's tracking
+      // arrives by webhook (bobgo-webhook.service.ts) and pending bookings are
+      // resolved by the every-5-minutes sweep; there is no poll to watch.
+      //
       // Every schedule below is cross-checked against the actual @Cron
       // decorators in tasks.service.ts (audit 2026-07-18 — dispatch-sla
       // was declared "every 10 min" while the cron runs hourly, which
       // false-red'd the row for 30 of every 60 minutes).
       //
-      { key: 'shipping-poll', label: 'Shipping tracking poll', schedule: 'every 10 min', expectedIntervalSec: 600 },
       // Nightly at 02:40. Deletes the encrypted identity documents behind
       // motivations past their retention date. A retention job that stops
       // running is a POPIA problem, not a missing nicety, so it is watched.
