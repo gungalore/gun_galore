@@ -565,8 +565,8 @@ describe('the annexure index', () => {
     });
     const text = flat((await readPdfAsync(pdf)).text);
     expect(text).toContain('ANNEXURES');
-    expect(text).toMatch(/Annexure A\s*-\s*Copy of the applicant/i);
-    expect(text).toMatch(/Annexure B\s*-\s*Photographs of the safe/i);
+    expect(text).toMatch(/Annexure A\s*\u2014\s*Copy of the applicant/i);
+    expect(text).toMatch(/Annexure B\s*\u2014\s*Photographs of the safe/i);
     // A divider, not a form: no attach instruction and no placeholder box.
     expect(text).not.toContain('Place the copy here.');
     expect(text).not.toContain('Attach your');
@@ -598,7 +598,7 @@ describe('the annexure index', () => {
 
     const pages = await pageTexts(pdf);
     const contents = pages.find((p) => p.includes('CONTENTS')) ?? '';
-    const cited = /Annexure A\s*-\s*Copy[^)]*\)\s*(\d+)/.exec(contents);
+    const cited = /Annexure A\s*\u2014\s*Copy[^)]*\)\s*(\d+)/.exec(contents);
     expect(cited).not.toBeNull();
 
     // 1-based page numbers in the contents; the cited sheet opens the annexure.
@@ -690,7 +690,9 @@ describe('the annexure index', () => {
       })),
     });
     const pages = await pageTexts(pdf);
-    const opening = pages.find((p) => /Annexure A\s*\u2014\s*Copy/.test(p));
+    const opening = pages.find(
+      (p) => /Annexure A\s*\u2014\s*Copy/.test(p) && !p.includes('CONTENTS'),
+    );
     expect(opening).toBeDefined();
     expect(opening).toMatch(/\(1 of 2\)/);
   });
@@ -825,9 +827,14 @@ describe('the annexure index', () => {
     // every letter on one page, so "includes('Annexure B')" matches the index
     // before it ever reaches the copy. The caption is the only place a letter
     // is joined to its label by an em dash.
+    // ⚠️ AND NOT THE CONTENTS PAGE, WHICH NOW USES THE SAME EM DASH. The index
+    // and the opening caption read identically on purpose; the locator has to
+    // skip the page that lists every letter.
     const at = (letter: string) =>
-      pages.findIndex((p) =>
-        new RegExp(`Annexure ${letter}\\s*\\u2014`).test(p),
+      pages.findIndex(
+        (p) =>
+          new RegExp(`Annexure ${letter}\\s*\\u2014`).test(p) &&
+          !p.includes('CONTENTS'),
       );
     const a = at('A');
     const b = at('B');
@@ -925,13 +932,13 @@ describe('the annexure index', () => {
     const pages = await pageTexts(pdf);
     const contents = pages.find((p) => p.includes('CONTENTS')) ?? '';
     const cited =
-      /Annexure B\s*-\s*The previous owner.s consent[^)]*\)\s*(\d+)/.exec(
+      /Annexure B\s*\u2014\s*The previous owner.s consent[^)]*\)\s*(\d+)/.exec(
         contents,
       );
     expect(cited).not.toBeNull();
 
     const actual = pages.findIndex((p) =>
-      /Annexure B\s*\u2014\s*The previous owner/.test(p),
+      /Annexure B\s*\u2014\s*The previous owner/.test(p) && !p.includes('CONTENTS'),
     );
     expect(actual).toBeGreaterThanOrEqual(0);
     expect(actual + 1).toBe(Number(cited![1]));

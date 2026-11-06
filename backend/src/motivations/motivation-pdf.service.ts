@@ -3798,15 +3798,19 @@ export class MotivationPdfService {
        * ⚠️ THE QUESTION IS THE HEADING, AND A QUESTION CAN OUTRUN THE BAND.
        * "Why is the MOSSBERG 500, chambered in 12 GAUGE, suited for hunting for
        * Rock pigeon, Egyptian goose" ran off the right edge of MO000073's page
-       * 10 and was clipped mid-word. The argument underneath still carries the
-       * full question; the band gets a readable stub.
+       * 10 and was clipped mid-word. Capping it at 82 characters was not
+       * enough — MO000074 still ended "…SUITED FOR HUNTING F" at the edge — so
+       * the cap is measured against the band rather than guessed: the title is
+       * drawn in caps with letter-spacing, and about sixty-four characters is
+       * what fits at this size. The argument underneath still carries the full
+       * question in its own words.
        */
       const label =
         input.suitabilitySheet?.label ??
         `Why ${article?.title ?? 'this cartridge'} suits this purpose`;
       renderHeading(
         cartridgeSubHeading(
-          label.length > 82 ? `${label.slice(0, 81).trimEnd()}…` : label,
+          label.length > 64 ? `${label.slice(0, 63).trimEnd()}…` : label,
           '2',
         ),
       );
@@ -5037,7 +5041,14 @@ export class MotivationPdfService {
      * "Annexure B - SAPS competency certificate (1 items; expected)".
      */
     const annexureContentsHeading = (a: AnnexureEntry) =>
-      `Annexure ${a.letter} - ${a.label} (${a.count} ${
+      /**
+       * ⚠️ AN EM DASH, THE SAME ONE THE DIVIDER PAGES USE. The contents listed
+       * "Annexure A - Copy of the applicant's identity document" while the page
+       * it points at read "Annexure A — Copy of …", so the index and the tab it
+       * named did not match character for character on a document a DFO reads
+       * with a thumb.
+       */
+      `Annexure ${a.letter} — ${a.label} (${a.count} ${
         a.count === 1 ? 'item' : 'items'
       }; ${certificationPhrase(a.certification)})`;
 

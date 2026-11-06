@@ -7,6 +7,24 @@ overwritten.
 
 Last updated: **2026-11-06**.
 
+## 2026-11-06 (POLISH) - THE LAST THREE FROM THE MO000074 READ
+
+**The 6.2 heading still clipped.** Capping it at 82 characters was a guess and
+it was wrong — MO000074 ended "…SUITED FOR HUNTING F" at the page edge. The
+band takes about sixty-four characters in caps with letter-spacing; the argument
+underneath still carries the full question.
+
+**The index and its own tabs disagreed on punctuation.** The contents listed
+"Annexure A - Copy of …" while the page it pointed at read "Annexure A — Copy
+of …". Both use the em dash now, which means the spec locators have to skip the
+contents page: it looks identical to the opening caption on purpose.
+
+**The writer was inventing frequency.** MO000074 said "I spend most of my
+weekends at the shooting range" of a man whose entire history was two ticked
+chips. The history brief now forbids a frequency, a duration or a club name the
+facts do not carry — a short honest paragraph is correct, a padded one is a
+false statement the applicant signs.
+
 ## 2026-11-06 (CONTENT) - NO ASSOCIATION, NO ASSOCIATION SECTION; NO NAMED DISCIPLINE, NO EXHIBIT
 
 Operator, on the same review: "do it, but if no association is given then it

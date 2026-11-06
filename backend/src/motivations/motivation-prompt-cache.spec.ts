@@ -356,29 +356,40 @@ const BEFORE_THE_REORDER: Record<
    * are now in every type's plan, so every prompt gained their briefs. The
    * line count rose by five or six on most types and by six on S24.
    */
+  /**
+   * ⚠️ RE-BASELINED ON 2026-11-06 — the shooting-history brief stopped allowing
+   * an invented frequency.
+   *
+   * A rendered pack said "I spend most of my weekends at the shooting range" of
+   * an applicant whose entire history was two ticked chips. The brief now
+   * forbids a frequency, a duration or a club name the facts do not carry, and
+   * tells the writer that a short honest paragraph is the correct answer. Every
+   * type's plan carries that brief, so all six hashes moved and not one line
+   * count did — which is the check that this was a rewording.
+   */
   S14_RESTRICTED_SELF_DEFENCE: {
     lines: 133,
-    sha: '6db3398f8acdf4a854efdc3f65eedcb827ac469ae03c7463d89f62f24729c18f',
+    sha: '75bbb6f5d18f414a5fe85417bc7a2eb413e09b4f0986a789e832e109060a2258',
   },
   S13_SELF_DEFENCE: {
     lines: 134,
-    sha: 'ba96999b4c75411a6bb565351408c7efd70a949d359bc76fb935156cb5f2ff1a',
+    sha: '65df8d4716e504a31d7e64b65340f47cfa764bfc2d996e7714f81c4411f7e2e1',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 134,
-    sha: '1d6e8c5df43d0509a16fe801ead6aa7708573e46303ff908c7545db620e3b940',
+    sha: '99a34f16741be0e92a63204a917258ff59803815b644345596a626cf63505327',
   },
   S16_DEDICATED_HUNTER: {
     lines: 134,
-    sha: '99069e9c644ba90917c26d9f35804d64f842ab8f9410f1943b2ae6986f7505b5',
+    sha: 'bdf178ffef62a293ac639203587e6d2abbb96b79f870c8c80eae56b2b9ed2bbf',
   },
   S16_DEDICATED_SPORT: {
     lines: 134,
-    sha: '790f0cd68b193005df5aeb21f2db3ca43b566c03c6b49759005637cd7049b89c',
+    sha: '75ec4ce190d53564f27b34a25814752efa8067f98e62349b650f37366f2c2362',
   },
   S24_RENEWAL: {
     lines: 128,
-    sha: '8e616cdd801d7db77b4fa9280c8b040781aab4cbfab95a0312a4c02269834f51',
+    sha: 'eec4b692e9cfa025c451049fb1b49759c50905291efc775cf6c089837a9e6f30',
   },
 };
 
@@ -440,6 +451,9 @@ describe('generation prompt — cacheable prefix', () => {
 
 describe('generation prompt — the reorder changed no content', () => {
   it('produces the same set of non-empty lines as before the reorder', () => {
+    for (const t of TYPES) {
+      const p = generationUserPrompt(packFor(t, 'a'), planFor(t, 7));
+    }
     for (const t of TYPES) {
       const p = generationUserPrompt(packFor(t, 'a'), planFor(t, 7));
       expect(contentIdentity(p)).toEqual(BEFORE_THE_REORDER[t]);
