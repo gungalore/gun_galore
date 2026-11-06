@@ -9,6 +9,10 @@ Last updated: **2026-11-06**.
 
 ## 2026-11-06 (LATER) - THE INTERVIEW ASKS WHAT THE DOCUMENT NEEDS
 
+Deployed `ebdbfe8e` (full; rollback `alloutdoor-20261106-063030.dump`,
+33,625,674 bytes). Backend 407 suites / 6,056 tests, production build OK both
+sides, both health checks twice, public 200 twice, three pm2 services online.
+
 **What triggered it.** The end-of-interview panel listed "what the firearm is
 for" and "the species you intend to hunt" as missing, with "the interview stays
 open". It had never asked either. Operator: "It never asked these questions."
