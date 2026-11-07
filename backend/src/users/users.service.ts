@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   Injectable,
   Logger,
@@ -1306,6 +1306,47 @@ export class UsersService {
     const makeDefault =
       input.isDefault === true ||
       (count === 0 && !this.profileAddressEntry(user, false));
+
+    // THE SAME PLACE, TWICE, IS ONE ADDRESS. The checkout and the sell form both
+    // offer "save this address", so the same place would otherwise accumulate a
+    // row per order. Matched on the five fields that decide where a parcel
+    // lands, trimmed and case-insensitive — the same rule the checkout uses.
+    const norm = (v: string | null | undefined) =>
+      (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const existing = await this.prisma.address.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        street: true,
+        suburb: true,
+        city: true,
+        postalCode: true,
+        isDefault: true,
+      },
+    });
+    const match = existing.find(
+      (a) =>
+        norm(a.street) === norm(input.street) &&
+        norm(a.suburb) === norm(input.suburb) &&
+        norm(a.city) === norm(input.city) &&
+        norm(a.postalCode) === norm(input.postalCode),
+    );
+    if (match) {
+      if (input.isDefault === true && !match.isDefault) {
+        await this.prisma.$transaction([
+          this.prisma.address.updateMany({
+            where: { userId, isDefault: true },
+            data: { isDefault: false },
+          }),
+          this.prisma.address.update({
+            where: { id: match.id },
+            data: { isDefault: true },
+          }),
+        ]);
+      }
+      return this.prisma.address.findUniqueOrThrow({ where: { id: match.id } });
+    }
+
     return this.prisma.$transaction(async (tx) => {
       if (makeDefault) {
         await tx.address.updateMany({

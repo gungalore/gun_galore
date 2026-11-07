@@ -700,6 +700,10 @@ export default function NewListingPage() {
   // when the seller typed manually instead of picking a Google suggestion.
   const [pickupLat, setPickupLat] = useState<number | null>(null);
   const [pickupLng, setPickupLng] = useState<number | null>(null);
+  // Add the pickup address to the seller's address book, as their default.
+  // Only offered when the entered address is NOT the one already on their
+  // profile — there is nothing to promote if it is.
+  const [makePickupDefault, setMakePickupDefault] = useState(false);
 
   // Parcel weight + dimensions. Required for non-firearm listings — the
   // courier needs them to quote a rate. Stored as strings here for forgiving
@@ -2771,11 +2775,41 @@ export default function NewListingPage() {
         // ignore
       }
 
+      // The seller asked for this pickup address to become their default.
+      // Fire-and-forget AFTER the listing exists: the publish is the thing
+      // that matters, and the server de-duplicates the address book.
+      if (makePickupDefault) {
+        void getToken()
+          .then((t) =>
+            t
+              ? fetch(`${API_URL}/users/me/addresses`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${t}`,
+                  },
+                  body: JSON.stringify({
+                    building: pickupAddress.building.trim() || null,
+                    street: pickupAddress.street.trim(),
+                    address2: pickupAddress.address2.trim() || null,
+                    suburb: pickupAddress.suburb.trim() || null,
+                    city: pickupAddress.city.trim(),
+                    postalCode: pickupAddress.postalCode.trim(),
+                    province: pickupAddress.province,
+                    lat: pickupLat,
+                    lng: pickupLng,
+                    isDefault: true,
+                  }),
+                })
+              : undefined,
+          )
+          .catch(() => {});
+      }
+
       // A refused/failed video must not hide the successful listing. Keep the
       // seller on a clear notice so they can view the listing or add another
       // video from the edit page.
-      if (videoStripped) {
-        setStrippedVideoNotice({ listingId: listing.id });
+      if (videoStripped) {        setStrippedVideoNotice({ listingId: listing.id });
         setSubmitting(false);
         setPublishProgress(null);
         return;
@@ -4711,6 +4745,35 @@ export default function NewListingPage() {
                   idPrefix="pickup"
                 />
               </div>
+              {pickupAddress.street.trim() &&
+                pickupAddress.city.trim() &&
+                pickupAddress.postalCode.trim() &&
+                currentMe &&
+                !(
+                  (currentMe.addrStreet ?? '').trim().toLowerCase() ===
+                    pickupAddress.street.trim().toLowerCase() &&
+                  (currentMe.addrPostalCode ?? '').trim().toLowerCase() ===
+                    pickupAddress.postalCode.trim().toLowerCase()
+                ) && (
+                  <label
+                    className="flex items-start gap-2 text-xs mt-3"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={makePickupDefault}
+                      onChange={(e) => setMakePickupDefault(e.target.checked)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      Make this my default address (it is not the one on your
+                      profile)
+                    </span>
+                  </label>
+                )}
             </Field>
 
             {/* What happens at this address once it sells. A courier collects

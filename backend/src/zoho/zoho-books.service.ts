@@ -596,9 +596,11 @@ export class ZohoBooksService {
    * a marketplace sale. Called from the verification-APPROVED hook.
    *
    * Idempotent: skips if zohoCommissionInvoiceId already set.
-   * Skips silently for PRIVATE_ARRANGE (no commission on that flow â€”
-   * funds release direct to seller at payment capture, no agent
-   * relationship to invoice).
+   * Skips only when commissionZar is zero â€” i.e. a Buy Now sale, where the
+   * seller pays no fee and the platform's income is the buyer's Platform Fee
+   * line on the buyer invoice. PRIVATE_ARRANGE and DEALER_TRANSFER are NOT
+   * skipped: the fee calculator charges commission on them exactly as on a
+   * courier sale, so they are invoiced like any other fee-bearing sale.
    *
    * On any error: writes FAILED status + error message to the
    * transaction row. Caller doesn't need to try/catch â€” this method

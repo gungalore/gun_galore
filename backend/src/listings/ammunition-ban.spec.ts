@@ -939,6 +939,7 @@ function makeService(
     // BUY_NOW markup maths honest wherever a spec touches pricing.
     new FeeCalculator(),
     { resolveByEntity: jest.fn() } as never, // notifications
+    { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
   );
   return { service, prisma, search, moderation };
 }

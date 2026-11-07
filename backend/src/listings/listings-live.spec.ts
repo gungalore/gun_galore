@@ -39,6 +39,7 @@ function makeService(over: Record<string, unknown> = {}) {
     { record: jest.fn() } as never,
     new FeeCalculator(),
     { resolveByEntity: jest.fn() } as never,
+    { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
   );
   return { service, prisma };
 }

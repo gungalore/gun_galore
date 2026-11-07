@@ -307,4 +307,29 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
     render: () =>
       `Welcome to All Outdoor. Finish setting up your profile so you can buy, sell and get your order updates here.`,
   },
+
+  // ── Seller identity verification ────────────────────────────────────
+  // Sent the moment a listing goes live, and again (urgently) when money is
+  // actually captured for one of the seller's items — that second send is the
+  // enforcement point: the payout is held until the check passes.
+  //
+  // ⚠️ NO ORDER REFERENCE, deliberately. The same template serves both
+  // moments, and a reference in the body would be wrong at go-live. It also
+  // keeps the lock screen free of anything about the item or the money: the
+  // deep link is the only detail, and it lands behind the auth wall.
+  //
+  // ⚠️ NEVER the words "KYC" or "escrow" — product rule. "Verify your
+  // identity" is the approved wording.
+  seller_kyc_required: {
+    key: 'seller_kyc_required',
+    metaName: 'seller_kyc_required',
+    lang: 'en',
+    requiredVars: [],
+    linkVars: [],
+    // Static button (…/t/k), so no button parameter is sent.
+    linkCode: () => 'k',
+    buttonParam: false,
+    render: () =>
+      `Verify your identity to receive your All Outdoor payouts. It takes about 3 minutes, and any money you are owed stays safely held until you are done.`,
+  },
 };

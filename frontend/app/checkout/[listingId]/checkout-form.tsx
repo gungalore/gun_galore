@@ -322,6 +322,14 @@ export function CheckoutForm({
   // mount prefill below can't race-overwrite the picked address.
   const addrPinnedRef = useRef(false);
 
+  // Address book, so the checkout can tell whether the address the buyer just
+  // typed is NEW. That is the question the operator asked to be asked: a new
+  // address may become their default; one they already have should never be
+  // re-offered as "new".
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [saveAddressToBook, setSaveAddressToBook] = useState(true);
+  const [makeAddressDefault, setMakeAddressDefault] = useState(false);
+
   // AUDIT M33 — 18+/competency attestation for firearm checkouts. The
   // backend HARD-refuses any firearm transaction without the explicit
   // `true` flag, so this gate is mirrored on Pay/isReady. Non-firearm
@@ -352,6 +360,31 @@ export function CheckoutForm({
     if (usesDeliveryPicker) return;
     setUseDifferentAddress(false);
   }, [method, usesDeliveryPicker]);
+
+  // The buyer's address book. Only used to answer "is this address new?", so a
+  // failure is silent: the checkout works without it, and the server still
+  // de-duplicates on save.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { url, headers } = await authedRequest('/users/me/addresses');
+        const res = await fetch(url, { headers, cache: 'no-store' });
+        if (!res.ok) return;
+        const rows = (await res.json()) as Address[];
+        if (cancelled || !Array.isArray(rows)) return;
+        setSavedAddresses(rows);
+        // A member with no default yet should get one without having to think
+        // about it — the checkbox starts ticked, and they can untick it.
+        if (!rows.some((a) => a.isDefault)) setMakeAddressDefault(true);
+      } catch {
+        // Non-fatal.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
 
 
   useEffect(() => {
@@ -404,6 +437,38 @@ export function CheckoutForm({
   // for this order; otherwise the profile values. Drives the delivery
   // options and buildPayload uniformly.
   const usingCaptureAddr = !hasSavedAddress || useDifferentAddress;
+
+  // Is the address the buyer is typing already in their book? Compared on the
+  // five fields that decide where a parcel lands, trimmed and case-insensitive,
+  // so "12 Main Rd" and "12 main rd " are the same place — the exact rule the
+  // server applies when it saves.
+  const addrKey = (a: {
+    street?: string | null;
+    suburb?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+  }) =>
+    [a.street, a.suburb, a.city, a.postalCode]
+      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
+      .join('|');
+  const captureAddressComplete = !!(
+    captureAddr.street.trim() &&
+    captureAddr.suburb.trim() &&
+    captureAddr.city.trim() &&
+    captureAddr.postalCode.trim()
+  );
+  const matchingSavedAddress = captureAddressComplete
+    ? savedAddresses.find(
+        (a) => addrKey(a) === addrKey(captureAddr),
+      )
+    : undefined;
+  const captureAddressIsNew = captureAddressComplete && !matchingSavedAddress;
+  // Shown for a new address (it may become the default) and for an existing
+  // one that is not the default yet — the two moments the question is real.
+  const showDefaultPrompt =
+    captureAddressComplete &&
+    (!matchingSavedAddress || !matchingSavedAddress.isDefault) &&
+    !useDifferentAddress;
 
   // UX-3 — a picked address-book entry drives the SAME capture state a typed
   // address does, so the checkout payload is byte-identical to typing it. We
@@ -642,6 +707,17 @@ export function CheckoutForm({
       return {
         ...base,
         deliveryAddress: addr,
+        // Persist the typed address to the buyer's book (opt-out via the
+        // checkbox above). Only meaningful for a typed address — a saved one is
+        // already there. The server de-duplicates and enforces one default.
+        ...(usingCaptureAddr
+          ? {
+              saveDeliveryAddress: saveAddressToBook,
+              ...(saveAddressToBook && makeAddressDefault
+                ? { makeDeliveryAddressDefault: true }
+                : {}),
+            }
+          : {}),
         deliveryOption: deliveryOption?.kind,
         ...(deliveryOption?.kind === 'STORE_PICKUP'
           ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
@@ -1207,6 +1283,34 @@ export function CheckoutForm({
                   address. One-off overrides MUST NOT touch the
                   saved profile. The options below read LIVE from these
                   inputs either way — no Save step needed to see prices. */}
+              {!useDifferentAddress && captureAddressComplete && (
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={saveAddressToBook}
+                      onChange={(e) => setSaveAddressToBook(e.target.checked)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      {captureAddressIsNew
+                        ? 'Save this address to my address book'
+                        : 'This address is already saved'}
+                    </span>
+                  </label>
+                  {saveAddressToBook && showDefaultPrompt && (
+                    <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={makeAddressDefault}
+                        onChange={(e) => setMakeAddressDefault(e.target.checked)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span>Make this my default delivery address</span>
+                    </label>
+                  )}
+                </div>
+              )}
               {!useDifferentAddress && (
                 <button
                   type="button"

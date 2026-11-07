@@ -66,7 +66,16 @@ function makeService(o: Overrides = {}) {
       upsert: jest.fn(async () => ({ id: 'dv1' })),
       update: jest.fn(async () => ({ id: 'dv1' })),
     },
-    adminAlert: { create: jest.fn(async () => ({})) },
+    adminAlert: {
+      create: jest.fn(async () => ({})),
+      findFirst: jest.fn(async () => null),
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    // markSellerCleared stamps every paid sale of a seller who just passed.
+    transaction: {
+      findMany: jest.fn(async () => []),
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
     loginEvent: { create: jest.fn(async () => ({})) },
   };
 

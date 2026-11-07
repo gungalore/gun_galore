@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
 import { av } from '@/lib/asset-version';
@@ -191,6 +191,9 @@ export default function EditProfilePage() {
   const [addrLat, setAddrLat] = useState<number | null>(null);
   const [addrLng, setAddrLng] = useState<number | null>(null);
   const [savingAddress, setSavingAddress] = useState(false);
+  // Promote the saved profile address to the default entry in the delivery
+  // address book, so checkout offers it first.
+  const [setAsDefault, setSetAsDefault] = useState(false);
   const [addressStatus, setAddressStatus] = useState<
     { tone: 'success' | 'error'; msg: string } | null
   >(null);
@@ -369,6 +372,30 @@ export default function EditProfilePage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
+      // Mirror the saved address into the delivery address book when the
+      // member asked for it to be their default. Best-effort: the profile
+      // address is already saved, so a failure here must not report an error.
+      if (setAsDefault && addr.street.trim() && addr.city.trim()) {
+        void fetch(`${API_URL}/users/me/addresses`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            building: addr.building.trim() || null,
+            street: addr.street.trim(),
+            address2: addr.address2.trim() || null,
+            suburb: addr.suburb.trim() || null,
+            city: addr.city.trim(),
+            postalCode: addr.postalCode.trim(),
+            province: addr.province,
+            lat: addrLat,
+            lng: addrLng,
+            isDefault: true,
+          }),
+        }).catch(() => {});
+      }
       await refreshMe();
       setAddressStatus({ tone: 'success', msg: 'Address saved.' });
     } catch (err) {
@@ -1448,6 +1475,20 @@ export default function EditProfilePage() {
                   idPrefix="profile"
                 />
               </div>
+              <label
+                className="flex items-start gap-2 text-xs mt-3"
+                style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={setAsDefault}
+                  onChange={(e) => setSetAsDefault(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  Make this my default delivery address (used on checkout)
+                </span>
+              </label>
             </Field>
 
             <div className="flex items-center gap-3 pt-2">

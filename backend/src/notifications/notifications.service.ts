@@ -6022,6 +6022,26 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * "Verify your identity" over WhatsApp — sent when a listing goes live and
+   * again when a payment is captured (that second one is the payout hold).
+   *
+   * Same gates as every other WhatsApp send: the kill switch and the member's
+   * own opt-in. A miss is silent by design — the email always goes, and a
+   * failed WhatsApp must not turn into a failed notification.
+   */
+  async sellerKycRequiredWhatsapp(d: {
+    userId: string;
+    phone: string | null;
+  }): Promise<void> {
+    if (!d.phone) return;
+    await this.tryWhatsapp(
+      d.phone,
+      { templateKey: 'seller_kyc_required', vars: {} },
+      `kyc-required-${d.userId}`,
+    );
+  }
+
   // ─────────────────── Notification preference gate ──────────────────
   // A registered user can mute email or SMS entirely. NotificationsService
   // is the single chokepoint for both channels, so the check lives here.

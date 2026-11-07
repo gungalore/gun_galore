@@ -17,6 +17,7 @@ import {
 } from './listing-inquiries.controller';
 import { CategoriesModule } from '../categories/categories.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
+import { KycModule } from '../kyc/kyc.module';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 
 @Module({
@@ -25,7 +26,9 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
   // per-listing attribute values (P4.2).
   // WishlistAlertsModule (P5.2) exports WishlistAlertsService — the price-drop
   // fan-out to wishlisters on a seller price cut.
-  imports: [CategoriesModule, WishlistAlertsModule],
+  // KycModule exports KycService — the "verify your identity" offer fired the
+  // moment a listing goes live.
+  imports: [CategoriesModule, WishlistAlertsModule, KycModule],
   controllers: [
     ListingsController,
     ListingQuestionsController,

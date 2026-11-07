@@ -14,6 +14,7 @@
  * | `a<actionToken>`   | `/a/<token>`            |
  * | `m<motivationId>`  | `/licence-centre/<id>`  |
  * | `p`                | `/profile/edit`         |
+ * | `k`                | `/kyc/verify`           |
  * | `b`                | `/my/orders`            |
  * | `s`                | `/my/sales`             |
  * | `r`                | `/offers/received`      |
@@ -59,6 +60,8 @@ export function resolveShortCode(code: string): string {
 
   // Fixed, argument-free codes first — nothing to validate.
   if (code === 'p') return '/profile/edit';
+  // Identity-verification deep link (seller payout gate).
+  if (code === 'k') return '/kyc/verify';
   if (code === 'b') return '/my/orders';
   if (code === 's') return '/my/sales';
   if (code === 'r') return '/offers/received';

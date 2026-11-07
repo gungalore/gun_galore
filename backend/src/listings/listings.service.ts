@@ -39,6 +39,7 @@ import { resolvePostalArea } from './postal-locality';
 import { Prisma } from '@prisma/client';
 import { FeeCalculator } from '../payments/fee.calculator';
 import { NotificationsService } from '../notifications/notifications.service';
+import { KycService } from '../kyc/kyc.service';
 
 // Public-safe projection for the unauthenticated GET /listings/:id detail
 // endpoint. This is an explicit ALLOWLIST: every field named here is safe to
@@ -918,6 +919,10 @@ export class ListingsService {
     // the listing-task notifications (photos missing, firearm delisted) when
     // the seller republishes the listing to ACTIVE.
     private readonly notifications: NotificationsService,
+    // Appended last for the same positional-spec reason. KycModule exports
+    // KycService, and ListingsModule imports it. Used to offer identity
+    // verification the moment a listing goes live.
+    private readonly kyc: KycService,
   ) {}
 
   // AMMUNITION BAN — the single chokepoint every write path calls
@@ -1974,7 +1979,31 @@ export class ListingsService {
       await this.indexListing({ ...listing, category });
     }
 
+    // GO-LIVE IDENTITY OFFER. The listing is live; the seller now has a reason
+    // to verify before a buyer's money is ever involved. Fire-and-forget: the
+    // listing must publish even if the notification rails are down, and the
+    // method is idempotent per seller. Only for a listing that ACTUALLY went
+    // live — a PENDING_REVIEW row gets this on admin approval instead.
+    if (listing.status === ListingStatus.ACTIVE) {
+      void this.kyc
+        .offerAtListingLive(user.id)
+        .catch((err) =>
+          this.logger.warn(
+            `offerAtListingLive failed for ${user.id}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
     return listing;
+  }
+
+  /**
+   * Admin-approval path: a listing that sat in PENDING_REVIEW has just gone
+   * live, so the seller is offered identity verification now. Thin delegate so
+   * AdminService does not need KycService wired into its own constructor.
+   */
+  async offerSellerVerification(sellerId: string): Promise<void> {
+    await this.kyc.offerAtListingLive(sellerId);
   }
 
   /**

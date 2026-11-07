@@ -425,6 +425,15 @@ export class AdminService {
       ? this.notifications.listingApproved(sellerDetails)
       : this.notifications.listingRejected(sellerDetails));
 
+    // Approval is a GO-LIVE, so it carries the same identity offer as a
+    // listing that published straight to ACTIVE. Fire-and-forget — an
+    // approval must not fail because a notification rail is down.
+    if (newStatus === 'ACTIVE') {
+      void this.listings
+        .offerSellerVerification(listing.sellerId)
+        .catch(() => undefined);
+    }
+
     return updated;
   }
 

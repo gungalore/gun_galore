@@ -47,6 +47,7 @@ describe('ListingsService — browse filters & brand facet', () => {
       // BUY_NOW markup maths honest wherever a spec touches pricing.
       new FeeCalculator(),
       { resolveByEntity: jest.fn() } as never, // notifications
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
     );
   });
 
@@ -198,6 +199,7 @@ describe('ListingsService — findById projection & owner-awareness', () => {
       // BUY_NOW markup maths honest wherever a spec touches pricing.
       new FeeCalculator(),
       { resolveByEntity: jest.fn() } as never, // notifications
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
     );
   });
 
@@ -379,6 +381,7 @@ describe('ListingsService — distanceToBuyer (W3)', () => {
       { record: jest.fn() } as never,
       new FeeCalculator(),
       { resolveByEntity: jest.fn() } as never, // notifications
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
     );
     return { service, prisma };
   }
@@ -457,6 +460,7 @@ describe('ListingsService — cancel status guard', () => {
       { record: jest.fn() } as never,
       new FeeCalculator(),
       { resolveByEntity: jest.fn() } as never, // notifications
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never, // kyc
     );
   });
 

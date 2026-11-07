@@ -127,6 +127,35 @@ export function OfferCheckoutForm({
     contactName: '',
     contactPhone: '',
   });
+  // The address book decides whether the typed address is NEW, which is what
+  // makes the "make it your default" question honest. A failure here is
+  // non-fatal — checkout still works and the server de-duplicates.
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [saveAddressToBook, setSaveAddressToBook] = useState(true);
+  const [makeAddressDefault, setMakeAddressDefault] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/users/me/addresses`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const rows = (await res.json()) as Address[];
+        if (cancelled || !Array.isArray(rows)) return;
+        setSavedAddresses(rows);
+        if (!rows.some((a) => a.isDefault)) setMakeAddressDefault(true);
+      } catch {
+        // Non-fatal.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase-1 payment gate — card payments aren't live yet, so a checkout POST
@@ -153,6 +182,24 @@ export function OfferCheckoutForm({
         province: deliveryAddress.province,
       }
     : null;
+
+  // The same five-field comparison the server uses to de-duplicate, so the
+  // "already saved" label cannot disagree with what saving will do.
+  const addrKey = (a: {
+    street?: string | null;
+    streetAddress?: string | null;
+    suburb?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+  }) =>
+    [a.street ?? a.streetAddress, a.suburb, a.city, a.postalCode]
+      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
+      .join('|');
+  const matchingSavedAddress = addressComplete
+    ? savedAddresses.find((a) => addrKey(a) === addrKey(deliveryAddress))
+    : undefined;
+  const showDefaultPrompt =
+    addressComplete && (!matchingSavedAddress || !matchingSavedAddress.isDefault);
 
   // A price quoted against the old address must never survive an edit.
   useEffect(() => {
@@ -191,6 +238,12 @@ export function OfferCheckoutForm({
       return {
         ...base,
         deliveryAddress: deliveryAddress,
+        // Remember the address; the server de-duplicates and enforces one
+        // default. Saving is opt-out via the checkbox above.
+        saveDeliveryAddress: saveAddressToBook,
+        ...(saveAddressToBook && makeAddressDefault
+          ? { makeDeliveryAddressDefault: true }
+          : {}),
         deliveryOption: deliveryOption?.kind,
         ...(deliveryOption?.kind === 'STORE_PICKUP'
           ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
@@ -366,6 +419,37 @@ export function OfferCheckoutForm({
               </Field>
             ))}
           </div>
+
+          {/* Offer this address to the address book, and ask the only question
+              worth asking: should it be the default? */}
+          {addressComplete && (
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={saveAddressToBook}
+                  onChange={(e) => setSaveAddressToBook(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  {matchingSavedAddress
+                    ? 'This address is already saved'
+                    : 'Save this address to my address book'}
+                </span>
+              </label>
+              {saveAddressToBook && showDefaultPrompt && (
+                <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={makeAddressDefault}
+                    onChange={(e) => setMakeAddressDefault(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>Make this my default delivery address</span>
+                </label>
+              )}
+            </div>
+          )}
 
           {/* Door rate for this parcel + address. The buyer is never asked to
               choose a carrier, and the same component serves the Buy Now

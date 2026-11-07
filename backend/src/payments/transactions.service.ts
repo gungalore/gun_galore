@@ -926,20 +926,22 @@ export class TransactionsService {
       );
     }
 
-    // KYC TRIGGER — if this seller hasn't been verified yet, fire the
-    // VerifyNow prompt (SMS + email + in-app banner flag). idempotent:
-    // repeat sales on the same unverified seller don't re-notify.
-    // Fire-and-forget so a slow SMS gateway never blocks the buyer's
-    // checkout redirect.
-    if (listing.seller.kycStatus !== 'VERIFIED') {
-      void this.kyc
-        .triggerSellerVerification(listing.sellerId)
-        .catch((err) =>
-          this.logger.warn(
-            `triggerSellerVerification failed for ${listing.sellerId}: ${(err as Error).message}`,
-          ),
-        );
-    }
+    // Remember the address this buyer just typed, so the next checkout can
+    // offer it instead of asking again. Fire-and-forget: a failure here must
+    // never fail a checkout that has already reserved stock and created the
+    // sale row — the address snapshot on the transaction is authoritative.
+    void this.saveCheckoutAddress(buyer.id, dto).catch((err) =>
+      this.logger.warn(
+        `saveCheckoutAddress failed for buyer ${buyer.id}: ${(err as Error).message}`,
+      ),
+    );
+
+    // ⚠️ NO KYC PROMPT HERE ANY MORE. It fired when a buyer merely OPENED a
+    // checkout, so a seller was nagged over SMS and email for sales that never
+    // completed, and the message carried no leverage because no money existed
+    // yet. The prompt now fires at listing go-live (KycService
+    // .offerAtListingLive), and the ENFORCEMENT fires in markPaid() the
+    // moment a gateway confirms the money — see KycService.enforceAtPayment.
     // ⚠️ THE HIGH-VALUE RE-CHECK IS GONE WITH THE PROVIDER THAT MADE IT
     // POSSIBLE. A sale above the anchored threshold used to pull the
     // applicant's official Home Affairs photograph and re-match it against
@@ -969,6 +971,105 @@ export class TransactionsService {
       sellerPayout,
       payByAt,
     };
+  }
+
+  /**
+   * Add a courier checkout's address to the buyer's address book.
+   *
+   * The address typed at checkout used to live ONLY in the transaction's JSON
+   * snapshot, so the buyer retyped it on every order. Now it is remembered —
+   * unless the client explicitly opts out — and can become their default.
+   *
+   * Matching is on the five fields that decide where a parcel lands, trimmed
+   * and case-insensitive: the same place typed twice is one address, not two
+   * rows that differ by a capital letter. Re-using an existing row is also
+   * what makes the "make it my default" question honest — we promote the row
+   * that actually exists rather than creating a twin.
+   */
+  private async saveCheckoutAddress(
+    userId: string,
+    dto: CreateTransactionDto,
+  ): Promise<void> {
+    if (dto.shippingMethod !== 'COURIER') return;
+    if (!dto.deliveryAddress) return;
+    if (dto.saveDeliveryAddress === false) return;
+
+    const a = dto.deliveryAddress;
+    const norm = (v: string | null | undefined) =>
+      (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const street = norm(a.streetAddress);
+    const suburb = norm(a.suburb);
+    const city = norm(a.city);
+    const postalCode = norm(a.postalCode);
+    if (!street || !city || !postalCode) return;
+
+    const makeDefault = dto.makeDeliveryAddressDefault === true;
+
+    const existing = await this.prisma.address.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        street: true,
+        suburb: true,
+        city: true,
+        postalCode: true,
+        isDefault: true,
+      },
+    });
+    const match = existing.find(
+      (row) =>
+        norm(row.street) === street &&
+        norm(row.suburb) === suburb &&
+        norm(row.city) === city &&
+        norm(row.postalCode) === postalCode,
+    );
+
+    // A member with no address at all gets this one as the default — an
+    // address book whose only entry is not the default is a trap for the
+    // next checkout, which auto-selects "the default (or first)".
+    const shouldDefault = makeDefault || (existing.length === 0 && !match);
+
+    if (match) {
+      if (shouldDefault && !match.isDefault) {
+        await this.prisma.$transaction([
+          this.prisma.address.updateMany({
+            where: { userId, isDefault: true },
+            data: { isDefault: false },
+          }),
+          this.prisma.address.update({
+            where: { id: match.id },
+            data: { isDefault: true },
+          }),
+        ]);
+      }
+      return;
+    }
+
+    await this.prisma.$transaction([
+      ...(shouldDefault
+        ? [
+            this.prisma.address.updateMany({
+              where: { userId, isDefault: true },
+              data: { isDefault: false },
+            }),
+          ]
+        : []),
+      this.prisma.address.create({
+        data: {
+          userId,
+          building: a.building?.trim() || null,
+          street: a.streetAddress.trim(),
+          address2: a.address2?.trim() || null,
+          suburb: a.suburb.trim(),
+          city: a.city.trim(),
+          postalCode: a.postalCode.trim(),
+          province: a.province as Province,
+          lat: (a as { lat?: number }).lat ?? null,
+          lng: (a as { lng?: number }).lng ?? null,
+          isDefault: shouldDefault,
+        },
+      }),
+    ]);
   }
 
   // ------------------------------------------------------------------
@@ -6078,6 +6179,13 @@ export class TransactionsService {
     // Fire-and-forget fraud-risk scoring — log-only, post-capture, never
     // blocks payment (its own try/catch swallows everything).
     void this.fraudRisk.evaluate(txId);
+
+    // Identity verification, ENFORCED at the moment the money is confirmed:
+    // a verified seller has the sale cleared for payout, an unverified one
+    // has it held (sellerKycClearedAt stays null + an urgent KYC_HOLD alert)
+    // and is told over email and WhatsApp. Never throws, so it cannot fail a
+    // payment the gateway has already taken.
+    void this.kyc.enforceAtPayment(txId, listing.sellerId);
   }
 
   // ------------------------------------------------------------------

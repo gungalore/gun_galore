@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   Logger,
   ForbiddenException,
@@ -417,15 +417,21 @@ export class KycService {
     return { sent: true, phoneMasked: `•••${user.phone.slice(-4)}` };
   }
 
-  // ─────────────────── Trigger: first sale forces verification ──────
-  // Called from TransactionsService.create() when a buyer kicks off a
-  // purchase on an unverified seller's listing. Idempotent — if
-  // kycRequiredAt is already set (or seller is already VERIFIED), this
-  // is a no-op, so repeat sales don't spam notifications.
-  //
-  // Failure-mode: notification sends fail open. We never block the
-  // buyer's checkout because of an SMS hiccup.
-  async triggerSellerVerification(sellerId: string): Promise<void> {
+  // ─────────────────── Offer: listing goes live ──────────────────────
+  /**
+   * Ask a seller to verify their identity the moment their listing goes live.
+   *
+   * This is an OFFER, not a gate: the listing publishes regardless, so a
+   * seller is never blocked from trying to sell. It exists so the check is
+   * waiting for them BEFORE money is involved — a seller asked at go-live has
+   * days to do a three-minute task, whereas one asked at the moment a buyer's
+   * payment clears is holding up a real sale.
+   *
+   * Both channels, once: email always, WhatsApp when the member has opted in.
+   * Idempotent on `kycRequiredAt` — a seller with five live listings is told
+   * once, not five times.
+   */
+  async offerAtListingLive(sellerId: string): Promise<void> {
     const seller = await this.prisma.user.findUnique({
       where: { id: sellerId },
       select: {
@@ -437,64 +443,151 @@ export class KycService {
         kycRequiredAt: true,
       },
     });
-    if (!seller) {
-      this.log.warn(
-        `triggerSellerVerification called with unknown sellerId ${sellerId}`,
-      );
-      return;
-    }
+    if (!seller) return;
+    // Already proven, or a human is already looking at the file — nothing the
+    // seller can usefully do, so a "verify now" message would only confuse.
     if (seller.kycStatus === 'VERIFIED') return;
-    // UNDER_REVIEW = the file is with the admins — nothing for the seller
-    // to do, so a "verify your identity" SMS would only confuse them.
     if (seller.kycStatus === 'UNDER_REVIEW') return;
-    if (seller.kycRequiredAt) return; // already notified — banner is up
+    if (seller.kycRequiredAt) return; // already asked — the banner is up
 
-    // Mark the deadline so the in-app banner shows on next login.
     await this.prisma.user.update({
       where: { id: seller.id },
       data: { kycRequiredAt: new Date() },
     });
 
-    // Mint a KYC_VERIFY token so the SMS link works without an identity provider
-    // login (the SMS opens in the phone's default browser, which has no
-    // PWA session). 7-day TTL. If minting fails we fall back to the bare
-    // /kyc/verify URL (login-gated) rather than dropping the SMS.
-    const appUrl = process.env.FRONTEND_URL ?? 'https://gungalore.co.za';
-    let kycUrl = `${appUrl}/kyc/verify`;
-    try {
-      const kycToken = await this.actionTokens.mint({
-        purpose: 'KYC_VERIFY',
-        targetType: 'user',
-        targetId: seller.id,
-        authorisedUserId: seller.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
-      kycUrl = `${appUrl}/a/${kycToken}`;
-    } catch (mintErr) {
-      this.log.warn(
-        `KYC_VERIFY token mint failed for ${seller.id}; using login-gated link: ${(mintErr as Error).message}`,
-      );
-    }
+    const name = seller.firstName ?? 'Seller';
+    await Promise.allSettled([
+      seller.email
+        ? this.notifications.sellerKycRequired(seller.email, name)
+        : Promise.resolve(),
+      this.notifications.sellerKycRequiredWhatsapp({
+        userId: seller.id,
+        phone: seller.phone,
+      }),
+    ]);
+  }
 
+  // ─────────────────── Enforcement: payment captured ────────────────
+  /**
+   * The hard gate, at the one moment that matters: money has been captured.
+   *
+   * Called from TransactionsService.markPaid() — the single funnel every
+   * gateway confirmation passes through (Ozow webhook, Peach webhook, the
+   * result page and the reconcile sweeper all land there).
+   *
+   * A verified seller gets `sellerKycClearedAt` stamped, which is what the
+   * payout path reads. An unverified one gets the sale held, an urgent admin
+   * alert, and both notification channels — the buyer's money is safe, and
+   * the seller has every reason to finish the check.
+   *
+   * NEVER THROWS: a notification or DB hiccup must not fail a payment that
+   * the gateway has already confirmed.
+   */
+  async enforceAtPayment(txId: string, sellerId: string): Promise<void> {
     try {
-      if (seller.phone) {
-        await this.sms.sendSms({
-          to: seller.phone,
-          message: `ALL Outdoor: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
-          reference: `kyc-required-${seller.id}`,
+      const seller = await this.prisma.user.findUnique({
+        where: { id: sellerId },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          kycStatus: true,
+          kycRequiredAt: true,
+        },
+      });
+      if (!seller) return;
+
+      if (seller.kycStatus === 'VERIFIED') {
+        // Already proven — clear the hold on every paid sale they have.
+        await this.markSellerCleared(seller.id);
+        return;
+      }
+
+      // Hold: the money is ours to hold, not theirs to spend, until the check
+      // passes. `sellerKycClearedAt` staying null is the state the payout
+      // gate reads; the alert is what makes the hold visible to a human.
+      if (!seller.kycRequiredAt) {
+        await this.prisma.user.update({
+          where: { id: seller.id },
+          data: { kycRequiredAt: new Date() },
         });
       }
-      if (seller.email) {
-        await this.notifications.sellerKycRequired(
-          seller.email,
-          seller.firstName ?? 'Seller',
-        );
+
+      const existingHold = await this.prisma.adminAlert.findFirst({
+        where: {
+          type: 'KYC_HOLD',
+          referenceId: txId,
+          resolved: false,
+        },
+        select: { id: true },
+      });
+
+      if (!existingHold) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'KYC_HOLD',
+              referenceId: txId,
+              urgent: true,
+              context: `Payment captured for ${txId} but the seller (${seller.id}) has not completed identity verification. Payout is held until it passes.`,
+            },
+          })
+          .catch(() => undefined);
+
+        // UNDER_REVIEW means a human is already deciding — nagging the seller
+        // to "verify now" at that point is wrong; tell the desk instead.
+        if (seller.kycStatus !== 'UNDER_REVIEW') {
+          const name = seller.firstName ?? 'Seller';
+          await Promise.allSettled([
+            seller.email
+              ? this.notifications.sellerKycRequired(seller.email, name)
+              : Promise.resolve(),
+            this.notifications.sellerKycRequiredWhatsapp({
+              userId: seller.id,
+              phone: seller.phone,
+            }),
+          ]);
+        }
       }
     } catch (err) {
       this.log.warn(
-        `KYC required notifications failed for ${seller.id}: ${(err as Error).message}`,
+        `enforceAtPayment failed for tx ${txId} / seller ${sellerId}: ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * The seller passed: stamp every paid sale still missing a clearance and
+   * resolve the holds that were raised for them, so the desk's queue empties
+   * without anyone having to remember which transactions were waiting.
+   */
+  private async markSellerCleared(sellerId: string): Promise<void> {
+    const cleared = await this.prisma.transaction.findMany({
+      where: {
+        sellerId,
+        paidAt: { not: null },
+        sellerKycClearedAt: null,
+      },
+      select: { id: true },
+    });
+    if (cleared.length === 0) return;
+
+    const ids = cleared.map((t) => t.id);
+    await this.prisma.transaction.updateMany({
+      where: { id: { in: ids } },
+      data: { sellerKycClearedAt: new Date() },
+    });
+    await this.prisma.adminAlert
+      .updateMany({
+        where: {
+          type: 'KYC_HOLD',
+          referenceId: { in: ids },
+          resolved: false,
+        },
+        data: { resolved: true, resolvedAt: new Date() },
+      })
+      .catch(() => undefined);
   }
 
   // ─────────────────── Admin alert on repeated failure ──────────────
@@ -702,6 +795,8 @@ export class KycService {
 
     await this.announceVerdict(user, finalStatus, mismatch);
     if (finalStatus === 'VERIFIED') {
+      // Release any sale that was held at payment awaiting this exact check.
+      await this.markSellerCleared(user.id);
       void this.banv?.request(user.id).catch(() => undefined);
     }
     return { applied: true, status: finalStatus };

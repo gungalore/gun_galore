@@ -1,4 +1,4 @@
-﻿import {
+import {
   IsString,
   IsEnum,
   IsOptional,
@@ -88,6 +88,20 @@ export class CreateTransactionDto {
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
+
+  // Courier: keep this address in the buyer's address book. Defaults to true —
+  // an address typed at checkout is one the buyer will want again — so only an
+  // explicit `false` opts out.
+  @IsOptional()
+  @IsBoolean()
+  saveDeliveryAddress?: boolean;
+
+  // Courier: make the saved address (new OR existing) the buyer's default.
+  // The checkout asks this question only when the typed address is not
+  // already their default; the server enforces one default per member.
+  @IsOptional()
+  @IsBoolean()
+  makeDeliveryAddressDefault?: boolean;
 
   // Courier menu choice. Server re-quotes and resolves the selected kind; the
   // buyer never supplies or controls a shipping price. STORE_PICKUP additionally

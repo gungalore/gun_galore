@@ -105,6 +105,13 @@ const TEMPLATES = [
     button: { text: 'Open document', code: 'm{{1}}', dynamic: true },
   },
   {
+    // Seller identity verification. Sent at listing go-live and again when
+    // payment is captured (the payout gate). Static button: /t/k.
+    name: 'seller_kyc_required',
+    body: 'Verify your identity to receive your All Outdoor payouts. It takes about 3 minutes, and any money you are owed stays safely held until you are done.',
+    button: { text: 'Verify identity', code: 'k' },
+  },
+  {
     name: 'motivation_failed_applicant',
     body: 'We could not finish document {{1}}. Nothing is lost and nothing has been charged. Open it and try again.',
     example: 'MO000123',
@@ -194,6 +201,15 @@ async function main() {
   const all = await listAll();
   const byName = new Map(all.map((t) => [t.name, t]));
 
+  // `--only=a,b` limits creation to the named templates. Listing is unaffected.
+  // Without it the script creates every missing template it manages, which is
+  // noisy when Meta is reviewing one specific addition.
+  const onlyArg = process.argv.find((a) => a.startsWith('--only='));
+  const only = onlyArg
+    ? new Set(onlyArg.slice('--only='.length).split(',').map((s) => s.trim()))
+    : null;
+  const targets = only ? TEMPLATES.filter((t) => only.has(t.name)) : TEMPLATES;
+
   if (process.argv.includes('--list')) {
     for (const t of all) {
       console.log(`[${t.status ?? '?'}]  ${t.name}  (${t.language ?? '?'})`);
@@ -206,7 +222,7 @@ async function main() {
     return;
   }
 
-  for (const t of TEMPLATES) {
+  for (const t of targets) {
     const now = byName.get(t.name);
     if (now) {
       console.log(`[skip]     ${t.name} already exists (${now.status})`);

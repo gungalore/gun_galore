@@ -26,6 +26,7 @@ describe('resolveShortCode', () => {
     expect(resolveShortCode('r')).toBe('/offers/received');
     expect(resolveShortCode('y')).toBe('/my/offers');
     expect(resolveShortCode('w')).toBe('/my/bids');
+    expect(resolveShortCode('k')).toBe('/kyc/verify');
   });
 
   it('maps a motivation code to the Licence Centre review sheet', () => {
