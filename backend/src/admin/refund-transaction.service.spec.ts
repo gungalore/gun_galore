@@ -145,8 +145,20 @@ describe('AdminService.refundTransaction (manual rail)', () => {
         }),
       }),
     );
-    // Partial → no terminal side-effects
-    expect(zohoBooks.createCommissionCreditNote).not.toHaveBeenCalled();
+    // ⚠️ A PARTIAL REFUND NOW REACHES BOOKS ON BOTH SIDES. The commission
+    // credit note used to be full-refund only, which left the buyer's note
+    // (proportional) and the seller's (absent) disagreeing. Both helpers are
+    // incremental, so a partial credits its own slice.
+    expect(zohoBooks.createBuyerCreditNote).toHaveBeenCalledWith(
+      'TX1',
+      expect.any(Number),
+      'partial damage',
+    );
+    expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalledWith(
+      'TX1',
+      'partial damage',
+      expect.any(Number),
+    );
     expect(notifications.resolveByEntity).not.toHaveBeenCalled();
     // Buyer is told the partial amount, not buyerTotal
     expect(notifications.refundIssuedBuyer).toHaveBeenCalledWith(
@@ -170,7 +182,16 @@ describe('AdminService.refundTransaction (manual rail)', () => {
         data: expect.objectContaining({ refundOfId: 'TX1', buyerTotal: 100_000 }),
       }),
     );
-    expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalledWith('TX1', 'full refund');
+    expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalledWith(
+      'TX1',
+      'full refund',
+      expect.any(Number),
+    );
+    expect(zohoBooks.createBuyerCreditNote).toHaveBeenCalledWith(
+      'TX1',
+      expect.any(Number),
+      'full refund',
+    );
     expect(notifications.resolveByEntity).toHaveBeenCalled();
   });
 

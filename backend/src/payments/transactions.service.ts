@@ -2738,6 +2738,12 @@ export class TransactionsService {
         }),
       ]);
       await settleSellerChargeRecoveries(this.prisma, attempt.transactionId);
+      // The payout COMPLETED, so the seller's Books documents are settled now —
+      // reserving them at claim time would mark a debt paid that a failed
+      // payout never actually collected.
+      void this.zohoBooks
+        .settlePayoutDocuments(attempt.transactionId)
+        .catch(() => undefined);
       this.logger.log(
         `Peach payout SUCCESS for ${attempt.transactionId} (${evt.payoutId})`,
       );
@@ -3604,6 +3610,9 @@ export class TransactionsService {
       });
       if (!completed) return;
       this.logger.log(`Ozow payout COMPLETE for ${txId} (payoutId ${evt.payoutId})`);
+      // Same rule as Peach: Books is told only once the money has actually
+      // left, not when the payout was merely requested.
+      void this.zohoBooks.settlePayoutDocuments(txId).catch(() => undefined);
       void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
         message: 'Ozow reports the payout complete; a later return notification is still possible.',
       });

@@ -3131,24 +3131,24 @@ export class AdminService {
       // notifications tied to it (auction_won, offer_accepted, new_sale,
       // order_dispatched all become moot).
       void this.notifications.resolveByEntity('transaction', txId);
-
-      // Zoho Books: post a Credit Note reversing the commission. Only on a
-      // FULL refund — a partial would otherwise credit the full commission
-      // (the credit-note helper isn't proportional), so we skip it for
-      // partials and let the operator reconcile the final settlement.
-      void this.zohoBooks.createCommissionCreditNote(txId, note);
     }
 
-    // ⚠️ AND THE BUYER'S DOCUMENT, ON EVERY REFUND. Only the seller's
-    // commission used to be credited, so the buyer invoice — item and delivery
-    // in Client Funds Payable, the platform fee in revenue, its payment already
-    // applied — stayed on the books as a completed sale while the cash went
-    // back. This note is proportional and incremental: a partial refund credits
-    // exactly its share, and a second refund credits only the new slice.
-    void this.zohoBooks.createBuyerCreditNote(
+    const refundedTotalForBooks = updated?.refundedAmount ?? tx.refundedAmount;
+
+    // ⚠️ BOTH SIDES OF THE REFUND, ON EVERY REFUND.
+    //
+    // The buyer's invoice (item + delivery in Client Funds Payable, the platform
+    // fee in revenue, payment already applied) used to stay on the books as a
+    // completed sale while the cash went back. The seller's commission was only
+    // reversed on a FULL refund, because the helper was not proportional — so a
+    // partial refund credited one side and not the other. Both helpers are
+    // proportional and incremental now, so each refund reverses its own share of
+    // each document.
+    void this.zohoBooks.createBuyerCreditNote(txId, refundedTotalForBooks, note);
+    void this.zohoBooks.createCommissionCreditNote(
       txId,
-      updated?.refundedAmount ?? tx.refundedAmount,
       note,
+      refundedTotalForBooks,
     );
 
     return updated;

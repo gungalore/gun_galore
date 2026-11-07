@@ -1066,6 +1066,8 @@ export class AdminTransactionsController {
     // The newer documents, so one button still covers the whole rail.
     await this.zohoBooks.createShippingVarianceJournal(id);
     await this.zohoBooks.settlePayoutDocuments(id);
+    // A refund whose credit notes failed had no retry path at all.
+    await this.zohoBooks.retryRefundCreditNotes(id);
     return { triggered: true };
   }
 }

@@ -55,12 +55,18 @@ for a seller Books already knew.
 these credentials") is now a probe row; it was dead code, and the old row was a
 HEAD to `www.zohoapis.com` that answers with an expired refresh token.
 
-⚠️ **Still open:** the credit-note helper for the *commission* is full-refund
-only (partial refunds leave the fee credited in full on the buyer side and not at
-all on the seller side — the two documents are now inconsistent for a partial);
-`zohoSyncStatus` is still one column for six documents, so the desk cannot name
-which one failed; and the re-weigh invoice is settled from Client Funds Payable,
-which assumes the withheld payout sat there.
+⚠️ **Follow-ups closed the same day.** The commission credit note is now
+proportional and incremental (`zohoCommissionCreditNoteCents`), so a partial
+refund reverses its own share on BOTH sides instead of crediting the buyer and
+leaving the seller's fee fully charged. Uncertainty is recorded per DOCUMENT
+(`zohoUncertainDocs`: commission / buyer / variance / journal / creditnote), so a
+buyer-invoice timeout no longer blocks the commission invoice from retrying.
+The re-weigh invoice settles only on **SETTLED** recoveries (a claimed payout
+that fails releases the slice, and Books must not have been told it was paid);
+the settle call now also runs from the two payout-completion paths, not just at
+claim. Credit notes have a retry path (`retryRefundCreditNotes`, in the hourly
+sweep and the dossier button). And `SKIPPED` no longer doubles as "nothing to
+do" — that is `NOTHING_TO_DO`.
 
 ## 2026-11-07 (SHIPPING) - THE COURIER ALWAYS ACCEPTS IT, SO THE SELLER PAYS
 

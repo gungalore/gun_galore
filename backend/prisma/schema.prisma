@@ -2188,6 +2188,19 @@ model Transaction {
   zohoCommissionPaymentId String?
   zohoCommissionSettleJournalId String?
   zohoCreditNoteId        String?
+  // CUMULATIVE commission credited back to the seller. A partial refund must
+  // reverse only its share of the fee, and a second refund only the next slice
+  // — the helper used to be full-refund-only, which left the two sides of one
+  // refund disagreeing (the buyer's note was proportional, the seller's absent).
+  zohoCommissionCreditNoteCents Int @default(0)
+  /**
+   * Which documents have an UNCERTAIN Books outcome (a write that may have
+   * landed: timeout or 5xx). Named per document — `commission`, `buyer`,
+   * `variance`, `journal`, `creditnote` — because the retry policy is per
+   * document: a buyer-invoice timeout must not stop the commission invoice from
+   * retrying. The status column stays as the desk's "something is wrong here".
+   */
+  zohoUncertainDocs       String[] @default([])
   // The BUYER-side credit note, kept separate from zohoCreditNoteId (which
   // credits the SELLER's commission). A refund has to reverse the buyer's
   // invoice too — item and delivery out of Client Funds Payable, the platform

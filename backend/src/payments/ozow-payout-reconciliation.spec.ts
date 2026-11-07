@@ -62,7 +62,7 @@ function setup(completedAt: Date | null = null) {
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
+    { settlePayoutDocuments: jest.fn().mockResolvedValue(undefined) } as never,
     {} as never,
     {} as never,
   );
