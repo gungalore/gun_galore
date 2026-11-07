@@ -2049,6 +2049,27 @@ export class ZohoBooksService {
   }
 
   /**
+   * Force the courier re-weigh invoice for a transaction, by finding its charge.
+   *
+   * ⚠️ WITHOUT THIS, AN UNCERTAIN VARIANCE INVOICE WAS A DEAD END. The dossier
+   * retry button knows a transaction id, not a SellerCharge id, so it could not
+   * force this document — and the hourly sweep refuses an uncertain one by
+   * design. That left SQL as the only way out for the one document that bills
+   * the seller.
+   */
+  async retryVarianceInvoiceForTransaction(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const charge = await this.prisma.sellerCharge
+      .findFirst({
+        where: { transactionId, kind: 'SHIPPING_VARIANCE' },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (!charge) return;
+    await this.createShippingVarianceInvoice(charge.id, { force: true });
+  }
+
+  /**
    * Re-fire the credit notes a refund implies.
    *
    * Safe for any refunded sale: both helpers are proportional and incremental,

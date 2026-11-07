@@ -1068,6 +1068,9 @@ export class AdminTransactionsController {
     await this.zohoBooks.settlePayoutDocuments(id);
     // A refund whose credit notes failed had no retry path at all.
     await this.zohoBooks.retryRefundCreditNotes(id);
+    // The dossiers knows a transaction, not a charge — this forces the
+    // re-weigh invoice that the sweep refuses to retry once uncertain.
+    await this.zohoBooks.retryVarianceInvoiceForTransaction(id);
     return { triggered: true };
   }
 }
