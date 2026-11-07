@@ -637,6 +637,134 @@ export class ZohoBooksService {
   }
 
   /**
+   * The courier re-weighed the parcel and billed MORE than the buyer paid.
+   *
+   * ⚠️ THIS IS THE SELLER'S BILL, NOT OURS. Bob Go accepts the parcel and
+   * charges the platform — there is no refusal to fall back on — and the buyer
+   * paid the quoted figure and is never re-billed. The difference is the
+   * seller's, recovered from their payout through the SellerCharge ledger
+   * (kind SHIPPING_VARIANCE) and documented here, with the declared-versus-
+   * billed reason on the line, because a seller is entitled to see what they
+   * were charged and why.
+   *
+   * Idempotent on SellerCharge.zohoInvoiceId: a re-fired charge event reuses
+   * the same document rather than raising a second one.
+   *
+   * Never throws — the debt exists in the ledger whether or not Books answers.
+   */
+  async createShippingVarianceInvoice(sellerChargeId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const charge = await this.prisma.sellerCharge.findUnique({
+      where: { id: sellerChargeId },
+      select: {
+        id: true,
+        sellerId: true,
+        transactionId: true,
+        amountCents: true,
+        reason: true,
+        zohoInvoiceId: true,
+      },
+    });
+    if (!charge || charge.zohoInvoiceId || charge.amountCents <= 0) return;
+
+    const seller = await this.prisma.user.findUnique({
+      where: { id: charge.sellerId },
+      select: { id: true, email: true },
+    });
+    // No address, no document. The charge still stands and is still deducted.
+    if (!seller?.email) return;
+
+    try {
+      const contactId = await this.ensureContact(seller.id, seller.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for seller');
+      }
+      // Freight-side income first: a re-weigh is a shipping cost recovery, and
+      // booking it against the delivery accounts keeps it out of the platform
+      // fee revenue line the seller already pays.
+      const accountId =
+        (await this.resolveAccountId(HANDLING_ACCOUNT_NAMES)) ??
+        (await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES));
+      if (!accountId) {
+        throw new Error(
+          'No freight/delivery revenue account found in Books chart-of-accounts',
+        );
+      }
+
+      const rand = charge.amountCents / 100;
+      const today = new Date().toISOString().slice(0, 10);
+      const reason = (
+        charge.reason ?? 'Courier re-weigh charge'
+      ).slice(0, 500);
+
+      type CreateInvoiceResp = {
+        invoice?: { invoice_id?: string; invoice_number?: string };
+        code?: number;
+        message?: string;
+      };
+
+      const resp = await this.request<CreateInvoiceResp>('POST', '/invoices', {
+        customer_id: contactId,
+        date: today,
+        due_date: today,
+        line_items: [
+          {
+            name: 'Courier re-weigh charge',
+            description: reason,
+            rate: rand,
+            quantity: 1,
+            account_id: accountId,
+          },
+        ],
+        notes:
+          `${reason}\n` +
+          `All Outdoor transaction reference: ${charge.transactionId
+            .slice(-8)
+            .toUpperCase()}`,
+      });
+
+      const invoiceId = resp.invoice?.invoice_id;
+      if (!invoiceId) {
+        throw new Error(
+          `Books invoice create returned no invoice_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      // A draft posts to nothing and cannot be emailed.
+      await this.request<{ code?: number; message?: string }>(
+        'POST',
+        `/invoices/${invoiceId}/status/sent`,
+        {},
+      );
+
+      // The id lands BEFORE the email attempt: if sending fails, the document
+      // still exists and the ledger still points at it.
+      await this.prisma.sellerCharge.update({
+        where: { id: charge.id },
+        data: { zohoInvoiceId: invoiceId },
+      });
+      this.logger.log(
+        `Raised courier re-weigh invoice ${resp.invoice?.invoice_number ?? invoiceId} ` +
+          `for seller charge ${charge.id} (R${rand.toFixed(2)})`,
+      );
+
+      // Best-effort. Zoho refuses to email until the sender address is
+      // confirmed on the org, which is an operator-side fix, not a reason to
+      // lose the invoice id.
+      await this.request('POST', `/invoices/${invoiceId}/email`, {}).catch(
+        (err: Error) =>
+          this.logger.warn(
+            `Courier re-weigh invoice ${invoiceId} created but not emailed: ${err.message}`,
+          ),
+      );
+    } catch (err) {
+      this.logger.error(
+        `Courier re-weigh invoice failed for seller charge ${sellerChargeId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Buyer invoice: ALL Outdoor → Buyer for the WHOLE checkout, with the
    * principal/agent split made explicit on the document.
    *

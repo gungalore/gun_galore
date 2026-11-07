@@ -22,7 +22,7 @@ function tx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function prismaWith(row: unknown) {
+function prismaWith(row: unknown, recoveries: unknown[] = []) {
   return {
     user: {
       findUnique: jest.fn(({ where }: { where: { id: string } }) =>
@@ -30,6 +30,9 @@ function prismaWith(row: unknown) {
       ),
     },
     transaction: { findUnique: jest.fn().mockResolvedValue(row) },
+    // Charges this payout was set off against. Empty is the normal case; the
+    // document must still reconcile when one is present.
+    sellerChargeRecovery: { findMany: jest.fn().mockResolvedValue(recoveries) },
   };
 }
 
@@ -94,5 +97,25 @@ describe('RemittanceService — seller payment voucher', () => {
 
     expect((await PDFDocument.load(pdf)).getPageCount()).toBe(1);
     expect(filename).toBe('remittance-GG-BN-9.pdf');
+  });
+
+  it('shows a courier re-weigh charge as a deduction against the payout', async () => {
+    const prisma = prismaWith(tx(), [
+      { amountCents: 4_500, charge: { kind: 'SHIPPING_VARIANCE' } },
+    ]);
+    const svc = new RemittanceService(prisma as never);
+
+    const { pdf } = await svc.generateForTransaction('tx1', 'user_seller');
+
+    // Still one page: the deduction is a line, not a section. (pdf-lib cannot
+    // read text back, so the reconciliation itself is covered by the render
+    // path and the ledger specs; this proves the charge is LOOKED UP for the
+    // right sale and does not break the document.)
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBe(1);
+    expect(prisma.sellerChargeRecovery.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ transactionId: 'tx1' }),
+      }),
+    );
   });
 });

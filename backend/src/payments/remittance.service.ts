@@ -45,6 +45,15 @@ export interface RemittanceTx {
   order: { orderReference: string | null } | null;
   listing: { title: string };
   seller: { username: string | null };
+  /**
+   * Seller charges set off against THIS payout, already labelled.
+   *
+   * ⚠️ WITHOUT THIS THE DOCUMENT LIES BY OMISSION. A payout can be net of a
+   * courier re-weigh charge or a failure charge carried over from an earlier
+   * sale, and the seller then sees less money than the sale's payout figure
+   * with no explanation. The charge rows are the explanation.
+   */
+  recoveries?: Array<{ label: string; amountCents: number }>;
 }
 
 function money(cents: number): string {
@@ -97,7 +106,32 @@ export class RemittanceService {
       );
     }
 
-    return this.buildPdf(tx);
+    // Charges this payout was reduced by. RESERVED and SETTLED both count:
+    // RESERVED is written when the payout is claimed (the amount sent to the
+    // gateway is already net), SETTLED when it lands.
+    const recoveries = await this.prisma.sellerChargeRecovery
+      .findMany({
+        where: {
+          transactionId,
+          status: { in: ['RESERVED', 'SETTLED'] },
+        },
+        select: {
+          amountCents: true,
+          charge: { select: { kind: true } },
+        },
+      })
+      .catch(() => []);
+
+    return this.buildPdf({
+      ...tx,
+      recoveries: recoveries.map((r) => ({
+        label:
+          r.charge.kind === 'SHIPPING_VARIANCE'
+            ? 'Courier re-weigh charge'
+            : 'Seller failure charge recovered',
+        amountCents: r.amountCents,
+      })),
+    });
   }
 
   /**
@@ -205,9 +239,18 @@ export class RemittanceService {
     };
     line(shown.grossLabel, shown.gross);
     for (const d of shown.deductions) line(d.label, d.cents);
+    // Set-off against the seller's position from another sale (or this one):
+    // shown as its own deduction so the reduced payout reconciles on paper.
+    const recoveredCents = (tx.recoveries ?? []).reduce(
+      (sum, r) => sum + Math.max(0, r.amountCents),
+      0,
+    );
+    for (const r of tx.recoveries ?? []) {
+      line(r.label, -Math.max(0, r.amountCents));
+    }
     y -= 4;
     rule();
-    line(shown.netLabel, shown.net, true);
+    line(shown.netLabel, shown.net - recoveredCents, true);
     y -= 20;
 
     // Footer

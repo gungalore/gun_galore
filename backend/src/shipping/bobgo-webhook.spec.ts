@@ -21,7 +21,13 @@ function makeService(over: { tx?: unknown } = {}) {
   };
   const shipping = { applyShippingUpdate: jest.fn().mockResolvedValue('COLLECTED') };
   return {
-    svc: new BobGoWebhookService(prisma as never, shipping as never),
+    svc: new BobGoWebhookService(
+      prisma as never,
+      shipping as never,
+      // Books is only reachable from a courier re-weigh charge; none of these
+      // cases raises one.
+      { createShippingVarianceInvoice: jest.fn().mockResolvedValue(undefined) } as never,
+    ),
     prisma,
     shipping,
     created,
@@ -189,9 +195,13 @@ describe('BobGoWebhookService', () => {
       },
       transaction: { findFirst: jest.fn().mockResolvedValue({ id: 'TX9' }) },
     };
-    const svc = new BobGoWebhookService(prisma as never, {
-      applyShippingUpdate: jest.fn(),
-    } as never);
+    const svc = new BobGoWebhookService(
+      prisma as never,
+      {
+        applyShippingUpdate: jest.fn(),
+      } as never,
+      { createShippingVarianceInvoice: jest.fn() } as never,
+    );
     await expect(
       svc.handle('tracking/updated', { id: 1, status: 'pending-collection' }),
     ).resolves.toEqual({ handled: true });

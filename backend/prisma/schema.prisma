@@ -3881,6 +3881,12 @@ enum SellerChargeKind {
   NO_DISPATCH
   NOT_DELIVERED
   DEALER_TRANSFER_FAILED
+  // The courier re-weighed / re-measured the parcel at collection and billed
+  // more than the buyer was quoted. The carrier always accepts the parcel and
+  // charges the platform, so the difference is the SELLER's, recovered from
+  // their payout and invoiced to them with the declared-vs-billed reason.
+  // See common/shipment-failure-policy.ts and app/(legal)/terms.
+  SHIPPING_VARIANCE
 }
 
 enum SellerChargeRecoveryStatus {
@@ -3908,6 +3914,12 @@ model SellerCharge {
   waivedAt      DateTime?
   waivedById    String?
   waivedReason  String?
+
+  // The Books document raised to the seller for this charge, when there is one
+  // (SHIPPING_VARIANCE always raises one; the failure kinds surface on the
+  // remittance advice instead). Doubles as the idempotency key so a re-fired
+  // charge event cannot create a second invoice.
+  zohoInvoiceId String?
 
   recoveries    SellerChargeRecovery[]
 

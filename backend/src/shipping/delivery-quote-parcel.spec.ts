@@ -37,6 +37,8 @@ const DELIVERY = {
   city: 'Johannesburg',
   postalCode: '2092',
   province: 'GAUTENG' as never,
+  lat: -26.18,
+  lng: 28.01,
 };
 
 const DOOR_RATE = {

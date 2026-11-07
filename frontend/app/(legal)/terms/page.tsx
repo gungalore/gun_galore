@@ -1,4 +1,4 @@
-﻿// Terms of Service — the master contract between ALL Outdoor and every user
+// Terms of Service — the master contract between ALL Outdoor and every user
 // of the Platform. Drafted with reference to the Electronic Communications and
 // Transactions Act 25 of 2002 (section 43), the Consumer Protection Act 68 of
 // 2008 and the Protection of Personal Information Act 4 of 2013.
@@ -499,6 +499,33 @@ export default function TermsPage() {
         the item has been delivered or collected, unless the law provides
         otherwise. If the Buyer provides an incorrect address or refuses
         delivery, the Buyer is responsible for any re-delivery cost.
+      </p>
+      <p
+        id="courier-reweigh"
+        style={{
+          border: '1px solid var(--red)',
+          borderRadius: 8,
+          padding: 16,
+          background: 'rgba(227,6,19,0.04)',
+        }}
+      >
+        <strong>Courier re-weigh charge — the Seller&apos;s liability.</strong>{' '}
+        When the Seller offers courier delivery, the Seller states the packed
+        parcel&apos;s weight and dimensions, and the courier rate the Buyer pays
+        is calculated from that declaration. Couriers may weigh and measure a
+        parcel when they collect it. If the parcel is heavier or larger than
+        declared, the courier will still carry it and will bill ALL Outdoor the
+        higher rate. <strong>The Seller is liable for that difference.</strong>{' '}
+        We recover it by deducting it from the Seller&apos;s payout — from this
+        sale, or, if this sale has already been paid out, by setting it off
+        against any amount we later owe the Seller — and we issue the Seller an
+        invoice showing the rate quoted, the amount the courier billed and the
+        reason for the charge. The deduction is itemised on the Seller&apos;s
+        remittance advice. The Buyer is never charged more than the delivery
+        figure quoted at checkout, and no part of this difference is passed on to
+        the Buyer. The charge is a recovery of the carrier&apos;s cost, not a
+        penalty. Where a Seller repeatedly under-declares a parcel we may review
+        the account.
       </p>
 
       <h2>10. Buy Now, offers and auctions</h2>

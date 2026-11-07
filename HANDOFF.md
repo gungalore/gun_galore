@@ -5,7 +5,95 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-06**.
+Last updated: **2026-11-07**.
+
+## 2026-11-07 (SHIPPING) - THE COURIER ALWAYS ACCEPTS IT, SO THE SELLER PAYS
+
+Operator: *"The courier will always accept a reweight and charge the platform.
+We need to deduct that from the seller then and invoice them with a reason.
+This needs to be clearly stipulated in the T&Cs. We deduct that from the
+payout."*
+
+The old behaviour was the mirror of that: the variance was recorded and alerted,
+and the platform absorbed it. Wrong parcel measurement is the seller's error,
+the carrier cannot be refused, and the buyer paid the quote.
+
+**The mechanism.** `BobGoWebhookService.onCharge` now raises a `SellerCharge` of
+kind **`SHIPPING_VARIANCE`** for the difference, with a reason that names the
+quoted rate, the billed figure and the billed weight. The recovery machinery in
+`common/seller-charges.ts` is kind-agnostic — `reserveSellerChargesForPayout`
+takes outstanding charges oldest-first — so the deduction happens on this sale's
+payout, or on the next one if this sale was already paid out. That is the same
+set-off path a seller failure charge already used.
+
+**It is invoiced.** `ZohoBooksService.createShippingVarianceInvoice` raises a
+Books invoice to the seller, one line "Courier re-weigh charge" with the reason
+as the description, booked against the freight/delivery revenue account (not the
+platform fee line the seller already pays). Idempotent on
+`SellerCharge.zohoInvoiceId`; the id is stored BEFORE the email attempt so a
+failed send never loses the document.
+
+⚠️ **CAPPED AT R1,000.** Above that the charge is NOT raised automatically and
+the alert stays urgent: an automatic deduction from somebody's earnings must not
+be driven by a malformed payload or a carrier pricing error.
+
+**The remittance advice now explains a smaller payout.** It reads the
+`SellerChargeRecovery` rows reserved against that payout and prints each as a
+deduction ("Courier re-weigh charge R45,00") with the net reduced to match.
+Before this, a seller could be paid less than the sale's payout figure with
+nothing on the document to say why.
+
+**T&Cs — clause 9, `id="courier-reweigh"`.** Pinned in the same red-box
+treatment as the seller failure charge: the seller's declaration sets the rate,
+the courier may weigh at collection, the seller is liable for the difference,
+we deduct it from the payout or set it off against a later amount, we invoice it
+with the reason, and **the buyer is never charged more than the quoted figure**.
+The clause also says repeated under-declaration may lead to an account review —
+that sentence is a statement of intent, not an automated rule; nothing suspends
+a seller for it today.
+
+### The still-open half
+
+If the courier bills **less** than the quote, the buyer is not refunded the
+difference and the platform keeps it. That asymmetry was not in scope and is
+recorded here rather than fixed: decide whether a downward variance should be
+credited to the buyer (a credit note against their invoice) or retained.
+
+## 2026-11-07 (SHIPPING LANE) - QUOTE THE PARCEL THAT GETS BOOKED
+
+The audit of this lane found the bookends wrong: what a listing was allowed to
+publish, and what the quote declared versus what got booked.
+
+- **A couriered listing could be published with no parcel measurements.** The
+  quote endpoint refused it, so the buyer found the seller's omission at
+  checkout on a listing that looked buyable. Now refused at publish, with a
+  100 kg / 300 cm sanity ceiling that catches a grams-for-kilograms slip.
+- **The quote described a different parcel from the booking.** Booking stacks
+  weight × quantity and height × quantity; the quote took one unit, so a
+  five-unit order was priced as one parcel and the carrier billed five. The
+  quote now takes the quantity (the checkout form sends it, the service clamps
+  it) and stacks the same way.
+- **The declared value was `listing.price`** — the unit price, and on an auction
+  the OPENING BID — while the booking declared the settled amount. Auctions now
+  declare the hammer, and checkout passes the settled total it knows.
+- **A delivery address whose province the carrier table does not recognise** sent
+  an undefined province to Bob Go. Refused before the call, with a message the
+  buyer can act on.
+- **What the carrier actually billed is recorded** (`Transaction.shipmentChargedCents`
+  / `shipmentChargedAt`), beside the untouched quote, so the two can be compared
+  without parsing an alert.
+- **A parcel that stops moving is visible.** There is no tracking poll (see the
+  admin note below); `sweepStaleParcels` runs every 6 hours and flags sales
+  dispatched more than ten days ago with no terminal status — the shape of a
+  dropped webhook — and `applyShippingUpdate` resolves the alert when the parcel
+  lands, fails or returns.
+
+⚠️ **Two prices moved, deliberately.** A multi-unit courier order now shows more
+delivery (the correct figure) and an auction winner's delivery is insured at the
+hammer. Both are visible at checkout.
+
+Still untouched: the ten-business-day estimate (a product choice) and the
+unverified Pargo status vocabulary (guessing it would be worse).
 
 ## 2026-11-06 (ADMIN) - THE ONE ALERT IN THE QUEUE, AND THE NIGHTLY JOB NOBODY HEARD DIE
 

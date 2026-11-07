@@ -41,6 +41,16 @@ export interface RaiseSellerChargeInput {
   /** True when a waybill exists and cannot be reliably voided. */
   shipmentCommitted: boolean;
   shippingCost: number | null | undefined;
+  /**
+   * The charge is a MEASURED amount, not a slice of a refund.
+   *
+   * SHIPPING_VARIANCE is the only user: the courier re-weighed the parcel,
+   * billed us the difference, and that difference is owed by the seller. It
+   * goes entirely into the carrier slice (a re-weigh is a carrier cost, never
+   * our handling), and it replaces the computed failure fee rather than adding
+   * to it — the sale was delivered, so there is no refund to slice.
+   */
+  amountCentsOverride?: number;
 }
 
 /**
@@ -52,12 +62,23 @@ export async function raiseSellerCharge(
   db: Db,
   input: RaiseSellerChargeInput,
 ): Promise<SellerChargeRow | null> {
-  const charge = sellerFailureChargeCents({
-    kind: input.kind,
-    refundedTotalCents: input.refundedTotalCents,
-    shipmentCommitted: input.shipmentCommitted,
-    shippingCost: input.shippingCost,
-  });
+  const override =
+    input.amountCentsOverride == null
+      ? null
+      : Math.max(0, Math.round(input.amountCentsOverride));
+  const charge =
+    override != null
+      ? {
+          handlingCents: 0,
+          shippingCents: override,
+          amountCents: override,
+        }
+      : sellerFailureChargeCents({
+          kind: input.kind,
+          refundedTotalCents: input.refundedTotalCents,
+          shipmentCommitted: input.shipmentCommitted,
+          shippingCost: input.shippingCost,
+        });
 
   const existing = await db.sellerCharge.findUnique({
     where: {

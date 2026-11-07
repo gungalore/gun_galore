@@ -2,6 +2,19 @@ import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { bobgoToShippingStatus } from './status-map';
 import { ShippingService } from './shipping.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { raiseSellerCharge } from '../common/seller-charges';
+
+/**
+ * The most we will dock a seller automatically for a courier re-weigh.
+ *
+ * A re-weigh charge is real and the seller owes it (see the T&Cs), but an
+ * automatic deduction from somebody's earnings must have a ceiling: a
+ * malformed payload, a carrier pricing error or a parcel that was re-boxed by
+ * the courier would otherwise become a debt nobody checked. Above this figure
+ * the charge is NOT raised and the alert stays urgent for a human.
+ */
+const MAX_AUTO_VARIANCE_CENTS = 100_000; // R1,000
 
 /**
  * Bob Go webhook ingestion.
@@ -53,6 +66,10 @@ export class BobGoWebhookService {
     // and Nest would otherwise see a cycle through ShippingModule.
     @Inject(forwardRef(() => ShippingService))
     private readonly shipping: ShippingService,
+    // Books: a courier re-weigh is billed to the SELLER, so the debt needs a
+    // document as well as a ledger row. ZohoBooksModule imports nothing from
+    // shipping, so this is not a cycle.
+    private readonly zoho: ZohoBooksService,
   ) {}
 
 
@@ -231,6 +248,10 @@ export class BobGoWebhookService {
         id: true,
         shippingCost: true,
         shipmentChargedCents: true,
+        // The variance is a seller debt, so the seller and any refund on the
+        // sale have to come with it.
+        sellerId: true,
+        refundedAmount: true,
       },
     });
     if (!tx) {
@@ -275,13 +296,78 @@ export class BobGoWebhookService {
     }
 
     const sign = varianceCents > 0 ? 'MORE' : 'LESS';
+
+    // ── THE SELLER PAYS THE DIFFERENCE ──────────────────────────────────
+    //
+    // Bob Go accepts the parcel and bills the wallet; there is no point at
+    // which we can refuse the charge, and the buyer paid the quote and is
+    // never re-billed. So a re-weigh that costs more is the SELLER's debt: it
+    // goes on the SellerCharge ledger (the recovery machinery is kind-agnostic
+    // and will take it off their payout, this sale's or the next one), and
+    // Books raises an invoice to them carrying the declared-vs-billed reason.
+    //
+    // ⚠️ CAPPED. Above the cap we do NOT dock a seller automatically — a
+    // malformed or wildly wrong charge must be looked at by a person before it
+    // becomes a debt against somebody's earnings.
+    let recoveryNote: string;
+    let urgent = false;
+    if (varianceCents <= 0) {
+      // The carrier billed less than the buyer paid. Nothing is recovered from
+      // the seller; the platform keeps the difference for now.
+      recoveryNote =
+        'The carrier billed less than quoted; nothing is recovered from the seller.';
+    } else if (varianceCents > MAX_AUTO_VARIANCE_CENTS) {
+      urgent = true;
+      recoveryNote =
+        `NOT charged automatically: ${formatCents(varianceCents)} is above the ` +
+        `${formatCents(MAX_AUTO_VARIANCE_CENTS)} automatic cap. Decide manually; ` +
+        `the seller's payout has not been touched.`;
+    } else {
+      const reason =
+        `Courier re-weigh: you quoted the parcel at ${formatCents(quotedCents)}` +
+        (body.charged_weight_kg != null
+          ? ` (billed weight ${String(body.charged_weight_kg)} kg)`
+          : '') +
+        ` and the courier billed ${formatCents(chargedCents)}. The ` +
+        `${formatCents(varianceCents)} difference is charged to you and deducted ` +
+        `from your payout.`;
+      const chargeRow = await raiseSellerCharge(this.prisma, {
+        sellerId: tx.sellerId,
+        transactionId: tx.id,
+        kind: 'SHIPPING_VARIANCE',
+        reason,
+        amountCentsOverride: varianceCents,
+        // Not a refund slice: the sale stands. These two only feed the
+        // failure-fee calculation, which the override replaces.
+        refundedTotalCents: tx.refundedAmount ?? 0,
+        shipmentCommitted: true,
+        shippingCost: quotedCents,
+      }).catch((err: Error) => {
+        this.logger.error(
+          `could not raise the courier variance charge for ${tx.id}: ${err.message}`,
+        );
+        return null;
+      });
+      if (chargeRow) {
+        void this.zoho
+          .createShippingVarianceInvoice(chargeRow.id)
+          .catch(() => undefined);
+        recoveryNote = `Recovered from the seller's payout as SellerCharge ${chargeRow.id} (${formatCents(
+          chargeRow.amountCents,
+        )}); invoice raised to them with the reason.`;
+      } else {
+        urgent = true;
+        recoveryNote =
+          'Could not raise the seller charge automatically — investigate and raise it by hand.';
+      }
+    }
+
     const context =
       `Bob Go ${topic} for shipment ${shipmentId} (tx ${tx.id}): the carrier billed ` +
       `${formatCents(chargedCents)} where the buyer was charged ${formatCents(quotedCents)} — ` +
       `${sign} than quoted by ${formatCents(Math.abs(varianceCents))}. ` +
-      `Raw charged_amount=${JSON.stringify(body.charged_amount)}. ` +
-      `Decide whether to absorb it, re-bill, or recover it; the freight journal and the ` +
-      `buyer's Delivery line still carry the quoted figure.`;
+      `${recoveryNote} ` +
+      `Raw charged_amount=${JSON.stringify(body.charged_amount)}.`;
 
     // One alert per sale, kept current. A re-weigh can deliver more than one
     // event, and an operator staring at three rows in a queue reads the oldest.
@@ -299,10 +385,16 @@ export class BobGoWebhookService {
       await this.prisma.adminAlert
         .update({
           where: { id: existing.id },
-          data: { context, urgent: true },
+          data: {
+            context,
+            urgent,
+            // An automatic recovery needs no queue attention.
+            resolved: !urgent,
+            resolvedAt: urgent ? null : new Date(),
+          },
         })
         .catch(() => undefined);
-    } else {
+    } else if (urgent) {
       await this.prisma.adminAlert
         .create({
           data: {
