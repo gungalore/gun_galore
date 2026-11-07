@@ -47,6 +47,48 @@ const BANK_ACCOUNT_NAMES = [
 ];
 const BANK_ACCOUNT_LAST4 = '5183';
 const UNDEPOSITED_FUNDS_NAMES = ['Undeposited Funds'];
+/**
+ * Where the carrier's re-weigh SURCHARGE is expensed.
+ *
+ * Deliberately a list of plausible names rather than one: the chart of accounts
+ * is the operator's, and a mismatch here must degrade to "not journalled, log a
+ * warning" rather than failing the webhook path — the invoice to the seller
+ * still recovers the money either way.
+ */
+const FREIGHT_EXPENSE_ACCOUNT_NAMES = [
+  'Freight & Courier Expense',
+  'Freight and Courier Expense',
+  'Courier Expense',
+  'Courier & Freight',
+  'Shipping Expense',
+  'Freight Expense',
+  'Freight Out',
+  'Cost of Goods Sold',
+];
+
+/** Hard ceiling on one Books call. A hung connection must not hold a cron. */
+const ZOHO_TIMEOUT_MS = 20_000;
+/** Total attempts for a retryable failure, including the first. */
+const ZOHO_MAX_ATTEMPTS = 3;
+
+/**
+ * A Books failure that knows whether a retry could DUPLICATE work.
+ *
+ * `uncertain` is true when a WRITE may already have landed (timeout, network
+ * drop, 5xx). Books has no idempotency key, so those are never retried
+ * automatically: the caller records `zohoSyncStatus = UNCERTAIN` and a human
+ * checks the Books UI before the retry button is used.
+ */
+export class ZohoTransportError extends Error {
+  constructor(
+    message: string,
+    /** A retry might create a second document. */
+    public readonly uncertain: boolean,
+  ) {
+    super(message);
+    this.name = 'ZohoTransportError';
+  }
+}
 
 /**
  * Zoho Books integration — accounting backend for ALL Outdoor.
@@ -211,14 +253,30 @@ export class ZohoBooksService {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    return this.requestInner<T>(method, path, body, /* retried */ false);
+    return this.requestInner<T>(method, path, body, 0);
   }
 
+  /**
+   * ⚠️ A BOOKS CALL MUST NOT HANG, AND MUST NOT BE SILENTLY RETRIED WHEN the
+   * OUTCOME IS UNKNOWN.
+   *
+   * Before this, `fetch` had no signal: a stalled connection blocked the hourly
+   * retry sweep (it awaits each document in turn) and anything else awaiting a
+   * Books write. Now every call has a hard timeout, and the retry rule depends
+   * on whether a retry could duplicate a document:
+   *
+   *   GET      — retried on a timeout, a network error, 429 and 5xx.
+   *   POST/PUT/DELETE — retried ONLY on 429/503 (the request was refused, not
+   *              processed). A timeout or 5xx means Books may already have
+   *              created the invoice, so it is thrown as UNCERTAIN and the
+   *              callers refuse to auto-retry it; a duplicate invoice is worse
+   *              than a late one, and Books has no idempotency key.
+   */
   private async requestInner<T>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body: unknown,
-    retried: boolean,
+    attempt: number,
   ): Promise<T> {
     const token = await this.getAccessToken();
     // Books REST API requires organization_id as a query param on
@@ -233,30 +291,73 @@ export class ZohoBooksService {
         Authorization: `Zoho-oauthtoken ${token}`,
         'Content-Type': 'application/json',
       },
+      signal: AbortSignal.timeout(ZOHO_TIMEOUT_MS),
     };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }
 
-    const res = await fetch(url, init);
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (method === 'GET' && attempt + 1 < ZOHO_MAX_ATTEMPTS) {
+        await this.backoff(attempt);
+        return this.requestInner<T>(method, path, body, attempt + 1);
+      }
+      // A write that timed out MAY have landed. Say so, loudly, in the error.
+      throw new ZohoTransportError(
+        `Zoho Books ${method} ${path} did not answer (${message})`,
+        method !== 'GET',
+      );
+    }
 
-    if (res.status === 401 && !retried) {
+    if (res.status === 401 && attempt === 0) {
       // Token cache thinks it's valid but Zoho disagrees — force
       // refresh and retry once.
       this.logger.warn('Zoho returned 401 — forcing token refresh');
       this.cachedAccessToken = null;
       this.cachedAccessTokenExpiresAt = 0;
-      return this.requestInner<T>(method, path, body, true);
+      return this.requestInner<T>(method, path, body, attempt + 1);
+    }
+
+    // 429 / 503 are refusals, not partial work: safe to retry for any method.
+    if (
+      (res.status === 429 || res.status === 503) &&
+      attempt + 1 < ZOHO_MAX_ATTEMPTS
+    ) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      this.logger.warn(
+        `Zoho Books ${method} ${path} answered ${res.status} — retrying (${
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? `after ${retryAfter}s`
+            : `attempt ${attempt + 2}`
+        })`,
+      );
+      await this.backoff(attempt, retryAfter);
+      return this.requestInner<T>(method, path, body, attempt + 1);
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
+      throw new ZohoTransportError(
         `Zoho Books ${method} ${path} failed (${res.status}): ${text || res.statusText}`,
+        // A 5xx on a write is ambiguous; a 4xx is a definite refusal.
+        method !== 'GET' && res.status >= 500,
       );
     }
 
     return (await res.json()) as T;
+  }
+
+  /** Exponential backoff, honouring a Retry-After when Zoho sends one. */
+  private async backoff(attempt: number, retryAfterSec?: number): Promise<void> {
+    const ms =
+      Number.isFinite(retryAfterSec) && (retryAfterSec ?? 0) > 0
+        ? Math.min(30_000, (retryAfterSec as number) * 1000)
+        : 250 * 2 ** attempt;
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ─── Contact (customer) management ───────────────────────────────
@@ -341,16 +442,37 @@ export class ZohoBooksService {
       code?: number;
       message?: string;
     };
-    const resp = await this.request<CreateContactResp>(
-      'POST',
-      '/contacts',
-      payload,
-    );
-
-    const contactId = resp.contact?.contact_id;
-    if (!contactId) {
-      throw new Error(
-        `Zoho Books contact create returned no contact_id: ${resp.message ?? 'unknown'}`,
+    let contactId: string | undefined;
+    try {
+      const resp = await this.request<CreateContactResp>(
+        'POST',
+        '/contacts',
+        payload,
+      );
+      contactId = resp.contact?.contact_id;
+      if (!contactId) {
+        throw new Error(
+          `Zoho Books contact create returned no contact_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+    } catch (createErr) {
+      // ⚠️ THE FALLBACK THIS DOCBLOCK HAS ALWAYS PROMISED. Books refuses a
+      // duplicate contact email with a 400. Without this, a seller whose
+      // contact already exists — created by hand in the Books UI, or by an
+      // earlier attempt that created it but failed before saving the id — could
+      // never be invoiced: every attempt failed, hourly, for as long as they
+      // sold.
+      const found = await this.request<{
+        contacts?: Array<{ contact_id?: string }>;
+      }>(
+        'GET',
+        `/contacts?email=${encodeURIComponent(user.email)}&contact_type=customer`,
+      ).catch(() => null);
+      const existingId = found?.contacts?.[0]?.contact_id;
+      if (!existingId) throw createErr;
+      contactId = existingId;
+      this.logger.warn(
+        `Books already had a contact for ${user.email} — reusing ${existingId} instead of failing`,
       );
     }
 
@@ -482,7 +604,10 @@ export class ZohoBooksService {
    * transaction row. Caller doesn't need to try/catch — this method
    * never throws.
    */
-  async createCommissionInvoice(transactionId: string): Promise<void> {
+  async createCommissionInvoice(
+    transactionId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -506,6 +631,16 @@ export class ZohoBooksService {
     if (!tx) return;
     // Idempotency — if we've already created the invoice, no-op.
     if (tx.zohoCommissionInvoiceId) return;
+    // ⚠️ A PREVIOUS ATTEMPT MAY HAVE LANDED IN BOOKS WITHOUT US SEEING THE
+    // ANSWER (timeout / 5xx). Books has no idempotency key, so retrying would
+    // create a second invoice. A human checks the Books UI and uses the retry
+    // action, which passes force.
+    if (!opts.force && tx.zohoSyncStatus === 'UNCERTAIN') {
+      this.logger.log(
+        `Commission invoice for ${transactionId} left UNCERTAIN — not retried automatically`,
+      );
+      return;
+    }
     // A Buy Now seller pays no fee, so there is no seller-side tax document
     // to raise. Their paperwork is the platform remittance advice, issued to
     // them once the payout actually leaves the bank. (The zero-total
@@ -652,7 +787,10 @@ export class ZohoBooksService {
    *
    * Never throws — the debt exists in the ledger whether or not Books answers.
    */
-  async createShippingVarianceInvoice(sellerChargeId: string): Promise<void> {
+  async createShippingVarianceInvoice(
+    sellerChargeId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     if (!this.isEnabled()) return;
     const charge = await this.prisma.sellerCharge.findUnique({
       where: { id: sellerChargeId },
@@ -666,6 +804,14 @@ export class ZohoBooksService {
       },
     });
     if (!charge || charge.zohoInvoiceId || charge.amountCents <= 0) return;
+    if (!opts.force) {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: charge.transactionId },
+        select: { zohoSyncStatus: true },
+      });
+      // The same "outcome unknown" rule as the other documents.
+      if (tx?.zohoSyncStatus === 'UNCERTAIN') return;
+    }
 
     const seller = await this.prisma.user.findUnique({
       where: { id: charge.sellerId },
@@ -781,7 +927,10 @@ export class ZohoBooksService {
    * Idempotent: skips if zohoBuyerInvoiceId already set. Never throws —
    * failures persist as FAILED on the transaction.
    */
-  async createBuyerInvoice(transactionId: string): Promise<void> {
+  async createBuyerInvoice(
+    transactionId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     if (!this.isEnabled()) {
       await this.markDisabled(transactionId);
       return;
@@ -795,6 +944,13 @@ export class ZohoBooksService {
     });
     if (!tx) return;
     if (tx.zohoBuyerInvoiceId) return; // already raised
+    // Same UNCERTAIN guard as the commission invoice: no second document.
+    if (!opts.force && tx.zohoSyncStatus === 'UNCERTAIN') {
+      this.logger.log(
+        `Buyer invoice for ${transactionId} left UNCERTAIN — not retried automatically`,
+      );
+      return;
+    }
 
     try {
       const contactId = await this.ensureContact(tx.buyer.id, tx.buyer.email);
@@ -1357,6 +1513,26 @@ export class ZohoBooksService {
         await this.createBuyerInvoice(t.id);
       }
 
+      // Courier re-weigh invoices that were never raised. The CHARGE is the
+      // record of the debt; if it has no Books document, the seller has a debt
+      // in our ledger that they have never been told about. Nothing else
+      // retries this document, because it is not tied to a transaction id.
+      const missingVarianceInvoices = await this.prisma.sellerCharge
+        .findMany({
+          where: {
+            kind: 'SHIPPING_VARIANCE',
+            zohoInvoiceId: null,
+            amountCents: { gt: 0 },
+            createdAt: { lt: staleFloor },
+          },
+          select: { id: true },
+          take: limit,
+        })
+        .catch(() => []);
+      for (const c of missingVarianceInvoices) {
+        await this.createShippingVarianceInvoice(c.id);
+      }
+
       // Buyer invoice created but not sent/settled (e.g. the payment call
       // failed after the invoice was raised). Balance-checked, so a re-run
       // on an already-paid invoice is a no-op.
@@ -1441,6 +1617,439 @@ export class ZohoBooksService {
     } catch (err) {
       this.logger.warn(
         `retryFailedRevenueDocs failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * A write whose outcome we do NOT know — timed out, or answered 5xx.
+   *
+   * Books has no idempotency key, so the document may exist. The row is marked
+   * UNCERTAIN, the automatic retry refuses it (see the create methods), and an
+   * urgent alert asks a human to look in Books before pressing retry. A second
+   * invoice is worse than a late one.
+   */
+  private async markUncertain(
+    transactionId: string,
+    err: Error,
+  ): Promise<void> {
+    const message = err.message.slice(0, 1000);
+    this.logger.error(
+      `Zoho Books outcome UNCERTAIN for tx ${transactionId}: ${message}`,
+    );
+    try {
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoSyncStatus: 'UNCERTAIN',
+          zohoSyncError: message,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      const existing = await this.prisma.adminAlert.findFirst({
+        where: {
+          type: 'ZOHO_SYNC_UNCERTAIN',
+          referenceId: transactionId,
+          resolved: false,
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'ZOHO_SYNC_UNCERTAIN',
+            referenceId: transactionId,
+            urgent: true,
+            context:
+              `A Zoho Books write for ${transactionId} did not get an answer, so the ` +
+              `document MAY exist: ${message.slice(0, 300)}. Check Books, then use the ` +
+              `retry action. It is deliberately not retried automatically.`,
+          },
+        });
+      }
+    } catch {
+      /* best effort — the alert is a courtesy; the status is the record */
+    }
+  }
+
+  /**
+   * SETTLE EVERY SELLER-SIDE DOCUMENT THIS PAYOUT DISCHARGES.
+   *
+   * ⚠️ THIS WAS THE HOLE. The commission invoice was raised on release and
+   * settled only on the firearm dealer-transfer path and via the admin button,
+   * so every ordinary courier sale left an open invoice to the seller and an
+   * undischarged Client Funds Payable. A courier re-weigh invoice had no
+   * settlement path at all. Both are settled here, at the moment the money
+   * actually moves — which is the only moment either entry is true.
+   */
+  async settlePayoutDocuments(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    await this.markCommissionInvoicePaid(transactionId);
+    await this.markShippingVarianceInvoicePaid(transactionId);
+  }
+
+  /**
+   * Pay off a courier re-weigh invoice with the slices the payout ledger
+   * collected. A charge can be recovered across more than one payout, so this
+   * pays the DELTA between what has been recovered and what has already been
+   * settled in Books — never the whole invoice optimistically.
+   */
+  private async markShippingVarianceInvoicePaid(
+    transactionId: string,
+  ): Promise<void> {
+    const recoveries = await this.prisma.sellerChargeRecovery
+      .findMany({
+        where: {
+          transactionId,
+          status: { in: ['RESERVED', 'SETTLED'] },
+          charge: { kind: 'SHIPPING_VARIANCE', zohoInvoiceId: { not: null } },
+        },
+        select: {
+          amountCents: true,
+          charge: {
+            select: {
+              id: true,
+              zohoInvoiceId: true,
+              zohoInvoicePaidCents: true,
+              sellerId: true,
+              amountCents: true,
+            },
+          },
+        },
+      })
+      .catch(() => []);
+    if (recoveries.length === 0) return;
+
+    type ChargeRef = (typeof recoveries)[number]['charge'];
+    const byCharge = new Map<
+      string,
+      { charge: ChargeRef; recovered: number }
+    >();
+    for (const r of recoveries) {
+      const entry = byCharge.get(r.charge.id) ?? {
+        charge: r.charge,
+        recovered: 0,
+      };
+      entry.recovered += Math.max(0, r.amountCents);
+      byCharge.set(r.charge.id, entry);
+    }
+
+    for (const { charge, recovered } of byCharge.values()) {
+      try {
+        const paid = Math.max(0, charge.zohoInvoicePaidCents);
+        const target = Math.min(charge.amountCents, recovered);
+        const slice = target - paid;
+        if (slice <= 0 || !charge.zohoInvoiceId) continue;
+
+        const seller = await this.prisma.user.findUnique({
+          where: { id: charge.sellerId },
+          select: { id: true, email: true },
+        });
+        if (!seller?.email) continue;
+        const contactId = await this.ensureContact(seller.id, seller.email);
+        if (!contactId) {
+          throw new Error('Could not resolve Books contact for seller');
+        }
+
+        const trustAccountId = await this.resolveAccountId(
+          CLIENT_FUNDS_ACCOUNT_NAMES,
+        );
+        const undepositedId = await this.resolveAccountId(
+          UNDEPOSITED_FUNDS_NAMES,
+        );
+        if (!trustAccountId || !undepositedId) {
+          throw new Error(
+            'Client Funds Payable or Undeposited Funds account missing from Books',
+          );
+        }
+        const amount = slice / 100;
+        const today = new Date().toISOString().slice(0, 10);
+        const orderRef = transactionId.slice(-8).toUpperCase();
+
+        // The money is withheld from the seller's own payout, which sits in
+        // Client Funds Payable — so clear the liability into Undeposited, then
+        // settle the invoice from there. No bank movement between the two.
+        await this.request('POST', '/journals', {
+          journal_date: today,
+          reference_number: `Re-weigh recovered — ${orderRef}`.slice(0, 100),
+          notes:
+            'Courier re-weigh charge recovered from the seller’s payout ' +
+            '(deducted from Client Funds Payable).',
+          line_items: [
+            {
+              account_id: trustAccountId,
+              debit_or_credit: 'debit',
+              amount,
+              description: `Re-weigh recovered — ${orderRef}`,
+            },
+            {
+              account_id: undepositedId,
+              debit_or_credit: 'credit',
+              amount,
+              description: `Re-weigh recovered — ${orderRef}`,
+            },
+          ],
+        });
+        await this.request('POST', '/customerpayments', {
+          customer_id: contactId,
+          payment_mode: 'others',
+          amount,
+          date: today,
+          reference_number: `Re-weigh recovered — ${orderRef}`.slice(0, 50),
+          account_id: undepositedId,
+          invoices: [
+            {
+              invoice_id: charge.zohoInvoiceId,
+              amount_applied: amount,
+            },
+          ],
+          description: 'Courier re-weigh charge settled from the seller payout',
+        });
+        await this.prisma.sellerCharge.update({
+          where: { id: charge.id },
+          data: { zohoInvoicePaidCents: target },
+        });
+        this.logger.log(
+          `Settled courier re-weigh invoice ${charge.zohoInvoiceId} for tx ${transactionId} (R${amount.toFixed(2)})`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Could not settle the re-weigh invoice for charge ${charge.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * BUYER-SIDE CREDIT NOTE ON A REFUND.
+   *
+   * ⚠️ ONLY THE SELLER'S COMMISSION USED TO BE CREDITED. The buyer's invoice —
+   * item and delivery into Client Funds Payable, the platform fee into revenue,
+   * with a payment already applied at creation — stayed on the books as a
+   * completed sale while the cash went back to the buyer. A partial refund sent
+   * nothing at all to Books.
+   *
+   * Credits the DELTA between the cumulative refunded amount and what has
+   * already been credited, split in the same proportion as the original invoice
+   * (fee vs item + delivery), so the liability and the revenue unwind together.
+   */
+  async createBuyerCreditNote(
+    transactionId: string,
+    refundedTotalCents: number,
+    reason?: string,
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        listing: { select: { title: true, referenceNumber: true } },
+      },
+    });
+    if (!tx || !tx.zohoBuyerInvoiceId) return;
+    if (tx.buyerTotal <= 0) return;
+
+    const target = Math.min(
+      Math.max(0, Math.round(refundedTotalCents)),
+      tx.buyerTotal,
+    );
+    const already = Math.max(0, tx.zohoBuyerCreditNoteCents ?? 0);
+    const delta = target - already;
+    if (delta <= 0) return; // nothing new to credit
+
+    try {
+      const contactId = await this.ensureContact(tx.buyer.id, tx.buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+      const trustAccountId = await this.resolveAccountId(
+        CLIENT_FUNDS_ACCOUNT_NAMES,
+      );
+      const feeAccountId = await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES);
+      if (!trustAccountId || !feeAccountId) {
+        throw new Error(
+          'Client Funds Payable or platform fee revenue account missing from Books',
+        );
+      }
+
+      // Same split as the invoice being reversed: the fee share of the refund
+      // comes out of revenue, the rest out of the liability.
+      const feeShare = Math.round((delta * tx.processingFee) / tx.buyerTotal);
+      const itemShare = delta - feeShare;
+      const orderRef =
+        tx.listing?.referenceNumber ?? transactionId.slice(-8).toUpperCase();
+      const why = (reason ?? 'Order refunded').slice(0, 200);
+      const today = new Date().toISOString().slice(0, 10);
+
+      const line_items = [
+        {
+          name: 'Item and delivery — refunded',
+          description: `${orderRef} — ${tx.listing?.title ?? 'item'} (${why})`,
+          rate: itemShare / 100,
+          quantity: 1,
+          account_id: trustAccountId,
+        },
+        ...(feeShare > 0
+          ? [
+              {
+                name: 'Platform fee — refunded',
+                description: `${orderRef} (${why})`,
+                rate: feeShare / 100,
+                quantity: 1,
+                account_id: feeAccountId,
+              },
+            ]
+          : []),
+      ];
+
+      type CreateCreditNoteResp = {
+        creditnote?: { creditnote_id?: string; creditnote_number?: string };
+        message?: string;
+      };
+      const resp = await this.request<CreateCreditNoteResp>(
+        'POST',
+        '/creditnotes',
+        {
+          customer_id: contactId,
+          reference_number: `Refund — ${orderRef}`.slice(0, 100),
+          date: today,
+          line_items,
+          notes:
+            `Refund of ${this.formatRand(delta / 100)} on ${orderRef}.\n` +
+            `Reason: ${why}\nALL Outdoor transaction reference: ${orderRef}`,
+        },
+      );
+      const creditNoteId = resp.creditnote?.creditnote_id;
+      if (!creditNoteId) {
+        throw new Error(
+          `Books credit-note create returned no creditnote_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      try {
+        await this.request('POST', `/creditnotes/${creditNoteId}/invoices`, {
+          invoices: [
+            {
+              invoice_id: tx.zohoBuyerInvoiceId,
+              amount_applied: delta / 100,
+            },
+          ],
+        });
+      } catch (applyErr) {
+        // The note exists; applying it can be done in the Books UI.
+        this.logger.warn(
+          `Buyer credit note ${creditNoteId} created but apply-to-invoice failed: ${(applyErr as Error).message}`,
+        );
+      }
+
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoBuyerCreditNoteId: creditNoteId,
+          zohoBuyerCreditNoteCents: target,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Credited buyer invoice for tx ${transactionId}: ${creditNoteId} (R${(
+          delta / 100
+        ).toFixed(2)})`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  /**
+   * The carrier's re-weigh SURCHARGE is a cost we paid.
+   *
+   * The freight journal is built from the quote the buyer paid and cannot carry
+   * it; the seller's re-weigh invoice records the recovery. Without this
+   * journal the surcharge appears only as income and the Books freight expense
+   * never matches the carrier's statement.
+   *
+   * Idempotent on zohoShippingVarianceJournalId. Skips (quietly, with a log)
+   * when no freight expense account can be resolved rather than failing the
+   * whole webhook path over a chart-of-accounts naming question.
+   */
+  async createShippingVarianceJournal(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        shippingCost: true,
+        shipmentChargedCents: true,
+        zohoShippingVarianceJournalId: true,
+      },
+    });
+    if (!tx || tx.zohoShippingVarianceJournalId) return;
+    const surcharge =
+      Math.max(0, tx.shipmentChargedCents ?? 0) -
+      Math.max(0, tx.shippingCost);
+    if (surcharge <= 0) return;
+
+    try {
+      const expenseId = await this.resolveAccountId(
+        FREIGHT_EXPENSE_ACCOUNT_NAMES,
+      );
+      const bankId = await this.resolveBankAccountId();
+      if (!expenseId || !bankId) {
+        this.logger.warn(
+          `No freight expense / bank account in Books — courier surcharge of ` +
+            `R${(surcharge / 100).toFixed(2)} on ${transactionId} not journalled`,
+        );
+        return;
+      }
+      const amount = surcharge / 100;
+      const orderRef = transactionId.slice(-8).toUpperCase();
+      type CreateJournalResp = {
+        journal?: { journal_id?: string; journal_number?: string };
+        message?: string;
+      };
+      const resp = await this.request<CreateJournalResp>('POST', '/journals', {
+        journal_date: new Date().toISOString().slice(0, 10),
+        reference_number: `Courier re-weigh surcharge — ${orderRef}`.slice(
+          0,
+          100,
+        ),
+        notes:
+          'The carrier re-weighed the parcel and billed more than the buyer ' +
+          'paid. Paid from the bank on the seller’s behalf and recovered from ' +
+          'their payout.',
+        line_items: [
+          {
+            account_id: expenseId,
+            debit_or_credit: 'debit',
+            amount,
+            description: `Courier re-weigh surcharge — ${orderRef}`,
+          },
+          {
+            account_id: bankId,
+            debit_or_credit: 'credit',
+            amount,
+            description: `Courier re-weigh surcharge — ${orderRef}`,
+          },
+        ],
+      });
+      const journalId = resp.journal?.journal_id;
+      if (!journalId) {
+        throw new Error(
+          `Books re-weigh journal returned no journal_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { zohoShippingVarianceJournalId: journalId },
+      });
+      this.logger.log(
+        `Journalled courier surcharge ${journalId} for tx ${transactionId} (R${amount.toFixed(2)})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Courier surcharge journal failed for ${transactionId}: ${(err as Error).message}`,
       );
     }
   }
@@ -1727,6 +2336,14 @@ export class ZohoBooksService {
     transactionId: string,
     err: Error,
   ): Promise<void> {
+    // ⚠️ ONE PLACE DECIDES, SO NO CALL SITE CAN FORGET. A transport error whose
+    // outcome is unknown is not a failure — the document may exist. Routing it
+    // to markUncertain keeps the automatic retry off it and puts a human in
+    // front of the decision.
+    if (err instanceof ZohoTransportError && err.uncertain) {
+      await this.markUncertain(transactionId, err);
+      return;
+    }
     const message = err.message.slice(0, 1000);
     this.logger.error(
       `Zoho Books sync FAILED for tx ${transactionId}: ${message}`,

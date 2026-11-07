@@ -1053,11 +1053,19 @@ export class AdminTransactionsController {
   @Post(':id/zoho-retry')
   @HttpCode(200)
   async retryZohoSync(@Param('id') id: string) {
-    await this.zohoBooks.createCommissionInvoice(id);
-    await this.zohoBooks.createBuyerInvoice(id);
+    // ⚠️ `force` IS THE HUMAN OVERRIDE, AND THE ONLY ONE. A row left
+    // UNCERTAIN means a Books write may already have landed; the automatic
+    // sweep refuses it so a second invoice cannot appear. This button is the
+    // operator saying "I looked in Books" — so it forces.
+    const force = { force: true };
+    await this.zohoBooks.createCommissionInvoice(id, force);
+    await this.zohoBooks.createBuyerInvoice(id, force);
     await this.zohoBooks.finalizeExistingBuyerInvoice(id);
     await this.zohoBooks.createShippingCostJournal(id);
     await this.zohoBooks.markCommissionInvoicePaid(id);
+    // The newer documents, so one button still covers the whole rail.
+    await this.zohoBooks.createShippingVarianceJournal(id);
+    await this.zohoBooks.settlePayoutDocuments(id);
     return { triggered: true };
   }
 }

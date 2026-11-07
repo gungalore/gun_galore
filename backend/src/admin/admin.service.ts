@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   Logger,
   NotFoundException,
@@ -3138,6 +3138,18 @@ export class AdminService {
       // partials and let the operator reconcile the final settlement.
       void this.zohoBooks.createCommissionCreditNote(txId, note);
     }
+
+    // ⚠️ AND THE BUYER'S DOCUMENT, ON EVERY REFUND. Only the seller's
+    // commission used to be credited, so the buyer invoice — item and delivery
+    // in Client Funds Payable, the platform fee in revenue, its payment already
+    // applied — stayed on the books as a completed sale while the cash went
+    // back. This note is proportional and incremental: a partial refund credits
+    // exactly its share, and a second refund credits only the new slice.
+    void this.zohoBooks.createBuyerCreditNote(
+      txId,
+      updated?.refundedAmount ?? tx.refundedAmount,
+      note,
+    );
 
     return updated;
   }

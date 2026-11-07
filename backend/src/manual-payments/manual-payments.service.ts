@@ -11,6 +11,7 @@ import {
   OzowPayoutResult,
 } from '../payments/ozow.service';
 import { normaliseOzowBank, bankByBranchCode } from '../payments/ozow-banks';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import {
   PeachService,
   PeachPayoutBeneficiary,
@@ -91,7 +92,29 @@ export class ManualPaymentsService {
     // arm simply reports "not configured" when absent.
     @Optional()
     private readonly peach?: PeachService,
+    // ⚠️ THE PAYOUT IS THE MOMENT A SELLER-SIDE BOOKS DOCUMENT BECOMES TRUE.
+    // The commission invoice and any courier re-weigh invoice are settled here,
+    // not at release: until the payout is made, no money has moved. Optional so
+    // positional test harnesses keep working; absent means no Books settlement
+    // (the documents stay open, which is the old behaviour, not a crash).
+    @Optional()
+    private readonly zoho?: ZohoBooksService,
   ) {}
+
+  /**
+   * Settle the seller's Books documents for a payout that actually happened.
+   * Fire-and-forget: a Books outage must never fail a payout the bank accepted.
+   */
+  private settleSellerDocuments(transactionId: string): void {
+    if (!this.zoho) return;
+    void this.zoho
+      .settlePayoutDocuments(transactionId)
+      .catch((err: Error) =>
+        this.logger.warn(
+          `Books settlement after payout ${transactionId} failed: ${err.message}`,
+        ),
+      );
+  }
 
   // ── Seller payout disbursement (Ozow + Peach) ───────────────────────
   // Operator-triggered (admin endpoint). Gathers the due seller payouts and
@@ -273,6 +296,9 @@ export class ManualPaymentsService {
           ref: candidate.orderReference ?? candidate.txId,
           reason: `Payout fully recovered against seller charges (R${(applied / 100).toFixed(2)}); settled without a bank payment`,
         });
+        // No bank payment, but the seller's debt was discharged: their
+        // commission and re-weigh invoices are settled by the retention.
+        this.settleSellerDocuments(candidate.txId);
         continue;
       }
 
@@ -358,6 +384,9 @@ export class ManualPaymentsService {
         ]);
         accepted += 1;
         totalCents += b.amountCents;
+        // The payout exists now, so the seller-side documents it settles can be
+        // discharged in Books.
+        this.settleSellerDocuments(b.txId);
       } else {
         const reason = res.errorMessage ?? 'Ozow rejected the payout request';
         if (res.attemptId) {
@@ -665,6 +694,9 @@ export class ManualPaymentsService {
       ]);
       if (successful) {
         await settleSellerChargeRecoveries(this.prisma, c.txId);
+        // Same rule as the Ozow arm: the payout exists, so the seller's Books
+        // documents can be discharged.
+        this.settleSellerDocuments(c.txId);
       }
       accepted += 1;
       totalCents += c.amountCents;

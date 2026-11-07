@@ -7,6 +7,61 @@ overwritten.
 
 Last updated: **2026-11-07**.
 
+## 2026-11-07 (ZOHO) - THREE SETTLEMENT HOLES AND A TRANSPORT THAT HUNG
+
+Audit of the Books rail found the documents were raised correctly and then
+never settled. Fixed here:
+
+**The commission invoice was never settled on the normal path.**
+`markCommissionInvoicePaid` was called only from dealer verification and the
+admin button, so every courier sale left the seller's invoice open and Client
+Funds Payable undischarged. `ZohoBooksService.settlePayoutDocuments()` now runs
+from `ManualPaymentsService` at the moment the payout is made (both rails, and
+on the fully-recovered branch), settling the commission **and** any courier
+re-weigh invoice. That is the only moment either entry is true.
+
+**A refund only reversed the seller's commission.** The buyer's invoice — item
+and delivery in Client Funds Payable, the platform fee in revenue, payment
+already applied — stayed on the books as a completed sale while the cash went
+back. `createBuyerCreditNote` now credits it on **every** refund, proportional
+and incremental: `Transaction.zohoBuyerCreditNoteCents` tracks the cumulative
+amount, so a partial refund credits its own slice and a second refund credits
+only the new one.
+
+**A re-weigh invoice was never marked paid.** `SellerCharge.zohoInvoicePaidCents`
+records how much has been settled; the payout settles the delta between what the
+ledger recovered and what Books has been told, so a charge recovered across two
+payouts is paid in two slices.
+
+**The surcharge is now expensed.** `createShippingVarianceJournal` posts the
+difference as Dr freight expense / Cr bank. The freight journal built from the
+quote cannot carry it, so before this the surcharge appeared only as recovery
+income and the freight expense never matched the carrier statement. It skips
+with a warning when the chart has no recognisable freight expense account.
+
+**Transport.** Every Books call now has a 20 s abort timeout. GET retries on
+timeout/429/5xx; **writes retry only on 429/503** — a timeout or 5xx on a POST is
+thrown as `ZohoTransportError{uncertain:true}`, `markFailed` routes it to a new
+`UNCERTAIN` status, an urgent `ZOHO_SYNC_UNCERTAIN` alert is raised, and the
+automatic sweep refuses the row. A human checks Books and uses the retry button,
+which passes `force`. A second invoice is worse than a late one, and Books has no
+idempotency key.
+
+**The contact fallback the docblock promised now exists.** `ensureContact` looks
+the contact up by email when the create is refused, instead of failing forever
+for a seller Books already knew.
+
+**The desk can see it.** `ZohoBooksService.healthCheck()` (auth + "org visible to
+these credentials") is now a probe row; it was dead code, and the old row was a
+HEAD to `www.zohoapis.com` that answers with an expired refresh token.
+
+⚠️ **Still open:** the credit-note helper for the *commission* is full-refund
+only (partial refunds leave the fee credited in full on the buyer side and not at
+all on the seller side — the two documents are now inconsistent for a partial);
+`zohoSyncStatus` is still one column for six documents, so the desk cannot name
+which one failed; and the re-weigh invoice is settled from Client Funds Payable,
+which assumes the withheld payout sat there.
+
 ## 2026-11-07 (SHIPPING) - THE COURIER ALWAYS ACCEPTS IT, SO THE SELLER PAYS
 
 Operator: *"The courier will always accept a reweight and charge the platform.

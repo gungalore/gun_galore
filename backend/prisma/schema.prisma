@@ -2188,6 +2188,19 @@ model Transaction {
   zohoCommissionPaymentId String?
   zohoCommissionSettleJournalId String?
   zohoCreditNoteId        String?
+  // The BUYER-side credit note, kept separate from zohoCreditNoteId (which
+  // credits the SELLER's commission). A refund has to reverse the buyer's
+  // invoice too — item and delivery out of Client Funds Payable, the platform
+  // fee out of revenue — or the books keep a completed sale that was refunded.
+  // `Cents` is the CUMULATIVE refunded amount already credited, so a partial
+  // refund credits only the new slice.
+  zohoBuyerCreditNoteId   String?
+  zohoBuyerCreditNoteCents Int      @default(0)
+  // The journal that books the carrier's re-weigh SURCHARGE as the cost it is
+  // (Dr freight expense / Cr bank). The invoice to the seller recovers it; the
+  // freight journal built from the quote cannot, because the buyer never paid
+  // this part.
+  zohoShippingVarianceJournalId String?
   zohoBuyerInvoiceId      String?
   zohoHandlingJournalId   String?
   zohoShippingJournalId   String?
@@ -3920,6 +3933,10 @@ model SellerCharge {
   // remittance advice instead). Doubles as the idempotency key so a re-fired
   // charge event cannot create a second invoice.
   zohoInvoiceId String?
+  // How much of that invoice has been settled in Books. A variance can be
+  // recovered across more than one payout, so the invoice is paid off in the
+  // slices the ledger actually collects — never in one optimistic lump.
+  zohoInvoicePaidCents Int @default(0)
 
   recoveries    SellerChargeRecovery[]
 

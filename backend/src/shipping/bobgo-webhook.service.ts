@@ -362,6 +362,17 @@ export class BobGoWebhookService {
       }
     }
 
+    // The surcharge is a COST we paid. The freight journal built from the quote
+    // cannot carry it, so it is journalled here — otherwise Books shows the
+    // recovery as income with no matching expense, and the carrier's statement
+    // never reconciles. Independent of whether the seller was charged (above
+    // the cap the cost is still ours).
+    if (varianceCents > 0) {
+      void this.zoho
+        .createShippingVarianceJournal(tx.id)
+        .catch(() => undefined);
+    }
+
     const context =
       `Bob Go ${topic} for shipment ${shipmentId} (tx ${tx.id}): the carrier billed ` +
       `${formatCents(chargedCents)} where the buyer was charged ${formatCents(quotedCents)} — ` +

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 /**
  * System Health monitor — pings every external service ALL Outdoor
@@ -77,6 +78,12 @@ export class AdminHealthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
+    // ⚠️ THE PROBE THAT ACTUALLY KNOWS. A HEAD to www.zohoapis.com answers for
+    // any reachable host — including with an expired refresh token, a revoked
+    // app or the wrong org id, which is exactly what breaks invoicing. The
+    // deeper check (auth + org visible to these credentials) lives in the Zoho
+    // service and used to be called by nobody.
+    private readonly zoho: ZohoBooksService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -178,27 +185,42 @@ export class AdminHealthService {
       // quota or a project without the API enabled all pass a /models GET
       // and fail every real call. So it is now LlmService.ping(), a genuine
       // one-token completion, appended after this list.
-      {
-        // Zoho Books — accounting integration. Probes the public API
-        // host; we don't use a credential-authenticated probe here
-        // (other services in this list also probe base hosts only).
-        // The deeper "can we actually auth + see our org" check
-        // lives in ZohoBooksService.healthCheck() and could be added
-        // as a separate row later if needed.
-        name: 'Zoho Books',
-        url:
-          process.env.ZOHO_BOOKS_API_DOMAIN ?? 'https://www.zohoapis.com',
-        category: 'comms',
-        method: 'HEAD',
-        requiresEnv: ['ZOHO_BOOKS_REFRESH_TOKEN'],
-      },
+      // ⚠️ THE ZOHO BOOKS ROW IS NOT A URL PROBE ANY MORE. `www.zohoapis.com`
+      // answers for anyone with a network, so the row was green with an expired
+      // refresh token, a revoked app or the wrong org — the three things that
+      // actually stop invoicing. It is now `ZohoBooksService.healthCheck()`,
+      // appended below with the AI probe.
     ];
 
-    const [probes, ai] = await Promise.all([
+    const [probes, ai, zoho] = await Promise.all([
       this.probeUrlTargets(targets),
       this.probeAi(),
+      this.probeZoho(),
     ]);
-    return [...probes, ai];
+    return [...probes, ai, zoho];
+  }
+
+  /**
+   * Books: can these credentials actually see our organisation?
+   *
+   * A read, so it never throws. `not-configured` when the rail is off (which is
+   * not a fault), `degraded` when enabled but the auth/org check fails.
+   */
+  private async probeZoho(): Promise<ServiceProbe> {
+    const h = await this.zoho.healthCheck().catch((err: Error) => ({
+      ok: false,
+      enabled: true,
+      detail: err.message,
+    }));
+    return {
+      name: 'Zoho Books (auth + org)',
+      url: 'books/v3/organizations',
+      category: 'comms',
+      status: !h.enabled ? 'not-configured' : h.ok ? 'up' : 'degraded',
+      latencyMs: null,
+      httpStatus: null,
+      detail: h.detail ?? null,
+    };
   }
 
   /**
