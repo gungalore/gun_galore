@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../lib/auth';
@@ -24,6 +24,7 @@ type AddrForm = {
   city: string;
   postalCode: string;
   province: string;
+  isDefault: boolean;
 };
 
 const EMPTY: AddrForm = {
@@ -35,6 +36,7 @@ const EMPTY: AddrForm = {
   city: '',
   postalCode: '',
   province: '',
+  isDefault: false,
 };
 
 const card: React.CSSProperties = {
@@ -267,6 +269,9 @@ export default function SettingsPage() {
         city: form.city,
         postalCode: form.postalCode,
         province: form.province,
+        // Only meaningful when ticked: the API promotes this row and clears the
+        // previous default. Sending false is a no-op, never a demotion.
+        isDefault: form.isDefault === true,
       });
       if (form.id) {
         await authed(`/users/me/addresses/${form.id}`, { method: 'PATCH', body });
@@ -742,6 +747,7 @@ export default function SettingsPage() {
                               city: a.city,
                               postalCode: a.postalCode,
                               province: a.province,
+                              isDefault: a.isDefault,
                             })
                           }
                           className="text-xs"
@@ -834,6 +840,24 @@ export default function SettingsPage() {
                     ))}
                   </select>
                 </div>
+                {/* Offered whenever the address being edited is not already the
+                    default; a default needs no promotion. */}
+                {!(form.id && addresses.find((a) => a.id === form.id)?.isDefault) && (
+                  <label
+                    className="flex items-start gap-2 text-xs"
+                    style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.isDefault}
+                      onChange={(e) =>
+                        setForm({ ...form, isDefault: e.target.checked })
+                      }
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>Make this my default delivery address</span>
+                  </label>
+                )}
                 <div className="flex gap-2 mt-1">
                   <button
                     type="button"
