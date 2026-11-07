@@ -1272,6 +1272,9 @@ export function CheckoutForm({
             deliveryAddress={pickerAddress}
             onSelect={handleSelectDeliveryOption}
             getToken={getToken}
+            // The courier is booked for the whole stack, so the price the
+            // buyer sees has to be for the whole stack.
+            quantity={listing.trackInventory ? quantity : 1}
           />
         </div>
       )}

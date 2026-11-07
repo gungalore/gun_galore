@@ -1628,6 +1628,18 @@ model Transaction {
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
   // sibling lines — none of those create their own waybill.
   shippingHandlingCents    Int      @default(0)
+  // ── What the carrier ACTUALLY billed, next to what the buyer paid ──
+  //
+  // shippingCost above is the quote snapshotted at checkout and is what the
+  // buyer's Delivery line and the Books freight journal carry. It is never
+  // mutated — the buyer paid that number. Bob Go, however, bills the wallet at
+  // collection, and a re-weigh or a rate change moves it (see
+  // shipment_charged_amount/updated in bobgo-webhook.service.ts). These two
+  // record the real figure and let the desk compare the pair; the variance is
+  // NOT auto-applied to anyone, because absorb / re-bill / recover is a
+  // commercial decision.
+  shipmentChargedCents     Int?
+  shipmentChargedAt        DateTime?
   // Service level snapshot — the chosen Bob Go rate's service_code, kept so we
   // can pass it back into the shipment-create call without re-fetching the
   // quote. Null on non-courier sales.

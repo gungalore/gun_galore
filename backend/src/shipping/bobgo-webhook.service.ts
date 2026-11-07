@@ -227,7 +227,11 @@ export class BobGoWebhookService {
 
     const tx = await this.prisma.transaction.findFirst({
       where: { carrierShipmentId: shipmentId },
-      select: { id: true, shippingCost: true },
+      select: {
+        id: true,
+        shippingCost: true,
+        shipmentChargedCents: true,
+      },
     });
     if (!tx) {
       // Booked outside the platform, or an id we never stored. Recorded above.
@@ -239,9 +243,33 @@ export class BobGoWebhookService {
 
     const quotedCents = Math.max(0, tx.shippingCost ?? 0);
     const varianceCents = chargedCents - quotedCents;
+    // A retried delivery of the SAME figure is not news — and Bob Go does
+    // retry. Read the previous value before overwriting it, so the alert is
+    // raised once per change rather than once per attempt.
+    const alreadyKnown = tx.shipmentChargedCents === chargedCents;
+
+    // Record the real charge regardless of the variance, so the desk can
+    // compare the pair without parsing an alert string. The QUOTE is never
+    // touched: the buyer paid that number.
+    await this.prisma.transaction
+      .update({
+        where: { id: tx.id },
+        data: {
+          shipmentChargedCents: chargedCents,
+          shipmentChargedAt: new Date(),
+        },
+      })
+      .catch(() => undefined);
+
     if (varianceCents === 0) {
       this.logger.log(
         `Bob Go ${topic}: shipment ${shipmentId} charged exactly the quote (${quotedCents}c)`,
+      );
+      return { handled: true };
+    }
+    if (alreadyKnown) {
+      this.logger.log(
+        `Bob Go ${topic}: shipment ${shipmentId} re-reported the same charge (${chargedCents}c) — already alerted`,
       );
       return { handled: true };
     }

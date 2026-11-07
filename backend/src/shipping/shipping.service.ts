@@ -74,6 +74,32 @@ function offersCourier(shippingMethods: string[]): boolean {
 }
 
 /**
+ * What the caller knows about the shipment that the LISTING cannot.
+ *
+ * ⚠️ TWO THINGS THE QUOTE USED TO GET WRONG, AND THIS IS THE FIX FOR BOTH.
+ *
+ * `quantity` — booking builds one parcel by multiplying weight and height by
+ * the line quantity (bookWithBobGo). The quote ignored quantity entirely, so a
+ * five-unit courier order was priced as a single unit and the carrier billed
+ * the stacked box. That is not an occasional re-weigh; it is a guaranteed
+ * shortfall on every multi-unit order, and it lands in the charge-variance
+ * alert with no way to correct the buyer's invoice.
+ *
+ * `declaredValueCents` — both quote paths used `listing.price`, which is the
+ * UNIT price and, on an auction, the STARTING BID. The winner pays the hammer
+ * and the booking declares the hammer, so the liability cover inside the rate
+ * was priced on a number the buyer never pays. The checkout knows the settled
+ * amount; pass the total for the shipment here and the two paths describe the
+ * same parcel at the same value.
+ */
+export interface DeliveryQuoteOptions {
+  /** Units on this line. Defaults to 1. */
+  quantity?: number;
+  /** TOTAL declared value for the shipment, cents. Defaults to the listing's own value. */
+  declaredValueCents?: number;
+}
+
+/**
  * One door option as the buyer sees it. `priceCents` already carries our 10%
  * margin; `carrierRateCents` is the pure remittance (the fee maths runs on it).
  * `deliveryDays*` come from the static service-level lookup so the UI can label
@@ -349,6 +375,11 @@ export class ShippingService {
         "Seller hasn't provided a collection address yet.",
       );
     }
+    if (!PROVINCE_LONG[body.deliveryAddress.province]) {
+      throw new BadRequestException(
+        'Choose the province for your delivery address so we can price the courier.',
+      );
+    }
     const from: CarrierAddress = {
       streetAddress: listing.pickupStreet,
       suburb: listing.pickupSuburb ?? '',
@@ -392,6 +423,7 @@ export class ShippingService {
   async deliveryOptions(
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
+    opts: DeliveryQuoteOptions = {},
   ): Promise<{
     /** Cheapest door rate — the default selection. */
     door: DoorOption | null;
@@ -460,6 +492,43 @@ export class ShippingService {
         "Seller hasn't provided a collection address yet.",
       );
     }
+    // A province Bob Go does not recognise resolves to `undefined`, and an
+    // undefined province is not "no opinion" — it is a malformed collection or
+    // delivery address in the rate request. Catch it here with a message the
+    // person who caused it can act on, rather than letting the carrier answer
+    // with a rate for the wrong region.
+    if (!from.province) {
+      throw new BadRequestException(
+        'This listing has no province on its pickup address — the seller needs to set one before a courier can be priced.',
+      );
+    }
+    const deliveryProvince = PROVINCE_LONG[deliveryAddress.province];
+    if (!deliveryProvince) {
+      throw new BadRequestException(
+        'Choose the province for your delivery address so we can price the courier.',
+      );
+    }
+
+    // The parcel quoted is the parcel booked — see DeliveryQuoteOptions.
+    // Finite-safe on purpose: this value can arrive from a request body, and
+    // `Math.max(1, Math.floor(NaN))` is NaN, which would put a NaN height in
+    // the rate request and turn a bad quantity into a carrier error.
+    const quantity = Number.isFinite(opts.quantity)
+      ? Math.max(1, Math.min(999, Math.floor(opts.quantity as number)))
+      : 1;
+    const unitValueCents =
+      listing.listingType === 'AUCTION'
+        ? // The winner pays the hammer, not the opening bid.
+          (listing.currentBid ?? listing.price ?? 0)
+        : (listing.price ?? 0);
+    const declaredTotalCents = Math.max(
+      0,
+      Math.round(
+        opts.declaredValueCents != null
+          ? opts.declaredValueCents
+          : unitValueCents * quantity,
+      ),
+    );
 
     let rates: BobGoRate[];
     try {
@@ -470,17 +539,18 @@ export class ShippingService {
           suburb: deliveryAddress.suburb,
           city: deliveryAddress.city,
           postalCode: deliveryAddress.postalCode,
-          province: PROVINCE_LONG[deliveryAddress.province],
+          province: deliveryProvince,
         },
         parcels: [
           {
             lengthCm: listing.lengthCm,
             widthCm: listing.widthCm,
-            heightCm: listing.heightCm,
-            weightKg: listing.weightGrams / 1000,
+            // Stacked, exactly as bookWithBobGo stacks it.
+            heightCm: listing.heightCm * quantity,
+            weightKg: (listing.weightGrams * quantity) / 1000,
           },
         ],
-        declaredValueCents: listing.price ?? 0,
+        declaredValueCents: declaredTotalCents,
       });
       rates = q.rates;
     } catch (err) {
@@ -505,8 +575,9 @@ export class ShippingService {
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
     selection: DeliverySelection,
+    opts: DeliveryQuoteOptions = {},
   ): Promise<ShippingQuote> {
-    const menu = await this.deliveryOptions(listingId, deliveryAddress);
+    const menu = await this.deliveryOptions(listingId, deliveryAddress, opts);
     const quote = this.quoteFromMenu(menu, selection);
     if (quote) return quote;
     throw new BadRequestException(
@@ -1700,6 +1771,88 @@ export class ShippingService {
       .catch(() => undefined);
   }
 
+  // ⚠️ THE TRACKING BACKSTOP THAT DOES NOT EXIST, MADE VISIBLE INSTEAD.
+  //
+  // There is no tracking poll any more — it was the Pudo poll, retired with the
+  // move to Bob Go — so a parcel's status only ever moves when a webhook
+  // arrives. A dropped webhook therefore leaves a sale frozen mid-flight: the
+  // buyer sees "in transit" forever, the payout never becomes eligible, and
+  // nothing in the system notices, because no sweep looks at parcels at all.
+  //
+  // This does not try to FETCH the missing status (that is a poll, and a poll
+  // against an undocumented endpoint is its own risk). It looks for the shape
+  // of the failure: dispatched long ago, still not in any terminal state. The
+  // anchor is `dispatchedAt`, which is immutable after dispatch — deliberately
+  // not `updatedAt`, because an unrelated write (a Zoho retry, a notification
+  // stamp) would reset that clock and hide exactly the stuck parcel this is
+  // meant to find.
+  async sweepStaleParcels(
+    staleAfterDays = 10,
+  ): Promise<{ scanned: number; alerted: number }> {
+    const floor = new Date(Date.now() - staleAfterDays * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.transaction
+      .findMany({
+        where: {
+          shippingMethod: 'COURIER',
+          carrierShipmentId: { not: null },
+          dispatchedAt: { not: null, lt: floor },
+          deliveredAt: null,
+          paymentStatus: { in: ['HELD', 'DISPUTED'] },
+          OR: [
+            { shippingStatus: null },
+            {
+              shippingStatus: {
+                notIn: ['DELIVERED', 'DELIVERY_FAILED', 'RETURNED'],
+              },
+            },
+          ],
+        },
+        select: {
+          id: true,
+          trackingReference: true,
+          shippingStatus: true,
+          dispatchedAt: true,
+        },
+        take: 50,
+      })
+      .catch(() => []);
+
+    let alerted = 0;
+    for (const tx of rows) {
+      try {
+        const existing = await this.prisma.adminAlert.findFirst({
+          where: {
+            type: 'PARCEL_STALE',
+            referenceId: tx.id,
+            resolved: false,
+          },
+          select: { id: true },
+        });
+        if (existing) continue;
+        const days = Math.floor(
+          (Date.now() - (tx.dispatchedAt?.getTime() ?? Date.now())) /
+            (24 * 60 * 60 * 1000),
+        );
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'PARCEL_STALE',
+            referenceId: tx.id,
+            urgent: false,
+            context:
+              `Parcel for ${tx.id} was dispatched ${days} day(s) ago and is still ` +
+              `${tx.shippingStatus ?? 'un-tracked'}${tx.trackingReference ? ` (${tx.trackingReference})` : ''}. ` +
+              `No tracking update has arrived — check the carrier, then deliver, ` +
+              `redeliver or refund. The buyer's money is still HELD.`,
+          },
+        });
+        alerted += 1;
+      } catch {
+        /* best-effort: an alert that fails must not stop the sweep */
+      }
+    }
+    return { scanned: rows.length, alerted };
+  }
+
   private async raiseBookingFailedAlert(
     transactionId: string,
     reason: string,
@@ -1838,6 +1991,26 @@ export class ShippingService {
         where: { shipsWithId: transactionId },
         data: dataPatch,
       });
+
+      // The stale-parcel watch (sweepStaleParcels) raises PARCEL_STALE when a
+      // dispatched parcel stops moving. The moment it reaches a terminal state
+      // — delivered, or a failure this file already alerts on — that alert has
+      // served its purpose. Resolved in the same transaction as the status so
+      // a desk cannot see "stale" and "delivered" at once.
+      if (
+        newStatus === 'DELIVERED' ||
+        newStatus === 'DELIVERY_FAILED' ||
+        newStatus === 'RETURNED'
+      ) {
+        await tx.adminAlert.updateMany({
+          where: {
+            type: 'PARCEL_STALE',
+            referenceId: transactionId,
+            resolved: false,
+          },
+          data: { resolved: true, resolvedAt: now },
+        });
+      }
 
       this.logger.log(
         `Transaction ${transactionId} shippingStatus: ${current ?? 'null'} → ${newStatus}`,

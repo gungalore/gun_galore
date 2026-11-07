@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -1555,6 +1555,50 @@ export class ListingsService {
       throw new BadRequestException(
         'In-person collection is only available for collection-only items.',
       );
+    }
+    // ── A COURIER LISTING WITHOUT ITS PARCEL MEASUREMENTS IS A DEAD LISTING ──
+    // Every courier price is computed from weight and dimensions, and the quote
+    // endpoint refuses a listing that lacks them — which meant the buyer
+    // discovered the seller's omission at the checkout step, on a listing that
+    // looked perfectly buyable. The sell form has always required the four
+    // numbers; the API never did, so a crafted POST (or a row written before
+    // the form enforced it) could publish one anyway. Refuse it here, where the
+    // seller is still standing in front of the form and can fix it.
+    if (dto.shippingMethods?.includes('COURIER')) {
+      const measurements: Array<[string, number | undefined]> = [
+        ['weight', dto.weightGrams],
+        ['length', dto.lengthCm],
+        ['width', dto.widthCm],
+        ['height', dto.heightCm],
+      ];
+      const missing = measurements
+        .filter(
+          ([, value]) =>
+            typeof value !== 'number' || !Number.isFinite(value) || value <= 0,
+        )
+        .map(([label]) => label);
+      if (missing.length > 0) {
+        throw new BadRequestException(
+          `Courier delivery needs the packed parcel's weight and dimensions — missing or invalid: ${missing.join(
+            ', ',
+          )}. The courier prices on them, so a buyer cannot be quoted without them.`,
+        );
+      }
+      // A sanity ceiling, not a carrier limit: it catches a unit mix-up (25
+      // typed where 25 kg was meant, i.e. 25 grams) and a stray keystroke, both
+      // of which produce a quote wrong by orders of magnitude rather than
+      // merely mistyped.
+      const heaviest = dto.weightGrams ?? 0;
+      const longest = Math.max(
+        dto.lengthCm ?? 0,
+        dto.widthCm ?? 0,
+        dto.heightCm ?? 0,
+      );
+      if (heaviest > 100_000 || longest > 300) {
+        throw new BadRequestException(
+          'One of the parcel measurements is out of range — weight is in grams (25 kg = 25000) and dimensions in centimetres. Nothing we courier is over 100 kg or 300 cm on a side.',
+        );
+      }
     }
     if (effectiveCollectionOnly && category.isFirearm) {
       // Defensive: a category is never both firearm + collection-only (and a

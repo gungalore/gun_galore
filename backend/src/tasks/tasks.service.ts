@@ -1086,6 +1086,31 @@ export class TasksService {
     await this.recordCronRun('bobgo-pending-bookings');
   }
 
+  // Stale-parcel watch — every 6 hours.
+  //
+  // ⚠️ THE ONLY THING THAT NOTICES A PARCEL WHOSE WEBHOOKS STOPPED. There is no
+  // tracking poll (the Pudo one was retired with the move to Bob Go), so a
+  // dropped webhook freezes a sale in its last known status with nothing to
+  // correct it. This sweep looks for the shape of that failure — dispatched
+  // more than ten days ago, not delivered, not failed, money still held — and
+  // raises one PARCEL_STALE alert per sale. It never fetches the carrier: it
+  // makes the silence visible to a human instead of guessing at a status.
+  @Cron(CronExpression.EVERY_6_HOURS)
+  async staleParcelWatch() {
+    try {
+      const r = await this.shipping.sweepStaleParcels();
+      if (r.alerted > 0) {
+        this.logger.warn(
+          `Stale parcel watch: ${r.alerted} new alert(s) from ${r.scanned} stuck shipment(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`staleParcelWatch failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('stale-parcel-watch');
+    }
+  }
+
   // Dispatch SLA — both passes run hourly. Cheap (one indexed query
   // each) and there's no benefit to running more often: the buyer
   // doesn't perceive a difference between "nudged at 48h0m" and

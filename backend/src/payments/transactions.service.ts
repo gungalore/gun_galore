@@ -582,6 +582,15 @@ export class TransactionsService {
           deliveryOption: dto.deliveryOption,
           pickupPointLocationId: dto.pickupPointLocationId,
         },
+        // Quote the parcel that will actually be BOOKED, at the amount the
+        // buyer is actually PAYING. Both used to come from the listing: one
+        // unit's weight and, on an auction, the opening bid. The booking then
+        // stacked N units and declared the hammer, so the carrier's bill and
+        // the buyer's delivery figure described different parcels.
+        {
+          quantity,
+          declaredValueCents: agreedPrice * quantity,
+        },
       );
       shippingCostCents = quote.priceCents;
       shippingServiceCode = quote.serviceCode;

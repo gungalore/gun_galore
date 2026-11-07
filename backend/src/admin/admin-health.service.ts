@@ -411,6 +411,11 @@ export class AdminHealthService {
       // are never told to ship, and the board says nothing, because a job
       // nobody registered cannot go stale.
       { key: 'bobgo-pending-bookings', label: 'Bob Go pending-booking resolver', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      // Watches parcels that stopped moving. It is NOT a tracking poll (there
+      // is none) — it finds sales dispatched more than ten days ago that never
+      // reached a terminal state, which is the shape of a dropped webhook. If
+      // this job stops, the only signal that a parcel is stuck stops with it.
+      { key: 'stale-parcel-watch', label: 'Stale parcel watch', schedule: 'every 6 hours', expectedIntervalSec: 6 * 3600 },
       { key: 'stats-rollup', label: 'Nightly stats rollup', schedule: 'daily 02:00', expectedIntervalSec: 86_400 },
       { key: 'event-prune', label: 'User-event prune', schedule: 'weekly', expectedIntervalSec: 7 * 24 * 3600 },
       { key: 'insights-digest', label: 'Weekly insights digest', schedule: 'weekly Mon 06:00', expectedIntervalSec: 7 * 24 * 3600 },

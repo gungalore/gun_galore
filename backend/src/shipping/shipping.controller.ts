@@ -110,9 +110,18 @@ export class ShippingController {
     body: {
       listingId: string;
       deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>;
+      /**
+       * Units on the line. Without it the quoted parcel is one unit while the
+       * booked parcel is N stacked units, so the buyer sees a delivery figure
+       * the carrier will never bill. Optional for older clients; the service
+       * clamps it to a sane integer.
+       */
+      quantity?: number;
     },
   ) {
-    return this.shipping.deliveryOptions(body.listingId, body.deliveryAddress);
+    return this.shipping.deliveryOptions(body.listingId, body.deliveryAddress, {
+      quantity: body.quantity,
+    });
   }
 
   // ---------------------------------------------------------------

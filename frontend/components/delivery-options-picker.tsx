@@ -91,12 +91,19 @@ export function DeliveryOptionsPicker({
   deliveryAddress,
   onSelect,
   getToken,
+  quantity = 1,
 }: {
   listingId: string;
   deliveryAddress: DeliveryAddressInput | null;
   onSelect: (option: DeliveryOption) => void;
   /** Clerk token getter — browse endpoints must forward the session. */
   getToken?: () => Promise<string | null>;
+  /**
+   * Units on the line. The courier is booked for the STACKED parcel, so the
+   * quote has to be for the stacked parcel too — otherwise a buyer of five
+   * sees one unit's freight and the carrier bills five. Defaults to 1.
+   */
+  quantity?: number;
 }) {
   const [options, setOptions] = useState<DeliveryOption[]>([]);
   const [selectedOption, setSelectedOption] = useState<DeliveryOption | null>(null);
@@ -130,7 +137,7 @@ export function DeliveryOptionsPicker({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ listingId, deliveryAddress }),
+        body: JSON.stringify({ listingId, deliveryAddress, quantity }),
       });
 
       // An empty 200 body would throw on res.json(); read defensively — this
@@ -198,8 +205,11 @@ export function DeliveryOptionsPicker({
     }
     // Keyed on the address VALUES (addrKey) rather than the object identity;
     // a fresh object every parent render would otherwise loop the fetch.
+    // `quantity` belongs here too: it changes the parcel, so it changes the
+    // price, and a stale quote for the wrong stack is exactly the divergence
+    // this prop exists to remove.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listingId, addrKey, addrComplete, getToken]);
+  }, [listingId, addrKey, addrComplete, getToken, quantity]);
 
   useEffect(() => {
     void load();
