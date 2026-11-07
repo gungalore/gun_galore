@@ -73,6 +73,9 @@ export class UsersController {
         lastName: true,
         phone: true,
         phoneVerified: true,
+        // Both contact points gate buying and selling, so the UI needs to know
+        // each one's state from the single /users/me it already loads.
+        emailVerifiedAt: true,
         avatarUrl: true,
         sellerTier: true,
         kycStatus: true,

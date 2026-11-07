@@ -2492,6 +2492,17 @@ export default function NewListingPage() {
   //   5. Only redirect when every image lands.
   async function handlePublish(useCleanedDescription: boolean) {
     if (!previewResult) return;
+    // Contact verification is a hard server gate (CONTACT_UNVERIFIED). Catch it
+    // here so the seller gets a link instead of a failed publish.
+    if (
+      currentMe &&
+      (!currentMe.phone || !currentMe.phoneVerified || currentMe.emailVerifiedAt === null)
+    ) {
+      setPublishError(
+        'Verify your phone number and email address before publishing. Open your profile to finish it.',
+      );
+      return;
+    }
     if (images.length === 0) {
       setPublishError('Add at least one photo before publishing.');
       return;

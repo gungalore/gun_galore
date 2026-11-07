@@ -1,4 +1,4 @@
-﻿export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
+export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';
@@ -196,6 +196,8 @@ export interface Me {
   lastName: string | null;
   phone: string | null;
   phoneVerified: boolean;
+  /** Set at sign-up; login refuses an unverified address. */
+  emailVerifiedAt?: string | null;
   avatarUrl: string | null;
   sellerTier: SellerTier;
   kycStatus: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW';

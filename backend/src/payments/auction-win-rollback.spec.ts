@@ -61,6 +61,9 @@ function makeService(listing: Record<string, unknown>) {
         isBanned: false,
         email: 'b@x.co',
         username: 'buyer',
+        phone: '+27821234567',
+        phoneVerified: true,
+        emailVerifiedAt: new Date(),
       }),
     },
     listing: {

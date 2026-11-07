@@ -895,6 +895,9 @@ function makeService(
         userId: 'user_1',
         isBanned: false,
         sellingBannedAt: null,
+        phone: '+27821234567',
+        phoneVerified: true,
+        emailVerifiedAt: new Date(),
       }),
     },
     category: {

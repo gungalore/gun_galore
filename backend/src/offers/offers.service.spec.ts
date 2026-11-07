@@ -20,6 +20,7 @@ function makeMocks() {
         id: 'B1',
         isBanned: false,
         auctionStrikes: 0,
+        phone: '+27821234567', phoneVerified: true, emailVerifiedAt: new Date(),
       }),
       update: jest.fn().mockResolvedValue({ auctionStrikes: 1, username: 'buyer1' }),
     },
@@ -225,6 +226,7 @@ describe('submit — gates', () => {
       isBanned: false,
       accountClosedAt: new Date('2026-08-22'),
       auctionStrikes: 0,
+        phone: '+27821234567', phoneVerified: true, emailVerifiedAt: new Date(),
     });
     await expect(
       service.submit('clerk-b', { listingId: 'L1', offerAmount: 10_000 }),

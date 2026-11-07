@@ -72,6 +72,7 @@ import {
 import { REFUND_TERMS_VERSION } from './refund-terms-version';
 import { vicinityLabel } from '../common/province-labels';
 import { assertAccountNotClosed } from '../common/account-standing';
+import { assertContactVerified } from '../common/contact-verification';
 import { orderRef } from '../common/order-reference';
 import {
   applySellerRejectPenalty,
@@ -247,6 +248,11 @@ export class TransactionsService {
     // suspended. See common/account-standing.ts.
     assertAccountNotClosed(buyer);
     if (buyer.isBanned) throw new ForbiddenException('Account is banned');
+    // Both contact points must be PROVEN before any money moves. Placed here
+    // (not in create()) because the cart checkout calls this too — one gate,
+    // every path. The buyer gets a 403 carrying CONTACT_UNVERIFIED so the UI
+    // can send them to /verify-phone rather than show a dead end.
+    await assertContactVerified(this.prisma, buyer.id, 'buy or bid');
 
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },

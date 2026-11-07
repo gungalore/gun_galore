@@ -48,7 +48,15 @@ function makeService(listing: Record<string, unknown>) {
     user: {
       findUnique: jest
         .fn()
-        .mockResolvedValue({ id: 'B1', isBanned: false, email: 'b@x.co', username: 'buyer' }),
+        .mockResolvedValue({
+        id: 'B1',
+        isBanned: false,
+        email: 'b@x.co',
+        username: 'buyer',
+        phone: '+27821234567',
+        phoneVerified: true,
+        emailVerifiedAt: new Date(),
+      }),
     },
     listing: {
       findUnique: jest.fn().mockResolvedValue(listing),

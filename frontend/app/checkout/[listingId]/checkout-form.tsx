@@ -750,7 +750,12 @@ export function CheckoutForm({
     // Hard gate — every buyer needs a phone on file before Pay enables
     // (the inline BuyerPhoneCapture block surfaces above when missing).
     // No phone = no dispatch SMS = lost parcel risk.
-    if (meLoaded && me && !me.phone) return false;
+    // Hard gate — every buyer needs a VERIFIED phone and email before Pay
+    // enables. A phone on file is not enough: an unverified number is a number
+    // nobody proved they own, and the server refuses the checkout anyway
+    // (CONTACT_UNVERIFIED). The inline block above links to /verify-phone.
+    if (meLoaded && me && (!me.phone || !me.phoneVerified)) return false;
+    if (meLoaded && me && me.emailVerifiedAt === null) return false;
     // M33 — firearm buyers must affirm 18+/competency.
     // Collection papers — buyers of requiresPapers listings must
     // acknowledge the in-person collection + papers handover.
@@ -1054,6 +1059,51 @@ export function CheckoutForm({
             setMe({ ...me, phone });
           }}
         />
+      )}
+      {/* Verified contact points. Both are required before Pay — the server
+          refuses a checkout whose buyer has not proven them (CONTACT_UNVERIFIED),
+          so this is the visible half of that gate. `next` brings the buyer back
+          to this exact checkout. */}
+      {meLoaded && me && (me.phoneVerified === false || me.emailVerifiedAt === null) && (
+        <div
+          className="rounded-[6px] p-4 space-y-2"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          <p style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+            Verify your contact details to continue
+          </p>
+          <p>
+            We ask every buyer and seller to confirm their phone number and
+            email address before money changes hands — it is how we reach you
+            about delivery, and how we protect your account.
+          </p>
+          <p className="space-x-3">
+            {me.phoneVerified === false && (
+              <a
+                href={`/verify-phone?next=${encodeURIComponent(
+                  `/checkout/${listing.id}`,
+                )}`}
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                Verify your phone
+              </a>
+            )}
+            {me.emailVerifiedAt === null && (
+              <a
+                href={`/verify-email?email=${encodeURIComponent(me.email)}`}
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                Verify your email
+              </a>
+            )}
+          </p>
+        </div>
       )}
       {/* Token-flow buyers without a phone are an edge case (they
           must have had a phone to receive the offer-accepted SMS in

@@ -15,6 +15,7 @@ import {
   assertAccountNotClosed,
   isAccountClosed,
 } from '../common/account-standing';
+import { assertContactVerified } from '../common/contact-verification';
 import { Prisma } from '@prisma/client';
 
 // Lazy getter — must NOT be a module-level constant. ES module imports
@@ -394,6 +395,9 @@ export class AuctionsService {
     if (buyer.auctionStrikes >= 3) {
       throw new ForbiddenException('Bidding suspended — three strikes for non-payment');
     }
+
+    // Both contact points proven before a bid can commit us to a contract.
+    await assertContactVerified(this.prisma, buyer.id, 'bid');
 
     // CONCURRENCY: the transaction alone is NOT enough. At Postgres's
     // default READ COMMITTED isolation, two simultaneous bids both read

@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-11-07**.
 
+## 2026-11-07 (TRUST) - VERIFY AT GO-LIVE, ENFORCE AT PAYMENT, REMEMBER THE ADDRESS
+
+**Identity verification is now a two-moment flow, not a checkout-time nag.**
+Offered when a listing goes live (`KycService.offerAtListingLive`, called from
+`ListingsService.create` for a direct publish and from `AdminService.reviewListing`
+on approval) over email + WhatsApp, once per seller. Enforced in
+`TransactionsService.markPaid` — the single funnel every gateway confirmation
+passes through — by `KycService.enforceAtPayment`: a verified seller gets
+`sellerKycClearedAt` stamped on every paid sale; an unverified one has the sale
+held (the column stays null), an urgent `KYC_HOLD` alert raised, and the seller
+told on both channels. Verification passing backfills every paid sale and
+resolves the holds. The buyer is never blocked — only the payout is.
+
+Removed the old `triggerSellerVerification` call from checkout: it fired when a
+buyer merely OPENED checkout, nagging sellers over sales that never happened.
+
+**WhatsApp template `seller_kyc_required`** (static `/t/k` → `/kyc/verify`)
+submitted to Meta via `scripts/whatsapp-submit-sales-templates.mjs --only=...`
+and approved same-day. No order reference in the body: the same template serves
+go-live and payment, so a reference would be wrong at one of them.
+
+**Address book.** A delivery address typed at checkout is saved
+(`saveDeliveryAddress`, opt-out) and can be made default
+(`makeDeliveryAddressDefault`). The same place typed twice is ONE row —
+`UsersService.createAddress` and `TransactionsService.saveCheckoutAddress` both
+match on street/suburb/city/postal, trimmed and case-insensitive. The sell form's
+pickup address and the profile address also offer "make this my default".
+
+**Contact gate.** `common/contact-verification.ts` refuses buying, bidding,
+offering and listing until BOTH email and phone are proven, with a 403 carrying
+`CONTACT_UNVERIFIED` so the client can route to `/verify-phone` (new page)
+instead of dead-ending. `User.phoneVerified` is the state; `phone` alone is not.
+
+Deployed `c9905860` (full) + this round. No migration — `sellerKycClearedAt`
+already existed and was unused.
+
+
 ## 2026-11-07 (ZOHO) - THREE SETTLEMENT HOLES AND A TRANSPORT THAT HUNG
 
 Audit of the Books rail found the documents were raised correctly and then

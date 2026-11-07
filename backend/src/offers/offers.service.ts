@@ -18,6 +18,7 @@ import {
   applySellerRejectPenalty,
 } from '../common/seller-reject-policy';
 import { assertAccountNotClosed } from '../common/account-standing';
+import { assertContactVerified } from '../common/contact-verification';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
@@ -84,6 +85,8 @@ export class OffersService {
     // suspended. See common/account-standing.ts.
     assertAccountNotClosed(buyer);
     if (buyer.isBanned) throw new ForbiddenException('Account is suspended');
+    // Both contact points proven before an offer can commit the buyer to pay.
+    await assertContactVerified(this.prisma, buyer.id, 'make an offer');
     // An accepted offer is a commitment to pay — the same 3-strike
     // non-payment gate the auction engine enforces applies here.
     if (buyer.auctionStrikes >= 3) {

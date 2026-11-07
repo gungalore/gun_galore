@@ -24,6 +24,7 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
+import { assertContactVerified } from '../common/contact-verification';
 import {
   optimizedVideoThumbnailUrl,
   optimizedVideoUrl,
@@ -1386,6 +1387,10 @@ export class ListingsService {
         'Selling is suspended on your account after repeated rejected sales/offers. You can still buy. Contact support to have your account reviewed.',
       );
     }
+    // Selling needs BOTH contact points proven — this is the moment the
+    // identity offer later refers back to, and a seller we cannot reach is a
+    // sale we cannot complete.
+    await assertContactVerified(this.prisma, user.id, 'list an item');
 
     const category = await this.prisma.category.findUnique({
       where: { id: dto.categoryId },

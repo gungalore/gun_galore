@@ -32,8 +32,8 @@ function makeMocks() {
         id: 'B1',
         isBanned: false,
         auctionStrikes: 0,
-        email: null,
-        phone: null,
+        email: 'b@x.co',
+        phone: '+27821234567', phoneVerified: true, emailVerifiedAt: new Date(),
       }),
     },
     listing: {
