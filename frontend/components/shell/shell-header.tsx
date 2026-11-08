@@ -214,6 +214,7 @@ function RootHeader() {
     >
       <Link
         href="/"
+        className="gg-header-wordmark"
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 800,
@@ -229,9 +230,21 @@ function RootHeader() {
       <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
         {/* Shop/Community — the always-on view switch (installed PWA). */}
         <ViewModeToggle size="sm" />
-        <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
-          <IconHeart />
-        </TapTarget>
+        {/* ⚠️ THE WISHLIST HEART IS THE ONE CONTROL THAT GIVES WAY ON A NARROW
+            PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The row wordmark (109) +
+            switch (141) + heart + cart + avatar (44 each) + padding is ~410px.
+            A 360-402px Android phone is narrower than that, and the overflow is
+            not cosmetic: it widens the LAYOUT viewport to ~402x894 while the
+            visual viewport stays 360x800, so `position: fixed; bottom: 0` puts
+            the tab bar 94px BELOW the visible screen — the "no navigation bar
+            on Android" report. The heart is duplicated in the More sheet and the
+            account menu, so it is the cheapest thing to lose on a small screen.
+            See the .gg-header-wishlist rule in globals.css. */}
+        <span className="gg-header-wishlist" style={{ display: 'contents' }}>
+          <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
+            <IconHeart />
+          </TapTarget>
+        </span>
         <CartLink />
         <Avatar />
       </span>

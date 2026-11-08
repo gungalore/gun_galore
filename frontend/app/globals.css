@@ -1382,6 +1382,40 @@ html[data-standalone='true'] .gg-shell-chrome {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* ── Keep the shell header inside a narrow phone ─────────────────────
+   ⚠️ THIS IS NOT A COSMETIC TRIM. THE TAB BAR'S DISAPPEARANCE IS THE SYMPTOM.
+
+   The ROOT header is wordmark (109px) + the Shop/Community switch (141px) +
+   wishlist + cart + avatar (44px each) + 16/8px padding ≈ 410px. On a 360px
+   Android phone (and a 390px iPhone, which is 20px short) that row overflows
+   HORIZONTALLY. Chrome then expands the LAYOUT viewport to ~402x894 while the
+   VISUAL viewport stays 360x800 — and `position: fixed; bottom: 0` resolves
+   against the layout viewport, so the bottom tab bar sits ~94px BELOW the
+   visible screen. That is the "installed PWA has no navigation bar on Android"
+   report, reproduced at 360px on 2026-11-08 and verified gone by these rules.
+
+   The heart is the control that gives way: it is the only entry in that row
+   that is duplicated in the More sheet AND the account menu. The wordmark drops
+   to 15px on every phone-sized header (≤430px), which buys ~13px of slack — at
+   412px the full-size row fits with only 2px to spare, and 1px of font rounding
+   is enough to spill it again. Both need !important because the values they
+   override are inline.
+
+   ⚠️ WIDTH-GATED, NOT DISPLAY-MODE-GATED. The overflow breaks browser mode and
+   the installed app identically; gating on display-mode would fix one and leave
+   the other, and would make the server HTML depend on the mode. */
+@media (max-width: 430px) {
+  .gg-header-wordmark {
+    font-size: 15px !important;
+    letter-spacing: -0.4px !important;
+  }
+}
+@media (max-width: 400px) {
+  .gg-header-wishlist {
+    display: none !important;
+  }
+}
+
 html[data-standalone='true'] .gg-shell {
   display: flex;
   flex-direction: column;
