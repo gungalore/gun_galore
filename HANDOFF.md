@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-11-08**.
 
+## 2026-11-08 (PWA) — THE UPDATE BANNER STOPS ASKING ON SAFE ROUTES
+
+A parked service-worker update is now applied on the next `visibilitychange`
+instead of waiting for a Reload tap — so a deploy lands while the app is behind
+the OS switcher. `skipWaiting`/`clientsClaim` stay **false** and the page still
+chooses the moment; it just no longer needs a tap to choose a safe one.
+
+The deny list (checkout, `/listings/new`, `/listings/*/edit`, licence wizard,
+valuations, scanner, every auth route, `/a/*`, `/witness/*`, `/v/*`, consent,
+identity, `/admin`, composers, `/documents`, `/preview`) lives in
+`frontend/lib/sw-update-policy.ts` with a reason per entry, plus a 30-second
+recent-input guard for a safe route with a field still open (offer panel,
+question, search). **Default allow** — a missed form route costs a banner, never
+a lost listing. When a denied route is on screen the banner behaves exactly as
+before.
+
+One consequence to remember: a tab left visible indefinitely keeps the old JS
+bundle (data stays fresh — HTML, RSC and `/api/*` are network-only in `sw.ts`)
+until it is backgrounded or reloaded.
+
+Deployed `e55a0783` (**frontend-only**; backend and warden kept serving).
+Rollback point `alloutdoor-20261108-092011.dump` (33.9 MB). Health: web 200 ×2,
+public 200 ×2.
+
 ## 2026-11-08 (LISTINGS) — SELLER INTEREST PANEL
 
 Each card on `/my/listings` now carries a small `ⓘ Interest` button. It holds no
