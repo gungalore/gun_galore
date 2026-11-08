@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-11-08**.
 
+## 2026-11-08 (SHELL) — THE MISSING ANDROID TAB BAR WAS A HEADER OVERFLOW
+
+The installed PWA showed no bottom tab bar on Android. It was not the bar: the
+ROOT header needed ~410px on a 360px phone (wordmark 109 + Shop/Community 141 +
+wishlist/cart/avatar 44 each + padding), and Chrome **expands the layout
+viewport** instead of clipping — 402×894 against a 360×800 visual viewport. A
+`position: fixed; bottom: 0` element resolves against the layout viewport, so
+the tab bar sat ~94px BELOW the visible screen. The same 42px of overflow is why
+it appeared when scrolling down and half-hid on the way up. iPhone at 390px was
+20px short too, so this was never Android-only.
+
+Fix: wordmark 15px on ≤430px (at 412px the full-size row fits with 2px to
+spare) and the header wishlist heart hidden on ≤400px — the one control in that
+row duplicated in both the More sheet and the account menu. Width-gated, not
+display-mode-gated. Verified live at 360/390/412 with a CDP probe: `innerWidth`
+== `scrollWidth` == the device width, tab-bar bottom == viewport height, no
+overflowing elements.
+
+Deployed `3a8e61d1` (**frontend-only**; backend and warden kept serving).
+Rollback point `alloutdoor-20261108-110519.dump` (33.9 MB). Health: web 200 ×2,
+public 200 ×2.
+
+⚠️ **Probing tip for the next session:** `innerWidth` can exceed the emulated
+device width when a page overflows horizontally, and every `position: fixed;
+bottom: 0` then lands off-screen. Compare `innerWidth`/`scrollWidth` against
+`visualViewport.width` before blaming the fixed element itself.
+
 ## 2026-11-08 (PWA) — THE UPDATE BANNER STOPS ASKING ON SAFE ROUTES
 
 A parked service-worker update is now applied on the next `visibilitychange`
