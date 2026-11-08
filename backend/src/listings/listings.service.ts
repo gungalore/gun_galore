@@ -896,6 +896,36 @@ export interface PreviewResult {
   photoFlags?: { index: number; categories: string[]; reason: string }[];
 };
 
+/**
+ * One counter pair for the seller's interest panel. `total` is lifetime;
+ * `last7d` is the trailing week, so the seller can see whether interest is
+ * still arriving or has gone quiet. See `ListingsService.interest`.
+ */
+export interface ListingInterestCounter {
+  total: number;
+  last7d: number;
+}
+
+export interface ListingInterest {
+  listingId: string;
+  listingType: ListingType;
+  status: ListingStatus;
+  /** Whole days since the listing row was created. */
+  liveSinceDays: number;
+  /** Event count, not a headcount — one buyer can be several views. */
+  views: ListingInterestCounter;
+  /** Distinct members who saved it to their wishlist. */
+  saves: ListingInterestCounter;
+  /** Distinct buyers who ever made an offer (one Offer row per buyer). */
+  offers: ListingInterestCounter & { open: number };
+  /** Auction only — bid rows. `total` is the denormalised Listing.bidCount. */
+  bids: ListingInterestCounter;
+  /** Auction-only opt-in watchers (distinct members). */
+  watchers: ListingInterestCounter;
+  /** Distinct members who asked a public question. */
+  questions: ListingInterestCounter;
+}
+
 @Injectable()
 export class ListingsService {
   private readonly logger = new Logger(ListingsService.name);
@@ -2139,6 +2169,126 @@ export class ListingsService {
     return {
       status: listing.status,
       wishlistCount: listing._count.wishlistedBy,
+    };
+  }
+
+  /**
+   * Seller-facing interest summary — what the listing has attracted, in
+   * aggregates only.
+   *
+   * ⚠️ OWNER-ONLY, AND A NON-OWNER GETS 404, NOT 403. This payload says how
+   * many people looked at somebody else's item and how many of them made an
+   * offer; a "forbidden" answer would confirm the listing id exists to anyone
+   * who guesses it, which is the same probe the buyer-facing stats() endpoint
+   * already refuses.
+   *
+   * ⚠️ THE SELLER'S OWN VIEWS ARE EXCLUDED. `findById` records a
+   * `listing_view` for every call that reaches it, including the seller
+   * refreshing their own listing, so an unfiltered count would let the seller
+   * inflate (or misread) their own number. The OR is load-bearing: a plain
+   * `userId: { not: sellerId }` compiles to `userId <> $1`, which is NULL —
+   * and therefore false — for every anonymous row, and anonymous rows are the
+   * MAJORITY of views (server-side recording has no device id). Dropping them
+   * would hide most of the traffic instead of filtering one person out.
+   *
+   * ⚠️ "VIEWS" IS AN EVENT COUNT, NOT A HEADCOUNT, and the wording in the UI
+   * has to stay honest about that: the same buyer opening the page twice is
+   * two views, and a crawler that renders the page is a view too. Everything
+   * else here (saves, offers, questions, watchers) is one row per person, so
+   * those really are distinct members.
+   *
+   * 7-day figures are computed from the same tables rather than snapshotted —
+   * the panel opens on a deliberate click, so a handful of indexed counts on
+   * one listing is cheaper than keeping counters in sync on every write.
+   */
+  async interest(id: string, userId: string): Promise<ListingInterest> {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        sellerId: true,
+        status: true,
+        listingType: true,
+        createdAt: true,
+        bidCount: true,
+        _count: {
+          select: {
+            wishlistedBy: true,
+            offers: true,
+            watchers: true,
+            questions: true,
+          },
+        },
+      },
+    });
+    if (!listing || listing.sellerId !== userId) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    const since = new Date(Date.now() - 7 * 86_400_000);
+    const viewWhere = {
+      listingId: id,
+      eventType: 'listing_view',
+      // See the doc comment: null = anonymous, and those must survive.
+      OR: [{ userId: null }, { userId: { not: listing.sellerId } }],
+    };
+    const isAuction = listing.listingType === ListingType.AUCTION;
+    const last7d = { createdAt: { gte: since } };
+
+    const [
+      views,
+      views7d,
+      saves7d,
+      offers7d,
+      questions7d,
+      watchers7d,
+      bids7d,
+      openOffers,
+    ] = await Promise.all([
+      this.prisma.userEvent.count({ where: viewWhere }),
+      this.prisma.userEvent.count({
+        where: { ...viewWhere, createdAt: { gte: since } },
+      }),
+      this.prisma.watchedListing.count({
+        where: { listingId: id, ...last7d },
+      }),
+      this.prisma.offer.count({ where: { listingId: id, ...last7d } }),
+      this.prisma.listingQuestion.count({
+        where: { listingId: id, ...last7d },
+      }),
+      // Watchers and bids only exist on auctions; a buy-now listing can skip
+      // both round-trips entirely.
+      isAuction
+        ? this.prisma.auctionWatch.count({ where: { listingId: id, ...last7d } })
+        : 0,
+      isAuction
+        ? this.prisma.bid.count({ where: { listingId: id, ...last7d } })
+        : 0,
+      this.prisma.offer.count({
+        where: { listingId: id, status: { in: ['PENDING', 'COUNTERED'] } },
+      }),
+    ]);
+
+    return {
+      listingId: listing.id,
+      listingType: listing.listingType,
+      status: listing.status,
+      liveSinceDays: Math.max(
+        0,
+        Math.floor((Date.now() - listing.createdAt.getTime()) / 86_400_000),
+      ),
+      views: { total: views, last7d: views7d },
+      saves: { total: listing._count.wishlistedBy, last7d: saves7d },
+      offers: {
+        total: listing._count.offers,
+        last7d: offers7d,
+        open: openOffers,
+      },
+      // bidCount is the denormalised counter every bid write already bumps,
+      // so the lifetime figure needs no aggregate at all.
+      bids: { total: listing.bidCount, last7d: bids7d },
+      watchers: { total: listing._count.watchers, last7d: watchers7d },
+      questions: { total: listing._count.questions, last7d: questions7d },
     };
   }
 

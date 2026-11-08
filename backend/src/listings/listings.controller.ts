@@ -182,6 +182,17 @@ export class ListingsController {
     return this.listingsService.stats(id, userId);
   }
 
+  // Seller-only "what interest has this listing generated" panel. AuthGuard,
+  // not OptionalAuthGuard: there is no anonymous version of this payload, and
+  // the service answers a non-owner with 404 so the id cannot be probed.
+  // MUST stay above @Get(':id') so 'interest' is not captured as an id.
+  @Get(':id/interest')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(AuthGuard)
+  interest(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.listingsService.interest(id, userId);
+  }
+
   // Coarse buyer-distance to a listing (W3). PUBLIC, but returns only a 5 km-
   // snapped distance — never the seller/dealer coordinates. MUST stay above
   // @Get(':id') so 'distance' isn't captured as an id.

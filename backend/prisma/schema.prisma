@@ -4277,6 +4277,12 @@ model UserEvent {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([eventType, createdAt])
+  // Seller-facing listing interest — "how many views has MY listing had" is a
+  // per-listing read, and without this it is a sequential scan of the whole
+  // behavioural-event table on every popover open. The eventType and createdAt
+  // components let the same index answer both the lifetime total and the
+  // last-7-days variant without a second index.
+  @@index([listingId, eventType, createdAt])
 }
 
 // ─── Self-hosted auth ──────────────────────────────────────────────────────

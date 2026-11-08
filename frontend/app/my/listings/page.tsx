@@ -5,6 +5,7 @@ import Image from 'next/image';
 import CancelButton from './cancel-button';
 import RenewButton from './renew-button';
 import FeatureButton from './feature-button';
+import { ListingInterest } from '@/components/listing-interest';
 import { LISTING_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
 import { PageReveal } from '@/components/page-reveal';
 
@@ -189,17 +190,24 @@ export default async function MyListingsPage() {
                     >
                       {l.title}
                     </Link>
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full shrink-0"
-                      title={status.hint ?? status.label}
-                      style={{
-                        color,
-                        background: `color-mix(in srgb, ${color} 9%, transparent)`,
-                        border: `0.5px solid color-mix(in srgb, ${color} 25%, transparent)`,
-                      }}
-                    >
-                      {status.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full shrink-0"
+                        title={status.hint ?? status.label}
+                        style={{
+                          color,
+                          background: `color-mix(in srgb, ${color} 9%, transparent)`,
+                          border: `0.5px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                        }}
+                      >
+                        {status.label}
+                      </span>
+                      {/* Interest is a deliberate click — the card carries no
+                          numbers. The panel it opens is the only place a seller
+                          sees views/saves/offers, so the trigger stays quiet
+                          rather than competing with the status chip. */}
+                      <ListingInterest listingId={l.id} />
+                    </div>
                   </div>
                   <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {l.category.name} · {new Date(l.createdAt).toLocaleDateString('en-ZA')}
