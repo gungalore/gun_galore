@@ -21,15 +21,28 @@
 //      the server now has fresher code).
 //   3. Once the new SW reaches the `installed` state AND there
 //      WAS a previous controller (i.e. this isn't a first-install
-//      situation), show the banner.
-//   4. Tapping the banner activates the waiting worker (SKIP_WAITING)
-//      and reloads once it takes control, so the new bundles load.
+//      situation), the update is READY.
+//   4. WHAT HAPPENS NEXT DEPENDS ON THE ROUTE:
+//      • safe route (browse, PDP, orders, dashboards) — applied
+//        automatically the moment the tab goes to the background,
+//        with no prompt. Reloading a page nobody is looking at costs
+//        nothing, and it is what stops the banner appearing after
+//        every deploy just because the app was left open.
+//      • unsafe route (checkout, the sell form, the scanner, auth,
+//        one-time action pages) — the banner stays, and only a tap
+//        activates the worker. A reload there destroys work.
+//        The list, and the reason for each entry, is in
+//        lib/sw-update-policy.ts and covered by its spec.
+//   5. Either path posts SKIP_WAITING to the waiting worker, waits for
+//      `controllerchange`, then reloads into the new bundle.
 //
 // Mounted ONCE in app/layout.tsx. Hidden until a real update is
 // detected; persists until the user taps reload or dismisses (the
 // dismissal is per-session — they'll see it again next deploy).
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { isAutoApplySafePath, shouldAutoApplyOnHide } from '@/lib/sw-update-policy';
 
 // sessionStorage key — stamped when the user taps Reload (inside
 // applyUpdateAndReload). After the reload lands, the SW's
@@ -46,7 +59,7 @@ const SUPPRESS_MS = 60_000;
  * in both directions at once:
  *
  *  · TOO STICKY. Tapping × on the first deploy's banner set `dismissed` for the
- *    life of the tab. Every later update still fired setUpdateReady(true)
+ *    life of the tab. Every later update still fired setWaiting(true)
  *    internally and never reached the screen — so an admin who dismissed once
  *    in the morning was never told again, and kept working against stale code
  *    with no way to know. On the Desk that is the surface where the answer to
@@ -120,7 +133,11 @@ function markReloading() {
 }
 
 export function SwUpdateBanner() {
-  const [updateReady, setUpdateReady] = useState(false);
+  // ⚠️ `waiting` IS "A PARKED WORKER EXISTS", NOT "SHOW THE BANNER". On a route
+  // that can be reloaded safely the banner never appears — the update is
+  // applied when the tab goes to the background (see the effect below). On a
+  // route holding unsaved work the banner is the old, deliberate behaviour.
+  const [waiting, setWaiting] = useState(false);
   const [reloading, setReloading] = useState(false);
   // The generation this banner is showing, and the one the operator waved
   // away. Equal => stay hidden; a newer generation => show again.
@@ -130,19 +147,42 @@ export function SwUpdateBanner() {
   );
   const dismissed = dismissedGeneration !== null && dismissedGeneration >= generation;
 
+  const pathname = usePathname();
+  // A background reload is only allowed where it cannot destroy work. The
+  // policy (and the reason for every denied route) lives in
+  // lib/sw-update-policy.ts so it can be tested without booting a browser.
+  const safeToAutoApply = isAutoApplySafePath(pathname);
+
+  // Timestamp of the last `input` event anywhere on the page — the second net
+  // for "safe route, but the user is mid-sentence in the offer panel".
+  const lastInputAt = useRef(0);
+  // Latched once the update is being applied, so a second visibilitychange
+  // cannot post SKIP_WAITING twice or reload twice.
+  const applyingRef = useRef(false);
+
+  useEffect(() => {
+    function onInput() {
+      lastInputAt.current = Date.now();
+    }
+    // Capture phase: inputs inside portals (sheets, modals) bubble to document
+    // anyway, but capture also catches listeners that stopPropagation.
+    document.addEventListener('input', onInput, true);
+    return () => document.removeEventListener('input', onInput, true);
+  }, []);
+
   // Activate the parked (waiting) service worker, then reload into the
   // new bundle. Because the SW ships with `skipWaiting: false`, a plain
   // reload would NOT pick up the new code (the old worker still controls
   // the page). We message the waiting worker to skipWaiting and reload
   // the moment it takes control. A short timeout is a safety net in case
   // `controllerchange` doesn't fire (or there's no waiting worker).
-  async function applyUpdateAndReload() {
+  const applyUpdateAndReload = useCallback(async () => {
     // Suppress the banner on the freshly-reloaded page (see RELOAD_FLAG_KEY).
     markReloading();
     try {
       const reg = await navigator.serviceWorker.getRegistration();
-      const waiting = reg?.waiting;
-      if (waiting) {
+      const waitingWorker = reg?.waiting;
+      if (waitingWorker) {
         let done = false;
         const reloadOnce = () => {
           if (done) return;
@@ -159,11 +199,11 @@ export function SwUpdateBanner() {
           reloadOnce,
           { once: true },
         );
-        waiting.addEventListener('statechange', () => {
-          if (waiting.state === 'activated') reloadOnce();
+        waitingWorker.addEventListener('statechange', () => {
+          if (waitingWorker.state === 'activated') reloadOnce();
         });
         window.setTimeout(reloadOnce, 3000);
-        waiting.postMessage({ type: 'SKIP_WAITING' });
+        waitingWorker.postMessage({ type: 'SKIP_WAITING' });
         return;
       }
     } catch {
@@ -171,7 +211,42 @@ export function SwUpdateBanner() {
     }
     // No waiting worker (already active / unsupported) — just reload.
     window.location.reload();
-  }
+  }, []);
+
+  // ── THE AUTOMATIC PATH ────────────────────────────────────────────────
+  // A parked update on a safe route is applied the moment the tab goes to the
+  // background: nobody is reading it, the reload lands behind the app switcher,
+  // and the member returns to the new build instead of a "Reload" button they
+  // have to tap after every deploy.
+  //
+  // It runs with NO prompt, so the two guards above are load-bearing: the path
+  // policy and the recent-input check. If either says no, we simply do nothing
+  // here — the banner still offers the manual option on unsafe routes.
+  useEffect(() => {
+    if (!waiting || !safeToAutoApply) return;
+
+    function maybeApply() {
+      if (
+        !shouldAutoApplyOnHide({
+          pathname,
+          visibility: document.visibilityState,
+          lastInputAt: lastInputAt.current,
+          alreadyApplied: applyingRef.current,
+        })
+      ) {
+        return;
+      }
+      applyingRef.current = true;
+      setReloading(true);
+      void applyUpdateAndReload();
+    }
+
+    // A tab can already be hidden when it is first hydrated (opened in the
+    // background, restored by the browser at startup).
+    maybeApply();
+    document.addEventListener('visibilitychange', maybeApply);
+    return () => document.removeEventListener('visibilitychange', maybeApply);
+  }, [waiting, safeToAutoApply, pathname, applyUpdateAndReload]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -179,7 +254,7 @@ export function SwUpdateBanner() {
     // True for the first 60s after the user clicked Reload — the
     // initial `controllerchange` event after reload would otherwise
     // re-show the banner. We still arm the listener; we just suppress
-    // setUpdateReady during the window.
+    // setWaiting during the window.
     const inReloadWindow = isInRecentReloadWindow();
 
     function trackInstallation(reg: ServiceWorkerRegistration) {
@@ -191,7 +266,7 @@ export function SwUpdateBanner() {
       ) {
         // Same update the stored dismissal (if any) refers to — do not
         // clear it; a remount must not re-raise a waved-away notice.
-        setUpdateReady(true);
+        setWaiting(true);
       }
       reg.addEventListener('updatefound', () => {
         const installing = reg.installing;
@@ -212,7 +287,7 @@ export function SwUpdateBanner() {
               clearDismissed();
               setDismissedGeneration(null);
               setGeneration(updateGeneration);
-              setUpdateReady(true);
+              setWaiting(true);
             }
           }
         });
@@ -238,7 +313,7 @@ export function SwUpdateBanner() {
       // already acknowledged.
       if (cancelled) return;
       if (isInRecentReloadWindow()) return;
-      setUpdateReady(true);
+      setWaiting(true);
     }
     navigator.serviceWorker.addEventListener(
       'controllerchange',
@@ -254,7 +329,9 @@ export function SwUpdateBanner() {
     };
   }, []);
 
-  if (!updateReady || dismissed) return null;
+  // The banner is only for the case the automatic path declines: a safe reload
+  // is impossible here (form/checkout/scanner/auth), so the member chooses.
+  if (!waiting || safeToAutoApply || dismissed) return null;
 
   return (
     <div
