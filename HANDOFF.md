@@ -5,7 +5,38 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-07**.
+Last updated: **2026-11-08**.
+
+## 2026-11-08 (LISTINGS) — SELLER INTEREST PANEL
+
+Each card on `/my/listings` now carries a small `ⓘ Interest` button. It holds no
+numbers: a deliberate click opens the panel (popover ≥640px, bottom sheet below),
+which shows **Total** and **Last 7 days** for views, saves, offers (+ open) and
+questions, plus bids/watching on auctions. No advice copy — operator decision was
+"just the data".
+
+`GET /listings/:id/interest` (`ListingsService.interest`) is `AuthGuard`,
+`private, no-store`, and answers a **non-owner with 404**, not 403, so an id
+cannot be probed. Views exclude the seller's own signed-in visits through an
+explicit `OR [{userId: null}, {userId: {not: sellerId}}]` — a bare `not` compiles
+to `userId <> $1`, which is NULL (false) for anonymous rows, and anonymous rows
+are the majority of recorded views. Saves/offers/questions/watching are one row
+per member; views are page opens, and the panel says so.
+
+Migration `20261108081400_listing_interest_index` adds
+`UserEvent(listingId, eventType, createdAt)`. Without it every panel open
+seq-scanned the behavioural-event table.
+
+Deployed `abf896cb` (full — backend, frontend, warden). Rollback point
+`alloutdoor-20261108-084722.dump` (33.8 MB). Health: api/web/public 200 ×2,
+warden online.
+
+⚠️ **The deploy script could not run from this Windows host.** `bash` is WSL
+(no `~/.ssh`), and Git Bash's ssh produced no output and a silent exit for the
+`alloutdoor` alias. The runbook steps were executed manually over PowerShell
+`ssh` instead, in the script's order (backup → lockfile reset → ff-only pull →
+migrate deploy → generate → build → artefact check → reload → 2× health). Next
+session: either provision WSL's key or run `deploy.sh` from a Linux shell.
 
 ## 2026-11-07 (TRUST) - VERIFY AT GO-LIVE, ENFORCE AT PAYMENT, REMEMBER THE ADDRESS
 
