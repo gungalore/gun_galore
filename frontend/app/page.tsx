@@ -9,6 +9,7 @@ import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageReveal } from '@/components/page-reveal';
 import { HomeInfoPanel } from '@/components/home-info-panel';
+import { SellerPromoBand } from '@/components/seller-promo-band';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
@@ -262,6 +263,16 @@ export default async function HomePage({
       {showHero ? (
         <>
               <Hero />
+
+              {/* The seller feature — the page body's first section at every
+                  width, directly under the hero on desktop and directly under
+                  the shop-mode bar on phones (the hero is display:none below
+                  768px). It is rendered OUTSIDE the container below so its card
+                  surface can run full-bleed. Bare landing only: showHero is
+                  false as soon as the visitor commits to a surface, a search,
+                  a category or a sort, and a seller pitch has no place over
+                  those results. */}
+              <SellerPromoBand />
 
               {/* ⚠️ THE SHOP-MODE TILES USED TO RENDER HERE, AND THEY NO
                   LONGER DO. They are the site-wide fork now — mounted once in
