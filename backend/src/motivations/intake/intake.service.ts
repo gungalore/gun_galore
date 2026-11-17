@@ -69,6 +69,7 @@ import {
   addCustomChoice,
   exerciseChoices,
   historyAnswerWords,
+  historyChoicesFor,
   normaliseChoices,
 } from './intake-choices';
 import {
@@ -1801,11 +1802,17 @@ const sourceText = (body.message ?? body.value ?? '').trim();
   private async enrichCard(
     bases: IntakeQuestion[],
     answers: Record<string, string>,
+    licenceType: MotivationLicenceType,
+    brief: InterviewBrief | null,
   ): Promise<IntakeQuestion[]> {
     const out: IntakeQuestion[] = [];
     for (const base of bases) {
       if (base.fieldKey === 'shooting_history') {
-        out.push({ ...base, choices: [...HISTORY_CHOICES], multi: true });
+        out.push({
+          ...base,
+          choices: this.historyChoicesFor(answers, licenceType, brief),
+          multi: true,
+        });
         continue;
       }
       if (base.fieldKey === 'intended_quarry') {
@@ -1830,6 +1837,42 @@ const sourceText = (body.message ?? body.value ?? '').trim();
   }
 
   /**
+   * The history chips for THIS application.
+   *
+   * ⚠️ THE BRIEF'S CHIPS WIN WHEN IT HAS THEM. They were written against this
+   * cartridge and discipline, which is the whole point: a 50 BMG long-range
+   * applicant was shown "Birds and small game" and "Plains game" under a
+   * question about long-range precision shooting. The pinned list remains the
+   * fallback (and for an outage), filtered to the purpose so it cannot offer a
+   * hunter's chips to a sport shooter.
+   */
+  private historyChoicesFor(
+    answers: Record<string, string>,
+    licenceType: MotivationLicenceType,
+    brief: InterviewBrief | null,
+  ): IntakeChoice[] {
+    const researched = brief?.chips['shooting_history'] ?? [];
+    if (researched.length >= 3) {
+      return researched
+        .slice(0, 6)
+        .map((chip) => ({ value: chip.value, label: chip.label }));
+    }
+    const step = strategyFor(licenceType);
+    const kind = (answers.firearm_use_kind ?? '').trim().toLowerCase();
+    const purpose =
+      step.purpose === 'sporting'
+        ? kind === 'sport'
+          ? 'sport'
+          : kind === 'both'
+            ? 'both'
+            : 'hunting'
+        : step.purpose === 'renewal'
+          ? 'renewal'
+          : 'self-defence';
+    return historyChoicesFor(purpose);
+  }
+
+  /**
    * Word a whole card in one model call.
    *
    * ⚠️ THE BRIEF'S FIELDS ARE ALREADY WORDED, SO THEY COST NOTHING. Only the
@@ -1845,7 +1888,7 @@ const sourceText = (body.message ?? body.value ?? '').trim();
     brief: InterviewBrief | null,
     bases: IntakeQuestion[],
   ): Promise<{ questions: IntakeQuestion[]; correction?: string }> {
-    const enriched = await this.enrichCard(bases, answers);
+    const enriched = await this.enrichCard(bases, answers, row.licenceType, brief);
     const briefPhrased = new Set(
       (brief?.questions ?? [])
         .filter((entry) => entry.question.trim())

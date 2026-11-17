@@ -374,6 +374,11 @@ function buildQuestion(args: {
       field.kind === 'date' ? 'Choose a date' : 'Or type your own answer…',
     progress: { answered, total },
     optional: field.required !== true,
+    ...(key === 'shooting_history'
+      ? { minWords: MIN_HISTORY_WORDS }
+      : key === 'continued_use'
+        ? { minWords: 8 }
+        : {}),
   };
 }
 

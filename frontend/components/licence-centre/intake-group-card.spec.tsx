@@ -193,6 +193,116 @@ describe('the grouped interview card', () => {
     ]);
   });
 
+  /**
+   * ⚠️ THE HISTORY FLOOR IS A UI RULE TOO. One chip reads as answered, enables
+   * Continue and is then refused by the server ("please give us a little
+   * more"). Below its floor the question must stay open and be left out of the
+   * batch, so the rest of the card saves.
+   */
+  it('keeps a thin shooting history open instead of refusing the card', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const history = question({
+      fieldKey: 'shooting_history',
+      id: 'shooting_history',
+      label: 'How did you first get involved in long-range precision shooting?',
+      kind: 'long',
+      multi: true,
+      minWords: 12,
+      choices: [
+        {
+          value: 'I was taught to shoot by a family member',
+          label: 'A family member taught me',
+        },
+        {
+          value: 'A friend introduced me to the sport',
+          label: 'A friend introduced me',
+        },
+        {
+          value: 'I learned to shoot at a club',
+          label: 'I learned at a club',
+        },
+      ],
+    });
+
+    render(
+      <IntakeGroupCard
+        group={group([history, holder])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // One chip is 8 words — short of the floor.
+    await user.click(screen.getByRole('button', { name: 'A family member taught me' }));
+    expect(
+      screen.getByText(/Pick a few of these, or add a sentence/),
+    ).toBeDefined();
+    expect(
+      screen.getAllByRole('img', { name: 'Still needs an answer' }),
+    ).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Main holder' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // The thin history is not submitted; the holder answer is.
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'licence_holder_type', value: 'Main firearm licence holder' },
+    ]);
+  });
+
+  it('counts several history ticks as an answer', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const history = question({
+      fieldKey: 'shooting_history',
+      id: 'shooting_history',
+      label: 'How did you first get involved?',
+      kind: 'long',
+      multi: true,
+      minWords: 12,
+      choices: [
+        {
+          value: 'I was taught to shoot by a family member',
+          label: 'A family member taught me',
+        },
+        {
+          value: 'A friend introduced me to the sport',
+          label: 'A friend introduced me',
+        },
+        {
+          value: 'I learned to shoot at a club',
+          label: 'I learned at a club',
+        },
+      ],
+    });
+
+    render(
+      <IntakeGroupCard
+        group={group([history])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'A family member taught me' }));
+    await user.click(screen.getByRole('button', { name: 'A friend introduced me' }));
+    await user.click(screen.getByRole('button', { name: 'I learned at a club' }));
+
+    expect(screen.getByRole('img', { name: 'Answered' })).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit.mock.calls[0][0]).toEqual([
+      {
+        fieldKey: 'shooting_history',
+        values: [
+          'I was taught to shoot by a family member',
+          'A friend introduced me to the sport',
+          'I learned to shoot at a club',
+        ],
+      },
+    ]);
+  });
+
   it('submits the whole card in one batch', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

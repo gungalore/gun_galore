@@ -5,6 +5,7 @@ import {
   addCustomChoice,
   exerciseChoices,
   historyAnswerWords,
+  historyChoicesFor,
   normaliseChoices,
 } from './intake-choices';
 import { MIN_HISTORY_WORDS } from '../motivation-completeness';
@@ -160,5 +161,30 @@ describe('exerciseChoices', () => {
   it('offers no duplicate exercise twice', () => {
     const values = exerciseChoices('NHSA', 'Rifle').map((choice) => choice.value);
     expect(new Set(values).size).toBe(values.length);
+  });
+});
+
+describe('the history chips for a purpose', () => {
+  const values = (purpose: Parameters<typeof historyChoicesFor>[0]): string[] =>
+    historyChoicesFor(purpose).map((choice) => choice.value);
+
+  it('never offers a hunter’s chips to a sport shooter', () => {
+    const sport = values('sport');
+    expect(sport).not.toContain('I hunt plains game');
+    expect(sport).not.toContain('I hunt birds and small game');
+    expect(sport).not.toContain('I grew up with firearms on a farm');
+    // What is true of any shooter stays.
+    expect(sport).toContain('I learned to shoot at a club');
+    expect(sport).toContain('I am at the range most weekends');
+  });
+
+  it('never offers the clay chip to a hunter', () => {
+    const hunting = values('hunting');
+    expect(hunting).not.toContain('I shoot clay targets at a club');
+    expect(hunting).toContain('I hunt plains game');
+  });
+
+  it('keeps both pools where the applicant does both', () => {
+    expect(values('both')).toEqual(HISTORY_CHOICES.map((c) => c.value));
   });
 });

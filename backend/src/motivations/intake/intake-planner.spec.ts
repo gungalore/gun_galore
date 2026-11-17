@@ -10,7 +10,7 @@ import {
 import { fieldByKey } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
 import { topicForField } from './intake-topics';
-import { missingDetail } from '../motivation-completeness';
+import { missingDetail, MIN_HISTORY_WORDS } from '../motivation-completeness';
 import type { InterviewBrief } from './intake-brief';
 import type { MotivationField } from '../motivation-fields';
 
@@ -542,6 +542,20 @@ describe('the question placeholder', () => {
     });
     expect(question?.customPlaceholder).toBe('Or type your own answer…');
     expect(question?.customPlaceholder).not.toContain('â');
+  });
+
+  it('publishes the history word floor to the card', () => {
+    const answers = { ...COMMON };
+    delete (answers as Record<string, string | undefined>).shooting_history;
+    const question = questionForField(
+      {
+        type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        answers,
+        sheet: EMPTY_SHEET,
+      },
+      'shooting_history',
+    );
+    expect(question?.minWords).toBe(MIN_HISTORY_WORDS);
   });
 });
 

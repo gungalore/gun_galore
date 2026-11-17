@@ -74,6 +74,15 @@ export interface IntakeQuestion {
   progress: { answered: number; total: number };
   /** True where the applicant may skip without blocking generation. */
   optional: boolean;
+  /**
+   * The minimum the answer must say, where the gate enforces one.
+   *
+   * ⚠️ THE CARD NEEDS IT TO AVOID A DEAD END. The shooting history has a
+   * twelve-word floor and its chips are short sentences, so one tick looks
+   * answered, enables Continue, and is then refused by the server. With this
+   * number the card can say "pick a few, or add a sentence" before submitting.
+   */
+  minWords?: number;
 }
 
 export interface IntakeDocumentItem {

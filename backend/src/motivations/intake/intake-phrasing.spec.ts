@@ -232,4 +232,42 @@ describe('wording a card', () => {
     ]);
     expect(card.questions[0].label).toBe('What else did you consider?');
   });
+
+  /**
+   * ⚠️ THE HISTORY CHIPS MUST FIT THE CARTRIDGE. A 50 BMG long-range applicant
+   * was shown "Birds and small game" and "Plains game"; when the brief has
+   * researched chips, they win over the pinned list.
+   */
+  it('uses the brief’s calibre-aware history chips when it has them', async () => {
+    const { svc } = makeService('{}');
+    const chips = [
+      'I started long-range precision shooting at 600 m',
+      'A club member introduced me to .50 BMG shooting',
+      'I learned on a borrowed target rifle at the club range',
+    ].map((text) => ({ value: text, label: text }));
+
+    const card = await (
+      svc as unknown as {
+        phrasedCard: (
+          row: unknown,
+          answers: Record<string, string>,
+          previousAnswer: string | null,
+          previousFieldKey: string | null,
+          brief: InterviewBrief | null,
+          bases: IntakeQuestion[],
+        ) => Promise<{ questions: IntakeQuestion[] }>;
+      }
+    ).phrasedCard(
+      ROW,
+      {},
+      null,
+      null,
+      brief({ chips: { shooting_history: chips } }),
+      [question('shooting_history', { kind: 'long', multi: true })],
+    );
+
+    expect(card.questions[0].choices.map((c) => c.value)).toEqual(
+      chips.map((c) => c.value),
+    );
+  });
 });

@@ -573,6 +573,13 @@ export interface IntakeQuestion {
   customPlaceholder: string;
   progress: { answered: number; total: number };
   optional: boolean;
+  /**
+   * The minimum the answer must say, where the gate enforces one.
+   *
+   * ⚠️ THE SHOOTING HISTORY HAS A WORD FLOOR AND ITS CHIPS ARE SHORT. One tick
+   * used to look answered, enable Continue and then be refused by the server.
+   */
+  minWords?: number;
 }
 
 export interface IntakeDocumentItem {

@@ -72,6 +72,11 @@ function NeedsAnswerMark() {
   );
 }
 
+function draftWords(draft: Draft): number {
+  const said = [...draft.picked, draft.typed].join(' ').trim();
+  return said ? said.split(/\s+/).filter(Boolean).length : 0;
+}
+
 /**
  * THE WHOLE CARD, IN ONE TAP-THROUGH.
  *
@@ -159,6 +164,15 @@ export default function IntakeGroupCard({
 
   function answerFor(question: IntakeQuestion): GroupAnswer | null {
     const draft = draftFor(question.fieldKey);
+    /**
+     * ⚠️ A TICK IS NOT AN ANSWER IF THE GATE WILL REFUSE IT. The shooting
+     * history has a twelve-word floor; one chip ("At the range most weekends",
+     * five words) used to tick, enable Continue and then be refused by the
+     * server. Below the floor the question stays open and is not submitted, so
+     * the rest of the card saves and this comes back for a sentence or a few
+     * more ticks.
+     */
+    if (question.minWords && draftWords(draft) < question.minWords) return null;
     const out: GroupAnswer = { fieldKey: question.fieldKey };
     if (draft.picked.length) {
       if (question.multi) out.values = draft.picked;
@@ -375,6 +389,16 @@ export default function IntakeGroupCard({
                     </label>
                   ))}
                 </div>
+              ) : null}
+
+              {question.minWords && draftWords(draft) < question.minWords ? (
+                <p
+                  className="mb-0 mt-1 text-[12px] leading-5"
+                  style={{ color: 'var(--warning)' }}
+                >
+                  Pick a few of these, or add a sentence — who introduced you,
+                  what you shoot and how often.
+                </p>
               ) : null}
 
               {question.optional ? (

@@ -159,6 +159,42 @@ export const HISTORY_CHOICES: readonly IntakeChoice[] = [
   { value: 'I am at the range most weekends', label: 'At the range most weekends' },
 ];
 
+/** The history chips that only make sense to a hunter. */
+const HUNTING_HISTORY = new Set([
+  'I grew up with firearms on a farm',
+  'I hunt birds and small game',
+  'I hunt plains game',
+]);
+
+/** The history chips that only make sense to a sport shooter. */
+const SPORT_HISTORY = new Set(['I shoot clay targets at a club']);
+
+/**
+ * The history chips for THIS application's purpose.
+ *
+ * ⚠️ A 50 BMG LONG-RANGE APPLICANT WAS SHOWN "BIRDS AND SMALL GAME" AND
+ * "PLAINS GAME" under "how did you first get involved in long-range precision
+ * shooting". The pinned list served every applicant, so the one question whose
+ * chips are meant to sound like the member's own words read as somebody else's
+ * application. The general chips (family, friend, club, range) stay; the
+ * purpose-specific ones are filtered.
+ */
+export function historyChoicesFor(
+  purpose: 'self-defence' | 'hunting' | 'sport' | 'both' | 'renewal',
+): IntakeChoice[] {
+  if (purpose === 'hunting') {
+    return HISTORY_CHOICES.filter(
+      (choice) => !SPORT_HISTORY.has(choice.value),
+    );
+  }
+  if (purpose === 'sport') {
+    return HISTORY_CHOICES.filter(
+      (choice) => !HUNTING_HISTORY.has(choice.value),
+    );
+  }
+  return [...HISTORY_CHOICES];
+}
+
 /**
  * HOW MUCH WAS SAID, TICKS INCLUDED.
  *
