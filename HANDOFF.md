@@ -7,7 +7,29 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — PHONE HAND-OFF READS LIKE UPLOAD; QUESTIONS MARKED
+## 2026-11-17 (LATEST) — ONE DATE CONTROL EVERYWHERE
+
+Shipped `4c0c0c2d` (**frontend-only**; backend and warden kept serving). The
+operator hit the browser's own date picker — the OS month/year wheel — on a date
+question, and the interview card had regressed to a native `<input type="date">`
+even though `DateField`/`DatePickerSheet` is the house control (type it, or pick
+year → month → day). Every remaining native date input now uses it: the
+interview card, the interview's single-question fallback, the review sheet's
+date rows, the licence tracker form and timeline, seller verification's date of
+birth, and the community composer.
+
+⚠️ **A DATE ANSWER ON THE CARD WAS ALSO UNSAVEABLE.** The card sent the chosen
+date as a typed `message`, which the batch handler routes through the chip
+matcher; a date field has no custom key, so it was refused. Dates now travel as
+the field's `value`, which the single-question path always sent.
+
+Frontend `tsc` clean, **169 files / 1 952 tests passed**; foreground production
+build clean. Rollback point `alloutdoor-20261117-162514.dump` (34,394,793
+bytes). `deploy.sh --frontend-only` exited 0; frontend health 200 ×2, backend
+health 200 ×2, public 200 ×2, all three PM2 services online (the backend process
+was not restarted).
+
+## 2026-11-17 (LATEST-1) — PHONE HAND-OFF READS LIKE UPLOAD; QUESTIONS MARKED
 
 Shipped `6dd23fdc` (**full deploy**). Two operator requests.
 
