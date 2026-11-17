@@ -7,7 +7,30 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — NO CHIP THE FACTS DO NOT SUPPORT
+## 2026-11-17 (LATEST) — A SPORT-PURPOSE SECTION 16 IS NOT ASKED FOR HUNTING SPECIES
+
+Shipped `da99a85c` (**full deploy**). The operator's `.50 BMG` Section 16
+application says "I will use it for sport shooting", but the review screen
+refused to move on: *"the species you intend to hunt — The quarry the caliber is
+chosen for."*
+
+⚠️ **S16_DEDICATED_HUNTER IS THE WHOLE SECTION 16 FAMILY** — its label is
+"Dedicated hunting or sport-shooting" — and the interview branches on
+`firearm_use_kind`. The **gate did not**: quarry was required for every
+S16-hunter row, including one whose own purpose answer is sport, and the sport
+branch never asks it. A finished interview was held open on a question no card
+could answer. Quarry is now required only when the answer says hunting (or
+both); a sport-purpose application passes on the sport facts it was asked for.
+
+Verified: backend `tsc` clean. The first full run had one failure; a clean re-run
+passed **419 suites / 6 231 tests** (8 skipped). Frontend build clean (its 1 954
+tests unchanged and green). One DRAFT existed and none was generating. Rollback
+point `alloutdoor-20261117-212553.dump` (34,399,192 bytes). `deploy.sh` exited 0;
+backend health 200 ×2, frontend 200 ×2 (the first check after the reload
+returned 000; both retries answered 200), public 200 ×2, three PM2 services
+online.
+
+## 2026-11-17 (LATEST-1) — NO CHIP THE FACTS DO NOT SUPPORT
 
 Shipped `d9299a4c` (**full deploy**). A .50 BMG long-range precision rifle
 application was offered **"Clay targets at a club"** under "how did you first
