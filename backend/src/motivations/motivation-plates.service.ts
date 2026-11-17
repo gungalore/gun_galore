@@ -60,14 +60,15 @@ const STORE_WIDTH = 1800;
 const STORE_QUALITY = 92;
 
 /**
- * Long enough for a 2K/medium picture model, short enough not to stall a
+ * Long enough for a slow picture model, short enough not to stall a
  * generation.
  *
- * ⚠️ 60s WAS THE 1K/LOW BUDGET AND NO LONGER FITS. Measured on the box
- * 2026-10-19, one 2K/medium plate takes ~100s; at 60s every call aborted,
- * retried twice and gave up at ~181s, so four plates were paid for as timeout
- * ledger rows and none were kept. 180s leaves headroom for a slow render and
- * still bounds a failed one.
+ * ⚠️ THE CAP IS SIZED FOR THE SLOWEST PROVIDER WE CAN ROLL BACK TO. Measured
+ * on the box 2026-10-19, one grok 2K/medium plate takes ~100 s; at 60 s every
+ * call aborted, retried twice and gave up at ~181 s, so four plates were paid
+ * for as timeout ledger rows and none were kept. The live Gemini Lite image
+ * model answers in ~6 s (measured 2026-11-17), so this bound is headroom
+ * rather than a budget — and it still covers a rollback to xAI.
  */
 const TIMEOUT_MS = 180_000;
 
@@ -196,9 +197,10 @@ export class MotivationPlatesService {
       const bytes = await sharp(Buffer.from(first.data, 'base64'))
         // ⚠️ `cover`, WHICH CROPS RATHER THAN SQUASHING — see quarry-plate.
         .resize(STORE_WIDTH, height, { fit: 'cover', position: 'centre' })
-        // ⚠️ 4:4:4 KEEPS THE COLOUR EDGES. The xAI render is 2K; a 4:2:0
-        // downscale smears fine range detail. The file is still a fraction of
-        // the model's output.
+        // ⚠️ 4:4:4 KEEPS THE COLOUR EDGES. The render is 2K on grok and about
+        // 1.5K on the live Gemini Lite image model; a 4:2:0 downscale smears
+        // fine range detail either way. The file is still a fraction of the
+        // model's output.
         .jpeg({ quality: STORE_QUALITY, chromaSubsampling: '4:4:4' })
         .toBuffer();
 

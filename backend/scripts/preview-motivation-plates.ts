@@ -27,10 +27,12 @@ import { PLATE_REQUEST_RATIO } from '../src/motivations/motivation-plates.servic
 // ⚠️ IT DOES NOT TOUCH THE DATABASE OR THE LEDGER. The preview is a dev tool;
 // the LlmService ledger write goes to a no-op stub so the spend is not booked
 // against a motivation that does not exist. The API call itself is real and
-// costs the same $0.08 a production plate costs.
+// costs the same ~3.4 cents a production plate costs on the live Gemini Lite
+// image model (a rollback to grok costs $0.08).
 // ────────────────────────────────────────────────────────────────────
 
-const PER_IMAGE_USD = 0.08;
+/** Gemini Lite image, ~1 120 image tokens a plate. grok is a flat $0.08. */
+const PER_IMAGE_USD = 0.034;
 const STORE_W = 1800;
 const STORE_H = 900;
 const TIMEOUT_MS = 180_000;
@@ -154,7 +156,7 @@ async function main(): Promise<void> {
     'MOTIVATION PURPOSE PLATES — PREVIEW',
     '',
     `promptVersion: ${PLATES_PROMPT_VERSION}`,
-    `model:          grok-imagine-image-2.0 (2K, medium)`,
+    `model:          gemini-3.1-flash-lite-image (Gemini Lite image; LLM_IMAGE_MODEL overrides)`,
     `aspectRatio:    ${ratio}`,
     `plates/case:    ${limit}`,
     `checkout:       ${draw ? 'DRAW (real API calls)' : 'prompts only'}`,
@@ -248,7 +250,8 @@ async function main(): Promise<void> {
         fs.writeFileSync(platePath, plate);
 
         console.log(
-          `OK   ${base}  ${Math.round((Date.now() - startedAt) / 1000)}s  ` +
+          `OK   ${base}  ${res.provider}/${res.model}  ` +
+            `${Math.round((Date.now() - startedAt) / 1000)}s  ` +
             `${Math.round(raw.length / 1024)}KB raw`,
         );
       } catch (err) {

@@ -1,5 +1,13 @@
 // ────────────────────────────────────────────────────────────────────
-// xAI (GROK IMAGINE) — the motivation PURPOSE and QUARRY plate generator.
+// xAI (GROK IMAGINE) — the ROLLBACK lever for the motivation PURPOSE and
+// QUARRY plates.
+//
+// ⚠️ NOT THE LIVE ROUTING SINCE 2026-11-17. Operator: "move the motivation
+// image generation to gemini 3.5 lite." The plates draw on Gemini's Lite
+// image model (`providerFor` in llm.service.ts); this provider stays wired so
+// `LLM_PROVIDER_MOTIVATION_PLATE=xai` (or `_QUARRY=xai`) puts one purpose
+// back on grok with an env edit and a reload, exactly as DeepSeek and Qwen
+// stay wired as rollback levers.
 //
 // Operator, 2026-10-15: "wire in the grok. just send it our own enhanced
 // prompt." The plates already carry a curated prompt per course of fire and
@@ -28,7 +36,7 @@
 //     money column keeps one author.
 //
 // ⚠️ THIS PROVIDER IS IMAGES ONLY. `complete`/`stream` throw `unsupported`;
-// nothing in LlmService routes a text purpose here (the routing pin targets
+// nothing in LlmService routes a text purpose here (the rollback lever targets
 // `motivation.plate` and `motivation.quarry`). It draws and does nothing else,
 // which is why `acceptsDocuments` is false and the text methods refuse rather
 // than half-work.

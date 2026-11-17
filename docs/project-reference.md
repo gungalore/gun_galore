@@ -330,7 +330,7 @@ state — do not read its absence as the switch being broken).
 **Backend**: `DATABASE_URL`, `JWT_MEMBER_SECRET`, `JWT_ADMIN_SECRET`,
 `ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`,
 `DIDIT_WEBHOOK_SECRET`, `DIDIT_MODE`, `DIDIT_BASE_URL`, `GEMINI_API_KEY`,
-`GROK_API_KEY`,
+`GROK_API_KEY` (rollback only),
 `LLM_PROVIDER`,
 `LLM_MODEL`, `LLM_IMAGE_MODEL`, `XAI_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
 `CLOUDINARY_CLOUD_NAME`,
@@ -419,23 +419,31 @@ against real data. It warns on every boot and raises a Desk card. It is currentl
   overrides it without a deploy. Anthropic has no image model: the adapter
   raises `unsupported` (a distinct code from `not_configured`, because a
   missing key and a provider that cannot draw are different problems).
-  ⚠️ **THE MOTIVATION PLATES ARE ON xAI (GROK IMAGINE), NOT GEMINI.** Operator,
-  2026-10-15: "wire in the grok." The PURPOSE exhibits (`motivation.plate`) and
-  the QUARRY plate (`motivation.quarry`) are pinned to the `xai` provider
-  (`providerFor`), which draws with `grok-imagine-image-2.0` at a flat
-  $0.04/image (`XAI_IMAGE_MODEL` overrides it; `GROK_API_KEY` is the key, with
-  `XAI_API_KEY` accepted). xAI has **no "enhance prompt" parameter** — the
-  curated course-of-fire and species prompts are sent verbatim, and its image
-  endpoint is the only thing this provider does. An explicit
-  `LLM_PROVIDER_MOTIVATION_PLATE` / `_QUARRY=gemini` moves a purpose back. xAI
-  bills per image, so `LlmUsage.images` carries the count and `costUsdMicros`
-  charges `flatPerImageUsd` (Gemini still bills image output by the token via
-  `imageTokens`).
+  ⚠️ **THE MOTIVATION PLATES RUN ON GEMINI'S LITE IMAGE MODEL.** Operator,
+  2026-11-17: "move the motivation image generation to gemini 3.5 lite" —
+  reversing the 2026-10-15 "wire in the grok" pin. The PURPOSE exhibits
+  (`motivation.plate`) and the QUARRY plate (`motivation.quarry`) are pinned to
+  the `gemini` provider in `providerFor`.
+  ⚠️ **`gemini-3.5-flash-lite` ITSELF CANNOT DRAW, AND IS NOT WHAT DRAWS THEM.**
+  Probed on this key 2026-11-17: it answers an image request with prose and no
+  `inlineData`, even with `responseModalities: ['TEXT','IMAGE']`. The drawing
+  model is the Lite image id above; a real plate on it returned in ~6 s at
+  1 120 image tokens, about 3.4 US cents. Pointing a plate at a text id spends
+  the call and stores nothing (the `safety`/empty-answer guard then fails the
+  plate), so do not "fix" the id to a 3.5 text model.
+  ⚠️ **xAI IS THE ROLLBACK LEVER, NOT A SECOND LIVE MODE.** `grok-imagine-image-2.0`
+  at a flat $0.08/image (`XAI_IMAGE_MODEL` overrides it; `GROK_API_KEY` is the
+  key, with `XAI_API_KEY` accepted). An explicit
+  `LLM_PROVIDER_MOTIVATION_PLATE` / `_QUARRY=xai` moves a purpose back with an
+  env edit and a reload. xAI has **no "enhance prompt" parameter** — the
+  curated course-of-fire and species prompts are sent verbatim on either
+  provider.
   ⚠️ **IMAGE OUTPUT IS TWENTY TIMES THE TEXT RATE AND ARRIVES IN THE SAME
   COUNTER.** $30/1M against $1.50/1M, both inside one `candidatesTokenCount`,
   so `mapUsage` carves the image half out via `candidatesTokensDetails` and
   `costUsdMicros` prices it separately. Billed as prose, a 3.4-cent plate reads
-  as a tenth of a cent.
+  as a tenth of a cent. (xAI bills per image instead — `LlmUsage.images` carries
+  the count and `flatPerImageUsd` prices it.)
   ⚠️ **AN EMPTY ANSWER IS A REFUSAL, NOT A SHAPE TO TRUST.** The safety filters
   return a candidate with no picture in it; a caller that assumed otherwise
   would store a zero-byte plate and print a blank box in a lodged document.
@@ -1443,10 +1451,12 @@ picture the quarry, sport packs the course of fire, self-defence packs the
 place, and a firearm that lawfully does both shows two of each. The composite
 quarry plate below is retired; this is the live image path.
 
-- ⚠️ **THE PROMPTS FOLLOW xAI'S IMAGINE GUIDE.** Subject first (what it is, its
-  form, what holds it, the setting), then details/count/where the eye enters,
-  art direction, light with a readable exposure, colour, lens/framing, the
-  snapshot treatment, and the exclusions last. `imageBrief()` in
+- ⚠️ **THE PROMPTS FOLLOW xAI'S IMAGINE GUIDE, AND STILL DO ON GEMINI.** Subject
+  first (what it is, its form, what holds it, the setting), then
+  details/count/where the eye enters, art direction, light with a readable
+  exposure, colour, lens/framing, the snapshot treatment, and the exclusions
+  last. The plates draw on Gemini's Lite image model since 2026-11-17; the
+  order is provider-neutral and is kept. `imageBrief()` in
   `motivation-image-brief.ts` assembles that order for the species and scene
   prompts; the course prompts use the same order through the shared tail
   constants in `motivation-courses.ts`. Do not append a new "No ..." clause to
@@ -1464,15 +1474,16 @@ quarry plate below is retired; this is the live image path.
   changes; a stored plate keeps the prompt and version that drew it. The
   2026-10-27 brief is `2026-10-27a`. New/regenerated motivations use it;
   existing packs keep their stored bytes until regenerated.
-- **Cost and preview.** One 2K/medium `grok-imagine-image-2.0` plate is $0.08,
-  so a four-plate pack is $0.32 and a regeneration pays again. Before shipping
-  a wording change, run `npm run motivation:plates:preview -- --draw` from
-  `backend/`: it builds the real prompts for the hunting, sport and
-  self-defence cases and writes raw + 2:1-cropped JPEGs to
-  `backend/tmp/plate-preview/`. Add `--limit 4` for a full pack, or
-  `--case hunt,sport,defence,both` for the mixed case. The script routes
-  through `LlmService` but uses a no-op ledger, so it does not touch member
-  spend.
+- **Cost and preview.** One plate is about **3.4 US cents** on
+  `gemini-3.1-flash-lite-image` (1 120 image tokens; measured 2026-11-17), so a
+  four-plate pack is ~13.6 cents and a regeneration pays again. A rollback to
+  `grok-imagine-image-2.0` costs a flat $0.08 a plate. Before shipping a wording
+  change, run `npm run motivation:plates:preview -- --draw` from `backend/`: it
+  builds the real prompts for the hunting, sport and self-defence cases and
+  writes raw + 2:1-cropped JPEGs to `backend/tmp/plate-preview/`. Add
+  `--limit 4` for a full pack, or `--case hunt,sport,defence,both` for the mixed
+  case. The script routes through `LlmService` but uses a no-op ledger, so it
+  does not touch member spend.
 
 ### Quarry plates
 

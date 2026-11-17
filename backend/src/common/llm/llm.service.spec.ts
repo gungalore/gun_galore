@@ -136,8 +136,9 @@ describe('LlmService', () => {
     // it is never confused with the pinned deepseek fake above.
     const qwen = new FakeProvider('qwen');
     qwen.response = { ...qwen.response, model: 'qwen3.8-flash' };
-    // ⚠️ xAI (Grok Imagine) — images only, so acceptsDocuments: false, and it
-    // draws (the pin sends motivation.plate / motivation.quarry here).
+    // ⚠️ xAI (Grok Imagine) — images only, so acceptsDocuments: false. It is
+    // the ROLLBACK lever for motivation.plate / motivation.quarry since
+    // 2026-11-17; the routing pin sends those purposes to Gemini.
     const xai = new FakeProvider('xai', false);
     xai.response = { ...xai.response, model: 'grok-imagine-image-2.0' };
     return {
@@ -736,10 +737,12 @@ describe('LlmService', () => {
     expect(create.mock.calls[0][0].data.provider).toBe('gemini');
   });
 
-  // ⚠️ THE MOTIVATION PLATES AND THE QUARRY PLATE RUN ON XAI (GROK IMAGINE).
-  // Operator, 2026-10-15: "wire in the grok." Pinned in providerFor, and the
-  // pin must beat a global LLM_PROVIDER switch (proved under deepseek here).
-  it('⚠️ ROUTES THE MOTIVATION PLATES AND QUARRY PLATE TO XAI', async () => {
+  // ⚠️ THE MOTIVATION PLATES AND THE QUARRY PLATE RUN ON GEMINI'S LITE IMAGE
+  // MODEL. Operator, 2026-11-17: "move the motivation image generation to
+  // gemini 3.5 lite" — the 2026-10-15 xAI pin is now the rollback lever, not
+  // the routing. Pinned in providerFor, and the pin must beat a global
+  // LLM_PROVIDER switch (proved under deepseek here).
+  it('⚠️ ROUTES THE MOTIVATION PLATES AND QUARRY PLATE TO GEMINI', async () => {
     process.env.LLM_PROVIDER = 'deepseek';
     const { svc, gemini, xai } = build();
     const plate = await svc.generateImage({
@@ -750,31 +753,34 @@ describe('LlmService', () => {
       prompt: 'an impala',
       purpose: 'motivation.quarry',
     });
-    expect(gemini.imageCalls).toHaveLength(0);
-    expect(xai.imageCalls).toHaveLength(2);
-    expect(plate.provider).toBe('xai');
-    expect(quarry.provider).toBe('xai');
+    expect(gemini.imageCalls).toHaveLength(2);
+    expect(xai.imageCalls).toHaveLength(0);
+    expect(plate.provider).toBe('gemini');
+    expect(quarry.provider).toBe('gemini');
+    // ⚠️ THE IMAGE MODEL, NOT A TEXT MODEL. 3.5-flash-lite (and every other
+    // text id) returns prose and no bytes for an image request.
+    expect(plate.model).toBe(gemini.defaultImageModel?.());
   });
 
-  it('lets an explicit LLM_PROVIDER_MOTIVATION_PLATE move a plate back to gemini', async () => {
-    process.env.LLM_PROVIDER_MOTIVATION_PLATE = 'gemini';
+  it('lets an explicit LLM_PROVIDER_MOTIVATION_PLATE roll a plate back to xai', async () => {
+    process.env.LLM_PROVIDER_MOTIVATION_PLATE = 'xai';
     const { svc, gemini, xai } = build();
     await svc.generateImage({
       prompt: 'a course of fire',
       purpose: 'motivation.plate',
     });
-    expect(xai.imageCalls).toHaveLength(0);
-    expect(gemini.imageCalls).toHaveLength(1);
+    expect(gemini.imageCalls).toHaveLength(0);
+    expect(xai.imageCalls).toHaveLength(1);
   });
 
-  it('books a grok plate under xai in the ledger', async () => {
+  it('books a motivation plate under gemini in the ledger', async () => {
     const { svc, create } = build();
     await svc.generateImage({
       prompt: 'a course of fire',
       purpose: 'motivation.plate',
     });
     await flush();
-    expect(create.mock.calls[0][0].data.provider).toBe('xai');
+    expect(create.mock.calls[0][0].data.provider).toBe('gemini');
   });
 
   it('⚠️ REFUSES AN UNSUPPORTED aspectRatio BEFORE IT SPENDS A CALL (MO000096)', async () => {

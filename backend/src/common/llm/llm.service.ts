@@ -239,18 +239,30 @@ export class LlmService {
     if (explicit === 'gemini') return this.gemini;
     if (explicit === 'qwen') return this.qwen;
     if (explicit === 'xai') return this.xai;
-    // ⚠️ THE MOTIVATION IMAGE EXHIBITS RUN ON XAI (GROK IMAGINE). Operator,
-    // 2026-10-15: "wire in the grok." The PURPOSE plates (`motivation.plate`)
-    // and the QUARRY plate (`motivation.quarry`) are the platform's only
-    // generateImage call sites, and both draw from it; the curated course and
-    // species prompts are sent verbatim (xAI has no "enhance prompt" parameter
-    // and none is used). Pinned in code so a global LLM_PROVIDER switch cannot
-    // drag the exhibits onto a text-only provider, exactly as video and the
-    // moderation images are pinned. An explicit `LLM_PROVIDER_MOTIVATION_PLATE`
-    // / `_QUARRY` env var still wins, above — the lever to move one purpose
-    // back to gemini without a deploy.
+    // ⚠️ THE MOTIVATION IMAGE EXHIBITS RUN ON GEMINI'S LITE IMAGE MODEL.
+    // Operator, 2026-11-17: "move the motivation image generation to gemini
+    // 3.5 lite" — this reverses the 2026-10-15 xAI ("wire in the grok") pin.
+    // The PURPOSE exhibits (`motivation.plate`) and the QUARRY plate
+    // (`motivation.quarry`) are the platform's only generateImage call sites,
+    // and the curated course / species prompts are sent verbatim on either
+    // provider (neither has an "enhance prompt" parameter we use).
+    //
+    // ⚠️ THE 3.5 FLASH-LITE MODEL ITSELF CANNOT DRAW, SO IT IS NOT WHAT THIS
+    // PIN NAMES. Probed on this account's key on 2026-11-17:
+    // `gemini-3.5-flash-lite` answers an image request with prose and no
+    // inlineData — even with `responseModalities: ['TEXT','IMAGE']` — so
+    // routing the plates there would pay for four calls and store nothing.
+    // The drawing model is `gemini-3.1-flash-lite-image` (Nano Banana 2 Lite),
+    // which `generateImage` takes from `defaultImageModel()` below; a real
+    // plate on it came back in ~6 s at 1 120 image tokens, about 3.4 US cents
+    // against grok's flat 8 cents. `LLM_IMAGE_MODEL` overrides it without a deploy,
+    // and an explicit `LLM_PROVIDER_MOTIVATION_PLATE` / `_QUARRY` env var
+    // still wins above — `=xai` is the rollback lever back to grok.
+    //
+    // Pinned in code so a global LLM_PROVIDER switch cannot drag the exhibits
+    // onto a text-only provider, exactly as video and licence-card OCR are.
     if (purpose === 'motivation.plate' || purpose === 'motivation.quarry') {
-      return this.xai;
+      return this.gemini;
     }
     // ⚠️ VIDEO IS GEMINI-ONLY ON THIS PLATFORM. A video moderation call must
     // not fall through to DeepSeek (whose vision path rejects video) just
@@ -367,7 +379,9 @@ export class LlmService {
     // The motivation agent — interview, shared research, the per-application
     // case brief, the writer, the verifier and the gate — runs on the cheap
     // flash-lite with thinking enabled by the call sites. The plate and quarry
-    // picture calls are image purposes and must not be pulled onto a text model.
+    // picture calls are excluded here on purpose: they are image purposes, and
+    // `generateImage` must take the provider's image model
+    // (`defaultImageModel`, gemini-3.1-flash-lite-image), never a text model.
     if (
       purpose.startsWith('motivation.') &&
       purpose !== 'motivation.plate' &&
