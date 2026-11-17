@@ -133,7 +133,7 @@ function detailsFor(
       choices: choicesFor(f, undefined, []),
       multi: f.kind === 'multi' || f.kind === 'cards',
       customPlaceholder:
-        f.kind === 'date' ? 'Choose a date' : 'Type your answerâ€¦',
+        f.kind === 'date' ? 'Choose a date' : 'Type your answer…',
     }));
 }
 
@@ -371,7 +371,7 @@ function buildQuestion(args: {
     multi,
     sensitive,
     customPlaceholder:
-      field.kind === 'date' ? 'Choose a date' : 'Or type your own answerâ€¦',
+      field.kind === 'date' ? 'Choose a date' : 'Or type your own answer…',
     progress: { answered, total },
     optional: field.required !== true,
   };

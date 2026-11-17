@@ -533,6 +533,18 @@ describe('the case questions', () => {
   });
 });
 
+describe('the question placeholder', () => {
+  it('is clean text, not mis-decoded UTF-8', () => {
+    const question = planQuestion({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {},
+      sheet: EMPTY_SHEET,
+    });
+    expect(question?.customPlaceholder).toBe('Or type your own answer…');
+    expect(question?.customPlaceholder).not.toContain('â');
+  });
+});
+
 describe('the brief guides the walk', () => {
   const brief: InterviewBrief = {
     version: 'test',

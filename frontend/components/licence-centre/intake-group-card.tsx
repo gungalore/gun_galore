@@ -126,7 +126,15 @@ export default function IntakeGroupCard({
   const missingRequired = required.filter(
     (question) => answerFor(question) === null,
   );
-  const canContinue = !busy && !stuck && missingRequired.length === 0;
+  /**
+   * ⚠️ ONE ANSWER IS ENOUGH TO CONTINUE. This used to require every required
+   * question on the card, so a member who tapped "Main firearm licence holder"
+   * found the button dead until they had also typed an occupation further down
+   * the card — the tap looked broken. Continue now saves whatever has been
+   * answered; anything still open stays pending and is served again (the
+   * generation gate still refuses without it).
+   */
+  const canContinue = !busy && !stuck && answered.length > 0;
 
   function submit(skipKey?: string): void {
     if (busy || stuck) return;
@@ -300,11 +308,11 @@ export default function IntakeGroupCard({
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-[12px] text-[var(--text-tertiary)]">
-          {missingRequired.length
-            ? `${missingRequired.length} question${
-                missingRequired.length === 1 ? '' : 's'
-              } to go.`
-            : 'Tap Continue to save these answers.'}
+          {answered.length === 0
+            ? 'Tap an answer to carry on.'
+            : missingRequired.length
+              ? `${missingRequired.length} still to answer — Continue saves what you have.`
+              : 'Tap Continue to save these answers.'}
         </span>
         <button
           type="button"

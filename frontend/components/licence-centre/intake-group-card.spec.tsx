@@ -78,27 +78,33 @@ describe('the grouped interview card', () => {
     expect(screen.queryByText('The manufacturer.')).toBeNull();
   });
 
-  it('blocks Continue until every required question is answered', async () => {
+  it('enables Continue as soon as one question is answered', async () => {
     const user = userEvent.setup();
+    const onSubmit = vi.fn();
     render(
       <IntakeGroupCard
         group={group([holder, question()])}
         busy={false}
-        onSubmit={() => undefined}
+        onSubmit={onSubmit}
       />,
     );
 
     const cta = screen.getByRole('button', { name: 'Continue' });
     expect(cta).toHaveProperty('disabled', true);
+    expect(screen.getByText('Tap an answer to carry on.')).toBeDefined();
 
+    // ⚠️ THE TAP ITSELF MUST ACTIVATE THE BUTTON. The card used to wait for
+    // every required question, so selecting this chip looked like a dead tap
+    // until the occupation further down was typed.
     await user.click(screen.getByRole('button', { name: 'Main holder' }));
-    expect(cta).toHaveProperty('disabled', true);
-
-    await user.type(
-      screen.getByPlaceholderText('Or type your own answer…'),
-      'Gerhard Fourie',
-    );
     expect(cta).toHaveProperty('disabled', false);
+    expect(screen.getByText(/1 still to answer/)).toBeDefined();
+
+    // It saves what has been answered; the open question is served again.
+    await user.click(cta);
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'licence_holder_type', value: 'Main firearm licence holder' },
+    ]);
   });
 
   it('submits the whole card in one batch', async () => {
