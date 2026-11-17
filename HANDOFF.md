@@ -7,6 +7,54 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
+## 2026-11-17 (NEWEST) — RESEARCH-FIRST INTERVIEW AND DISCIPLINE-TRUE RANGES
+
+Shipped `e584262c` (**full deploy**; backend changed and the first migration
+since the plate deploy was applied). Two features, both in the motivation
+pipeline.
+
+**1. The guided interview is built from a research brief.**
+`Motivation.intakeBrief*` (migration `20261117110000_motivation_intake_brief`,
+applied) holds one encrypted brief per fact-hash: the shared research joined to
+the gate's gaps, an ordered question list with a reason and wording per
+question, and tappable answers. It is built in the background once per
+application (`gemini-3.1-flash-lite`, ~3 s measured live) and is **advisory** —
+the planner still appends every required/gate field it omitted. `INTERVIEW_BRIEF=off`
+(env + reload) restores label-only questions.
+
+The card now renders the whole category and posts it in one batch, with Skip
+for optional questions travelling in the same request. Chips are ranked
+(precinct/occupation/calibre/association) and acknowledgements are composed from
+the member's own answer. Coverage fixed: S13/S14 ask the premises block, routine
+and carry method; S24 asks `continued_use`; safe follow-ups are conditional;
+`firearm_use_kind` is demanded only on sporting sections; `residence_type` is
+asked once; `GROUP_CAP` is 7. A property test asserts every generation-gate gap
+has a question in the walk. Measured: a cold applicant sees 7–8 cards / 30–36
+questions (was ~30 one-question screens); a documented applicant sees **2–3
+cards / 3–6 questions**.
+
+**2. Sport ranges fit the discipline.** `discipline-ranges.ts` parses the
+chosen association exercise's published rulebook text (NHSA "SHOOTING
+DISTANCE", FOSA "Distance:", yards, bands vs lists; millimetres and target
+dimensions stripped — NHSA's "300m (w) × 300mm" typo was being read as a 300 m
+course). The spec then filters the generated sport uses before the prompt,
+renders a `<discipline-ranges>` block the writer may not exceed, feeds the 5.2
+suitability facts, and is checked by `packConsistency()` for any course-of-fire
+distance outside it. No rulebook distance (no association, unlisted exercise,
+or "Distance: Various") means the writer is told to describe the discipline
+**without** a distance. The long `shooting-disciplines` requirement paragraphs
+are deliberately not parsed: their metres are facilities and target sizes.
+
+Verified before deploy: backend `tsc` clean, **419 suites / 6 221 tests passed**
+(8 skipped); frontend `tsc` clean, **168 files / 1 947 tests passed**; foreground
+production build clean; one live brief call. No motivation was in flight at
+deploy time (production held none). Rollback point
+`alloutdoor-20261117-130251.dump` (34,363,352 bytes). Migration applied on the
+box; the four columns are present; `deploy.sh` exited **0** this run (the
+trailing exit-1 noted in the plate record did not recur). Backend health 200 ×2,
+frontend 200 ×2, public 200 ×2, all three PM2 services online, backend boot log
+clean apart from the pre-existing Peach warnings.
+
 ## 2026-11-17 (LATEST) — MOTIVATION PLATES BACK ON GEMINI'S LITE IMAGE MODEL
 
 Shipped `280f3441` (**full deploy**; backend changed). The motivation purpose
