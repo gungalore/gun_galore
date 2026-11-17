@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
+## 2026-11-17 (PEACH) — CHECKOUT LIVE-READY, WAITING ON DOMAIN APPROVAL
+
+Peach activated Checkout. Captured the **Hosted Checkout** pair — Entity ID +
+Secret token — which the account did not have before (the earlier set was
+Embedded only). ⚠️ `entityId` is **not** the Merchant ID: sandbox shows
+`8ac7…` vs `222f…`, and the live Entity ID is its own 32-char value.
+
+Production `.env` now carries 10 `PEACH_*` keys: checkout client pair + merchant
++ entity + secret token, the checkout webhook signing secret, and the Payouts
+client pair. Mode `600`, backend reloaded clean, rail flags still OFF.
+
+Registered with Peach: `…/webhook/peach` (Checkout, **Verified**, signing ON —
+44-char shared secret in `PEACH_WEBHOOK_SECRET`), `…/webhook/peach-payout`
+(both float-allocation and payout-status toggles on) and `…/webhook/peach-banv`
+(**Verified**).
+
+**Deployed `ae43a0e4` (backend-only).** Peach's Payouts product exposes no
+webhook-signing control, so its live deliveries arrive unsigned. Refusing them
+would mean a payout is created and its completion never lands — `paidOutAt`
+stays null forever. The payout and BANV handlers now accept an unsigned delivery
+as a HINT and re-query `getPayoutStatus` / `getBankVerificationResult` before
+writing anything, so a forged delivery can do no more than trigger a status
+read. A delivery that DOES carry a bad signature is still rejected. 420 suites /
+6,237 tests. Rollback `alloutdoor-20261117-231526.dump` (37 MB).
+
+**Blocked on Peach:** `alloutdoor.co.za` is still *Pending*. A live checkout
+create returns **`400 Merchant domain is not allowlisted`** — tested with the
+real credentials. Both admin flags stay OFF; enabling payin now would expose a
+Card option that errors at create.
+
+**Next session:** when the domain reads *Allowed*, flip `peach_payin_enabled`,
+run one live R1 card payment + refund, confirm the signed webhook settles the
+order, then enable `peach_payouts_enabled` (danger flag — typed key + reason).
+
 ## 2026-11-17 (LATEST) — A FAILED SAVE NO LONGER TAKES THE QUESTION AWAY
 
 Shipped `c7fa018b` (**frontend-only**). A section 13 application reached the
