@@ -13,8 +13,8 @@ Shipped `280f3441` (**full deploy**; backend changed). The motivation purpose
 exhibits (`motivation.plate`) and the quarry plate (`motivation.quarry`) are
 pinned back to the `gemini` provider, reversing the 2026-10-15 "wire in the
 grok" pin. A plate now draws on `gemini-3.1-flash-lite-image` at about **3.4 US
-cents** instead of grok's flat **8**; measured through the real prompt path,
-~5 s and ~1 550 output tokens (1 120 of them the picture) per plate.
+cents** instead of grok's flat **8 US cents**; measured through the real prompt
+path, ~5 s and ~1 550 output tokens (1 120 of them the picture) per plate.
 
 ⚠️ **`gemini-3.5-flash-lite` ITSELF CANNOT DRAW.** The operator asked for "gemini
 3.5 lite"; probed on our own key, that model answers an image request with
