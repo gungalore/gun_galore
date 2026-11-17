@@ -262,12 +262,27 @@ export default function IntakeStartPage() {
     }
   }
 
-  async function setOutput(outputMode: MotivationOutputMode) {
+  /**
+   * Choosing the result starts the interview.
+   *
+   * ⚠️ THE EXTRA "START THE INTERVIEW" CARD WAS A STEP WITH NO CHOICE IN IT.
+   * The member had already said what they wanted; the card only repeated the
+   * promise and made them press a second time. A result is now a decision and
+   * an action: set the output, start the interview, go there. Documents are
+   * still taken per topic inside the interview, so nothing is skipped by not
+   * showing a document picker first.
+   */
+  async function chooseOutput(outputMode: MotivationOutputMode) {
+    if (busy || uploading) return;
     setBusy(true);
     setError(null);
     try {
-      const next = await motivationsApi.setIntakeOutput(getToken, id, outputMode);
+      // The output is set server-side; the state is not rendered in between —
+      // setting it here would flash the mode-only screen for a frame.
+      await motivationsApi.setIntakeOutput(getToken, id, outputMode);
+      const next = await motivationsApi.startIntake(getToken, id, 'INTERVIEW');
       setData(next);
+      router.push(`/licence-centre/${id}/interview`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -380,14 +395,16 @@ export default function IntakeStartPage() {
           What do you need today?
         </h1>
         <p className="mt-2 max-w-[58ch] text-[13.5px] leading-6 text-[var(--text-secondary)]">
-          Choose the result first. We only ask for what that result needs.
+          Choose the result. The interview starts straight away and asks only
+          what that result needs.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <button
             type="button"
             disabled={busy}
-            onClick={() => void setOutput('MOTIVATION_ONLY')}
+            onClick={() => void chooseOutput('MOTIVATION_ONLY')}
+            aria-busy={busy || undefined}
             className="rounded-xl border p-4 text-left"
             style={{
               borderColor: motivationOnly ? 'var(--red)' : 'var(--border)',
@@ -405,7 +422,8 @@ export default function IntakeStartPage() {
           <button
             type="button"
             disabled={busy}
-            onClick={() => void setOutput('PRINT_READY')}
+            onClick={() => void chooseOutput('PRINT_READY')}
+            aria-busy={busy || undefined}
             className="rounded-xl border p-4 text-left"
             style={{
               borderColor: !motivationOnly ? 'var(--red)' : 'var(--border)',
@@ -448,22 +466,6 @@ export default function IntakeStartPage() {
           </div>
         ) : null}
 
-        <div className="mt-6">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void start('INTERVIEW')}
-            className="w-full rounded-xl border p-4 text-left transition hover:border-[var(--red)]"
-            style={{ borderColor: 'var(--red)', background: 'var(--red-wash)' }}
-          >
-            <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              {busy ? 'Starting…' : 'Start the interview'}
-            </span>
-            <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              Upload whatever documentation you have first to eliminate repetitive questions, then answer only what’s still needed.
-            </span>
-          </button>
-        </div>
         {error ? (
           <p className="mt-3 text-[13px] text-[var(--red)]">{error}</p>
         ) : null}
@@ -495,7 +497,7 @@ export default function IntakeStartPage() {
         className="mt-6 w-full rounded-xl px-4 py-3 text-[14px] font-medium text-white disabled:opacity-50"
         style={{ background: 'var(--red)' }}
       >
-        {busy ? 'Starting…' : 'Start the interview'}
+        {busy ? 'Starting…' : 'Continue to the interview'}
       </button>
       {error ? (
         <p className="mt-3 text-[13px] text-[var(--red)]">{error}</p>
