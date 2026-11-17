@@ -11,8 +11,11 @@ import { huntGameClassOptions } from '../motivation-hunt-classes';
 import type { SheetItem, SheetResponse } from '../motivation-sheet.service';
 import {
   sportingFields,
+  CASE_KEYS,
   strategyFor,
 } from './intake-strategies';
+import type { InterviewBrief } from './intake-brief';
+import { chipsFor, rankCardOptions, type ChipContext } from './interview-chips';
 import type {
   IntakeChoice,
   IntakeDetailField,
@@ -32,13 +35,22 @@ function choicesFor(
   item: SheetItem | undefined,
   suggestions: readonly string[],
   answers?: Record<string, string>,
+  ctx?: ChipContext,
 ): IntakeChoice[] {
   if (field.kind === 'cards') {
-    const options =
+    /**
+     * ⚠️ THE RANKING IS THE POINT. `rankBy` on a card says how to order it for
+     * this applicant (their precinct, their trade, their calibre, their
+     * association). Until now nothing read it and every member saw registry
+     * order. Ranking only moves options forward; nothing is hidden.
+     */
+    const source = item?.options ?? field.options ?? [];
+    const options = ctx ? rankCardOptions(source, ctx) : source;
+    const huntClassOptions =
       field.key === 'hunt_game_class' && answers
         ? huntGameClassOptions(answers.firearm_calibre ?? '')
-        : (item?.options ?? field.options ?? []);
-    return options.map((o) => ({ value: o.key, label: o.sentence }));
+        : options;
+    return huntClassOptions.map((o) => ({ value: o.key, label: o.sentence }));
   }
   if (field.kind === 'choice' || field.kind === 'yesno') {
     const values =
@@ -59,6 +71,32 @@ function choicesFor(
     ];
   }
   return suggestions.map((s) => ({ value: s, label: s }));
+}
+
+/**
+ * ⚠️ THE BRIEF'S CHIPS ARE ONLY FOR OPEN QUESTIONS. A closed field's choices
+ * are the values the validator accepts; a researched chip outside that set
+ * would be refused on save. For a `short`/`long` question the chips are
+ * suggestions, so the researched ones lead and the field's own list fills the
+ * rest.
+ */
+function mergeBriefChoices(
+  field: MotivationField,
+  base: IntakeChoice[],
+  chips: { value: string; label: string }[] | undefined,
+): IntakeChoice[] {
+  if (!chips?.length) return base;
+  if (field.kind !== 'short' && field.kind !== 'long') return base;
+  const seen = new Set<string>();
+  const out: IntakeChoice[] = [];
+  for (const chip of [...chips, ...base]) {
+    const value = chip.value.trim();
+    if (!value || seen.has(value.toLowerCase())) continue;
+    seen.add(value.toLowerCase());
+    out.push({ value, label: chip.label.trim() || value });
+    if (out.length >= 6) break;
+  }
+  return out;
 }
 
 function valueOf(
@@ -109,7 +147,18 @@ function visibleFields(
     resolveSportingPurpose(answers);
   const keys = sportingFields(strategy, purpose);
   const out: { key: string; field: MotivationField }[] = [];
+  /**
+   * ⚠️ A KEY LISTED TWICE IS STILL ONE QUESTION.
+   *
+   * `residence_type` was in the common block and again in the self-defence
+   * block, so the raw plan carried it twice; the card deduped it at the last
+   * moment and the progress counter still counted two. Dedupe where the list is
+   * built, so every reader agrees.
+   */
+  const seen = new Set<string>();
   for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
     const field = fieldByKey(type, key);
     if (!field) continue;
     /**
@@ -155,6 +204,43 @@ export interface PlannerInput {
   answers: Record<string, string>;
   sheet: SheetResponse;
   provenance?: Record<string, { source?: string }>;
+  /**
+   * The research brief, when one has landed.
+   *
+   * ⚠️ ADVISORY ONLY. It reorders the questions within a topic, phrases them,
+   * says why each is needed and supplies chips. It cannot remove a pending
+   * field: the caller still appends every required and detail-gated question
+   * that the brief did not mention.
+   */
+  brief?: InterviewBrief | null;
+}
+
+/** The brief's entry for one field, if it covers it. */
+function briefFor(
+  brief: InterviewBrief | null | undefined,
+  key: string,
+): { question: string; why: string; priority: number } | undefined {
+  return brief?.questions.find((entry) => entry.fieldKey === key);
+}
+
+/**
+ * ⚠️ REQUIRED FIRST, THEN THE BRIEF'S ORDER. A card must never open with an
+ * optional question while a fact the gate refuses to do without is still
+ * pending on the same card. Inside that rule, the brief decides: it wrote its
+ * questions in the order an interviewer would ask them.
+ */
+function orderPending(
+  entries: { key: string; field: MotivationField }[],
+  required: (entry: { key: string; field: MotivationField }) => boolean,
+  brief: InterviewBrief | null | undefined,
+): { key: string; field: MotivationField }[] {
+  const rank = (entry: { key: string; field: MotivationField }): number => {
+    const weight = required(entry) ? 0 : 1000;
+    const order = briefFor(brief, entry.key)?.priority ?? 999;
+    return weight + order;
+  };
+  // Stable sort: fields the brief does not mention keep registry order.
+  return [...entries].sort((a, b) => rank(a) - rank(b));
 }
 
 /**
@@ -229,16 +315,39 @@ function buildQuestion(args: {
   const huntClasses = key === 'hunt_game_class' && calibre;
   const isPrimaryThreat = key === 'threat_circumstances';
   const isPrimaryQuarry = key === 'intended_quarry';
+  const briefEntry = briefFor(input.brief, key);
+  const chipContext: ChipContext = {
+    type: input.type,
+    answers: merged,
+    brief: input.brief,
+  };
+  const baseChoices =
+    sensitive &&
+    field.kind !== 'choice' &&
+    field.kind !== 'yesno' &&
+    field.kind !== 'cards'
+      ? []
+      : choicesFor(field, items.get(key), suggestions, merged, chipContext);
+  /**
+   * ⚠️ THE BRIEF'S WORDING WINS OVER THE REGISTRY LABEL, AND THE CALIBRE
+   * OVERRIDES WIN OVER NOTHING. The brief wrote its question knowing the
+   * cartridge and the research; the deterministic overrides exist for the
+   * first card and for an outage. A sensitive field never takes model wording.
+   */
+  const plainLabel = huntClasses
+    ? `What you hunt with your ${calibre}`
+    : isPrimaryThreat
+      ? 'What is your primary reason or situation that requires a firearm for self-defence?'
+      : isPrimaryQuarry
+        ? `What game or species do you intend to hunt with this ${calibre || 'firearm'}?`
+        : field.label;
   return {
     id: key,
     fieldKey: key,
-    label: huntClasses
-      ? `What you hunt with your ${calibre}`
-      : isPrimaryThreat
-        ? 'What is your primary reason or situation that requires a firearm for self-defence?'
-        : isPrimaryQuarry
-          ? `What game or species do you intend to hunt with this ${calibre || 'firearm'}?`
-          : field.label,
+    label: !sensitive && briefEntry?.question
+      ? briefEntry.question
+      : plainLabel,
+    why: briefEntry?.why ?? '',
     help:
       (huntClasses
         ? `Tap every class that is true of this ${calibre}.`
@@ -251,13 +360,13 @@ function buildQuestion(args: {
         ? 'This is typed here and never sent to the writing assistant.'
         : ''),
     kind: field.kind,
-    choices:
-      sensitive &&
-      field.kind !== 'choice' &&
-      field.kind !== 'yesno' &&
-      field.kind !== 'cards'
-        ? []
-        : choicesFor(field, items.get(key), suggestions, merged),
+    choices: mergeBriefChoices(
+      field,
+      baseChoices,
+      // Research first, catalogue second; a closed field ignores both because
+      // its allowed values are fixed.
+      sensitive ? undefined : chipsFor(field, chipContext),
+    ),
     ...(details.length ? { details } : {}),
     multi,
     sensitive,
@@ -285,6 +394,15 @@ function isPending(
   provenance: PlannerInput['provenance'],
 ): boolean {
   const existing = valueOf(key, merged, items);
+  /**
+   * ⚠️ A SKIP IS AN ANSWER TO "DO YOU WANT TO ANSWER THIS".
+   *
+   * Optional case questions are offered once. Without this line the planner
+   * sees an empty value, keeps the field pending and puts the same question
+   * back on the next card — which is how an "optional" question becomes
+   * permanent. See ProvenanceSource 'SKIPPED'.
+   */
+  if (!existing && provenance?.[key]?.source === 'SKIPPED') return false;
   if (!existing) return true;
   /**
    * ⚠️ ANSWERED IS NOT THE SAME AS ENOUGH. The shooting history is the one
@@ -319,18 +437,51 @@ function plannerContext(input: PlannerInput) {
   const merged = { ...input.answers };
   for (const item of input.sheet.items) merged[item.key] = item.value;
   const fields = visibleFields(input.type, strategy, merged);
+  /**
+   * ⚠️ A SKIPPED OPTIONAL QUESTION IS SETTLED, NOT OUTSTANDING. Counting only
+   * values would leave the progress bar permanently short of 100% on a member
+   * who exercised the Skip the interview offered them.
+   */
   const answered = fields.filter(
-    (f) => valueOf(f.key, merged, items) !== '',
+    (f) =>
+      valueOf(f.key, merged, items) !== '' ||
+      input.provenance?.[f.key]?.source === 'SKIPPED',
   ).length;
-  return { strategy, items, merged, fields, answered, total: fields.length };
+  /**
+   * ⚠️ REQUIRED = THE REGISTRY SAYS SO, OR THE GATE DOES. Computed from the
+   * stored answers, which is what the gate itself reads. Used for the "required
+   * before optional" ordering and for the single-question path.
+   */
+  const detailKeys = new Set(
+    missingDetail(input.answers, input.type).map((gap) =>
+      gap.code.slice(gap.code.indexOf(':') + 1),
+    ),
+  );
+  const required = (entry: { key: string; field: MotivationField }): boolean =>
+    entry.field.required === true || detailKeys.has(entry.key);
+  return {
+    strategy,
+    items,
+    merged,
+    fields,
+    answered,
+    total: fields.length,
+    detailKeys,
+    required,
+  };
 }
 
 export function planQuestion(input: PlannerInput): IntakeQuestion | null {
-  const { strategy, items, merged, fields, answered, total } =
+  const { strategy, items, merged, fields, answered, total, required } =
     plannerContext(input);
-  const next = fields.find(
-    ({ key }) => isPending(key, merged, items, input.provenance),
+  const pending = orderPending(
+    fields.filter(({ key }) =>
+      isPending(key, merged, items, input.provenance),
+    ),
+    required,
+    input.brief,
   );
+  const next = pending[0];
   if (!next) return null;
   return buildQuestion({
     input,
@@ -397,8 +548,16 @@ export interface PlannedGroup {
   questions: { key: string; field: MotivationField }[];
 }
 
-/** How many questions one card may carry. */
-export const GROUP_CAP = 6;
+/**
+ * How many questions one card may carry.
+ *
+ * ⚠️ SEVEN, NOT SIX, BECAUSE SIX LEFT A ONE-QUESTION CARD. The firearm block is
+ * seven facts (type, action, make, model, calibre, serial, what else was
+ * considered); at six the seventh fell onto a card of its own, which was an
+ * extra screen and two taps to answer one question. Seven still fits a phone,
+ * because every question on the card is a chip or one short box.
+ */
+export const GROUP_CAP = 7;
 
 export function planGroup(
   input: PlannerInput,
@@ -426,20 +585,36 @@ export function planGroup(
     ),
   );
   const asked = (entry: { key: string; field: MotivationField }): boolean =>
-    entry.field.required === true || detailKeys.has(entry.key);
+    entry.field.required === true ||
+    detailKeys.has(entry.key) ||
+    /**
+     * ⚠️ THE CASE QUESTIONS ARE OFFERED, ONCE. These are optional in the
+     * registry (the sheet may still show them), but a document written without
+     * them is the thin one: the security paragraph, the routine, the ground and
+     * the discipline. `CASE_KEYS` is the list of fields the interview puts on
+     * screen even though nobody is forced to answer; Skip records the decision
+     * so the question is not repeated. See intake-strategies.ts.
+     */
+    CASE_KEYS.has(entry.key);
 
   /**
-   * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED IN THE CONVERSATION.
+   * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED — EXCEPT THE CASE ONES.
    *
-   * The card shows one question at a time and Continue needs an answer, so an
-   * optional question would hold the member hostage — the server keeps it
-   * pending because nothing answers it, and the client would re-serve the same
-   * field forever. Optional values stay reachable on the sheet and from the
-   * profile; they are simply not part of the walk. Operator, 2026-11-05:
-   * "It should keep things minimal."
+   * An optional question holds the member hostage when the card cannot move on
+   * without it, so the walk skips optional values that the sheet and the profile
+   * already expose. Operator, 2026-11-05: "It should keep things minimal."
+   *
+   * The exception is `CASE_KEYS`: the case facts that make the document
+   * specific. They are offered once, marked Optional on the card, and Skip
+   * settles them for good. Everything else optional stays on the sheet.
    */
-  const pending = fields.filter(
-    (entry) => asked(entry) && isPending(entry.key, merged, items, input.provenance),
+  const pending = orderPending(
+    fields.filter(
+      (entry) =>
+        asked(entry) && isPending(entry.key, merged, items, input.provenance),
+    ),
+    (entry) => entry.field.required === true || detailKeys.has(entry.key),
+    input.brief,
   );
   if (!pending.length) return null;
 
@@ -476,7 +651,9 @@ export function planGroup(
   const inTopic = fields.filter(
     (f) =>
       topicForField(f.key) === id &&
-      (f.field.required === true || countedDetail.has(f.key)),
+      (f.field.required === true ||
+        countedDetail.has(f.key) ||
+        CASE_KEYS.has(f.key)),
   );
   return {
     id,

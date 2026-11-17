@@ -2,6 +2,7 @@ import { MotivationLicenceType } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { isSportingLicence, resolveSportingPurpose } from './motivation-purpose';
 import { fieldByKey } from './motivation-fields';
+import { describeDistances, rangeSpecForAnswers } from './discipline-ranges';
 import { BLOCK_LABELS, sectionOf } from './motivation-research.service';
 import { namesMatch } from './motivation-name-match';
 import type { ArsenalRow } from './motivation-arsenal';
@@ -198,6 +199,19 @@ export function buildSuitabilityFacts(input: SuitabilityInput): string[] {
   for (const key of purposeKeys) {
     const label = fieldByKey(input.licenceType, key)?.label ?? key;
     add(label, value(a, key));
+  }
+
+  /**
+   * ⚠️ A SPORT PAGE THAT ARGUES "THE COURSE OF FIRE" MUST KNOW THE COURSE. The
+   * exercise and its published distances were missing from this page's facts,
+   * so it reasoned about a course it had never been shown and could state a
+   * range the rulebook contradicts. See discipline-ranges.ts.
+   */
+  const exercise = value(a, 'discipline_exercise');
+  if (exercise) add('Discipline exercise', exercise);
+  const ranges = rangeSpecForAnswers(a);
+  if (ranges) {
+    add(`Published distance for ${ranges.label}`, describeDistances(ranges));
   }
 
   if (input.exhibits.length) {

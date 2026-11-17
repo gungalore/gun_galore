@@ -1,6 +1,7 @@
 import {
   correctionFor,
   isCorrectableField,
+  parseIntakeCardReply,
   parseIntakeReply,
 } from './intake-reply';
 
@@ -75,5 +76,64 @@ describe('isCorrectableField', () => {
     for (const key of ['id_number', 'full_name', 'history_conviction']) {
       expect(isCorrectableField(key)).toBe(false);
     }
+  });
+});
+
+describe('parseIntakeCardReply', () => {
+  it('reads one wording per field', () => {
+    const parsed = parseIntakeCardReply(
+      JSON.stringify({
+        questions: [
+          { fieldKey: 'firearm_make', question: 'Which make is your rifle?' },
+          { fieldKey: 'firearm_model', question: 'Which model?' },
+        ],
+      }),
+    );
+    expect(parsed?.questions).toHaveLength(2);
+    expect(parsed?.questions[0].fieldKey).toBe('firearm_make');
+  });
+
+  it('keeps only the first entry for a duplicated field', () => {
+    const parsed = parseIntakeCardReply(
+      JSON.stringify({
+        questions: [
+          { fieldKey: 'firearm_make', question: 'First?' },
+          { fieldKey: 'firearm_make', question: 'Second?' },
+        ],
+      }),
+    );
+    expect(parsed?.questions).toEqual([
+      { fieldKey: 'firearm_make', question: 'First?' },
+    ]);
+  });
+
+  it('drops an entry with no wording or no key', () => {
+    const parsed = parseIntakeCardReply(
+      JSON.stringify({
+        questions: [
+          { fieldKey: 'firearm_make' },
+          { question: 'Which model?' },
+          { fieldKey: 'firearm_model', question: 'Which model?' },
+        ],
+      }),
+    );
+    expect(parsed?.questions).toEqual([
+      { fieldKey: 'firearm_model', question: 'Which model?' },
+    ]);
+  });
+
+  it('carries the spelling correction with the card', () => {
+    const parsed = parseIntakeCardReply(
+      JSON.stringify({
+        questions: [{ fieldKey: 'firearm_model', question: 'Which model?' }],
+        correctedAnswer: 'Mossberg',
+      }),
+    );
+    expect(correctionFor('firearm_make', parsed)).toBe('Mossberg');
+  });
+
+  it('is null when there is nothing usable', () => {
+    expect(parseIntakeCardReply('no json here')).toBeNull();
+    expect(parseIntakeCardReply(JSON.stringify({ questions: [] }))).toBeNull();
   });
 });

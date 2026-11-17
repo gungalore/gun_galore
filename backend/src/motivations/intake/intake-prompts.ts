@@ -122,3 +122,90 @@ export function speciesUserPrompt(args: {
     'Do not name a species the calibre is under-matched for. Do not explain.',
   ].join('\n');
 }
+
+// ────────────────────────────────────────────────────────────────────
+// THE CARD TURN — one model call for every open question on a card.
+//
+// ⚠️ ONE CALL PER CARD, NOT ONE PER QUESTION. The grouped interview used to
+// phrase each open field separately (up to four in flight), which is where the
+// perceived delay between answers came from. The brief already phrases most
+// fields; this call is for the ones it could not, and it returns them in one
+// go so a card costs one round-trip at most.
+//
+// ⚠️ IT MAY ONLY WORD, NOT ASK. Every `fieldKey` comes from the server's plan;
+// the model is told to word each question and nothing else. A reply that
+// invents a key is dropped by the parser.
+// ────────────────────────────────────────────────────────────────────
+
+export const INTAKE_CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          fieldKey: { type: 'string' },
+          question: { type: 'string' },
+        },
+        required: ['fieldKey', 'question'],
+      },
+    },
+    /**
+     * ⚠️ THE SPELLING FIX TRAVELS WITH THE CARD TURN. The one-shot reply
+     * carries it, and a card turn without it would stop correcting "mosberg"
+     * the moment the grouped path became the only path.
+     */
+    correctedAnswer: { type: 'string' },
+  },
+  required: ['questions'],
+} as const;
+
+export function intakeCardSystemPrompt(): string {
+  return [
+    'You are a senior South African firearms-licence consultant, sitting with an applicant and working through their motivation.',
+    'You have read their file, their documents and the published research. You are not a chatbot and not a form — you are the professional they would pay to sit with them.',
+    '',
+    'RULES',
+    '1. Word each question you are given as ONE short, plain question. Use the reason to decide what the question must make clear.',
+    '2. Never change the subject, add a question, skip one, or invent a fact, a figure or a legal rule.',
+    '3. Carry the applicant’s own facts into the wording where it makes the question clearer: "What model is your Mauser?" rather than "What is the model?".',
+    '4. Do not read out the answer list, do not give legal advice, never predict approval, and do not mention being an AI, a model or a system.',
+    '5. South African English, short sentences, warm and direct. Never say "please provide".',
+    '6. The question must make sense on its own and stay under 180 characters.',
+    '7. If the previous answer misspells a firearm make, model, calibre or action, return `correctedAnswer` with the corrected value only — never a new fact.',
+    '',
+    'Return JSON only, matching the schema.',
+  ].join('\n');
+}
+
+export function intakeCardUserPrompt(args: {
+  licenceLabel: string;
+  known: string[];
+  previousAnswer?: string;
+  previousField?: string;
+  questions: { fieldKey: string; label: string; why?: string; help?: string }[];
+}): string {
+  const lines = args.questions.map(
+    (question) =>
+      `- ${question.fieldKey}: ${question.label}` +
+      (question.why ? `\n    reason: ${question.why}` : '') +
+      (question.help ? `\n    help: ${question.help}` : ''),
+  );
+  return [
+    `APPLICATION: ${args.licenceLabel}`,
+    `WHAT THE APPLICANT HAS ALREADY TOLD US: ${
+      args.known.length ? args.known.join('; ') : '(nothing yet)'
+    }`,
+    args.previousAnswer
+      ? `THEIR LAST ANSWER (${args.previousField ?? 'previous question'}): ${args.previousAnswer}`
+      : '',
+    '',
+    'QUESTIONS TO WORD (return one entry per fieldKey, same keys):',
+    ...lines,
+    '',
+    'Word each one as the interviewer would ask it. Return JSON only.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}

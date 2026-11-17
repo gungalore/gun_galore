@@ -29,6 +29,12 @@ function completeS13(): Record<string, string> {
     safe_mounted: 'Yes',
     safe_mounted_to: 'Wall',
     safe_key_holder: 'Only me',
+    /**
+     * ⚠️ THE SECURITY PARAGRAPH IS PART OF A COMPLETE SELF-DEFENCE SET NOW.
+     * Heading 5 is written from the premises block and nothing asked for it, so
+     * the gate names the enclosure — the tap the rest of the block hangs off.
+     */
+    premises_enclosure: 'Walled',
     firearm_use_kind: 'self-defence',
   };
 }
@@ -70,8 +76,7 @@ describe('missingDetail', () => {
     expect(codes(gaps)).not.toContain('association:association_name');
   });
 
-  it('refuses dedicated sport without the exercise it is entered in', () => {
-    const answers = {
+  it('refuses dedicated sport without the exercise it is entered in', () => {    const answers = {
       ...completeS13(),
       association_name: 'NHSA',
       association_number: '9407315019081',
@@ -122,5 +127,74 @@ describe('missingDetail', () => {
     expect(message).toContain('not ready to write yet');
     expect(message).toContain('the type of firearm');
     expect(missingDetailMessage([])).toBe('');
+  });
+});
+
+describe('the gate asks only what a card can show', () => {
+  it('does not demand "what the firearm is for" on a section 13', () => {
+    const gaps = missingDetail(
+      completeS13(),
+      MotivationLicenceType.S13_SELF_DEFENCE,
+    );
+    expect(codes(gaps)).not.toContain('purpose:firearm_use_kind');
+  });
+
+  it('still demands it on the sporting sections, where it chooses the branch', () => {
+    const answers = { ...completeS13(), association_name: 'NHSA' };
+    delete (answers as Record<string, string | undefined>).firearm_use_kind;
+    const gaps = missingDetail(
+      answers,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    );
+    expect(codes(gaps)).toContain('purpose:firearm_use_kind');
+  });
+
+  it('demands the security paragraph on a self-defence application', () => {
+    const answers = { ...completeS13() };
+    delete (answers as Record<string, string | undefined>).premises_enclosure;
+    const gaps = missingDetail(
+      answers,
+      MotivationLicenceType.S13_SELF_DEFENCE,
+    );
+    expect(codes(gaps)).toContain('premises:premises_enclosure');
+  });
+
+  it('demands how a renewal has kept using the firearm', () => {
+    const answers = {
+      ...completeS13(),
+      existing_licence_number: 'L1',
+      licence_expiry: '2027-01-01',
+    };
+    const short = missingDetail(answers, MotivationLicenceType.S24_RENEWAL);
+    expect(codes(short)).toContain('renewal:continued_use');
+
+    const full = missingDetail(
+      { ...answers, continued_use: words(8) },
+      MotivationLicenceType.S24_RENEWAL,
+    );
+    expect(codes(full)).not.toContain('renewal:continued_use');
+  });
+
+  it('asks who holds the key only when there is a safe', () => {
+    const withSafe = { ...completeS13() };
+    delete (withSafe as Record<string, string | undefined>).safe_key_holder;
+    expect(
+      codes(missingDetail(withSafe, MotivationLicenceType.S13_SELF_DEFENCE)),
+    ).toContain('safe:safe_key_holder');
+
+    const noSafe = {
+      ...completeS13(),
+      safe_present: 'No',
+      safe_mounted: 'No',
+    };
+    delete (noSafe as Record<string, string | undefined>).safe_key_holder;
+    delete (noSafe as Record<string, string | undefined>).safe_type;
+    delete (noSafe as Record<string, string | undefined>).safe_mounted_to;
+    const gaps = codes(
+      missingDetail(noSafe, MotivationLicenceType.S13_SELF_DEFENCE),
+    );
+    expect(gaps).not.toContain('safe:safe_key_holder');
+    expect(gaps).not.toContain('safe:safe_type');
+    expect(gaps).not.toContain('safe:safe_mounted_to');
   });
 });

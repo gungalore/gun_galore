@@ -1,4 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { isSportingLicence } from './motivation-purpose';
 
 /**
  * ⚠️ THE DETAIL A MOTIVATION NEEDS TO EXIST, AS OPPOSED TO THE FORM BEING FILLED.
@@ -120,18 +121,64 @@ export function missingDetail(
   }
 
   // ── safe storage ───────────────────────────────────────────────────────
-  for (const [key, label, hint] of [
+  /**
+   * ⚠️ THE SAFE FOLLOW-UPS ARE CONDITIONAL, LIKE THEY ARE ON SCREEN. Demanding
+   * "what it is mounted to" of somebody whose safe is not mounted — or "the
+   * type of safe" of somebody who has none — blocked the pack on a question the
+   * interview hid. The gate now follows the same showIf chain the card does.
+   */
+  const safePresent = (answers.safe_present ?? '').trim().toLowerCase() === 'yes';
+  const safeMounted = (answers.safe_mounted ?? '').trim().toLowerCase() === 'yes';
+  const safeRows: [string, string, string][] = [
     ['safe_present', 'whether there is a safe', 'A safe is required for every licence.'],
-    ['safe_type', 'the type of safe', 'Rifle safe, handgun safe, built-in.'],
-    ['safe_mounted', 'whether the safe is mounted', 'Bolted or built in, not loose.'],
-    ['safe_mounted_to', 'what it is mounted to', 'A wall, a floor, a concrete slab.'],
-    ['safe_key_holder', 'who holds the key', 'Only you, or somebody else.'],
-  ] as const) {
+    ...(safePresent
+      ? ([
+          ['safe_type', 'the type of safe', 'Rifle safe, handgun safe, built-in.'],
+          ['safe_mounted', 'whether the safe is mounted', 'Bolted or built in, not loose.'],
+          ['safe_key_holder', 'who holds the key', 'Only you, or somebody else.'],
+        ] as [string, string, string][])
+      : []),
+    ...(safePresent && safeMounted
+      ? ([
+          ['safe_mounted_to', 'what it is mounted to', 'A wall, a floor, a concrete slab.'],
+        ] as [string, string, string][])
+      : []),
+  ];
+  for (const [key, label, hint] of safeRows) {
     if (!has(answers, key)) gaps.push(GAP(`safe:${key}`, label, hint));
   }
 
+  // ── the security paragraph a self-defence document carries ─────────────
+  /**
+   * ⚠️ HEADING 5 IS WRITTEN FROM THE PREMISES BLOCK, AND NOTHING ASKED FOR IT.
+   * The interview's walk skipped every profile-scoped `premises_*` field, so a
+   * cold section 13 applicant could finish with a name, a serial and a safe and
+   * still be "complete". The enclosure is the one tap the rest of the block
+   * hangs off (alarm, response, bars, gates all follow it), so it is the gap.
+   */
+  if (
+    (licenceType === MotivationLicenceType.S13_SELF_DEFENCE ||
+      licenceType === MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE) &&
+    !has(answers, 'premises_enclosure')
+  ) {
+    gaps.push(
+      GAP(
+        'premises:premises_enclosure',
+        'what already protects your home',
+        'The wall, fence or gate, and what else you have done. The document says where those measures stop.',
+      ),
+    );
+  }
+
   // ── the purpose ────────────────────────────────────────────────────────
-  if (!has(answers, 'firearm_use_kind')) {
+  /**
+   * ⚠️ ONLY THE SPORTING SECTIONS ARE ASKED WHAT THE FIREARM IS FOR. On a
+   * section 13 the section answers it, and the registry itself retired
+   * `firearm_use_kind` as a question on 2026-10-17 ("the route is decided from
+   * the applicant's paperwork, their battery and the firearm itself"). Demanding
+   * it anyway left a section 13 applicant gated on a question no card asked.
+   */
+  if (isSportingLicence(licenceType) && !has(answers, 'firearm_use_kind')) {
     gaps.push(
       GAP(
         'purpose:firearm_use_kind',
@@ -146,6 +193,25 @@ export function missingDetail(
         'purpose:intended_quarry',
         'the species you intend to hunt',
         'The quarry the caliber is chosen for.',
+      ),
+    );
+  }
+  /**
+   * ⚠️ A RENEWAL TURNS ON TWO FACTS AND ONLY ONE WAS ASKED. "The purpose has
+   * not changed, and you are still active" is the whole argument, and
+   * `continued_use` — the active half — was optional and never put to the
+   * member. A one-word answer is still not a fact, so it keeps the floor the
+   * history uses.
+   */
+  if (
+    licenceType === MotivationLicenceType.S24_RENEWAL &&
+    wordCount(answers.continued_use ?? '') < 8
+  ) {
+    gaps.push(
+      GAP(
+        'renewal:continued_use',
+        'how you have kept using the firearm',
+        'What you have actually done with it since it was issued — hunts, matches, practice.',
       ),
     );
   }

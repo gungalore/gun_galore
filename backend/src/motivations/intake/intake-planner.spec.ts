@@ -5,10 +5,14 @@ import {
   planGroup,
   planQuestion,
   purposeForAnswers,
+  questionForField,
 } from './intake-planner';
 import { fieldByKey } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
 import { topicForField } from './intake-topics';
+import { missingDetail } from '../motivation-completeness';
+import type { InterviewBrief } from './intake-brief';
+import type { MotivationField } from '../motivation-fields';
 
 const EMPTY_SHEET = {
   application: {
@@ -385,5 +389,243 @@ describe('the document gate decides what the conversation asks', () => {
         sheet: EMPTY_SHEET,
       }),
     ).toBeNull();
+  });
+});
+
+/**
+ * Walk the whole interview the way the service serves it: ask, answer, ask.
+ *
+ * ⚠️ THIS IS THE ONLY HONEST WAY TO TEST "EVERY GATE GAP HAS A QUESTION". A
+ * single `planGroup` call only sees the first topic; a gap in the last one can
+ * be invisible there and still dead-end the member on the completion screen.
+ */
+function walk(
+  type: MotivationLicenceType,
+  seed: Record<string, string> = {},
+  provenance: Record<string, { source?: string }> = {},
+): { asked: string[]; answers: Record<string, string> } {
+  const answers: Record<string, string> = { ...seed };
+  const asked: string[] = [];
+  for (let i = 0; i < 60; i += 1) {
+    const question = planQuestion({
+      type,
+      answers,
+      sheet: EMPTY_SHEET,
+      provenance,
+    });
+    if (!question) break;
+    asked.push(question.fieldKey);
+    answers[question.fieldKey] = answerFor(question.fieldKey, type);
+  }
+  return { asked, answers };
+}
+
+function answerFor(key: string, type: MotivationLicenceType): string {
+  const field = fieldByKey(type, key);
+  if (key === 'shooting_history') {
+    return Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ');
+  }
+  if (key === 'continued_use') {
+    return Array.from({ length: 10 }, (_, i) => `used${i}`).join(' ');
+  }
+  if (!field) return 'x';
+  switch (field.kind) {
+    case 'date':
+      return '2020-01-01';
+    case 'yesno':
+      // Yes only where it opens useful follow-ups; No elsewhere keeps the walk
+      // out of declaration details.
+      return key === 'safe_present' ? 'Yes' : 'No';
+    case 'choice':
+      return field.choices?.[0] ?? 'Other';
+    case 'cards':
+    case 'multi':
+      return field.options?.[0]?.key ?? 'other';
+    default:
+      return 'A real answer';
+  }
+}
+
+describe('the case questions', () => {
+  const types = [
+    MotivationLicenceType.S13_SELF_DEFENCE,
+    MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+    MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_SPORT,
+    MotivationLicenceType.S24_RENEWAL,
+  ];
+
+  const seedFor = (type: MotivationLicenceType): Record<string, string> =>
+    sportingFields(strategyFor(type), 'both').includes('firearm_use_kind')
+      ? {
+          firearm_use_kind:
+            type === MotivationLicenceType.S16_DEDICATED_SPORT
+              ? 'sport'
+              : 'hunting',
+        }
+      : {};
+
+  it('never asks residence_type twice in a walk', () => {
+    for (const type of types) {
+      const { asked } = walk(type, seedFor(type));
+      expect(asked.filter((key) => key === 'residence_type')).toHaveLength(1);
+    }
+  });
+
+  it('asks the premises block and the routine on a self-defence application', () => {
+    const { asked } = walk(MotivationLicenceType.S13_SELF_DEFENCE);
+    expect(asked).toEqual(
+      expect.arrayContaining([
+        'premises_enclosure',
+        'premises_access_control',
+        's13_movements',
+        's13_carry_style',
+      ]),
+    );
+  });
+
+  it('asks how a renewal has kept using the firearm', () => {
+    const { asked } = walk(MotivationLicenceType.S24_RENEWAL);
+    expect(asked).toContain('continued_use');
+  });
+
+  it('asks the hunting ground and the sport formats', () => {
+    expect(walk(MotivationLicenceType.S16_DEDICATED_HUNTER, { firearm_use_kind: 'hunting' }).asked)
+      .toEqual(expect.arrayContaining(['hunt_game_class', 'hunt_terrain']));
+    expect(walk(MotivationLicenceType.S16_DEDICATED_SPORT, { firearm_use_kind: 'sport' }).asked)
+      .toEqual(expect.arrayContaining(['sport_formats', 'discipline_exercise']));
+  });
+
+  /**
+   * ⚠️ THE DEAD-END INVARIANT. `missingDetail()` is the generation gate; every
+   * gap it names must have a question in the walk, or the member is held on the
+   * interview screen with nothing left to answer. This is the test that would
+   * have caught `firearm_use_kind` on a section 13.
+   */
+  it('has a question for every gap the generation gate names', () => {
+    for (const type of types) {
+      const seed = seedFor(type);
+      const gaps = missingDetail(seed, type).map((gap) =>
+        gap.code.slice(gap.code.indexOf(':') + 1),
+      );
+      const { asked } = walk(type, seed);
+      for (const key of gaps) {
+        expect({ type, key, asked: asked.includes(key) }).toEqual({
+          type,
+          key,
+          asked: true,
+        });
+      }
+    }
+  });
+
+  it('does not re-ask a question the member skipped', () => {
+    const base = walk(MotivationLicenceType.S13_SELF_DEFENCE).answers;
+    delete base.s13_movements;
+    const withoutSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base);
+    expect(withoutSkip.asked).toContain('s13_movements');
+
+    const afterSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base, {
+      s13_movements: { source: 'SKIPPED' },
+    });
+    expect(afterSkip.asked).not.toContain('s13_movements');
+  });
+});
+
+describe('the brief guides the walk', () => {
+  const brief: InterviewBrief = {
+    version: 'test',
+    hash: 'h',
+    at: new Date().toISOString(),
+    facts: [],
+    questions: [
+      {
+        fieldKey: 'firearm_make',
+        question: 'Which make is your rifle?',
+        why: 'The card prints the make.',
+        priority: 0,
+      },
+      {
+        fieldKey: 'firearm_action',
+        question: 'Which action is it?',
+        why: 'The DFO reads the action against the competency.',
+        priority: 1,
+      },
+    ],
+    chips: {
+      alternative_considered: [
+        { value: 'A .308 for the shorter action', label: 'A .308 for the shorter action' },
+        { value: 'A 6.5 Creedmoor for the range', label: 'A 6.5 Creedmoor for the range' },
+        { value: 'A .270 for the flatter trajectory', label: 'A .270 for the flatter trajectory' },
+      ],
+    },
+    sources: [],
+    researched: true,
+  };
+
+  const answers = {
+    ...COMMON,
+    firearm_use_kind: 'hunting',
+  };
+  delete (answers as Record<string, string | undefined>).firearm_make;
+  delete (answers as Record<string, string | undefined>).firearm_action;
+  delete (answers as Record<string, string | undefined>).alternative_considered;
+
+  it('asks the brief’s first question, in the brief’s words, with its reason', () => {
+    const question = planQuestion({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers,
+      sheet: EMPTY_SHEET,
+      brief,
+    });
+    expect(question?.fieldKey).toBe('firearm_make');
+    expect(question?.label).toBe('Which make is your rifle?');
+    expect(question?.why).toBe('The card prints the make.');
+  });
+
+  it('offers the researched chips on an open question', () => {
+    const question = questionForField(
+      {
+        type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        answers,
+        sheet: EMPTY_SHEET,
+        brief,
+      },
+      'alternative_considered',
+    );
+    expect(question?.choices[0].value).toBe(
+      'A .308 for the shorter action',
+    );
+  });
+
+  it('keeps a required question ahead of a brief’s optional one', () => {
+    // Fill the walk, then put the required safe type and the optional alarm
+    // back as pending. The brief ranks the alarm first; the required question
+    // must still be the one asked.
+    const remaining = walk(MotivationLicenceType.S16_DEDICATED_HUNTER, {
+      firearm_use_kind: 'hunting',
+    }).answers;
+    remaining.safe_present = 'Yes';
+    delete remaining.safe_type;
+    delete remaining.alarm_present;
+    const ordered: InterviewBrief = {
+      ...brief,
+      questions: [
+        {
+          fieldKey: 'alarm_present',
+          question: 'Is there an alarm?',
+          why: 'The DFO reads the security measures.',
+          priority: 0,
+        },
+      ],
+    };
+    const question = planQuestion({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: remaining,
+      sheet: EMPTY_SHEET,
+      brief: ordered,
+    });
+    expect(question?.fieldKey).toBe('safe_type');
   });
 });

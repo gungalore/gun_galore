@@ -305,3 +305,55 @@ describe('naming the calibre', () => {
     expect(doc('The firearm is a Glock 17 in 9mm.').length).toBe(1);
   });
 });
+
+describe('the course of fire distances', () => {
+  // A section 16 sport applicant entered in a 10 m air-pistol exercise.
+  const SPORT = {
+    id_number: '8905125220089',
+    firearm_make: 'Glock',
+    firearm_serial: 'ABC123',
+    firearm_calibre: '9mm',
+    association_name: 'NHSA',
+    discipline_exercise: '10m Air Pistol Exercise',
+  };
+  const sportDoc = (course: string) =>
+    [
+      'My identity number is 890512 5220 089.',
+      'I apply for a Glock in 9mm, Serial Number: ABC123.',
+      course,
+    ].join(' ');
+
+  it('flags a distance the exercise’s rule does not admit', () => {
+    const issues = packConsistency(
+      sportDoc('My 10m Air Pistol Exercise is shot at 100 m.'),
+      SPORT,
+      [],
+      AS_AT,
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain('100 m');
+    expect(issues[0]).toContain('10 m');
+  });
+
+  it('passes the exercise’s own published distance', () => {
+    expect(
+      packConsistency(
+        sportDoc('The exercise is shot at 10 m from the firing line.'),
+        SPORT,
+        [],
+        AS_AT,
+      ),
+    ).toEqual([]);
+  });
+
+  it('checks nothing when the application names no exercise', () => {
+    expect(
+      packConsistency(
+        sportDoc('My exercise is shot at 100 m.'),
+        { ...SPORT, association_name: '', discipline_exercise: '' },
+        [],
+        AS_AT,
+      ),
+    ).toEqual([]);
+  });
+});

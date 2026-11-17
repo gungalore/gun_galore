@@ -557,6 +557,14 @@ export interface IntakeQuestion {
   fieldKey: string;
   label: string;
   help: string;
+  /**
+   * Why the DFO needs this fact, written by the research brief. One sentence,
+   * shown under the question so the interview reads as a professional asking
+   * rather than a form.
+   */
+  why?: string;
+  /** Where the tap answers came from. Telemetry only; never shown. */
+  chipSource?: 'documents' | 'research' | 'catalogue' | 'curated' | 'model';
   kind: 'short' | 'long' | 'date' | 'choice' | 'multi' | 'yesno' | 'cards';
   choices: IntakeChoice[];
   details?: IntakeDetailField[];
@@ -642,6 +650,14 @@ export interface IntakeState {
   topic: IntakeTopicState | null;
   /** The category being asked, with every pending question in it. */
   group: IntakeGroup | null;
+  /**
+   * The research strip: what the file already holds, in the member's words.
+   * Only non-sensitive facts; the server never sends an ID, serial or address.
+   */
+  brief?: {
+    ready: boolean;
+    facts: { label: string; value: string }[];
+  };
   /** True when the member's Document Library holds no documents at all. */
   vaultEmpty: boolean;
   documents: {
@@ -1391,6 +1407,8 @@ export const motivationsApi = {
       values?: string[];
       message?: string;
       fields?: Record<string, string>;
+      /** Optional question the member has chosen not to answer. */
+      skip?: boolean;
     }[],
   ) =>
     request<IntakeState & { acknowledgement?: string }>(
@@ -1398,6 +1416,18 @@ export const motivationsApi = {
       `/${id}/intake/answers`,
       { method: 'POST', body: JSON.stringify({ answers }) },
     ),
+
+  /**
+   * Settle an optional question the member chose not to answer.
+   *
+   * ⚠️ IT IS NOT A VALUE. The server records the decision, so the same
+   * question is not put again, and the document is written without it.
+   */
+  skipIntake: (t: TokenGetter, id: string, fieldKey: string) =>
+    request<IntakeState>(t, `/${id}/intake/skip`, {
+      method: 'POST',
+      body: JSON.stringify({ fieldKey }),
+    }),
 
   finishIntake: (t: TokenGetter, id: string) =>
     request<IntakeState>(t, `/${id}/intake/finish`, { method: 'POST' }),

@@ -21,6 +21,7 @@ import {
 } from '../common/blob-crypto';
 import {
   type AnswerProvenance,
+  SOURCE_LABELS,
   automaticCount,
   automaticSources,
   changedKeys,
@@ -624,6 +625,42 @@ export class MotivationsService {
     const provenance = markMember(
       parseProvenance(row.answerProvenance),
       [key],
+    );
+    await this.prisma.motivation.update({
+      where: { id },
+      data: { answerProvenance: provenance as unknown as object },
+    });
+  }
+
+  /**
+   * Record that the member skipped an OPTIONAL interview question.
+   *
+   * ⚠️ PROVENANCE ONLY — A SKIP IS NOT A VALUE. Nothing is written to
+   * `answersEncrypted`: the field stays empty, which is what the document
+   * should see, and the `SKIPPED` source is what tells the planner (and the
+   * sheet) that the member was asked and chose not to answer. Without this the
+   * same optional question comes back on every card, which is what made
+   * "optional" mean "ask me forever".
+   *
+   * `stamp()` still refuses to overwrite a MEMBER entry, so a question the
+   * member actually answered cannot be turned into a skip by a stale request.
+   */
+  async skipAnswer(userId: string, id: string, key: string) {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(userId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { answersEncrypted: true, answerProvenance: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!key.trim()) return;
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    if ((answers[key] ?? '').trim()) return;
+    const provenance = stamp(
+      parseProvenance(row.answerProvenance),
+      [key],
+      { source: 'SKIPPED', from: SOURCE_LABELS.SKIPPED },
     );
     await this.prisma.motivation.update({
       where: { id },

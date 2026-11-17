@@ -601,6 +601,28 @@ export default function IntakeInterviewPage() {
         {data.summary}
       </p>
 
+      {/*
+        ⚠️ WHAT THE FILE ALREADY HOLDS. The interview is not starting from
+        nothing: the firearm, the association and the province are already on
+        the application, and the researched questions are built around them.
+        The server sends only non-sensitive facts.
+      */}
+      {data.brief?.facts.length ? (
+        <div
+          className="mt-3 rounded-xl border px-3 py-2"
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)' }}
+        >
+          <p className="m-0 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            Already in your file
+          </p>
+          <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+            {data.brief.facts
+              .map((fact) => `${fact.label}: ${fact.value}`)
+              .join(' · ')}
+          </p>
+        </div>
+      ) : null}
+
 
 
       {group && group.questions.length ? (

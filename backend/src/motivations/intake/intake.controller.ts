@@ -100,6 +100,8 @@ export class MotivationsIntakeController {
         values?: string[];
         message?: string;
         fields?: Record<string, string>;
+        /** Optional question the member has chosen not to answer. */
+        skip?: boolean;
       }[];
     },
   ) {
@@ -108,6 +110,15 @@ export class MotivationsIntakeController {
       id,
       Array.isArray(body?.answers) ? body.answers : [],
     );
+  }
+
+  @Post(':id/intake/skip')
+  skip(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() body: { fieldKey?: string },
+  ) {
+    return this.intake.skip(userId, id, body?.fieldKey ?? '');
   }
 
   @Post(':id/intake/finish')

@@ -96,3 +96,59 @@ export function correctionFor(
   if (!isCorrectableField(previousFieldKey)) return undefined;
   return reply.correctedAnswer;
 }
+
+export interface ParsedIntakeCardReply {
+  questions: { fieldKey: string; question: string }[];
+  correctedAnswer?: string;
+}
+
+/**
+ * Read the JSON a card turn returned.
+ *
+ * ⚠️ ONLY KEYS THE SERVER ASKED FOR SURVIVE. A model that invents a field, or
+ * returns the same field twice, is ignored for that entry — the caller keeps
+ * the server's own label for it. The turn may only WORD the plan, never extend
+ * it.
+ */
+export function parseIntakeCardReply(
+  text: string,
+): ParsedIntakeCardReply | null {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return null;
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1)) as {
+      questions?: unknown;
+      correctedAnswer?: unknown;
+    };
+    const seen = new Set<string>();
+    const questions: { fieldKey: string; question: string }[] = [];
+    if (Array.isArray(parsed.questions)) {
+      for (const item of parsed.questions) {
+        if (!item || typeof item !== 'object') continue;
+        const record = item as { fieldKey?: unknown; question?: unknown };
+        const fieldKey =
+          typeof record.fieldKey === 'string' ? record.fieldKey.trim() : '';
+        const question =
+          typeof record.question === 'string' ? record.question.trim() : '';
+        if (!fieldKey || !question || seen.has(fieldKey)) continue;
+        seen.add(fieldKey);
+        questions.push({ fieldKey, question: question.slice(0, 180) });
+      }
+    }
+    if (!questions.length && typeof parsed.correctedAnswer !== 'string') {
+      return null;
+    }
+    return {
+      questions,
+      correctedAnswer:
+        typeof parsed.correctedAnswer === 'string'
+          ? parsed.correctedAnswer.trim() || undefined
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
+}

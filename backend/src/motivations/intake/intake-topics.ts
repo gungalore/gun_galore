@@ -70,6 +70,15 @@ export function topicForField(key: string): IntakeTopicId {
   ) {
     return 'activities';
   }
+  /**
+   * ⚠️ THE CASE CARDS BELONG WITH THE SHOOTING, NOT IN "OTHER". `hunt_*`,
+   * `sport_*` and the S13 routine/carry cards used to fall through to the
+   * `other` bucket, which put them in a final card of their own instead of
+   * beside the history and the discipline they belong to.
+   */
+  if (/^(hunt_|sport_|s13_movements$|s13_carry_style$)/.test(key)) {
+    return 'activities';
+  }
   if (key === 'alternative_considered') return 'firearm';
   if (/^competency_|^proficiency_/.test(key)) return 'credentials';
   if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';

@@ -262,6 +262,17 @@ export interface FactPack {
   intendedUses?: CandidateUses[];
 
   /**
+   * The published distances for the discipline this application is entered in.
+   *
+   * ⚠️ A CONSTRAINT, NOT A FACT TO PARAPHRASE. The writer is given the exact
+   * distances the association's rulebook prints (parsed in
+   * discipline-ranges.ts) and told that any distance it states for the course
+   * must be one of them. An empty `distances` means none could be established
+   * and the discipline must be described without a distance.
+   */
+  disciplineRange?: { label: string; distances: string };
+
+  /**
    * A reason WE drafted from the firearm's class because the applicant wrote
    * none. See motivation-reason.service.ts.
    *
@@ -320,6 +331,28 @@ one â€” two rifles that do the same job is the case this document has to an
 not repeat.
 ${lists}
 </intended-uses>`;
+}
+
+function renderDisciplineRanges(
+  range?: FactPack['disciplineRange'],
+): string {
+  if (!range) return '';
+  const admitted = range.distances.trim();
+  return `
+<discipline-ranges>
+DISCIPLINE: ${range.label}
+PUBLISHED DISTANCE${
+    admitted ? `S: ${admitted}` : 'S: none could be established'
+  }.
+⚠️ ANY distance you state for the course of fire, a stage, the exercise or the
+discipline must be ${
+    admitted
+      ? `one of these — ${admitted}`
+      : 'omitted: no published distance could be established for this discipline, so write it without stating a distance'
+  }. Do not substitute the cartridge's effective range, a distance from another
+discipline, or a figure from the research: the association's rulebook is
+printed with this pack, and a DFO checks the course against it.
+</discipline-ranges>`;
 }
 
 /**
@@ -1401,6 +1434,7 @@ ${renderOverlap(pack.overlapNote)}
 ${renderDraftedReason(pack.draftedReason)}
 ${arsenalBlock(pack.arsenal ?? [])}
 ${renderIntendedUses(pack.intendedUses)}
+${renderDisciplineRanges(pack.disciplineRange)}
 ${renderResearch(pack.research)}
 ${renderAnnexures(pack.annexures)}
 ${UNTRUSTED_NOTICE}
@@ -1539,6 +1573,7 @@ ${renderOverlap(pack.overlapNote)}
 ${renderDraftedReason(pack.draftedReason)}
 ${arsenalBlock(pack.arsenal ?? [])}
 ${renderIntendedUses(pack.intendedUses)}
+${renderDisciplineRanges(pack.disciplineRange)}
 ${renderResearch(pack.research)}
 ${renderAnnexures(pack.annexures)}
 ${UNTRUSTED_NOTICE}
@@ -1705,6 +1740,7 @@ ${renderFacts(pack)}
 ${renderDraftedReason(pack.draftedReason)}
 ${renderOverlap(pack.overlapNote)}
 ${renderIntendedUses(pack.intendedUses)}
+${renderDisciplineRanges(pack.disciplineRange)}
 
 ${
   /**

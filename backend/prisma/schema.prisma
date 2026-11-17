@@ -5000,6 +5000,25 @@ model Motivation {
   interviewEncrypted  String?   @db.Text
   interviewVersion    String?   @db.VarChar(24)
 
+  /// THE INTERVIEW BRIEF — the research pass turned into questions.
+  ///
+  /// Encrypted JSON: { version, hash, at, facts[], questions[], chips{},
+  /// sources[], researched }. Built once per fact-hash by
+  /// MotivationIntakeBriefService; the interview serves it as the question
+  /// order, the wording, the reason and the chips.
+  ///
+  /// ⚠️ NON-SENSITIVE BY CONSTRUCTION, AND STILL ENCRYPTED. The projection in
+  /// intake-brief.ts#briefFacts excludes ID numbers, serials, addresses,
+  /// spouse details and declaration answers — but it does name the member's
+  /// firearm, calibre and premises, which is why it sits in the same encrypted
+  /// posture as every other application-scoped blob.
+  intakeBriefEncrypted String? @db.Text
+  intakeBriefVersion   String? @db.VarChar(40)
+  /// Hash of the facts the brief was built from. A different calibre is a
+  /// different brief; an answered marital status is not.
+  intakeBriefHash      String? @db.VarChar(64)
+  intakeBriefAt        DateTime?
+
   // ── POPIA: encrypted at rest (AES-256-GCM, common/blob-crypto.ts) ──
   // The structured answers as ONE encrypted JSON blob. Deliberately not a Json
   // column: this is ID number, home address, security circumstances and firearm

@@ -3,6 +3,7 @@ import { MotivationsController } from './motivations.controller';
 import { MotivationsIntakeController } from './intake/intake.controller';
 import { MotivationIntakeService } from './intake/intake.service';
 import { MotivationIntakeAgentService } from './intake/intake-agent.service';
+import { MotivationIntakeBriefService } from './intake/intake-brief.service';
 import { MotivationWriterAgentService } from './motivation-writer-agent.service';
 import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
@@ -105,6 +106,10 @@ import { LegalModule } from '../legal/legal.module';
     MotivationsService,
     MotivationIntakeService,
     MotivationIntakeAgentService,
+    // The research pass turned into interview questions — see
+    // intake-brief.service.ts. Provided here and not exported: the intake
+    // service is its only caller.
+    MotivationIntakeBriefService,
     MotivationWriterAgentService,
     MotivationSharedService,
     MemberProfileAnswersService,

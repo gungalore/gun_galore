@@ -49,6 +49,21 @@ export interface IntakeQuestion {
   fieldKey: string;
   label: string;
   help: string;
+  /**
+   * Why the DFO needs this fact, in one sentence.
+   *
+   * ⚠️ THE INTERVIEWER'S REASON, NOT THE FIELD'S HELP TEXT. The brief writes
+   * this from the case it is building ("your file does not yet say what you do
+   * about security when you are away"); the registry help is the fallback when
+   * no brief exists. It is what makes a question read as a professional
+   * asking, rather than a form label.
+   */
+  why?: string;
+  /**
+   * Where the tap answers came from. Telemetry and support only — the UI never
+   * shows it, and it never names a person.
+   */
+  chipSource?: 'documents' | 'research' | 'catalogue' | 'curated' | 'model';
   kind: 'short' | 'long' | 'date' | 'choice' | 'multi' | 'yesno' | 'cards';
   choices: IntakeChoice[];
   /** Extra fields shown only after a Yes (the declaration follow-ups). */
@@ -193,6 +208,20 @@ export interface IntakeState {
   question: IntakeQuestion | null;
   /** One-sentence acknowledgement of the answer just given. */
   acknowledgement?: string;
+  /**
+   * THE RESEARCH STRIP: what we already hold, in the member's own words.
+   *
+   * ⚠️ VALUES ONLY, AND ONLY NON-SENSITIVE ONES. This is the "we already know"
+   * line above the card — the firearm, the association, the province's species,
+   * the station — so the member can see the interview is not starting from
+   * nothing. The brief that produces it excludes ID numbers, serials, home
+   * addresses, spouse details and declaration answers; see
+   * intake-brief.ts#briefFacts.
+   */
+  brief?: {
+    ready: boolean;
+    facts: { label: string; value: string }[];
+  };
   progress: {
     answered: number;
     total: number;

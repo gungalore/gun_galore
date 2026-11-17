@@ -16,6 +16,7 @@
 import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { calibreForms } from './saps-vocabulary';
+import { rangeSpecForAnswers, rangeViolations } from './discipline-ranges';
 
 export interface AnnexureRef {
   letter: string;
@@ -496,6 +497,19 @@ export function packConsistency(
       );
     }
   }
+
+  /**
+   * ── the course of fire is the course the rulebook prints ────────────
+   *
+   * ⚠️ A SPORT MOTIVATION DESCRIBES THE APPLICANT'S EXERCISE, AND THE RULEBOOK
+   * FOR THAT EXERCISE IS PRINTED IN THE SAME PACK. A distance that does not fit
+   * it is a contradiction a DFO can check with the page behind the tab. The
+   * spec comes from the exercise's own text; when there is no spec (no
+   * association, no exercise, or "distance: various") nothing is checked and
+   * nothing is invented — the prompt tells the writer to omit a distance.
+   */
+  const rangeSpec = rangeSpecForAnswers(answers);
+  if (rangeSpec) issues.push(...rangeViolations(text, rangeSpec));
 
   return issues;
 }

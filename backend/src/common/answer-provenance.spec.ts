@@ -270,9 +270,14 @@ describe('the source list itself', () => {
     expect(Object.keys(SOURCE_LABELS).sort()).toEqual([...PROVENANCE_SOURCES].sort());
   });
 
-  it('treats every source except MEMBER as automatic', () => {
+  it('treats every filling source as automatic, and a skip as the member’s own decision', () => {
     for (const source of PROVENANCE_SOURCES) {
-      expect(isAutomatic(source)).toBe(source !== 'MEMBER');
+      /**
+       * ⚠️ A SKIP HOLDS NO VALUE. Counting it in "we filled N things" would
+       * claim work that is not on the screen; it is the member's decision, not
+       * ours. See isAutomatic().
+       */
+      expect(isAutomatic(source)).toBe(source !== 'MEMBER' && source !== 'SKIPPED');
     }
   });
 

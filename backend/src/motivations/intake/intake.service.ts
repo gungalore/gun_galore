@@ -55,6 +55,14 @@ import {
   MotivationIntakeAgentService,
   type InterviewAgentContext,
 } from './intake-agent.service';
+import {
+  MotivationIntakeBriefService,
+} from './intake-brief.service';
+import {
+  briefHash,
+  composeAcknowledgement,
+  type InterviewBrief,
+} from './intake-brief';
 import type { FactCandidate } from './intake-agent.prompts';
 import {
   HISTORY_CHOICES,
@@ -66,11 +74,15 @@ import {
 import {
   correctionFor,
   isCorrectableField,
+  parseIntakeCardReply,
   parseIntakeReply,
 } from './intake-reply';
 import {
+  INTAKE_CARD_SCHEMA,
   INTAKE_SCHEMA,
   SPECIES_SCHEMA,
+  intakeCardSystemPrompt,
+  intakeCardUserPrompt,
   intakeSystemPrompt,
   intakeUserPrompt,
   speciesSystemPrompt,
@@ -97,8 +109,8 @@ import {
 
 const INTERVIEW_VERSION = '2026-10-29a';
 const MAX_TRANSCRIPT = 40;
-/** How many grouped questions are phrased at once. */
-const GROUP_CONCURRENCY = 4;
+/** How long a phrased card is reused, so a refresh costs no model call. */
+const CARD_PHRASING_TTL_MS = 10 * 60 * 1000;
 
 
 /**
@@ -131,6 +143,10 @@ interface IntakeRow {
   interviewEncrypted: string | null;
   answerProvenance: unknown;
   status: MotivationStatus;
+  intakeBriefEncrypted: string | null;
+  intakeBriefVersion: string | null;
+  intakeBriefHash: string | null;
+  intakeBriefAt: Date | null;
 }
 
 @Injectable()
@@ -141,6 +157,17 @@ export class MotivationIntakeService {
     string,
     { at: number; choices: IntakeChoice[] }
   >();
+  /**
+   * A card's wording, keyed by the card and the brief it was worded against.
+   *
+   * ⚠️ A REFRESH MUST NOT COST A MODEL CALL. The page reloads the whole state
+   * on every visit; without this, re-opening the interview re-asked the model
+   * to word questions it had already worded a second earlier.
+   */
+  private readonly cardCache = new Map<
+    string,
+    { at: number; questions: IntakeQuestion[]; correction?: string }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -150,6 +177,7 @@ export class MotivationIntakeService {
     private readonly documents: MotivationDocumentsService,
     private readonly motivations: MotivationsService,
     private readonly agent: MotivationIntakeAgentService,
+    private readonly briefs: MotivationIntakeBriefService,
   ) {}
 
   async state(userId: string, id: string): Promise<IntakeState> {
@@ -178,6 +206,24 @@ export class MotivationIntakeService {
         row.intakeDocumentsAt &&
         !row.intakeCompletedAt,
     );
+    /**
+     * ⚠️ THE BRIEF IS READ, NEVER WAITED ON. `current` is a decrypt + hash
+     * check; `ensure` schedules the build in the background and returns
+     * immediately. The first card after the firearm is answered may still be
+     * label-only; the next one is the researched card.
+     */
+    const brief = this.briefs.current(
+      row,
+      briefHash(row.licenceType, answers),
+    );
+    if (inInterview) {
+      this.briefs.ensure({
+        motivationId: id,
+        licenceType: row.licenceType,
+        answers,
+        stored: row,
+      });
+    }
     const grouped = inInterview
       ? await this.phrasedGroup(
           row,
@@ -187,12 +233,24 @@ export class MotivationIntakeService {
           previousQuestion,
           previousFieldKey,
           library,
+          brief,
         )
       : null;
     const phrased = grouped
       ? {
           question: grouped.questions[0],
-          acknowledgement: grouped.acknowledgement,
+          /**
+           * ⚠️ NOT THE MODEL'S ACKNOWLEDGEMENT ANY MORE. It invented a father
+           * the member never mentioned. The line is composed from the answer
+           * the member actually gave (intake-brief.ts#composeAcknowledgement);
+           * a long, card or sensitive answer gets a bare "Noted.".
+           */
+          acknowledgement: previousFieldKey
+            ? composeAcknowledgement(
+                fieldByKey(row.licenceType, previousFieldKey),
+                previousAnswer ?? '',
+              )
+            : undefined,
           correction: grouped.correction,
         }
       : null;
@@ -309,6 +367,16 @@ export class MotivationIntakeService {
       evidence,
       question,
       acknowledgement: phrased?.acknowledgement,
+      /**
+       * ⚠️ THE RESEARCH STRIP IS FACTS ONLY, AND ONLY NON-SENSITIVE ONES. It
+       * tells the member what the file already holds before they answer the
+       * next question ("Firearm: Tikka T3x .30-06", "Association: NHSA"), so
+       * the interview reads as a professional who has read the file.
+       */
+      brief: {
+        ready: Boolean(brief),
+        facts: brief?.facts ?? [],
+      },
       progress: {
         answered: question?.progress.answered ?? 0,
         total: question?.progress.total ?? 0,
@@ -815,6 +883,8 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       values?: string[];
       message?: string;
       fields?: Record<string, string>;
+      /** Optional question the member has chosen not to answer. */
+      skip?: boolean;
     }[],
   ): Promise<IntakeState & { acknowledgement?: string }> {
     const row = await this.load(userId, id);
@@ -852,6 +922,8 @@ const sourceText = (body.message ?? body.value ?? '').trim();
 
     const patch: Record<string, string> = {};
     const seen = new Set<string>();
+    /** Optional questions the card sent as skipped, settled in the same turn. */
+    const skips: string[] = [];
     for (const item of items) {
       const key = (item.fieldKey ?? '').trim();
       if (!key) {
@@ -874,6 +946,22 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       }
       seen.add(key);
       /**
+       * ⚠️ A SKIP TRAVELS WITH THE CARD, IN ONE REQUEST. Skipping used to need
+       * a second call after the batch — which by then had already moved the
+       * interview to the next card, so the skip was refused as "not part of
+       * this group". The card posts its answers and its skips together and the
+       * server settles both before rebuilding the state once.
+       */
+      if (item.skip === true) {
+        if (!current.optional) {
+          throw new BadRequestException(
+            'That question is needed before the motivation can be written.',
+          );
+        }
+        skips.push(key);
+        continue;
+      }
+      /**
        * ⚠️ NO FIELD KEY IN FRONT OF THE REASON. The batch used to wrap every
        * refusal as `"shooting_history": Please give us a little more…`, and
        * that raw key was the first thing a member read on screen. One question
@@ -890,8 +978,23 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       });
       Object.assign(patch, own);
     }
-    if (!Object.keys(patch).length) {
+    if (!Object.keys(patch).length && !skips.length) {
       throw new BadRequestException('Choose an answer or type one in.');
+    }
+
+    for (const key of skips) {
+      try {
+        await this.motivations.skipAnswer(userId, id, key);
+      } catch (err) {
+        this.logger.warn(
+          `Intake ${row.id}: skip of ${key} could not be recorded — ${
+            (err as Error).message
+          }`,
+        );
+      }
+    }
+    if (!Object.keys(patch).length) {
+      return this.state(userId, id);
     }
 
     const corePatch = { ...patch };
@@ -959,14 +1062,88 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       );
     }
 
+    /**
+     * ⚠️ THE ACKNOWLEDGEMENT ECHOES ONE ANSWER, NOT THE WHOLE CARD. This used
+     * to hand the state the joined text of every answer, so "Got it — Rifle
+     * Bolt action Tikka .30-06 …" was composed from six facts at once. The
+     * first real answer the member gave is the one an interviewer would
+     * respond to.
+     */
+    const answeredItem = items.find(
+      (item) =>
+        item.skip !== true &&
+        Boolean(item.value || item.message || item.values?.length),
+    );
+    const previousAnswer =
+      answeredItem?.message ??
+      answeredItem?.values?.join(', ') ??
+      answeredItem?.value ??
+      userText;
+    const previousFieldKey =
+      (answeredItem?.fieldKey ?? '').trim() || first?.key || null;
+
     const state = await this.stateInternal(
       userId,
       id,
-      userText,
+      previousAnswer,
       firstLabel,
-      first?.key ?? null,
+      previousFieldKey,
     );
     return { ...state };
+  }
+
+  /**
+   * Settle an optional question the member chose not to answer.
+   *
+   * ⚠️ ONLY AN OPTIONAL QUESTION ON THE CURRENT CARD. Validating against the
+   * card is what stops a stale tab skipping a question the walk now requires:
+   * the answer is checked against the same plan the screen was served from,
+   * and a required field cannot be skipped at all. The skip itself is a
+   * provenance line, never a value — see MotivationsService.skipAnswer.
+   */
+  async skip(
+    userId: string,
+    id: string,
+    fieldKey: string,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    if (row.intakeMode !== 'INTERVIEW') {
+      throw new ConflictException('Start the guided interview first.');
+    }
+    if (!row.intakeDocumentsAt) {
+      throw new ConflictException('Confirm your documents before the interview.');
+    }
+    if (row.intakeCompletedAt) {
+      throw new ConflictException('This application is already at the review stage.');
+    }
+
+    const key = (fieldKey ?? '').trim();
+    if (!key) throw new BadRequestException('Choose a question to skip.');
+
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const input = {
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance: parseProvenance(row.answerProvenance),
+    };
+    const plan = planGroup(input);
+    if (!plan?.questions.some((question) => question.key === key)) {
+      throw new BadRequestException(
+        'That question is not part of this card; reload the interview.',
+      );
+    }
+    const current = questionForField(input, key);
+    if (!current?.optional) {
+      throw new BadRequestException(
+        'That question is needed before the motivation can be written.',
+      );
+    }
+
+    await this.motivations.skipAnswer(userId, id, key);
+    return this.state(userId, id);
   }
 
   async finish(userId: string, id: string): Promise<IntakeState> {
@@ -1534,6 +1711,7 @@ const sourceText = (body.message ?? body.value ?? '').trim();
     previousQuestion: string | null,
     previousFieldKey: string | null,
     library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
+    brief: InterviewBrief | null = null,
   ): Promise<{
     group: Omit<IntakeGroup, 
       'questions'>;
@@ -1546,6 +1724,7 @@ const sourceText = (body.message ?? body.value ?? '').trim();
       answers,
       sheet,
       provenance: parseProvenance(row.answerProvenance),
+      brief,
     };
     const plan = planGroup(input);
     if (!plan) return null;
@@ -1557,31 +1736,16 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         bases.push(base);
       }
     }
+    if (!bases.length) return null;
 
-    const phrased: {
-      question: IntakeQuestion;
-      acknowledgement?: string;
-      correction?: string;
-    }[] = [];
-    for (let i = 0; i < bases.length; i += GROUP_CONCURRENCY) {
-      const chunk = bases.slice(i, i + GROUP_CONCURRENCY);
-      const settled = await Promise.all(
-        chunk.map((base) =>
-          this.phrasedQuestion(
-            row,
-            sheet,
-            answers,
-            previousAnswer,
-            previousQuestion,
-            previousFieldKey,
-            library,
-            base,
-          ),
-        ),
-      );
-      for (const reply of settled) if (reply) phrased.push(reply);
-    }
-    if (!phrased.length) return null;
+    const card = await this.phrasedCard(
+      row,
+      answers,
+      previousAnswer,
+      previousFieldKey,
+      brief,
+      bases,
+    );
 
     return {
       group: {
@@ -1592,10 +1756,159 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         answered: plan.answered,
         totalInGroup: plan.totalInGroup,
       },
-      questions: phrased.map((entry) => entry.question),
-      acknowledgement: phrased[0].acknowledgement,
-      correction: phrased[0].correction,
+      questions: card.questions,
+      /**
+       * ⚠️ THE ACKNOWLEDGEMENT IS NOT THE MODEL'S. It is composed from the
+       * member's own answer in stateInternal; this field stays undefined so a
+       * model can never invent one again.
+       */
+      acknowledgement: undefined,
+      correction: card.correction,
     };
+  }
+
+  /**
+   * Another association on the same application, for the exercise list.
+   */
+  private namedAssociation(answers: Record<string, string>): string {
+    return (
+      (answers.association_name ?? '').trim() ||
+      (answers.association_2_name ?? '').trim() ||
+      ''
+    );
+  }
+
+  /**
+   * The chips the server owns, applied before any model wording.
+   *
+   * ⚠️ THESE ARE PINNED FOR A REASON. The history choices are the operator's
+   * own list; the quarry choices are generated from the cartridge; the
+   * exercise list is the association's published index. A model reply must not
+   * replace any of them — it used to, and a twelve-species question shipped
+   * with two buttons.
+   */
+  private async enrichCard(
+    bases: IntakeQuestion[],
+    answers: Record<string, string>,
+  ): Promise<IntakeQuestion[]> {
+    const out: IntakeQuestion[] = [];
+    for (const base of bases) {
+      if (base.fieldKey === 'shooting_history') {
+        out.push({ ...base, choices: [...HISTORY_CHOICES], multi: true });
+        continue;
+      }
+      if (base.fieldKey === 'intended_quarry') {
+        const choices = await this.speciesChoices(answers);
+        out.push(choices.length ? { ...base, choices, multi: true } : base);
+        continue;
+      }
+      if (base.fieldKey === 'discipline_exercise') {
+        out.push({
+          ...base,
+          choices: exerciseChoices(
+            this.namedAssociation(answers),
+            answers.firearm_type,
+          ),
+          multi: false,
+        });
+        continue;
+      }
+      out.push(base);
+    }
+    return out;
+  }
+
+  /**
+   * Word a whole card in one model call.
+   *
+   * ⚠️ THE BRIEF'S FIELDS ARE ALREADY WORDED, SO THEY COST NOTHING. Only the
+   * open questions the brief did not cover are sent — usually none. When the
+   * call fails, the card is served with the server's own wording: a card never
+   * fails because a model did.
+   */
+  private async phrasedCard(
+    row: IntakeRow,
+    answers: Record<string, string>,
+    previousAnswer: string | null,
+    previousFieldKey: string | null,
+    brief: InterviewBrief | null,
+    bases: IntakeQuestion[],
+  ): Promise<{ questions: IntakeQuestion[]; correction?: string }> {
+    const enriched = await this.enrichCard(bases, answers);
+    const briefPhrased = new Set(
+      (brief?.questions ?? [])
+        .filter((entry) => entry.question.trim())
+        .map((entry) => entry.fieldKey),
+    );
+    const needs = enriched.filter(
+      (base) =>
+        (base.kind === 'short' || base.kind === 'long') &&
+        !base.sensitive &&
+        !briefPhrased.has(base.fieldKey),
+    );
+    if (!needs.length || !this.llm.isConfiguredFor('motivation.interview')) {
+      return { questions: enriched };
+    }
+
+    const cacheKey = [
+      row.id,
+      brief?.hash ?? '-',
+      previousAnswer ?? '',
+      enriched.map((q) => `${q.fieldKey}:${q.label}`).join('|'),
+    ].join('#');
+    const hit = this.cardCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CARD_PHRASING_TTL_MS) {
+      return { questions: hit.questions, correction: hit.correction };
+    }
+
+    try {
+      const res = await this.llm.complete({
+        system: intakeCardSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: intakeCardUserPrompt({
+              licenceLabel: LICENCE_TYPE_LABELS[row.licenceType],
+              known: this.knownFacts(answers),
+              previousAnswer: previousAnswer ?? undefined,
+              previousField: previousFieldKey ?? undefined,
+              questions: needs.map((question) => ({
+                fieldKey: question.fieldKey,
+                label: question.label,
+                why: question.why,
+                help: question.help,
+              })),
+            }),
+          },
+        ],
+        maxTokens: 900,
+        temperature: 0.4,
+        purpose: 'motivation.interview',
+        json: { schema: INTAKE_CARD_SCHEMA },
+        timeoutMs: 12_000,
+      });
+      const parsed = parseIntakeCardReply(res.text);
+      if (!parsed) return { questions: enriched };
+      const byKey = new Map(
+        parsed.questions.map((entry) => [entry.fieldKey, entry.question]),
+      );
+      const questions = enriched.map((question) => {
+        const text = byKey.get(question.fieldKey)?.trim();
+        return text ? { ...question, label: text } : question;
+      });
+      const correction = correctionFor(previousFieldKey, parsed);
+      this.cardCache.set(cacheKey, {
+        at: Date.now(),
+        questions,
+        correction,
+      });
+      return { questions, correction };
+    } catch (err) {
+      this.logger.warn(
+        `Interview card phrasing failed: ${(err as Error).message}`,
+      );
+      return { questions: enriched };
+    }
   }
 
   private knownFacts(answers: Record<string, string>): string[] {
@@ -1857,6 +2170,10 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         interviewEncrypted: true,
         answerProvenance: true,
         status: true,
+        intakeBriefEncrypted: true,
+        intakeBriefVersion: true,
+        intakeBriefHash: true,
+        intakeBriefAt: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');

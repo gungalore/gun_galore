@@ -43,8 +43,7 @@ const holder = question({
 });
 
 describe('the grouped interview card', () => {
-  // ⚠️ A CARD OF SIX QUESTIONS IS A FORM. One at a time.
-  it('asks one question at a time, with its chips', () => {
+  it('puts every question on the card, with one Continue', () => {
     render(
       <IntakeGroupCard
         group={group([holder, question()])}
@@ -55,22 +54,44 @@ describe('the grouped interview card', () => {
 
     expect(screen.getByText('About you')).toBeDefined();
     expect(screen.getByText('What kind of licence holder are you?')).toBeDefined();
+    expect(screen.getByText('What is your full name?')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Main holder' })).toBeDefined();
-    expect(screen.queryByText('What is your full name?')).toBeNull();
-    expect(screen.getByText('Question 1 of 2')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDefined();
   });
 
-  it('blocks Continue until the shown question is answered', async () => {
+  it('shows why the DFO needs the fact, when the brief supplies it', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            why: 'The DFO reads the make against the licence card.',
+            help: 'The manufacturer.',
+          }),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByText('The DFO reads the make against the licence card.'),
+    ).toBeDefined();
+    expect(screen.queryByText('The manufacturer.')).toBeNull();
+  });
+
+  it('blocks Continue until every required question is answered', async () => {
     const user = userEvent.setup();
     render(
       <IntakeGroupCard
-        group={group([question()])}
+        group={group([holder, question()])}
         busy={false}
         onSubmit={() => undefined}
       />,
     );
 
     const cta = screen.getByRole('button', { name: 'Continue' });
+    expect(cta).toHaveProperty('disabled', true);
+
+    await user.click(screen.getByRole('button', { name: 'Main holder' }));
     expect(cta).toHaveProperty('disabled', true);
 
     await user.type(
@@ -80,7 +101,7 @@ describe('the grouped interview card', () => {
     expect(cta).toHaveProperty('disabled', false);
   });
 
-  it('submits just that answer as a one-element batch', async () => {
+  it('submits the whole card in one batch', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -92,11 +113,98 @@ describe('the grouped interview card', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Main holder' }));
+    await user.type(
+      screen.getByPlaceholderText('Or type your own answer…'),
+      'Gerhard Fourie',
+    );
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls[0][0]).toEqual([
       { fieldKey: 'licence_holder_type', value: 'Main firearm licence holder' },
+      { fieldKey: 'full_name', message: 'Gerhard Fourie' },
+    ]);
+  });
+
+  it('sends a skipped optional question with the rest of the card', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          holder,
+          question({
+            fieldKey: 'alarm_present',
+            id: 'alarm_present',
+            label: 'Is there an alarm?',
+            kind: 'yesno',
+            optional: true,
+            choices: [
+              { value: 'Yes', label: 'Yes' },
+              { value: 'No', label: 'No' },
+            ],
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Main holder' }));
+    await user.click(screen.getByRole('button', { name: 'Skip this one' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'licence_holder_type', value: 'Main firearm licence holder' },
+      { fieldKey: 'alarm_present', skip: true },
+    ]);
+  });
+
+  it('opens the follow-up fields when a Yes is tapped', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'alarm_present',
+            id: 'alarm_present',
+            label: 'Is there an alarm?',
+            kind: 'yesno',
+            choices: [
+              { value: 'Yes', label: 'Yes' },
+              { value: 'No', label: 'No' },
+            ],
+            details: [
+              {
+                key: 'alarm_company',
+                label: 'Which company monitors it?',
+                kind: 'short',
+                help: '',
+                choices: [],
+                multi: false,
+                customPlaceholder: 'Type your answer…',
+              },
+            ],
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await user.type(
+      screen.getByLabelText('Which company monitors it?'),
+      'Fidelity',
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(onSubmit).toHaveBeenCalledWith([
+      {
+        fieldKey: 'alarm_present',
+        value: 'Yes',
+        fields: { alarm_company: 'Fidelity' },
+      },
     ]);
   });
 
@@ -141,10 +249,9 @@ describe('the grouped interview card', () => {
   it('does not cry stuck when the group simply has not replied yet', async () => {
     const user = userEvent.setup();
     const onStuck = vi.fn();
-    const first = group([question()]);
     render(
       <IntakeGroupCard
-        group={first}
+        group={group([question()])}
         busy={false}
         onSubmit={() => undefined}
         onStuck={onStuck}

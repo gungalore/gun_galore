@@ -1073,6 +1073,9 @@ describe('MotivationsService.generate', () => {
         safe_mounted: 'Yes',
         safe_mounted_to: 'Wall',
         safe_key_holder: 'Only me',
+        // The security paragraph a self-defence document carries — the gate
+        // names `premises_enclosure`, so a "ready" S13 has it.
+        premises_enclosure: 'Walled',
         firearm_use_kind: 'self-defence',
         shooting_history: Array.from(
           { length: 8 },

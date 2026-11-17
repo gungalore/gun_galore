@@ -96,8 +96,17 @@ import {
   isAssociationMember,
   isSelfDefence,
 } from './motivation-fields';
-import { resolveSportingPurpose, s15Purpose } from './motivation-purpose';
+import {
+  isSportingLicence,
+  resolveSportingPurpose,
+  s15Purpose,
+} from './motivation-purpose';
 import { packableIncidents } from './motivation-incident-filter';
+import {
+  describeDistances,
+  filterSportUsesForDiscipline,
+  rangeSpecForAnswers,
+} from './discipline-ranges';
 import {
   displayAction,
   displayCalibre,
@@ -1607,6 +1616,15 @@ export class MotivationGenerationService {
         },
         arsenal,
         intendedUses,
+        /**
+         * ⚠️ THE COURSE OF FIRE'S OWN DISTANCES. Where the applicant named an
+         * association exercise, its published rule states the distance; that
+         * spec constrains every distance the writer may state for the
+         * discipline (and the generated sport uses were already filtered by
+         * it). Where no spec exists, the block tells the writer to describe the
+         * discipline WITHOUT a distance rather than reach for one.
+         */
+        disciplineRange: disciplineRangeFor(row.licenceType, answers),
         draftedReason,
         /**
          * ⚠️ THE RULEBOOK IS APPENDED, NEVER WRITTEN. The writer gets it only so
@@ -2816,7 +2834,7 @@ export class MotivationGenerationService {
     const wanted = slicesWanted(licenceType, answers);
     if (!wanted.length) return [];
 
-    return this.firearmUses.forClass(
+    const groups = await this.firearmUses.forClass(
       {
         calibre: answers.firearm_calibre ?? '',
         type: answers.firearm_type ?? '',
@@ -2832,6 +2850,14 @@ export class MotivationGenerationService {
       'applying',
       wanted,
     );
+    /**
+     * ⚠️ A GENERATED SENTENCE ABOUT A DISCIPLINE THE APPLICANT DOES NOT SHOOT
+     * IS A RANGE THE RULEBOOK CONTRADICTS. The table is written for a class of
+     * firearm across every discipline that class appears in; the applicant
+     * named one exercise, and its published distances are the only courses the
+     * document may describe. See discipline-ranges.ts.
+     */
+    return filterSportUsesForDiscipline(groups, answers);
   }
 
   /**
@@ -3234,4 +3260,28 @@ export class MotivationGenerationService {
 
     return derived;
   }
+}
+
+/**
+ * The discipline's published distances, as the writer receives them.
+ *
+ * ⚠️ ONLY A SPORTING APPLICATION HAS A COURSE OF FIRE, AND ONLY WHEN A
+ * DISCIPLINE OR EXERCISE WAS NAMED. A hunting or self-defence document gets no
+ * block: there is no rulebook course to constrain, and a block saying "no
+ * published distance" would read as a gap the writer should fill.
+ */
+function disciplineRangeFor(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string>,
+): { label: string; distances: string } | undefined {
+  if (!isSportingLicence(licenceType)) return undefined;
+  const named =
+    (answers.discipline_exercise ?? '').trim() ||
+    (answers.discipline ?? '').split(',')[0]?.trim() ||
+    '';
+  const spec = rangeSpecForAnswers(answers);
+  if (!spec && !named) return undefined;
+  return spec
+    ? { label: spec.label, distances: describeDistances(spec) }
+    : { label: named, distances: '' };
 }

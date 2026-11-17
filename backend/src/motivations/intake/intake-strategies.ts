@@ -72,6 +72,28 @@ const SAFE = [
   'safe_mounted_to',
 ];
 
+/**
+ * THE PREMISES BLOCK — the security paragraph every approved motivation carries.
+ *
+ * ⚠️ PROFILE-SCOPED, BUT ASKED IN THE INTERVIEW. A wall does not move between
+ * applications, so these are stored on the member (`scope: 'profile'`) and the
+ * second application asks none of them. The first one must still ask: heading
+ * 5 ("what I already do and where it stops") is written from these taps, and
+ * until they were in a strategy the interview never put one of them on screen.
+ * MOTIVATION-INTAKE-PLAN.md §3.6.
+ *
+ * `alarm_company` is deliberately absent: it is the showIf child of
+ * `alarm_present`, so a Yes opens it as a detail field in the same question.
+ */
+const PREMISES = [
+  'premises_enclosure',
+  'premises_access_control',
+  'alarm_present',
+  'armed_response',
+  'burglar_bars',
+  'security_gates',
+];
+
 const DECLARATIONS = [
   'history_conviction',
   'history_conviction_detail',
@@ -86,9 +108,21 @@ const DECLARATIONS = [
 ];
 
 const SELF_DEFENCE_FIELDS = [
+  /**
+   * ⚠️ THE CASE, AS BEHAVIOUR RATHER THAN AS A REASON. The reason cards were
+   * retired as questions on 2026-10-17 ("the circumstances are argued from the
+   * applicant's own premises, routine, station figures, travelled areas and
+   * battery — not from a wall of taps", motivation-fields.ts). What the
+   * interview must therefore collect is the routine and the carry method, and
+   * the premises block above — not `s13_reasons`.
+   */
+  's13_carry_style',
+  's13_movements',
+  // Optional, and the one place somebody can say something the taps cannot.
   'threat_circumstances',
-  'residence_type',
+  ...PREMISES,
   ...SAFE,
+  'safe_key_holder',
   ...DECLARATIONS,
 ];
 
@@ -123,19 +157,56 @@ const SPORTING_COMMON = [
 
 const HUNTING_FIELDS = [
   'intended_quarry',
+  'hunt_game_class',
+  'hunt_terrain',
+  'hunt_where',
+  'hunt_reasons',
 ];
 
 const SPORT_FIELDS = [
   'competition_record',
+  'sport_reasons',
+  'sport_formats',
 ];
 
 const S24_FIELDS = [
   'existing_licence_number',
   'licence_expiry',
   'continued_use',
+  ...PREMISES,
   ...SAFE,
   ...DECLARATIONS,
 ];
+
+/**
+ * ⚠️ OPTIONAL QUESTIONS THE INTERVIEW STILL PUTS, ONCE.
+ *
+ * The planner asks a field when it is required or when `missingDetail()` names
+ * it. These are neither: they are the case facts the document is thin without,
+ * so they are offered once and the member may skip one. Without this list they
+ * were in a strategy and never asked — which is how a self-defence pack could
+ * be written from a name, a serial and a safe with no security paragraph in it.
+ *
+ * A skip is recorded as `SKIPPED` provenance (common/answer-provenance.ts) so
+ * the same question is not put again. See `isPending` in intake-planner.ts.
+ */
+export const CASE_KEYS: ReadonlySet<string> = new Set([
+  'premises_enclosure',
+  'premises_access_control',
+  'alarm_present',
+  'armed_response',
+  'burglar_bars',
+  'security_gates',
+  's13_movements',
+  's13_carry_style',
+  'hunt_game_class',
+  'hunt_terrain',
+  'hunt_where',
+  'hunt_reasons',
+  'sport_reasons',
+  'sport_formats',
+  'continued_use',
+]);
 
 const SELF_DEFENCE_SUGGESTIONS: Record<string, string[]> = {
   threat_circumstances: [
@@ -242,7 +313,7 @@ const S15: IntakeStrategy = {
     ...SPORTING_COMMON,
     ...HUNTING_FIELDS,
     ...SPORT_FIELDS,
-    'residence_type',
+    ...PREMISES,
     ...SAFE,
     ...DECLARATIONS,
   ],

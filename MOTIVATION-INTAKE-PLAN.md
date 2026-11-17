@@ -140,6 +140,13 @@ Cards, pre-ranked by what the vault already says. Each card is one sentence in t
 applicant's voice. Selected means true (FCA s120(9)(f) is why this is selection and not
 silent inclusion).
 
+> **Status 2026-11-17.** The card sets below are in the live interview and are ranked
+> by `rankBy` in `interview-chips.ts` (precinct, occupation, calibre, association). The
+> S13 reason cards were retired as questions on 2026-10-17; the interview now asks the
+> premises block, the routine and the carry method instead, and S24 asks `continued_use`.
+> The question order, wording, reasons and chips come from the research brief
+> (`intake-brief.service.ts`); the plan's job here is historical.
+
 **S13 self-defence** [6-10 taps]
 - Lives in a precinct with documented housebreaking / robbery (auto-suggested from
   `police_station` + crime stats; stat shown on the card; `press_clippings` attach here)

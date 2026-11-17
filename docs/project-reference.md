@@ -333,6 +333,7 @@ state — do not read its absence as the switch being broken).
 `GROK_API_KEY` (rollback only),
 `LLM_PROVIDER`,
 `LLM_MODEL`, `LLM_IMAGE_MODEL`, `XAI_IMAGE_MODEL`, `ANTHROPIC_API_KEY` (rollback only),
+`INTERVIEW_BRIEF` (`off` disables the research brief and its chips; env + reload),
 `CLOUDINARY_CLOUD_NAME`,
 `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `MEILISEARCH_HOST`,
 `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
@@ -1231,17 +1232,71 @@ so heading 10 appears when a paper produces it, not because somebody was asked
 six yes/no boxes. `requiredKeys`/`missingRequired` follow the same rule: a
 question the screen cannot show can never block a pack.
 
-### The interview asks one category at a time
+### The interview is research-first, one card at a time
 
 `planGroup()` in `intake-planner.ts` returns the first topic in `TOPIC_ORDER`
-that still has pending questions, at most six per card, and the page renders
-them together with the same tap-answer chips every question carries. The card's
-questions are phrased concurrently, so a group costs roughly one model round
-instead of six. `POST /motivations/:id/intake/answers` validates the whole card
-before writing anything, writes once, and rebuilds the state once.
+that still has pending questions, at most six per card. The page renders **all
+of them on one card** and posts them as one batch, so six facts cost one round
+trip instead of six. `POST /motivations/:id/intake/answers` validates the whole
+card before writing anything, writes once, settles any skips, and rebuilds the
+state once.
+
+⚠️ **THE RESEARCH BRIEF DECIDES THE QUESTIONS.** `MotivationIntakeBriefService`
+builds a per-application brief once per fact-hash (licence type, firearm,
+purpose, association, discipline, province) and stores it encrypted in
+`Motivation.intakeBrief*`. It joins the shared research (cartridge, quarry,
+discipline rules) and the gate's own gaps into an ordered question list with a
+reason for each and tappable answers. It is **advisory**: the planner always
+appends every required or detail-gated field the brief did not mention, so a
+failed brief costs polish, never a complete application. `INTERVIEW_BRIEF=off`
+(env + reload) restores label-only questions and catalogue chips.
+
+⚠️ **ONE MODEL CALL PER APPLICATION, ZERO PER CARD.** The brief words every
+askable field once, in one call, in the background — the first card is served
+immediately and enriched on the next turn. `phrasedCard()` only calls the model
+for an open question the brief did not cover; a card of closed choices makes no
+call at all. Wording is cached in process for ten minutes, so a refresh is free.
+
+⚠️ **THE BRIEF NEVER CARRIES A SENSITIVE VALUE.** `briefFacts()` projects only
+firearm type/action/make/model/calibre, purpose, association, discipline,
+quarry, residence type and province — never a name, ID number, address, serial,
+spouse or declaration answer. The validator drops any question, chip or fact
+that echoes a sensitive value, and chips that argue or predict ("therefore",
+"will be granted") are refused. A chip is a proposal the member taps; nothing
+is written without them.
+
+⚠️ **CHIPS ARE RANKED, NOT GENERIC.** `interview-chips.ts` finally reads the
+cards' `rankBy`: the precinct card leads when we hold a station, the cash/stock
+card leads for the trades that carry it, the calibre's supported uses lead for
+the cartridge, and the association's own exercises lead for the discipline. The
+brief's researched chips come first, the catalogue second, the old static
+suggestions last. `rankCardOptions` only reorders; it never hides a viable
+answer.
+
+⚠️ **CASE QUESTIONS ARE OFFERED ONCE, AND CAN BE SKIPPED.** `CASE_KEYS` in
+`intake-strategies.ts` (the premises block, the routine and carry method, the
+hunting ground, the sport formats, a renewal's continued use) are optional in
+the registry but asked once because the document is thin without them. Skip
+records `SKIPPED` provenance (`common/answer-provenance.ts`), which is not a
+value: the planner stops asking and the sheet still lets them fill it later.
+A skip travels with the card in the same batch, so it is one request.
+
+⚠️ **ACKNOWLEDGEMENTS ARE DETERMINISTIC.** `composeAcknowledgement()` echoes the
+member's own closed answer ("Got it — Walled.") and says "Noted." for a long,
+card or sensitive one. The model no longer writes one: a live member was once
+thanked for a hunting tradition they had never mentioned.
+
+⚠️ **THE GATE ASKS ONLY WHAT A CARD CAN SHOW.** `firearm_use_kind` is demanded
+only on the sporting sections (the registry retired it as a question for the
+others); `safe_type`/`safe_mounted`/`safe_key_holder` only when
+`safe_present = Yes`; `safe_mounted_to` only when `safe_mounted = Yes`. The
+detail gate names the security paragraph (`premises_enclosure`) on S13/S14 and
+`continued_use` on S24. Every gap has a question in the walk — asserted by a
+property test in `intake-planner.spec.ts`.
 
 Everything the motivation still argues with stays: identity, the firearm,
-competency, association, safe storage and the purpose sections.
+competency, association, safe storage, the premises block and the purpose
+sections.
 
 ### The motivation itself — a FIXED skeleton, not a varied one
 
@@ -1282,6 +1337,18 @@ association's rules for this exercise · 12. Safe storage and transport ·
   library is `association-rules.ts` + `associations/association-rules.json`
   (NHSA 61 exercises, FOSA 11), and the raw captures live in the gitignored
   `backend/data/association-rules/` the way the C.I.P. sheets do.
+- ⚠️ **THE DISTANCES IN THE DOCUMENT ARE THE RULEBOOK'S.** `discipline-ranges.ts`
+  parses the chosen exercise's published text (NHSA's "SHOOTING DISTANCE: …
+  10 metres", FOSA's "Distance: 10m", Bisley bands and yards) into a spec. That
+  spec does three things: it filters the generated sport uses before the prompt
+  (`filterSportUsesForDiscipline` — a 20 m handgun applicant is never offered
+  "F-Class prone at 600 m"), it renders a `<discipline-ranges>` block the writer
+  may not exceed, and `packConsistency()` flags any course-of-fire distance
+  outside it. A numbered dimension ("300m (w) × 300mm") is stripped before
+  parsing, because that typo is a target size, not a range. No spec (no
+  association, an unlisted exercise, or "Distance: Various") means the writer is
+  told to describe the discipline **without** a distance rather than reach for
+  the cartridge's effective range.
 - Heading **15** is the same paragraph in every document: a request for a lawful,
   fair decision with reasons under the Promotion of Administrative Justice Act.
 

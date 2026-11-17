@@ -217,3 +217,46 @@ describe('the writer persona', () => {
     ).not.toContain('courses of fire');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE COURSE OF FIRE IS THE COURSE THE RULEBOOK PRINTS.
+//
+// A sport motivation describes the applicant's exercise, and the pack prints
+// that exercise's published rule with its distance. The writer is constrained
+// to the parsed distance; when none could be established it is told to omit
+// one rather than reach for the cartridge's effective range.
+// ────────────────────────────────────────────────────────────────────
+describe('the discipline range constraint', () => {
+  const sport = MotivationLicenceType.S16_DEDICATED_SPORT;
+
+  it('renders the published distance and refuses any other', () => {
+    const p = generationUserPrompt(
+      {
+        ...pack(sport),
+        disciplineRange: { label: '10m Air Pistol Exercise', distances: '10 m' },
+      },
+      planFor(sport, 7),
+    );
+    expect(p).toContain('<discipline-ranges>');
+    expect(p).toContain('10m Air Pistol Exercise');
+    expect(p).toMatch(/must be one of these — 10 m/);
+    expect(p).toContain('Do not substitute the cartridge');
+  });
+
+  it('tells the writer to omit a distance when none could be established', () => {
+    const p = generationUserPrompt(
+      {
+        ...pack(sport),
+        disciplineRange: { label: 'An unlisted exercise', distances: '' },
+      },
+      planFor(sport, 7),
+    );
+    expect(p).toContain('none could be established');
+    expect(p).toContain('write it without stating a distance');
+  });
+
+  it('adds no block when the application has no discipline range', () => {
+    const p = generationUserPrompt(pack(sport), planFor(sport, 7));
+    expect(p).not.toContain('<discipline-ranges>');
+  });
+});

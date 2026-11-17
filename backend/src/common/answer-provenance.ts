@@ -69,6 +69,18 @@ export type ProvenanceSource =
    */
   | 'DERIVED'
   /**
+   * The member was shown the question and chose not to answer it.
+   *
+   * ⚠️ A SKIP IS A DECISION, NOT A MISSING VALUE. The interview offers a few
+   * optional case questions (premises, routine, hunting ground, an "anything
+   * else" box) and a member may reasonably say "nothing to add". Without a
+   * record of that, the planner sees an empty value, treats the field as
+   * pending and puts the same question back on every card forever. Recording
+   * the skip is what makes "optional" mean optional. It never carries a value —
+   * it is a source line like the rest of this map.
+   */
+  | 'SKIPPED'
+  /**
    * Typed or corrected by hand.
    *
    * ⚠️ ABSORBING, NOT ONE OF A SET. Every other member of this union describes
@@ -85,6 +97,7 @@ export const PROVENANCE_SOURCES: readonly ProvenanceSource[] = [
   'SELLER',
   'ASSOCIATION',
   'DERIVED',
+  'SKIPPED',
   'MEMBER',
 ] as const;
 
@@ -102,6 +115,7 @@ export const SOURCE_LABELS: Record<ProvenanceSource, string> = {
   SELLER: 'From the seller',
   ASSOCIATION: 'Synced from your association',
   DERIVED: 'Worked out from your other answers',
+  SKIPPED: 'You skipped this',
   MEMBER: 'You entered this',
 };
 
@@ -142,9 +156,15 @@ export interface AnswerProvenance {
 /** Answer key → provenance. The shape stored in `Motivation.answerProvenance`. */
 export type ProvenanceMap = Record<string, AnswerProvenance>;
 
-/** Sources that mean "we did this", as opposed to the member doing it. */
+/**
+ * Sources that mean "we did this", as opposed to the member doing it.
+ *
+ * ⚠️ A SKIP IS NOT AN AUTOMATIC FILL. It holds no value, so counting it in the
+ * "we filled N things before you typed anything" banner would overstate work
+ * that is not on the screen. It is the member's own decision.
+ */
 export function isAutomatic(source: ProvenanceSource): boolean {
-  return source !== 'MEMBER';
+  return source !== 'MEMBER' && source !== 'SKIPPED';
 }
 
 /** Runtime guard — the column is Json and predates any given deploy. */
