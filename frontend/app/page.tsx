@@ -264,14 +264,13 @@ export default async function HomePage({
         <>
               <Hero />
 
-              {/* The seller feature — the page body's first section at every
-                  width, directly under the hero on desktop and directly under
-                  the shop-mode bar on phones (the hero is display:none below
-                  768px). It is rendered OUTSIDE the container below so its card
-                  surface can run full-bleed. Bare landing only: showHero is
-                  false as soon as the visitor commits to a surface, a search,
-                  a category or a sort, and a seller pitch has no place over
-                  those results. */}
+              {/* The seller statement lives in <Hero /> on desktop. The hero is
+                  display:none below 768px, so this mobile-only strip (md:hidden)
+                  keeps the same sentence as the first body content on phones.
+                  It is outside the container below so its card surface can run
+                  full-bleed. Bare landing only: showHero is false as soon as the
+                  visitor commits to a surface, a search, a category or a sort,
+                  and a seller pitch has no place over those results. */}
               <SellerPromoBand />
 
               {/* ⚠️ THE SHOP-MODE TILES USED TO RENDER HERE, AND THEY NO

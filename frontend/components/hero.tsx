@@ -328,7 +328,7 @@ export function Hero() {
               crops behind it. */}
           {/* 44px at md+, not 54px. The old lg:text-[3.4rem] was sized for a
               706px hero; in a 330px band two lines of it plus the eyebrow,
-              subhead and CTA simply do not fit. 44/1.1 is the design's own
+              seller line and CTA simply do not fit. 44/1.1 is the design's own
               figure and it is what makes the band work. */}
           <h1
             className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl md:text-[44px] leading-[1.12] md:leading-[1.1]"
@@ -346,16 +346,30 @@ export function Hero() {
             <span style={{ whiteSpace: 'nowrap' }}>whole trip.</span>
           </h1>
 
-          <p
-            className="hero-reveal hero-reveal-3 text-base sm:text-lg md:text-[15.5px] leading-relaxed md:leading-[1.6] max-w-[520px]"
+          {/* The seller statement replaces the old "Camping, overlanding…"
+              subhead. It sits in the same third slot as that paragraph, so the
+              four-step hero reveal still lands as eyebrow -> buyer headline ->
+              seller line -> CTA. It is deliberately smaller than the 44px buyer
+              headline: the hero sells the store first and the seller offer
+              second. On phones the whole hero is hidden, so the same statement
+              is carried by the mobile-only band below it. */}
+          <h2
+            id="hero-seller-heading"
+            className="hero-reveal hero-reveal-3 text-2xl sm:text-[28px] md:text-[30px] leading-[1.12] m-0"
             style={{
-              color: 'rgba(245, 245, 245, 0.88)',
-              textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
+              color: 'var(--text-on-dark)',
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              textShadow: '0 1px 6px rgba(0, 0, 0, 0.55)',
+              textWrap: 'balance',
             }}
           >
-            Camping, overlanding, fishing and outdoor clothing —
-            new and secondhand, couriered to your door.
-          </p>
+            Sellers list for free.{' '}
+            <span className="block">
+              <span style={{ color: 'var(--red)' }}>100% payout</span> on Buy
+              Now.
+            </span>
+          </h2>
 
           {/* ONE call to action. The hero briefly carried a second button
               and flipped its primary to "List your first item" while the

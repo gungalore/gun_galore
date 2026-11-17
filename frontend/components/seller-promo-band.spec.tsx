@@ -27,19 +27,15 @@ describe('SellerPromoBand', () => {
     const section = container.querySelector('section');
     const heading = container.querySelector('#seller-promo-heading');
     expect(section).toHaveAttribute('aria-labelledby', 'seller-promo-heading');
+    expect(section).toHaveClass('md:hidden');
     expect(heading).not.toBeNull();
     expect(section?.contains(heading)).toBe(true);
   });
 
-  it('routes to the sell flow and to the full fee schedule', () => {
+  it('carries no buttons or fee links any more', () => {
     render(<SellerPromoBand />);
-    expect(
-      screen.getByRole('link', { name: /start selling/i }),
-    ).toHaveAttribute('href', '/listings/new');
-    expect(screen.getByRole('link', { name: /see fees/i })).toHaveAttribute(
-      'href',
-      '/fees',
-    );
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
   it('keeps the house copy rules', () => {
