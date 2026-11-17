@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Seller identity verification.
@@ -43,6 +43,7 @@ import { useAuth } from '../../../lib/auth';
 import { useStandalone } from '@/lib/use-standalone';
 import { KYC_RETURN_KEY, safeReturnPath } from '@/lib/kyc-return';
 import { StepRail, type StepRailStep } from '@/components/step-rail';
+import DateField from '@/components/date-field';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -438,15 +439,16 @@ export default function KycVerifyPage() {
               style={{ ...field, marginTop: 4 }}
             />
           </label>
-          <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            Date of birth
-            <input
-              type="date"
+          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            <span>Date of birth</span>
+            <DateField
               value={dob}
-              onChange={(e) => setDob(e.target.value)}
+              onChange={setDob}
+              label="Date of birth"
+              reach="far"
               style={{ ...field, marginTop: 4 }}
             />
-          </label>
+          </div>
           <button
             type="button"
             onClick={submitDetails}

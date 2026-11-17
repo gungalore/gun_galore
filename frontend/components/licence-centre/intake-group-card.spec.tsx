@@ -156,6 +156,43 @@ describe('the grouped interview card', () => {
     expect(screen.queryByRole('img', { name: 'Answered' })).toBeNull();
   });
 
+  it('uses the house date field, not the browser picker', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'competency_issued',
+            id: 'competency_issued',
+            label: 'Competency issued on',
+            kind: 'date',
+            optional: true,
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // ⚠️ NO NATIVE PICKER. DateField brings its own calendar button; the input
+    // is a typeable text box, not `type="date"`.
+    expect(
+      screen.getByRole('button', { name: /Open the calendar/ }),
+    ).toBeDefined();
+
+    const input = screen.getByPlaceholderText('yyyy-mm-dd');
+    expect(input.getAttribute('type')).toBe('text');
+    await user.type(input, '2024-03-05');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // A date is the field's VALUE, not a typed "message" the chip matcher
+    // would refuse.
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'competency_issued', value: '2024-03-05' },
+    ]);
+  });
+
   it('submits the whole card in one batch', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

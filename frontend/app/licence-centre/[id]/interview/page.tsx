@@ -16,6 +16,7 @@ import IntakeGroupCard, {
   type GroupAnswer,
 } from '@/components/licence-centre/intake-group-card';
 import ConsentCard from '@/components/licence-centre/consent-card';
+import DateField from '@/components/date-field';
 import type { SheetResponse } from '@/components/licence-centre/contract';
 import DocumentAddButtons, {
   type DocumentAddOutcome,
@@ -922,17 +923,28 @@ export default function IntakeInterviewPage() {
 
             {showCustom ? (
               <div className="mt-3 flex gap-2">
-                <input
-                  value={text}
-                  type={q.kind === 'date' ? 'date' : 'text'}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submitText();
-                  }}
-                  placeholder={q.customPlaceholder}
-                  className="min-h-[44px] flex-1 rounded-lg border px-3 text-[13.5px]"
-                  style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
-                />
+                {q.kind === 'date' ? (
+                  <div className="flex-1">
+                    <DateField
+                      value={text}
+                      onChange={setText}
+                      label={q.label}
+                      placeholder="yyyy-mm-dd"
+                    />
+                  </div>
+                ) : (
+                  <input
+                    value={text}
+                    type="text"
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') submitText();
+                    }}
+                    placeholder={q.customPlaceholder}
+                    className="min-h-[44px] flex-1 rounded-lg border px-3 text-[13.5px]"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
+                  />
+                )}
                 <button
                   type="button"
                   disabled={busy || !text.trim()}

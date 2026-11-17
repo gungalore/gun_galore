@@ -12,6 +12,7 @@ import {
   uploadPostVideo,
   type PostDetailPayload,
 } from '../../lib/community-api';
+import DateField from '../date-field';
 import { processImage } from '../../lib/process-image';
 import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
 import {
@@ -230,12 +231,11 @@ function DetailField({
     );
   } else if (field.kind === 'date') {
     control = (
-      <input
-        type="date"
+      <DateField
         value={asString}
         disabled={disabled}
-        onChange={(e) => onChange(field.key, e.target.value)}
-        className="px-2 py-2 rounded-[6px] text-[13px]"
+        onChange={(iso) => onChange(field.key, iso)}
+        label={field.label}
         style={fieldInput}
       />
     );

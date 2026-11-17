@@ -16,6 +16,7 @@ import {
   type TrackerDetail,
 } from '@/lib/licence-tracker-api';
 import TrackerStatusBadge from '@/components/licence-tracker/TrackerStatusBadge';
+import DateField from '@/components/date-field';
 import TrackerJourney from '@/components/licence-tracker/TrackerJourney';
 
 // ────────────────────────────────────────────────────────────────────
@@ -357,14 +358,14 @@ export default function TrackerDetailPage() {
             <label className={`${LABEL} mt-3`} htmlFor="milestone-date">
               When
             </label>
-            <input
+            <DateField
               id="milestone-date"
-              type="date"
               value={milestone.observedAt}
               max={todayValue()}
-              onChange={(e) =>
-                setMilestone((m) => ({ ...m, observedAt: e.target.value }))
+              onChange={(iso) =>
+                setMilestone((m) => ({ ...m, observedAt: iso }))
               }
+              label="When"
               className={INPUT}
             />
             <span className={HINT}>

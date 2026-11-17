@@ -7,6 +7,7 @@ import {
   type CreateTrackerBody,
   type TrackerKind,
 } from '@/lib/licence-tracker-api';
+import DateField from '@/components/date-field';
 
 // ────────────────────────────────────────────────────────────────────
 // START TRACKING AN APPLICATION.
@@ -161,12 +162,12 @@ export default function AddTrackerForm({
       <label className={`${LABEL} mt-3`} htmlFor="tracker-submitted">
         Date you lodged it
       </label>
-      <input
+      <DateField
         id="tracker-submitted"
-        type="date"
         value={submittedOn}
         max={todayValue()}
-        onChange={(e) => setSubmittedOn(e.target.value)}
+        onChange={setSubmittedOn}
+        label="Date you lodged it"
         className={INPUT}
       />
       <span className={HINT}>

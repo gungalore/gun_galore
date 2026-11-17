@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { IntakeGroup, IntakeQuestion } from '@/lib/motivations-api';
+import DateField from '@/components/date-field';
 
 export interface GroupAnswer {
   fieldKey: string;
@@ -164,7 +165,17 @@ export default function IntakeGroupCard({
       else out.value = draft.picked[0];
     }
     const text = draft.typed.trim();
-    if (text) out.message = text;
+    if (text) {
+      /**
+       * ⚠️ A DATE TRAVELS AS `value`, NOT AS A TYPED `message`. The batch
+       * handler routes `message` through the chip matcher, which has no
+       * customKey for a date field and refuses it ("choose one of the options")
+       * — so a date question could not be saved at all. `value` is the field's
+       * own answer and is what the single-question path has always sent.
+       */
+      if (question.kind === 'date') out.value = text;
+      else out.message = text;
+    }
     if (Object.keys(draft.details).length) out.fields = draft.details;
     return out.values?.length || out.value || out.message ? out : null;
   }
@@ -297,10 +308,29 @@ export default function IntakeGroupCard({
                 </div>
               ) : null}
 
-              {closedChoice ? null : (
+              {closedChoice ? null : question.kind === 'date' ? (
+                /**
+                 * ⚠️ THE HOUSE DATE CONTROL, NOT THE BROWSER'S. A native
+                 * `<input type="date">` opens whatever picker the OS ships —
+                 * on Windows a month/year wheel that has to be scrolled twice
+                 * before a day can be picked. DateField is the control the
+                 * rest of the Licence Centre uses: type it, or open the
+                 * year → month → day sheet.
+                 */
+                <div className="mt-2">
+                  <DateField
+                    value={draft.typed}
+                    onChange={(iso) =>
+                      update(question.fieldKey, { typed: iso })
+                    }
+                    label={question.label}
+                    placeholder="yyyy-mm-dd"
+                  />
+                </div>
+              ) : (
                 <input
                   value={draft.typed}
-                  type={question.kind === 'date' ? 'date' : 'text'}
+                  type="text"
                   onChange={(e) =>
                     update(question.fieldKey, { typed: e.target.value })
                   }

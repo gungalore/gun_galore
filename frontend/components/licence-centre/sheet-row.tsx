@@ -5,6 +5,7 @@ import type { SheetItem } from './contract';
 import CardsRow from './cards-row';
 import { sourceLine } from './source-line';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
+import DateField from '@/components/date-field';
 
 /**
  * Address fields that get Google's picker.
@@ -188,12 +189,19 @@ function Control({
   }
 
   if (item.kind === 'date') {
+    /**
+     * ⚠️ THE HOUSE DATE CONTROL, NOT THE BROWSER'S. A native
+     * `<input type="date">` opens whatever picker the OS ships; the rest of
+     * the Licence Centre uses DateField (type it, or the year → month → day
+     * sheet), so the review sheet matches the interview.
+     */
     return (
-      <input
-        type="date"
-        className={`${base} ${keyline}`}
+      <DateField
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
+        label={item.label}
+        invalid={missing}
+        placeholder="yyyy-mm-dd"
       />
     );
   }
