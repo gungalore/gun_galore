@@ -7,7 +7,28 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — A SPORT-PURPOSE SECTION 16 IS NOT ASKED FOR HUNTING SPECIES
+## 2026-11-17 (LATEST) — THE CHOSEN RESULT STARTS THE INTERVIEW
+
+Shipped `3bd23a76` (**frontend-only**; the backend kept serving). The start
+screen asked the member to choose "Motivation letter only" or "Print-ready
+pack", then made them press a second, separate "Start the interview" card that
+only repeated the promise.
+
+Choosing a result is now the decision and the action: it sets the output, starts
+the interview and goes there. The extra card is gone and the intro says the
+interview starts straight away. Documents are still taken per topic inside the
+interview, so removing the step skips nothing. A member who had already chosen a
+result before this change lands on the mode-only screen, whose one button now
+reads "Continue to the interview".
+
+Verified: frontend `tsc` clean, **169 files / 1 954 tests passed**, foreground
+production build clean. Backend untouched. One DRAFT and one COMPLETED existed,
+none generating. Rollback point `alloutdoor-20261117-224547.dump`
+(37,002,538 bytes). `deploy.sh --frontend-only` exited 0; frontend health 200
+(the first checks after the reload flapped 000 twice, then four consecutive 200s),
+public 200 ×2, backend and warden untouched and online.
+
+## 2026-11-17 (LATEST-1) — A SPORT-PURPOSE SECTION 16 IS NOT ASKED FOR HUNTING SPECIES
 
 Shipped `da99a85c` (**full deploy**). The operator's `.50 BMG` Section 16
 application says "I will use it for sport shooting", but the review screen
