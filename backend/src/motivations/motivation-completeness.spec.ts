@@ -76,6 +76,27 @@ describe('missingDetail', () => {
     expect(codes(gaps)).not.toContain('association:association_name');
   });
 
+  it('does not ask a sport-purpose section 16 for a hunting species', () => {
+    /**
+     * ⚠️ S16_DEDICATED_HUNTER IS THE WHOLE SECTION 16 FAMILY. The interview
+     * branches on firearm_use_kind; a sport-purpose application was still
+     * gated on "the species you intend to hunt" and could not move on.
+     */
+    const gaps = missingDetail(
+      {
+        ...completeS13(),
+        association_name: 'NHSA',
+        association_number: '9407315019081',
+        association_joined: '2019-08-17',
+        dedicated_since: '2019-09-01',
+        firearm_use_kind: 'sport',
+        discipline_exercise: '1000m Long Range Precision Rifle',
+      },
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    );
+    expect(codes(gaps)).not.toContain('purpose:intended_quarry');
+  });
+
   it('refuses dedicated sport without the exercise it is entered in', () => {    const answers = {
       ...completeS13(),
       association_name: 'NHSA',

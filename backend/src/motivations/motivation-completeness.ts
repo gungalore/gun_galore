@@ -187,7 +187,20 @@ export function missingDetail(
       ),
     );
   }
-  if (HUNTING_TYPES.includes(licenceType) && !has(answers, 'intended_quarry')) {
+  /**
+   * ⚠️ THE SECTION 16 TYPE IS THE FAMILY; THE PURPOSE DECIDES THE ARGUMENT.
+   * S16_DEDICATED_HUNTER stores the whole section 16 family (its label is
+   * "Dedicated hunting or sport-shooting"), and the interview branches on
+   * `firearm_use_kind`. A sport-purpose application was still gated on "the
+   * species you intend to hunt" — a question the sport branch never asks — so
+   * the interview finished and the review screen refused to move on. Quarry is
+   * a hunting fact; ask for it only when the applicant says they hunt (or say
+   * both).
+   */
+  const hunts =
+    HUNTING_TYPES.includes(licenceType) &&
+    (answers.firearm_use_kind ?? '').trim().toLowerCase() !== 'sport';
+  if (hunts && !has(answers, 'intended_quarry')) {
     gaps.push(
       GAP(
         'purpose:intended_quarry',
