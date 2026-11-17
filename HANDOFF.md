@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
+## 2026-11-17 (LATER) — SELLER LINE MOVES INTO THE HERO
+
+Shipped `7bdede63` (**frontend-only**; backend and warden kept serving). The
+hero's left copy column now carries "Sellers list for free. / 100% payout on
+Buy Now." in place of the old "Camping, overlanding…" subhead. It is 24/28/30px
+— below the 44px buyer headline and far below the removed band's 76px — white
+with the brand-red payout phrase, and uses the existing hero reveal sequence
+(eyebrow → buyer headline → seller line → CTA).
+
+The separate seller band is now **mobile-only** (`md:hidden`) and headline-only.
+The "On Buy Now the buyer pays the Platform Fee…" explainer and the **Start
+selling** / **See fees** links are gone. The mobile fallback stays because the
+hero is `display:none` below 768px; without it the seller statement would vanish
+on phones.
+
+Rollback point `alloutdoor-20261117-080201.dump` (34.4 MB). Frontend health OK
+×2, public 200 ×2, all three PM2 services online. Local gates: frontend 168
+files / 1,944 tests, backend 413 suites / 6,127 tests, both typechecks and the
+foreground production build clean. Production verified: `hero-seller-heading`
+present, the old explainer and "Start selling" absent.
+
 ## 2026-11-17 — JEV AUTO-MASKS FORBIDDEN PHOTO DETAILS (FULL DEPLOY)
 
 Shipped `be099b56` — the first deploy since `3a8e61d1`, so it also carried
