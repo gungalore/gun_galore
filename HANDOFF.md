@@ -7,7 +7,33 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — THE CHOSEN RESULT STARTS THE INTERVIEW
+## 2026-11-17 (LATEST) — A FAILED SAVE NO LONGER TAKES THE QUESTION AWAY
+
+Shipped `c7fa018b` (**frontend-only**). A section 13 application reached the
+"Your hunting and shooting" card and got a bare **"We could not save that
+answer. Try again."** box — no question, no answer, nothing to retry with.
+
+⚠️ **THE CARD READ A LEGITIMATE RE-ASK AS A FAILED SAVE.** When the server sends
+the same first question back, the card replaced itself with the error. But the
+server does that correctly for a stored shooting history below the twelve-word
+floor: the review sheet has no floor, so a five-word history saved there is
+re-asked by the interview. The card then hid the question AND the member's
+draft, leaving reload as the only way forward.
+
+The card keeps the question, the draft and a banner; Continue retries, and
+editing clears the banner. The question's `minWords` makes a thin history show
+the "pick a few, or add a sentence" hint instead of looking answered. Pinned
+with a planner test: a five-word stored history is re-asked with `minWords`; the
+same history at a real sentence length is not.
+
+Verified: backend `tsc` clean, **419 suites / 6 232 tests passed** (8 skipped);
+frontend `tsc` clean, **169 files / 1 954 tests passed**; production build clean.
+Backend runtime untouched by this deploy (PM2 shows one restart before it, not
+from it, and health stayed 200). Rollback point
+`alloutdoor-20261117-230044.dump` (37,002,722 bytes). `deploy.sh
+--frontend-only` exited 0; backend 200, frontend 200 ×2, public 200 ×2.
+
+## 2026-11-17 (LATEST-1) — THE CHOSEN RESULT STARTS THE INTERVIEW
 
 Shipped `3bd23a76` (**frontend-only**; the backend kept serving). The start
 screen asked the member to choose "Motivation letter only" or "Print-ready
