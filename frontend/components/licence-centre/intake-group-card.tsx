@@ -22,6 +22,56 @@ interface Draft {
 const EMPTY: Draft = { picked: [], typed: '', details: {} };
 
 /**
+ * ⚠️ THE TICK AND THE CROSS ARE THE "DID MY TAP REGISTER" SIGNAL. A card of
+ * six questions gives no feedback between the tap and Continue; a member who
+ * cannot see that an answer landed taps again. Green tick = this question has
+ * an answer on the card; red cross = it is required and still empty. An
+ * optional question with no answer carries neither.
+ */
+function AnsweredMark() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 20 20"
+      role="img"
+      aria-label="Answered"
+      className="ml-2 inline-block align-[-2px]"
+    >
+      <path
+        d="M3.5 10.5l4.2 4.2L16.5 5.6"
+        fill="none"
+        stroke="var(--success)"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function NeedsAnswerMark() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 20 20"
+      role="img"
+      aria-label="Still needs an answer"
+      className="ml-2 inline-block align-[-2px]"
+    >
+      <path
+        d="M5 5l10 10M15 5L5 15"
+        fill="none"
+        stroke="var(--red)"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
  * THE WHOLE CARD, IN ONE TAP-THROUGH.
  *
  * ⚠️ ONE SCREEN, ONE SUBMIT. Every question in the category is on the card at
@@ -191,6 +241,7 @@ export default function IntakeGroupCard({
       <div className="mt-3 grid gap-4">
         {group.questions.map((question) => {
           const draft = draftFor(question.fieldKey);
+          const answeredNow = answerFor(question) !== null;
           const closedChoice =
             question.choices.length > 0 &&
             (question.kind === 'choice' || question.kind === 'yesno');
@@ -209,6 +260,11 @@ export default function IntakeGroupCard({
                     Optional
                   </span>
                 ) : null}
+                {answeredNow ? (
+                  <AnsweredMark />
+                ) : question.optional ? null : (
+                  <NeedsAnswerMark />
+                )}
               </legend>
               {question.why || question.help ? (
                 <p className="mb-0 mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">

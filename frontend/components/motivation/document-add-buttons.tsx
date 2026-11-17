@@ -69,7 +69,21 @@ export default function DocumentAddButtons({
     files: File[],
     onProgress?: (done: number, total: number, file?: string) => void,
   ) => DocumentAddOutcome[] | Promise<DocumentAddOutcome[]>;
-  onHandoffArrived: (count?: number) => void;
+  /**
+   * A phone hand-off delivered files.
+   *
+   * ⚠️ IT RETURNS THE SAME OUTCOMES THE UPLOAD PATH DOES, SO THE SAME REVIEW
+   * SHEET OPENS. A hand-off used to be a count and a reload: the file was
+   * attached and read, but nothing was applied and no panel appeared — the
+   * exact gap the Upload button did not have.
+   */
+  onHandoffArrived: (
+    count?: number,
+  ) =>
+    | DocumentAddOutcome[]
+    | Promise<DocumentAddOutcome[]>
+    | void
+    | Promise<void>;
   /** Authenticated bytes for the review pane. The caller owns the blob URL. */
   onPreview: (uploadId: string) => Promise<string>;
   /** Persist the values the applicant confirmed or corrected. */
@@ -295,15 +309,44 @@ export default function DocumentAddButtons({
           title="Photograph a document"
           handoff={{ dest: 'motivation', motivationId }}
           onHandoffArrived={(count) => {
-            setOutcomes([
-              {
-                file: 'Phone scan',
-                label: 'Document received',
-                fields: [],
-                note: `${count ?? 0} file${count === 1 ? '' : 's'} sent from your phone`,
-              },
-            ]);
-            onHandoffArrived(count);
+            /**
+             * ⚠️ THE PHONE'S FILES ARRIVE ALREADY READ. The server stored the
+             * household reading when the phone uploaded them; this asks for
+             * that stored reading (no second vision call), applies it and
+             * queues the same review sheet the Upload button shows.
+             */
+            void (async () => {
+              try {
+                const result = await onHandoffArrived(count);
+                if (!Array.isArray(result) || !result.length) {
+                  setOutcomes([
+                    {
+                      file: 'Phone scan',
+                      label: 'Document received',
+                      fields: [],
+                      note: `${count ?? 0} file${count === 1 ? '' : 's'} sent from your phone`,
+                    },
+                  ]);
+                  return;
+                }
+                setOutcomes(result);
+                const reviewable = result.filter(
+                  (outcome) => !outcome.error && outcome.uploadId,
+                );
+                if (reviewable.length) {
+                  setReviewQueue(reviewable);
+                  setReviewIndex(0);
+                  setEdits(editsFor(reviewable[0]));
+                }
+              } catch (err) {
+                setOutcomes([
+                  {
+                    file: 'Phone scan',
+                    error: (err as Error).message,
+                  },
+                ]);
+              }
+            })();
           }}
           onFiles={handOff}
           disabled={busy}

@@ -3335,6 +3335,7 @@ describe('the stored reading for an attached document', () => {
     const b = build({});
     b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
       id: 'mo-1',
+      licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
     }));
     b.prisma.motivationUpload.findFirst = jest.fn(
       async (): Promise<any> =>
@@ -3358,7 +3359,13 @@ describe('the stored reading for an attached document', () => {
     expect(res).toEqual({
       id: 'up-1',
       suggestions: [
-        { key: 'competency_number', value: 'CC 123', label: 'competency_number' },
+        {
+          key: 'competency_number',
+          value: 'CC 123',
+          // ⚠️ A HUMAN LABEL, NOT THE KEY. The phone hand-off is confirmed on
+          // the review sheet, and `competency_number` is not a label.
+          label: 'Competency certificate number',
+        },
       ],
     });
     expect(extract.extract).not.toHaveBeenCalled();
@@ -3379,8 +3386,12 @@ describe('the stored reading for an attached document', () => {
     });
     const res = await svc.readingFor('c1', 'mo-1', 'up-1');
     expect(res.suggestions).toEqual([
-      { key: 'frame_serial', value: 'NONE', label: 'frame_serial' },
-      { key: 'barrel_serial', value: 'MR90189D', label: 'barrel_serial' },
+      { key: 'frame_serial', value: 'NONE', label: 'Frame serial number' },
+      {
+        key: 'barrel_serial',
+        value: 'MR90189D',
+        label: 'Barrel serial number',
+      },
     ]);
   });
 

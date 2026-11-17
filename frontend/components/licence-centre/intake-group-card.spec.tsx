@@ -107,6 +107,55 @@ describe('the grouped interview card', () => {
     ]);
   });
 
+  it('ticks an answered question and crosses one still needed', async () => {
+    const user = userEvent.setup();
+    render(
+      <IntakeGroupCard
+        group={group([holder, question()])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    // ⚠️ THE TAP MUST BE VISIBLE. A card of six questions gives no feedback
+    // between the tap and Continue, so the mark is the feedback.
+    expect(
+      screen.getAllByRole('img', { name: 'Still needs an answer' }),
+    ).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Main holder' }));
+    expect(screen.getByRole('img', { name: 'Answered' })).toBeDefined();
+    expect(
+      screen.getAllByRole('img', { name: 'Still needs an answer' }),
+    ).toHaveLength(1);
+  });
+
+  it('puts no cross on an optional question left empty', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'alarm_present',
+            id: 'alarm_present',
+            label: 'Is there an alarm?',
+            kind: 'yesno',
+            optional: true,
+            choices: [
+              { value: 'Yes', label: 'Yes' },
+              { value: 'No', label: 'No' },
+            ],
+          }),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+    expect(
+      screen.queryByRole('img', { name: 'Still needs an answer' }),
+    ).toBeNull();
+    expect(screen.queryByRole('img', { name: 'Answered' })).toBeNull();
+  });
+
   it('submits the whole card in one batch', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

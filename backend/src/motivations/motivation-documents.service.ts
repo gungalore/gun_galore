@@ -2164,7 +2164,7 @@ export class MotivationDocumentsService {
     const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true },
+      select: { id: true, licenceType: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
@@ -2189,7 +2189,13 @@ export class MotivationDocumentsService {
           .map(([key, value]) => ({
             key,
             value: printedAnswerValue(typeof value === 'string' ? value : ''),
-            label: key,
+            /**
+             * ⚠️ THE REVIEW SHEET READS THIS, SO A RAW KEY IS A DEFECT. The
+             * phone hand-off is confirmed on the same panel as an upload; the
+             * key `firearm_make` under an input is not a label a member should
+             * ever see.
+             */
+            label: fieldByKey(row.licenceType, key)?.label ?? key,
           }))
           .filter((s) => s.value !== '');
       } catch {

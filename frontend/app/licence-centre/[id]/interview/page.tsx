@@ -59,6 +59,13 @@ export default function IntakeInterviewPage() {
   const [busy, setBusy] = useState(false);
   const [engine, setEngine] = useState<DocumentEngineStatus | null>(null);
   const submitting = useRef(false);
+  /**
+   * ⚠️ THE PHONE'S FILES ARRIVE OUTSIDE THIS TAB. The hand-off uploads them
+   * server-side, so the only way to know which are new is to remember the ids
+   * already on the application. Seeded on every load; diffed when a scan
+   * arrives.
+   */
+  const seenUploads = useRef<Set<string>>(new Set());
   const [detailFor, setDetailFor] = useState<IntakeQuestion | null>(null);
   const [detailValues, setDetailValues] = useState<Record<string, string>>({});
   const [deferredDocs, setDeferredDocs] = useState(false);
@@ -79,11 +86,79 @@ export default function IntakeInterviewPage() {
     try {
       const next = await motivationsApi.intake(getToken, id);
       setData(next);
+      for (const item of next.documents.items) {
+        if (item.source === 'upload') seenUploads.current.add(item.sourceId);
+      }
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
   }, [getToken, id]);
+
+  /**
+   * A phone hand-off landed: read back what the server read, apply it and hand
+   * the same review sheet the Upload button opens.
+   *
+   * ⚠️ IT FETCHES THE STATE ITSELF rather than calling `load()` first —
+   * `load()` seeds `seenUploads`, which would mark the arrived files as
+   * already processed before this could read them.
+   */
+  const readArrivedUploads = useCallback(
+    async (_count?: number): Promise<DocumentAddOutcome[]> => {
+      const fresh = await motivationsApi.intake(getToken, id);
+      const arrived = fresh.documents.items.filter(
+        (item) =>
+          item.source === 'upload' && !seenUploads.current.has(item.sourceId),
+      );
+      if (!arrived.length) {
+        setData(fresh);
+        return [];
+      }
+
+      const outcomes: DocumentAddOutcome[] = [];
+      const accepted: Record<string, string> = {};
+      for (const item of arrived) {
+        seenUploads.current.add(item.sourceId);
+        try {
+          const reading = await motivationsApi.readingFor(
+            getToken,
+            id,
+            item.sourceId,
+          );
+          const fields = reading.suggestions.filter(
+            (s) => s.key && s.value,
+          );
+          for (const field of fields) accepted[field.key] = field.value;
+          outcomes.push({
+            file: item.title || item.kind,
+            label: item.title || item.kind,
+            kind: item.kind,
+            uploadId: item.sourceId,
+            fields,
+          });
+        } catch (err) {
+          outcomes.push({
+            file: item.title || item.kind,
+            error: (err as Error).message,
+          });
+        }
+      }
+
+      if (Object.keys(accepted).length) {
+        try {
+          // The same rule as an upload: fill only what is still empty.
+          await motivationsApi.applyExtraction(getToken, id, accepted);
+        } catch (err) {
+          setError((err as Error).message);
+        }
+      }
+
+      const next = await motivationsApi.intake(getToken, id);
+      setData(next);
+      return outcomes;
+    },
+    [getToken, id],
+  );
 
   const refreshSheet = useCallback(async () => {
     try {
@@ -570,7 +645,7 @@ export default function IntakeInterviewPage() {
       motivationId={id}
       busy={busy}
       onFiles={(files) => uploadDocument('', files)}
-      onHandoffArrived={() => void load()}
+      onHandoffArrived={(count) => readArrivedUploads(count)}
       onPreview={(uploadId) =>
         motivationsApi.uploadBlobUrl(getToken, id, uploadId)
       }
