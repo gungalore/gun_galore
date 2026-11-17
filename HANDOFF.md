@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
+## 2026-11-17 (LATEST) — MOTIVATION PLATES BACK ON GEMINI'S LITE IMAGE MODEL
+
+Shipped `280f3441` (**full deploy**; backend changed). The motivation purpose
+exhibits (`motivation.plate`) and the quarry plate (`motivation.quarry`) are
+pinned back to the `gemini` provider, reversing the 2026-10-15 "wire in the
+grok" pin. A plate now draws on `gemini-3.1-flash-lite-image` at about **3.4 US
+cents** instead of grok's flat **8**; measured through the real prompt path,
+~5 s and ~1 550 output tokens (1 120 of them the picture) per plate.
+
+⚠️ **`gemini-3.5-flash-lite` ITSELF CANNOT DRAW.** The operator asked for "gemini
+3.5 lite"; probed on our own key, that model answers an image request with
+prose and no `inlineData`, even with `responseModalities: ['TEXT','IMAGE']`.
+Routing the plates there would pay for four calls and store nothing (the
+`generateImage` empty-answer guard would then fail every plate). So the plates
+use the Lite **image** id, which `generateImage` already takes from
+`defaultImageModel()`. `LLM_IMAGE_MODEL` still overrides it, and
+`LLM_PROVIDER_MOTIVATION_PLATE=xai` (or `_QUARRY=xai`) is the rollback lever —
+the xAI provider and its pricing row stay wired for exactly that. Do not
+"correct" the id to a 3.5 text model.
+
+Verified before deploy: one real two-plate draw through `LlmService`
+(`gemini/gemini-3.1-flash-lite-image`, 5 s each, hunting kudu/gemsbok prompts,
+2:1 crop intact and the Kudu plate visually checked). Local gates: backend
+`tsc` clean, backend 413 suites / 6,127 passed (8 skipped), frontend `tsc`
+clean, frontend 168 files / 1,944 passed, foreground production build clean.
+Rollback point `alloutdoor-20261117-094715.dump` (34,362,044 bytes). Backend
+health 200 ×2, frontend 200 ×2, public 200 ×2, all three PM2 services online;
+box HEAD `280f3441` and the compiled `dist` shows the plate pin returning
+`this.gemini`.
+
+One oddity, recorded so it is not mistaken for a failed deploy: `deploy.sh`
+printed `=== deployed 280f3441 ===` and the three-service table, then the
+wrapper reported exit 1. The final pipeline (`pm2 list | grep`) re-runs 0, and
+every stage's own check passed and every independent verification above is
+green, so this was a trailing status, not a stage failure. If it recurs, it is
+the tail of `deploy.sh`, not the build or reload.
+
 ## 2026-11-17 (LATER) — SELLER LINE MOVES INTO THE HERO
 
 Shipped `7bdede63` (**frontend-only**; backend and warden kept serving). The
