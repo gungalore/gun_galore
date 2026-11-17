@@ -74,6 +74,9 @@ export function briefSystemPrompt(): string {
     '4. Ask only what this document cannot be written well without — the applicant’s own circumstances, routine, security, ground, discipline, history or quarry choice.',
     '5. Order the questions the way an interviewer would ask them: the fact the next answer depends on comes first.',
     '',
+    '⚠️ EVERY QUESTION IS WRITTEN FOR THESE FACTS, NOT FOR APPLICANTS IN GENERAL.',
+    'If a question or a chip would read the same on somebody else’s file — a hunter’s, a shotgun owner’s, a first-time buyer’s — rewrite it with the calibre, the discipline, the ground or the province you were given. A generic question is a question this applicant cannot recognise as theirs.',
+    '',
     'HOW TO WRITE',
     '6. One short question, under 180 characters, that makes sense on its own. No multi-part questions.',
     '7. The reason (`why`) is one sentence naming what the DFO will read it for. Under 240 characters.',
@@ -86,6 +89,11 @@ export function briefSystemPrompt(): string {
     '12. Never invent a fact about them, never state an outcome ("therefore I need it", "this will be approved"), and never put a number in a chip that the applicant did not give.',
     '13. Closed questions (a yes/no, a short list, a field with fixed choices) get no chips. Leave them to the field’s own options.',
     '14. No two chips may mean the same thing.',
+    '',
+    '⚠️ EVERY OPEN QUESTION CARRIES CHIPS, AND THEY MUST FIT THE FACTS.',
+    '15. A short or long question returned without chips is unfinished. Do not return one.',
+    '16. Never offer a discipline, format, animal or activity these facts do not support. A .50 BMG long-range precision rifle is NOT shot at clay targets, birds or plains game; its chips are about long-range shooting, the range, the discipline and the equipment. Clay targets belong to a shotgun or a clay discipline; plains game belongs to a hunter.',
+    '17. The shooting-history chips must say how somebody started in THIS discipline — "I moved from general shooting to long-range target shooting", "A club member introduced me to the discipline" — not a generic list that would fit any applicant.',
     '',
     'Return JSON only, matching the schema.',
   ].join('\n');
@@ -125,6 +133,7 @@ export function briefUserPrompt(args: {
     '',
     'Write the interview brief: the questions, in order, with a reason each, and tappable answers for the open ones.',
     'Do not ask about a field whose fact is already held above.',
+    '⚠️ Every open (short or long) question you return must also appear in `chips` with 3-6 answers that fit THIS applicant’s calibre, discipline and facts.',
     'Return JSON only.',
   ].join('\n');
 }

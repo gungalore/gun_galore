@@ -165,8 +165,11 @@ describe('exerciseChoices', () => {
 });
 
 describe('the history chips for a purpose', () => {
-  const values = (purpose: Parameters<typeof historyChoicesFor>[0]): string[] =>
-    historyChoicesFor(purpose).map((choice) => choice.value);
+  const values = (
+    purpose: Parameters<typeof historyChoicesFor>[0],
+    opts?: Parameters<typeof historyChoicesFor>[1],
+  ): string[] =>
+    historyChoicesFor(purpose, opts).map((choice) => choice.value);
 
   it('never offers a hunter’s chips to a sport shooter', () => {
     const sport = values('sport');
@@ -178,6 +181,15 @@ describe('the history chips for a purpose', () => {
     expect(sport).toContain('I am at the range most weekends');
   });
 
+  it('⚠️ NEVER OFFERS CLAY TARGETS TO A PRECISION RIFLE', () => {
+    // The operator’s .50 BMG long-range application was shown "Clay targets at
+    // a club" because it counted as a sport chip.
+    expect(values('sport')).not.toContain('I shoot clay targets at a club');
+    expect(values('sport', { clayAllowed: true })).toContain(
+      'I shoot clay targets at a club',
+    );
+  });
+
   it('never offers the clay chip to a hunter', () => {
     const hunting = values('hunting');
     expect(hunting).not.toContain('I shoot clay targets at a club');
@@ -185,6 +197,8 @@ describe('the history chips for a purpose', () => {
   });
 
   it('keeps both pools where the applicant does both', () => {
-    expect(values('both')).toEqual(HISTORY_CHOICES.map((c) => c.value));
+    expect([...values('both', { clayAllowed: true })].sort()).toEqual(
+      [...HISTORY_CHOICES.map((c) => c.value)].sort(),
+    );
   });
 });

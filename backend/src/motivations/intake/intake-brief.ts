@@ -39,7 +39,7 @@ import { CASE_KEYS, sportingFields, strategyFor } from './intake-strategies';
  * phrasing until the row is forgotten. Same discipline as
  * RESEARCH_ASK_VERSION.
  */
-export const INTERVIEW_BRIEF_VERSION = '2026-11-17a';
+export const INTERVIEW_BRIEF_VERSION = '2026-11-17b';
 
 /** How long a brief stays good. The answers it depends on rarely move. */
 export const INTERVIEW_BRIEF_TTL_DAYS = 14;

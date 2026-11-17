@@ -266,8 +266,57 @@ describe('wording a card', () => {
       [question('shooting_history', { kind: 'long', multi: true })],
     );
 
-    expect(card.questions[0].choices.map((c) => c.value)).toEqual(
-      chips.map((c) => c.value),
+    expect(
+      card.questions[0].choices.slice(0, chips.length).map((c) => c.value),
+    ).toEqual(chips.map((c) => c.value));
+    expect(card.questions[0].choices.length).toBeLessThanOrEqual(6);
+  });
+
+  /**
+   * ⚠️ THE OPERATOR'S .50 BMG CASE. A long-range precision rifle is a "sport"
+   * firearm, and the old fallback list offered it "Clay targets at a club".
+   * No chip may be offered that only another applicant's facts justify.
+   */
+  it('never offers clay or hunting chips to a long-range precision rifle', async () => {
+    const { svc } = makeService('{}');
+    const card = await (
+      svc as unknown as {
+        phrasedCard: (
+          row: unknown,
+          answers: Record<string, string>,
+          previousAnswer: string | null,
+          previousFieldKey: string | null,
+          brief: InterviewBrief | null,
+          bases: IntakeQuestion[],
+        ) => Promise<{ questions: IntakeQuestion[] }>;
+      }
+    ).phrasedCard(
+      ROW,
+      {
+        firearm_use_kind: 'sport',
+        firearm_type: 'Rifle',
+        firearm_calibre: '50 BMG',
+        discipline_exercise: '1000m Long Range Precision Rifle',
+      },
+      null,
+      null,
+      brief({
+        questions: [
+          {
+            fieldKey: 'shooting_history',
+            question:
+              'How did you first get involved in long-range precision shooting?',
+            why: 'The DFO reads your progression into the discipline.',
+            priority: 0,
+          },
+        ],
+      }),
+      [question('shooting_history', { kind: 'long', multi: true })],
     );
+
+    const values = card.questions[0].choices.map((c) => c.value);
+    expect(values).not.toContain('I shoot clay targets at a club');
+    expect(values).not.toContain('I hunt plains game');
+    expect(values).not.toContain('I hunt birds and small game');
   });
 });

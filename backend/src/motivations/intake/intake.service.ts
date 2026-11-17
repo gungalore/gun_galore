@@ -1851,12 +1851,10 @@ const sourceText = (body.message ?? body.value ?? '').trim();
     licenceType: MotivationLicenceType,
     brief: InterviewBrief | null,
   ): IntakeChoice[] {
-    const researched = brief?.chips['shooting_history'] ?? [];
-    if (researched.length >= 3) {
-      return researched
-        .slice(0, 6)
-        .map((chip) => ({ value: chip.value, label: chip.label }));
-    }
+    const researched = (brief?.chips['shooting_history'] ?? []).map((chip) => ({
+      value: chip.value,
+      label: chip.label,
+    }));
     const step = strategyFor(licenceType);
     const kind = (answers.firearm_use_kind ?? '').trim().toLowerCase();
     const purpose =
@@ -1869,7 +1867,35 @@ const sourceText = (body.message ?? body.value ?? '').trim();
         : step.purpose === 'renewal'
           ? 'renewal'
           : 'self-defence';
-    return historyChoicesFor(purpose);
+    /**
+     * ⚠️ CLAY CHIPS NEED A SHOTGUN OR A CLAY DISCIPLINE. The purpose alone is
+     * not enough: a .50 BMG precision rifle is a "sport" firearm and was still
+     * offered "Clay targets at a club".
+     */
+    const clayAllowed = /shotgun|clay|trap|skeet|sporting|wing/i.test(
+      [
+        answers.firearm_type,
+        answers.discipline,
+        answers.discipline_exercise,
+        answers.competition_record,
+      ].join(' '),
+    );
+    const fallback = historyChoicesFor(purpose, { clayAllowed });
+    /**
+     * ⚠️ ONE GOOD RESEARCHED CHIP BEATS THE WHOLE GENERIC LIST. The brief used
+     * to be ignored unless it supplied three, which is how the pinned list came
+     * back on a card the brief had already understood.
+     */
+    const seen = new Set<string>();
+    const out: IntakeChoice[] = [];
+    for (const choice of [...researched, ...fallback]) {
+      const key = choice.value.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(choice);
+      if (out.length >= 6) break;
+    }
+    return out;
   }
 
   /**

@@ -181,18 +181,42 @@ const SPORT_HISTORY = new Set(['I shoot clay targets at a club']);
  */
 export function historyChoicesFor(
   purpose: 'self-defence' | 'hunting' | 'sport' | 'both' | 'renewal',
+  opts: { clayAllowed?: boolean } = {},
 ): IntakeChoice[] {
+  /**
+   * ⚠️ UNIVERSAL CHIPS ONLY, UNLESS THE FACTS SUPPORT MORE. "Clay targets at a
+   * club" was offered to a .50 BMG long-range applicant because it counted as
+   * a "sport" chip. A shotgun or a clay discipline supports it; a precision
+   * rifle does not, and no chip may be offered that another applicant's facts
+   * would justify rather than this one's.
+   */
+  const universal = HISTORY_CHOICES.filter(
+    (choice) => !HUNTING_HISTORY.has(choice.value) && !SPORT_HISTORY.has(choice.value),
+  );
   if (purpose === 'hunting') {
-    return HISTORY_CHOICES.filter(
-      (choice) => !SPORT_HISTORY.has(choice.value),
-    );
+    return [
+      ...universal,
+      ...HISTORY_CHOICES.filter((choice) => HUNTING_HISTORY.has(choice.value)),
+    ];
   }
   if (purpose === 'sport') {
-    return HISTORY_CHOICES.filter(
-      (choice) => !HUNTING_HISTORY.has(choice.value),
-    );
+    return opts.clayAllowed
+      ? [
+          ...universal,
+          ...HISTORY_CHOICES.filter((choice) => SPORT_HISTORY.has(choice.value)),
+        ]
+      : universal;
   }
-  return [...HISTORY_CHOICES];
+  if (purpose === 'both') {
+    return [
+      ...universal,
+      ...HISTORY_CHOICES.filter((choice) => HUNTING_HISTORY.has(choice.value)),
+      ...(opts.clayAllowed
+        ? HISTORY_CHOICES.filter((choice) => SPORT_HISTORY.has(choice.value))
+        : []),
+    ];
+  }
+  return universal;
 }
 
 /**
