@@ -411,16 +411,19 @@ describe('the grouped interview card', () => {
   });
 
   // ⚠️ A FIELD THAT COMES BACK AFTER IT WAS ANSWERED DID NOT SAVE. Showing it
-  // again looks like the tap did nothing, and the member taps again forever.
-  it('surfaces a stuck answer instead of showing the same field twice', async () => {
+  // again looks like the tap did nothing. The card says so — but keeps the
+  // question and the draft, because a dead "try again" box leaves the member
+  // nothing to try with.
+  it('surfaces a stuck answer without taking the question away', async () => {
     const user = userEvent.setup();
     const onStuck = vi.fn();
+    const onSubmit = vi.fn();
     const first = group([question()]);
     const { rerender } = render(
       <IntakeGroupCard
         group={first}
         busy={false}
-        onSubmit={() => undefined}
+        onSubmit={onSubmit}
         onStuck={onStuck}
       />,
     );
@@ -436,16 +439,22 @@ describe('the grouped interview card', () => {
       <IntakeGroupCard
         group={group([question()])}
         busy={false}
-        onSubmit={() => undefined}
+        onSubmit={onSubmit}
         onStuck={onStuck}
       />,
     );
 
     expect(onStuck).toHaveBeenCalledWith('We could not save that answer. Try again.');
     expect(
-      screen.getByText('We could not save that answer. Try again.'),
+      screen.getByText(/We could not save that answer. Try again/),
     ).toBeDefined();
-    expect(screen.queryByText('What is your full name?')).toBeNull();
+    // The question and the member's own words survive, so the next tap can
+    // actually retry.
+    expect(screen.getByText('What is your full name?')).toBeDefined();
+    expect(screen.getByDisplayValue('Gerhard Fourie')).toBeDefined();
+    onSubmit.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('does not cry stuck when the group simply has not replied yet', async () => {

@@ -358,8 +358,44 @@ describe('the document gate decides what the conversation asks', () => {
     return answers;
   }
 
-  it('asks the quarry even though the registry does not mark it required', () => {
-    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
+  /**
+   * ⚠️ AN ANSWERED HISTORY CAN STILL BE TOO THIN. A value saved elsewhere (the
+   * review sheet has no word floor) at five words keeps the question pending,
+   * so the interview puts it back — with the floor published, so the card can
+   * ask for a sentence or more ticks instead of a dead "could not save".
+   */
+  it('re-asks a stored history below the floor, with the floor on the question', () => {
+    const thin = filled(MotivationLicenceType.S13_SELF_DEFENCE);
+    thin.shooting_history = 'At the range most weekends';
+
+    const group = planGroup({
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers: thin,
+      sheet: EMPTY_SHEET,
+    });
+    expect(group?.questions.map((q) => q.key)).toContain('shooting_history');
+    const question = questionForField(
+      {
+        type: MotivationLicenceType.S13_SELF_DEFENCE,
+        answers: thin,
+        sheet: EMPTY_SHEET,
+      },
+      'shooting_history',
+    );
+    expect(question?.minWords).toBe(MIN_HISTORY_WORDS);
+
+    const long = { ...thin, shooting_history: history() };
+    const next = planGroup({
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers: long,
+      sheet: EMPTY_SHEET,
+    });
+    expect(next?.questions.map((q) => q.key) ?? []).not.toContain(
+      'shooting_history',
+    );
+  });
+
+  it('asks the quarry even though the registry does not mark it required', () => {    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
     delete answers.intended_quarry;
     const group = planGroup({
       type: MotivationLicenceType.S15_OCCASIONAL_HUNTER,

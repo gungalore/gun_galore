@@ -145,6 +145,7 @@ export default function IntakeGroupCard({
   }
 
   function update(key: string, patch: Partial<Draft>): void {
+    setStuck(false);
     setDrafts((current) => ({
       ...current,
       [key]: { ...(current[key] ?? EMPTY), ...patch },
@@ -209,10 +210,18 @@ export default function IntakeGroupCard({
    * answered; anything still open stays pending and is served again (the
    * generation gate still refuses without it).
    */
-  const canContinue = !busy && !stuck && answered.length > 0;
+  const canContinue = !busy && answered.length > 0;
 
   function submit(skipKey?: string): void {
-    if (busy || stuck) return;
+    if (busy) return;
+    /**
+     * ⚠️ A RETRY MUST BE POSSIBLE. The card used to replace itself with a bare
+     * "could not save" box when the server sent the same first question back,
+     * which hid the question AND the member's draft: the only way forward was
+     * to reload and start the answer again. The banner stays, the question
+     * stays, the draft stays, and the next tap tries again.
+     */
+    setStuck(false);
     const answers: GroupAnswer[] = answered.map((entry) => entry.answer!);
     const firstAnswered = answered[0]?.question.fieldKey ?? null;
     if (skipKey) {
@@ -232,22 +241,6 @@ export default function IntakeGroupCard({
 
   if (!first) return null;
 
-  if (stuck) {
-    return (
-      <section
-        className="mt-4 rounded-2xl border p-4"
-        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
-      >
-        <h2 className="m-0 text-[15px] font-medium text-[var(--text-primary)]">
-          {group.title}
-        </h2>
-        <p className="mb-0 mt-2 text-[13px] leading-5 text-[var(--red)]">
-          We could not save that answer. Try again.
-        </p>
-      </section>
-    );
-  }
-
   return (
     <section
       className="mt-4 rounded-2xl border p-4"
@@ -262,6 +255,12 @@ export default function IntakeGroupCard({
           {group.totalInGroup} answered
         </span>
       </div>
+
+      {stuck ? (
+        <p className="mb-0 mt-2 text-[13px] leading-5" style={{ color: 'var(--red)' }}>
+          We could not save that answer. Try again — your answer is still here.
+        </p>
+      ) : null}
 
       <div className="mt-3 grid gap-4">
         {group.questions.map((question) => {
