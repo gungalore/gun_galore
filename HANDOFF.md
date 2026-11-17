@@ -7,7 +7,29 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — ONE DATE CONTROL EVERYWHERE
+## 2026-11-17 (LATEST) — DATE ANSWERS ACCEPTED AS A TYPED MESSAGE
+
+Shipped `ad49d09f` (**full deploy**). The operator picked a date on the interview
+card and got "Choose one of the options, or type a different answer."
+
+⚠️ **THE CARD SENT A DATE AS `message` AND THE BATCH HANDLER REFUSED IT.** A
+`message` goes through the chip matcher unless the field is short/long; a date
+field has no custom key, so the matcher threw — a date question could not be
+saved at all. The card posts `value` now (`4c0c0c2d`), and the server also
+accepts a date in `message`, so a tab still running the previous bundle works
+without a reload. Validity stays with `sanitiseAnswers`, not with this branch.
+
+The screenshot was an **already-open tab** on the pre-`4c0c0c2d` bundle: it
+still shows the browser's native date input and sends `message`. A reload now
+loads the house `DateField` (verified: `gg-datecell` and `yyyy-mm-dd` are in the
+deployed chunks), but the server fix means the open tab saves even before that.
+
+Verified: backend `tsc` clean, **419 suites / 6 223 tests passed** (8 skipped);
+frontend unchanged since its 1 952-test run; `deploy.sh` exited 0; backend
+health 200 ×2, frontend 200 ×2, public 200 ×2, three PM2 services online.
+Rollback point `alloutdoor-20261117-163102.dump` (34,394,995 bytes).
+
+## 2026-11-17 (LATEST-1) — ONE DATE CONTROL EVERYWHERE
 
 Shipped `4c0c0c2d` (**frontend-only**; backend and warden kept serving). The
 operator hit the browser's own date picker — the OS month/year wheel — on a date
