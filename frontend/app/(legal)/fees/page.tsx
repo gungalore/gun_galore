@@ -70,44 +70,6 @@ export default function FeesPage() {
     <>
       <LegalDocHeader title="Fees" lastUpdated="Effective 19 October 2026" />
 
-      <h2>The short version</h2>
-      <div
-        style={{
-          background: 'rgba(34,197,94,0.06)',
-          border: '0.5px solid var(--success)',
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 24,
-          fontSize: 14,
-          color: 'var(--text-primary)',
-        }}
-      >
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          <li><strong>Listing is free.</strong> Browsing, listing and offering cost nothing.</li>
-          <li>
-            <strong>There is one Platform Fee.</strong> It replaced the old
-            Buyer Protection Fee. It is calculated last, on the item price plus
-            delivery, and shown before payment.
-          </li>
-          <li>
-            <strong>On a marketplace (Buy Now) sale you receive your full asking price.</strong>{' '}
-            The buyer pays the Platform Fee on top; nothing is deducted from you.
-          </li>
-          <li>
-            <strong>On an auction the Platform Fee is a flat 10%</strong> —
-            the buyer pays 5% of the combined hammer price and delivery, and you
-            pay 5% of the hammer, deducted from your payout.
-          </li>
-          <li>
-            <strong>A buyer who cancels before dispatch</strong> is refunded
-            less a 4% transaction handling fee; delivery is also retained once
-            a waybill is booked. After dispatch there is no cancellation — only
-            the dispute process.
-          </li>
-          <li><strong>No charge until a sale completes.</strong> Nothing is billed up front.</li>
-        </ul>
-      </div>
-
       <h2>1. The Platform Fee — marketplace</h2>
       <p>
         On a Buy Now listing the seller&apos;s <strong>asking price is the
