@@ -7,7 +7,32 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — INTERVIEW CARD: CONTINUE ARMS ON THE FIRST ANSWER
+## 2026-11-17 (LATEST) — PHONE HAND-OFF READS LIKE UPLOAD; QUESTIONS MARKED
+
+Shipped `6dd23fdc` (**full deploy**). Two operator requests.
+
+- **The desktop Scan hand-off now behaves like Upload.** A phone-delivered file
+  is read server-side when it arrives, but the desktop only reloaded — nothing
+  was applied and no review sheet opened. On arrival the page now diffs the new
+  uploads against the ids it has already seen, asks for each one's stored
+  reading (`readingFor`, **no second vision call**), applies it with the same
+  fill-only-empty rule, and queues the same review sheet as Upload.
+  `readingFor` now returns the registry's human label per field instead of the
+  raw key, because that sheet renders it.
+- **Every question on the card is marked.** A green tick once it has an answer,
+  a red cross while it is required and still empty, nothing on an optional
+  question left blank. The card gave no feedback between the tap and Continue.
+
+Verified before deploy: backend `tsc` clean, **419 suites / 6 222 tests passed**
+(8 skipped); frontend `tsc` clean, **169 files / 1 951 tests passed** (the new
+`document-add-buttons.spec.tsx` covers the hand-off opening the review sheet and
+saving the corrections); foreground production build clean. One DRAFT
+motivation existed and none was generating. Rollback point
+`alloutdoor-20261117-134422.dump` (34,369,129 bytes). `deploy.sh` exited 0;
+backend health 200 ×2, frontend 200 ×2, public 200 ×2, all three PM2 services
+online.
+
+## 2026-11-17 (LATEST-1) — INTERVIEW CARD: CONTINUE ARMS ON THE FIRST ANSWER
 
 Shipped `5608cf42` (**full deploy**). Two defects the operator caught on the
 live interview card:
