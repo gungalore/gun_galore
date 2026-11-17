@@ -5,7 +5,45 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-08**.
+Last updated: **2026-11-17**.
+
+## 2026-11-17 — JEV AUTO-MASKS FORBIDDEN PHOTO DETAILS (FULL DEPLOY)
+
+Shipped `be099b56` — the first deploy since `3a8e61d1`, so it also carried
+`7da17cb1` (homepage seller band), `e2ce67bd` (headline animation / eyebrow
+removed), `12dd531d` (/fees short-version box removed), `bd7ff564` (JEV screens
+still images; Gemini keeps video) and `be099b56` (server-side auto-mask).
+
+The seller no longer draws a blur box. For a listing photo the server asks JEV
+for `box` answers for every maskable category that tripped the screen — contact,
+QR, address/storefront, advertising, three ordinals each — filters by confidence
+and area, dedupes by IoU, pixelates all of them with sharp, re-screens the masked
+image and returns the masked JPEG in the `image-screen` response. The sell form
+swaps in that file and marks it redacted for the final preview/create screen.
+Edit uploads (`addImage`/`replaceImage`) screen and auto-mask too; a photo that
+cannot be cleared is refused with the admin-review reason. The manual
+`ImageBlurModal`, the dropzone "Hide details" button and the image-fix queue are
+gone.
+
+⚠️ **Auto-mask is not auto-approve.** If the post-mask screen still flags
+something, the photo is held (or the edit upload refused); it is never handed
+back to the seller. A live smoke pixelated a phone number and URL but the
+residual "CALL" still read as advertising, so it held. Expect some advert-shaped
+photos to reach HUMAN_REVIEW until the boxes include the label text.
+
+⚠️ **API change:** `image-screen` now returns `maskedImage`. Any other client of
+that endpoint must use the returned bytes, not the original. `addImage` /
+`replaceImage` can now return 400 with a public reason.
+
+⚠️ The live smoke found and fixed a Sharp trap: two `.resize()` calls in one
+pipeline keep only the last, so the mask silently returned the original. Use two
+buffers.
+
+Rollback point `alloutdoor-20261117-074402.dump` (34.4 MB). Backend and frontend
+health OK ×2, public 200 ×2, pm2 shows all three services online. Production had
+zero `Motivation` rows, so no generation was in flight. Local gates: backend
+413 suites / 6,127 tests; frontend 168 files / 1,944 tests; both typechecks and
+the foreground frontend build clean.
 
 ## 2026-11-08 (SHELL) — THE MISSING ANDROID TAB BAR WAS A HEADER OVERFLOW
 
