@@ -7,7 +7,34 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — DATE ANSWERS ACCEPTED AS A TYPED MESSAGE
+## 2026-11-17 (LATEST) — HISTORY CHIPS FIT THE PURPOSE, AND THE FLOOR STOPS REFUSING
+
+Shipped `25625e3c` (**full deploy**). Two defects on the "Your hunting and
+shooting" card of a .50 BMG long-range application.
+
+- **The history chips did not fit the calibre.** They were the pinned list for
+  every applicant, so "Birds and small game" and "Plains game" sat under "how
+  did you first get involved in long-range precision shooting". The brief's
+  researched chips now win when it has three or more (they are written against
+  the cartridge and discipline); the pinned list is the fallback and is filtered
+  by purpose — no hunter's chips for a sport shooter, no clay chip for a hunter.
+- **One short chip looked answered and then refused the whole card.** The
+  history has a twelve-word floor; "At the range most weekends" is five, so the
+  card ticked it, enabled Continue and the server answered "please give us a
+  little more". The planner now publishes the floor as `minWords` and the card
+  keeps a below-floor history open: red cross, a "pick a few, or add a sentence"
+  hint, and the question is left out of the batch so the rest of the card saves.
+  Several ticks or a typed sentence clear it.
+
+Verified: backend `tsc` clean, **419 suites / 6 228 tests passed** (8 skipped);
+frontend `tsc` clean, **169 files / 1 954 tests passed**; foreground production
+build clean. One DRAFT existed and none was generating. Rollback point
+`alloutdoor-20261117-164450.dump` (34,395,510 bytes). `deploy.sh` exited 0;
+backend health 200 ×2, frontend 200 ×2 (the first check immediately after the
+reload returned 000; it answered 200 on both retries), public 200 ×2, all three
+PM2 services online.
+
+## 2026-11-17 (LATEST-1) — DATE ANSWERS ACCEPTED AS A TYPED MESSAGE
 
 Shipped `ad49d09f` (**full deploy**). The operator picked a date on the interview
 card and got "Choose one of the options, or type a different answer."
