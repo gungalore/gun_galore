@@ -2474,17 +2474,32 @@ export class TransactionsService {
     );
   }
 
-  /** Payout + BANV webhooks use the Payouts product's signing secret. */
+  /**
+   * Payout + BANV webhooks use the Payouts product's signing secret.
+   *
+   * ⚠️ 'unsigned' IS A REAL ANSWER, NOT A FAILURE. Peach's Payouts product
+   * exposes no webhook-signing control (unlike Checkout), so its live
+   * deliveries arrive with no signature at all. Refusing them means a payout
+   * is created and its completion never lands — the money leaves and the
+   * transaction stays "not paid out" forever.
+   *
+   * So an unsigned delivery is accepted, but ONLY as a hint: both handlers
+   * re-query the Payouts API and act on what Peach says, never on the body.
+   * A delivery that CARRIES a signature and fails verification is still
+   * rejected and alerted — a bad secret must not be silently tolerated.
+   */
   verifyPeachPayoutWebhook(
     rawBody: string,
     body: Record<string, unknown>,
     headers: { id?: string; timestamp?: string; signature?: string },
     url: string,
-  ): boolean {
-    return (
-      this.peach?.verifyPayoutWebhookSignature(rawBody, body, headers, url) ??
-      false
-    );
+  ): 'valid' | 'unsigned' | 'invalid' {
+    const carriesSignature =
+      Boolean(headers.signature) || typeof body.signature === 'string';
+    if (!carriesSignature) return 'unsigned';
+    return this.peach?.verifyPayoutWebhookSignature(rawBody, body, headers, url)
+      ? 'valid'
+      : 'invalid';
   }
 
   // Raise a deduped admin alert when a webhook signature fails to verify.
@@ -2814,14 +2829,29 @@ export class TransactionsService {
       );
       return;
     }
-    const status = evt.status.toLowerCase();
+    // ⚠️ THE BODY IS NOT EVIDENCE. The Payouts product has no webhook-signing
+    // control, so a delivery can arrive unsigned. It is treated as a HINT that
+    // tells us WHICH payout to look at — never as the fact itself. The Payouts
+    // API is asked directly and its answer is what moves paidOutAt, so a forged
+    // delivery can do no more than trigger a status read. Do not "simplify"
+    // this back to evt.status.
+    const remote = await this.peach.getPayoutStatus(evt.payoutId);
+    if (!remote) {
+      this.logger.warn(
+        `Peach payout webhook: Payouts API has no payout ${evt.payoutId}`,
+      );
+      return;
+    }
+    const status = remote.status.toLowerCase();
+    const resultCode = remote.resultCode ?? evt.code;
+    const errorText = remote.error ?? evt.error;
     const now = new Date();
     if (status === 'processing' || status === 'pending') {
       await this.prisma.peachPayoutAttempt.update({
         where: { id: attempt.id },
         data: {
-          status: evt.status,
-          resultCode: evt.code,
+          status: remote.status,
+          resultCode,
           lastStatusCheckedAt: now,
         },
       });
@@ -2832,8 +2862,8 @@ export class TransactionsService {
         this.prisma.peachPayoutAttempt.update({
           where: { id: attempt.id },
           data: {
-            status: evt.status,
-            resultCode: evt.code,
+            status: remote.status,
+            resultCode,
             lastStatusCheckedAt: now,
             completedAt: attempt.completedAt ?? now,
             terminalAt: now,
@@ -2863,9 +2893,9 @@ export class TransactionsService {
       this.prisma.peachPayoutAttempt.update({
         where: { id: attempt.id },
         data: {
-          status: evt.status,
-          resultCode: evt.code,
-          errorMessage: evt.error ?? evt.code ?? evt.status,
+          status: remote.status,
+          resultCode,
+          errorMessage: errorText ?? status,
           lastStatusCheckedAt: now,
           terminalAt: now,
         },
@@ -2877,7 +2907,7 @@ export class TransactionsService {
           payoutRequestedAt: null,
           gatewayPayoutId: null,
           payoutHeldAt: now,
-          payoutHoldReason: `Peach payout ${status}: ${evt.error ?? evt.code ?? 'no detail'}`.slice(0, 500),
+          payoutHoldReason: `Peach payout ${status}: ${errorText ?? 'no detail'}`.slice(0, 500),
           payoutHeldById: null,
         },
       }),
@@ -2889,7 +2919,7 @@ export class TransactionsService {
           type: reversed ? 'PEACH_PAYOUT_REVERSED' : 'PEACH_PAYOUT_FAILED',
           referenceId: attempt.transactionId,
           urgent: true,
-          context: `Peach payout ${status.toUpperCase()} for ${attempt.transactionId} (payout ${attempt.payoutId}, code ${evt.code ?? '?'}). The row is held for review${reversed ? ' — funds RETURNED after an earlier success; reconcile before re-running' : ''}.`,
+          context: `Peach payout ${status.toUpperCase()} for ${attempt.transactionId} (payout ${attempt.payoutId}, code ${resultCode ?? '?'}). The row is held for review${reversed ? ' — funds RETURNED after an earlier success; reconcile before re-running' : ''}.`,
         },
       })
       .catch(() => undefined);
@@ -2923,19 +2953,34 @@ export class TransactionsService {
       );
       return;
     }
-    if (evt.status === 'pending' || evt.status === 'processing') {
-      this.logger.log(`Peach BANV ${evt.status} for user ${user.id}`);
+    // ⚠️ SAME RULE AS THE PAYOUT HANDLER: the BANV webhook is unsigned, so the
+    // body only names WHICH verification to look at. The result — including the
+    // per-field match flags — is read back from the Payouts API. A forged
+    // delivery must never be able to stamp bankVerifiedAt.
+    const remote = await this.peach.getBankVerificationResult(
+      evt.bankVerificationId,
+    );
+    if (!remote) {
+      this.logger.warn(
+        `Peach BANV webhook: Payouts API has no verification ${evt.bankVerificationId}`,
+      );
       return;
     }
-    const flags = banvFlagsSummary(evt.matches);
-    if (evt.status === 'successful') {
-      const outcome = evaluateBanvMatches(evt.matches);
+    const status = remote.status;
+    const resultCode = remote.resultCode ?? evt.resultCode;
+    if (status === 'pending' || status === 'processing') {
+      this.logger.log(`Peach BANV ${status} for user ${user.id}`);
+      return;
+    }
+    const flags = banvFlagsSummary(remote);
+    if (status === 'successful') {
+      const outcome = evaluateBanvMatches(remote);
       if (outcome === 'passed') {
         await this.prisma.user.update({
           where: { id: user.id },
           data: {
             bankVerifiedAt: new Date(),
-            bankAvsResult: `PASS:${evt.resultCode ?? ''}:${flags}`,
+            bankAvsResult: `PASS:${resultCode ?? ''}:${flags}`,
           },
         });
         void this.notifications
@@ -2948,7 +2993,7 @@ export class TransactionsService {
         where: { id: user.id },
         data: {
           bankVerifiedAt: null,
-          bankAvsResult: `MISMATCH:${evt.resultCode ?? ''}:${flags}`,
+          bankAvsResult: `MISMATCH:${resultCode ?? ''}:${flags}`,
         },
       });
       await this.prisma.adminAlert
@@ -2978,7 +3023,7 @@ export class TransactionsService {
       where: { id: user.id },
       data: {
         bankVerifiedAt: null,
-        bankAvsResult: `FAILED:${evt.resultCode ?? ''}`,
+        bankAvsResult: `FAILED:${resultCode ?? ''}`,
       },
     });
     await this.prisma.adminAlert
@@ -2986,7 +3031,7 @@ export class TransactionsService {
         data: {
           type: 'BANK_VERIFY_FAILED',
           referenceId: user.id,
-          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. Re-run from the user dossier or ask the seller to re-check their details.`,
+          context: `Bank account verification FAILED (code ${resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. Re-run from the user dossier or ask the seller to re-check their details.`,
         },
       })
       .catch(() => undefined);

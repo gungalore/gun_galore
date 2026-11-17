@@ -854,16 +854,21 @@ export class PaymentsWebhookController {
     const rawBody =
       (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
       JSON.stringify(body);
-    const valid = this.txService.verifyPeachPayoutWebhook(
+    const verdict = this.txService.verifyPeachPayoutWebhook(
       rawBody,
       body,
       this.peachHeaders(req),
       this.webhookUrl(req),
     );
-    if (!valid) {
+    if (verdict === 'invalid') {
       this.logger.warn('Peach payout webhook signature invalid — dropping');
       void this.txService.alertWebhookSignatureFailure('peach-payout');
       return { received: true };
+    }
+    if (verdict === 'unsigned') {
+      // Payouts has no signing control; the handler re-queries the API before
+      // changing anything, so this is a hint and not evidence.
+      this.logger.warn('Peach payout webhook is UNSIGNED — confirming with the Payouts API');
     }
     try {
       await this.txService.handlePeachPayoutWebhook(body);
@@ -887,16 +892,20 @@ export class PaymentsWebhookController {
     const rawBody =
       (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
       JSON.stringify(body);
-    const valid = this.txService.verifyPeachPayoutWebhook(
+    const verdict = this.txService.verifyPeachPayoutWebhook(
       rawBody,
       body,
       this.peachHeaders(req),
       this.webhookUrl(req),
     );
-    if (!valid) {
+    if (verdict === 'invalid') {
       this.logger.warn('Peach BANV webhook signature invalid — dropping');
       void this.txService.alertWebhookSignatureFailure('peach-banv');
       return { received: true };
+    }
+    if (verdict === 'unsigned') {
+      // Same as the payout handler: re-queried against the Payouts API below.
+      this.logger.warn('Peach BANV webhook is UNSIGNED — confirming with the Payouts API');
     }
     try {
       await this.txService.handlePeachBanvWebhook(body);
