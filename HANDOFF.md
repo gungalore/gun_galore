@@ -7,7 +7,40 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
-## 2026-11-17 (LATEST) — HISTORY CHIPS FIT THE PURPOSE, AND THE FLOOR STOPS REFUSING
+## 2026-11-17 (LATEST) — NO CHIP THE FACTS DO NOT SUPPORT
+
+Shipped `d9299a4c` (**full deploy**). A .50 BMG long-range precision rifle
+application was offered **"Clay targets at a club"** under "how did you first
+get involved in long-range precision shooting". A precision rifle counts as a
+"sport" firearm, and the fallback treated every sport chip as fitting every
+sport applicant.
+
+- The sport fallback is now the **universal chips only** (family, friend, club,
+  range). The clay chip needs a shotgun or a clay discipline in the facts
+  (`shotgun|clay|trap|skeet|sporting|wing`); hunting chips stay with hunters.
+- The brief's researched chips are used **even when it returns one or two**,
+  padded with the universal set. The old "three or more or nothing" rule is how
+  the pinned list came back on a card the brief had already understood.
+- The brief prompt now states that **every open question must carry 3–6 chips**,
+  that no chip may describe a discipline, format, animal or activity the facts
+  do not support (the clay/long-range example is in the prompt), and that the
+  history chips must say how somebody started in THIS discipline. The brief
+  version is bumped to `2026-11-17b`, so stored briefs rebuild instead of
+  serving the old chips for their full TTL.
+
+⚠️ **A STORED BRIEF IS REBUILT, NOT REWRITTEN.** On the next state load the
+version mismatch starts a background rebuild; until it lands the card is served
+from the (now clay-free) fallback. The old brief is not edited in place.
+
+Verified: backend `tsc` clean, **419 suites / 6 230 tests passed** (8 skipped);
+frontend build clean (its 1 954 tests were green on unchanged code). One DRAFT
+existed and none was generating. Rollback point
+`alloutdoor-20261117-170855.dump` (34,395,853 bytes). `deploy.sh` exited 0;
+backend health 200 ×2, frontend 200 ×2 (the first check immediately after the
+reload returned 000; both retries answered 200), public 200 ×2, three PM2
+services online.
+
+## 2026-11-17 (LATEST-1) — HISTORY CHIPS FIT THE PURPOSE, AND THE FLOOR STOPS REFUSING
 
 Shipped `25625e3c` (**full deploy**). Two defects on the "Your hunting and
 shooting" card of a .50 BMG long-range application.
