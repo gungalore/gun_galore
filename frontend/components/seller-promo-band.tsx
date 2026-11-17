@@ -15,12 +15,14 @@
 // make this headline contradict the published fee schedule, so do not shorten it
 // — the spec asserts the whole sentence.
 //
-// Server component, deliberately: no hooks, no client bundle, no fetch. The
-// copy is identical for every viewer, so there is nothing here to cache or
-// personalise. It is also static on purpose — the hero already owns the page's
-// entrance animation, and a second reveal competing with it is worse than none.
+// THE BAND IS SERVER-RENDERED; THE HEADLINE IS A CLIENT ISLAND. Only the h2
+// needs JavaScript, and only to decide whether this launch has already played
+// its word-by-word intro (see seller-promo-headline.tsx). The copy, links and
+// layout stay static and viewer-independent. The hero already owns the page's
+// main entrance; this band gets one flourish of its own, once.
 
 import Link from 'next/link';
+import { SellerPromoHeadline } from './seller-promo-headline';
 
 export function SellerPromoBand() {
   return (
@@ -37,45 +39,8 @@ export function SellerPromoBand() {
       }}
     >
       <div className="mx-auto grid max-w-[var(--page-max)] gap-6 px-4 py-8 sm:px-6 sm:py-10 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-end lg:gap-12 lg:py-12">
-        <div className="min-w-0 flex flex-col gap-2.5">
-          <p
-            className="m-0 text-[11px] uppercase"
-            style={{
-              // --text-tertiary fails AA on card surfaces in the dark theme;
-              // the -on-card alias is the existing stand-in (globals.css).
-              color: 'var(--text-tertiary-on-card)',
-              letterSpacing: '0.2em',
-              fontWeight: 700,
-            }}
-          >
-            For sellers
-          </p>
-
-          {/* The brand red on "100% payout" is set at 27px+/800 in both themes,
-              which clears the 3:1 large-text threshold. It is not a small-text
-              colour here — keep it on the display line only. */}
-          <h2
-            id="seller-promo-heading"
-            className="m-0"
-            style={{
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: 'clamp(1.7rem, 7vw, 4.75rem)',
-              lineHeight: 1.02,
-              letterSpacing: '-0.03em',
-            }}
-          >
-            {/* Two block lines, with the space BETWEEN them made explicit: the
-                visual break is a CSS line break, but the accessible name must
-                still read as two sentences rather than "free.100%". */}
-            <span className="block" style={{ textWrap: 'balance' }}>
-              Sellers list for free.
-            </span>{' '}
-            <span className="block" style={{ textWrap: 'balance' }}>
-              <span style={{ color: 'var(--red)' }}>100% payout</span> on Buy Now.
-            </span>
-          </h2>
+        <div className="min-w-0">
+          <SellerPromoHeadline />
         </div>
 
         <div className="min-w-0">
