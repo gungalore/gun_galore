@@ -197,22 +197,22 @@ describe('LlmService', () => {
     expect(deepseek.calls).toHaveLength(0);
   });
 
-  // ⚠️ MODERATION IS PINNED TO GEMINI AT 3.1-FLASH-LITE. Operator decision
-  // 2026-10-12: moderation moved off DeepSeek, but stays on the cheap
-  // flash-lite rather than the platform-wide 3.8-flash. Pinned in providerFor
-  // and pinned again by the modelFor backstop below.
-  it('⚠️ PINS IMAGE SCREENING AND ESCALATION TO GEMINI AT 3.1-FLASH-LITE UNDER LLM_PROVIDER=deepseek', async () => {
+  // ⚠️ VIDEO MODERATION IS PINNED TO GEMINI AT 3.1-FLASH-LITE. Images and text
+  // are moderated by Jev now; only a clip needs a Gemini call (Jev has no video
+  // input), and it stays on the cheap flash-lite rather than the platform-wide
+  // 3.8-flash. Pinned in providerFor and pinned again by the modelFor backstop.
+  it('⚠️ PINS VIDEO MODERATION TO GEMINI AT 3.1-FLASH-LITE UNDER LLM_PROVIDER=deepseek', async () => {
     process.env.LLM_PROVIDER = 'deepseek';
     const { svc, gemini, deepseek } = build();
     await svc.complete({
       messages: [],
       maxTokens: 10,
-      purpose: 'moderation.listing.images',
+      purpose: 'moderation.listing.video',
     });
     await svc.complete({
       messages: [],
       maxTokens: 10,
-      purpose: 'moderation.escalation',
+      purpose: 'feed.moderation.video',
     });
     expect(gemini.calls).toHaveLength(2);
     expect(deepseek.calls).toHaveLength(0);

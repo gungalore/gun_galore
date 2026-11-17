@@ -1190,7 +1190,7 @@ export class ListingsService {
 
     let moderation: ListingModerationResult;
 
-    if (moderationEnabled && this.moderation.isEnabled) {
+    if (moderationEnabled) {
       moderation = await this.moderation.moderate({
         title: dto.title,
         description: dto.description,
@@ -1207,9 +1207,9 @@ export class ListingsService {
         sellerFirstFirearmListings: false, // safety-net removed
       });
     } else {
-      // Flag off OR no API key — preview is a no-op approve so the
-      // seller isn't blocked from publishing. The submit path mirrors
-      // this behaviour (publishes ACTIVE without moderation).
+      // The moderation flag is off — the preview is a no-op approve so the
+      // seller isn't blocked. A missing Jev key is NOT this branch:
+      // moderate() is still called and holds as HUMAN_REVIEW.
       moderation = {
         decision: 'APPROVE',
         confidence: 1,
@@ -1793,7 +1793,7 @@ export class ListingsService {
     let originalDescription: string | null = null;
     let autoFixApplied = false;
 
-    if (moderationEnabled && this.moderation.isEnabled) {
+    if (moderationEnabled) {
       moderation = await this.moderation.moderate({
         title: dto.title,
         description: dto.description,
@@ -1806,15 +1806,9 @@ export class ListingsService {
         sellerFirstFirearmListings: false, // safety-net removed
       });
     } else {
-      // Either the flag is off OR no model key is loaded. We
-      // PUBLISH ACTIVE in both cases (no more "manual review queued"
-      // stalls). If admin wants offline moderation, they enable the
-      // flag + set the key; otherwise the marketplace stays open.
-      this.logger.warn(
-        moderationEnabled
-          ? 'No model key configured — publishing listing ACTIVE without moderation'
-          : 'Moderation flag is OFF — publishing listing ACTIVE',
-      );
+      // The flag is off. A missing Jev key is NOT this branch: moderate() is
+      // still called and holds as HUMAN_REVIEW, so a keyless box fails closed.
+      this.logger.warn('Moderation flag is OFF — publishing listing ACTIVE');
     }
 
     // AUTO_FIX_AND_APPROVE — apply Claude's cleaned description and
@@ -3723,7 +3717,7 @@ export class ListingsService {
       const moderationEnabled = await this.settings.get(
         FLAGS.claudeModerationEnabled,
       );
-      if (moderationEnabled && this.moderation.isEnabled) {
+      if (moderationEnabled) {
         editModeration = await this.moderation.moderate({
           title: effectiveTitle,
           description: effectiveDescription,
@@ -3757,12 +3751,10 @@ export class ListingsService {
           editStatus = ListingStatus.PENDING_REVIEW;
         }
       } else {
-        // Flag off OR no API key — mirrors create(), which publishes without
-        // moderation rather than stalling the seller in a review queue.
+        // The flag is off. A missing Jev key is NOT this branch: moderate() is
+        // still called and holds the edit for review.
         this.logger.warn(
-          moderationEnabled
-            ? 'No model key configured — applying listing edit without moderation'
-            : 'Moderation flag is OFF — applying listing edit without moderation',
+          'Moderation flag is OFF — applying listing edit without moderation',
         );
       }
     }

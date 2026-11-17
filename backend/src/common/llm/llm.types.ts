@@ -434,7 +434,9 @@ export interface LlmImageResponse {
 // can use to make direct contact."
 // ────────────────────────────────────────────────────────────────────
 
-/** The `state` Jev ingests. Text only — never an image or a file. */
+/** The `state` Jev ingests. Text or a JSON object. Images are NOT part of the
+ *  state: they travel in `JevDecideRequest.assets` and the questions refer to
+ *  their keys. */
 export type JevState = string | Record<string, unknown> | unknown[];
 
 /**

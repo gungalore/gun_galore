@@ -1,13 +1,10 @@
 // ────────────────────────────────────────────────────────────────────
 // JEV (TypeSafe System One) — typed decisions, not prose.
 //
-// Operator decision, 2026-10-01: Jev monitors every user-supplied TEXT
-// surface (listings, listing Q&A, offer notes, rating comments, feed posts
-// and comments) for contact details, name sharing, social handles,
-// third-party advertising and any other way two users can reach each other
-// off-platform. DeepSeek Flash screens the IMAGES for the same content —
-// Jev cannot see a picture (models.md: "Text only. No image, audio, or
-// video input"), so the two are split by modality, never by preference.
+// Operator decision, 2026-11: Jev monitors every user-supplied TEXT surface
+// AND every still IMAGE. Photos travel in the `assets` map, one image per
+// request; `toJevImage` prepares them and `moderation/jev-image-battery.ts`
+// owns the questions. Video stays on Gemini — Jev has no video input.
 //
 // ⚠️ ONE REQUEST, MANY QUESTIONS. Jev evaluates every question in parallel
 // against one `state`; batching is the documented way to use it (TypeSafe's

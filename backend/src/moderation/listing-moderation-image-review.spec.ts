@@ -1,22 +1,49 @@
 import { ListingModerationService } from './listing-moderation.service';
 import type { ListingModerationResult } from './listing-moderation.service';
-import type { LlmResponse } from '../common/llm/llm.types';
+import type { ListingPhotoCategory } from './jev-image-battery';
 
-// Photo screening is a triage step, not the final judge. A vision model cannot
+// Photo screening is a triage step, not the final judge. JEV cannot reliably
 // tell a manufacturer's packaging URL from the seller's own shop, so the only
 // image sin that stays a hard REJECT is prohibited goods (live ammunition).
-// Everything else must reach the admin queue with HUMAN_REVIEW.
+// Everything else reaches the admin queue with HUMAN_REVIEW.
 
-function llmResponse(text: string): LlmResponse {
+jest.mock('../common/llm/jev-image', () => ({
+  toJevImage: jest.fn(async () => ({
+    type: 'image',
+    format: 'jpg',
+    data_base64: 'stub',
+  })),
+}));
+
+const ORIGINAL_KEY = process.env.JEV_API_KEY;
+
+beforeEach(() => {
+  process.env.JEV_API_KEY = 'test-jev';
+});
+afterAll(() => {
+  if (ORIGINAL_KEY === undefined) delete process.env.JEV_API_KEY;
+  else process.env.JEV_API_KEY = ORIGINAL_KEY;
+});
+
+/** All five photo categories, clean unless overridden. */
+function photoAnswers(
+  overrides: Partial<Record<ListingPhotoCategory, number>> = {},
+) {
+  const scores: Record<ListingPhotoCategory, number> = {
+    contact: 0.05,
+    qr: 0.05,
+    address: 0.05,
+    advertising: 0.05,
+    live_ammo: 0.05,
+    ...overrides,
+  };
   return {
-    text,
-    parts: [{ type: 'text', text }],
-    toolCalls: [],
-    stopReason: 'end',
-    usage: { inputTokens: 0, outputTokens: 0 },
-    model: 'gemini-3.1-flash-lite',
-    provider: 'gemini',
-    assistantMessage: { role: 'assistant', content: [{ type: 'text', text }] },
+    model: 'jev-1.13.0',
+    provider: 'typesafe',
+    usage: { inputTokens: 1, outputTokens: 0 },
+    answers: Object.fromEntries(
+      Object.entries(scores).map(([key, noul]) => [key, { type: 'noul', noul }]),
+    ),
   };
 }
 
@@ -30,18 +57,18 @@ function mockPhotoFetch(): void {
   ) as unknown as typeof fetch;
 }
 
-function makeService(reply: unknown) {
-  const complete = jest
-    .fn()
-    .mockResolvedValue(llmResponse(JSON.stringify(reply)));
+function makeService(replies: unknown[]) {
+  const decide = jest.fn();
+  for (const reply of replies) decide.mockResolvedValueOnce(reply);
+  const complete = jest.fn();
   const svc = Object.create(
     ListingModerationService.prototype,
   ) as ListingModerationService;
   Object.assign(svc as unknown as Record<string, unknown>, {
-    llm: { complete, isConfigured: () => true },
+    llm: { decide, complete },
     logger: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
   });
-  return { svc, complete };
+  return { svc, decide, complete };
 }
 
 function screen(svc: ListingModerationService) {
@@ -62,44 +89,143 @@ function screen(svc: ListingModerationService) {
   });
 }
 
-describe('image moderation - admin review instead of auto-reject', () => {
+function screenMany(svc: ListingModerationService, count: number) {
+  return (
+    svc as unknown as {
+      moderateImageAxis: (input: unknown) => Promise<ListingModerationResult>;
+    }
+  ).moderateImageAxis({
+    title: 'Tags',
+    description: 'Tags.',
+    categoryName: 'Accessories',
+    categoryIsFirearm: false,
+    priceCents: 1,
+    imageUrls: Array.from({ length: count }, (_, i) => `https://x/${i + 1}.jpg`),
+    imagesBase64: [],
+    imageCount: count,
+    sellerFirstFirearmListings: false,
+  });
+}
+
+describe('image moderation — Jev, admin review instead of auto-reject', () => {
   beforeEach(() => {
     mockPhotoFetch();
   });
 
-  it('sends a website URL in a photo to HUMAN_REVIEW', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      categories: ['contact-info'],
-      reasons: [
-        'The second image contains a website URL (www.ppprsa.shop) on the product packaging.',
-      ],
-    });
+  it('sends readable contact details to HUMAN_REVIEW with a photo flag', async () => {
+    const { svc, decide, complete } = makeService([
+      photoAnswers({ contact: 0.92 }),
+    ]);
     const r = await screen(svc);
+
     expect(r.decision).toBe('HUMAN_REVIEW');
-    expect(r.reasons[0]).toMatch(/website URL/i);
+    expect(r.reasons[0]).toMatch(/contact details/i);
     expect(r.publicReason).toMatch(/admin check/i);
     expect(r.photoFlags?.[0]).toMatchObject({
       index: 1,
       categories: ['photo-contact-info'],
     });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0][0]).toMatchObject({
+      purpose: 'moderation.listing.images',
+    });
+    expect(complete).not.toHaveBeenCalled();
   });
 
-  it('uses the model photo index when it is supplied', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      categories: ['contact-info'],
-      reasons: ['Phone number visible in photo 2'],
-      photos: [
-        {
-          index: 2,
-          categories: ['contact-info'],
-          reason: 'Phone number visible in photo 2',
-        },
-      ],
-    });
+  it('flags a QR code, a storefront address and third-party advertising', async () => {
+    for (const [category, flag] of [
+      ['qr', 'qr-code'],
+      ['address', 'photo-address'],
+      ['advertising', 'advertising'],
+    ] as const) {
+      const { svc } = makeService([photoAnswers({ [category]: 0.91 })]);
+      const r = await screen(svc);
+      expect(r.decision).toBe('HUMAN_REVIEW');
+      expect(r.photoFlags?.[0]?.categories).toContain(flag);
+    }
+  });
+
+  it('still hard-rejects live ammunition', async () => {
+    const { svc } = makeService([photoAnswers({ live_ammo: 0.93 })]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('REJECT');
+    expect(r.publicReason).toMatch(/live ammunition/i);
+    expect(r.photoFlags?.[0]?.categories).toContain('live-ammo');
+  });
+
+  it('holds the 60–80 % band for a human', async () => {
+    const { svc } = makeService([photoAnswers({ contact: 0.7 })]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.photoFlags?.[0]?.reason).toMatch(/may show/i);
+  });
+
+  it('approves a clean photo', async () => {
+    const { svc } = makeService([photoAnswers()]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('APPROVE');
+  });
+
+  it('holds when an answer is missing instead of reading it as clean', async () => {
+    const { svc } = makeService([
+      {
+        model: 'jev-1.13.0',
+        provider: 'typesafe',
+        usage: { inputTokens: 1, outputTokens: 0 },
+        answers: { contact: { type: 'noul', noul: 0.1 } },
+      },
+    ]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('HUMAN_REVIEW');
+  });
+
+  it('holds when Jev errors', async () => {
+    const { svc, decide } = makeService([]);
+    decide.mockRejectedValueOnce(new Error('down'));
+    const r = await screen(svc);
+    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.reasons[0]).toMatch(/unavailable/i);
+  });
+
+  it('flags the photo by its real index in a multi-photo listing', async () => {
+    const { svc, decide } = makeService([
+      photoAnswers(),
+      photoAnswers({ contact: 0.94 }),
+    ]);
+    const r = await screenMany(svc, 2);
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(r.photoFlags).toEqual([
+      expect.objectContaining({
+        index: 2,
+        categories: ['photo-contact-info'],
+      }),
+    ]);
+  });
+
+  it('tells Jev to ignore an intentional seller redaction', async () => {
+    const { svc, decide } = makeService([photoAnswers()]);
+    await svc.screenImage('image/jpeg', 'abc', true);
+
+    const args = decide.mock.calls[0][0] as {
+      questions: Record<string, { instructions?: string }>;
+    };
+    const all = Object.values(args.questions)
+      .map((q) => q.instructions ?? '')
+      .join(' ');
+    expect(all).toMatch(/intentionally blurred or pixelated/i);
+    expect(all).toMatch(/treat that area as removed/i);
+  });
+
+  it('fails closed when Jev is not configured', async () => {
+    delete process.env.JEV_API_KEY;
+    const { svc, decide } = makeService([]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('approves with no photos and spends no model call', async () => {
+    const { svc, decide } = makeService([]);
     const r = await (
       svc as unknown as {
         moderateImageAxis: (input: unknown) => Promise<ListingModerationResult>;
@@ -110,105 +236,12 @@ describe('image moderation - admin review instead of auto-reject', () => {
       categoryName: 'Accessories',
       categoryIsFirearm: false,
       priceCents: 1,
-      imageUrls: ['https://x/1.jpg', 'https://x/2.jpg'],
+      imageUrls: [],
       imagesBase64: [],
-      imageCount: 2,
+      imageCount: 0,
       sellerFirstFirearmListings: false,
     });
-    expect(r.photoFlags).toEqual([
-      {
-        index: 2,
-        categories: ['photo-contact-info'],
-        reason: 'Phone number visible in photo 2',
-      },
-    ]);
-  });
-
-  it('sends third-party advertising to HUMAN_REVIEW', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      categories: ['advertising'],
-      reasons: ['Shop signage is visible in photo 2.'],
-    });
-    const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
-  });
-
-  it('still hard-rejects live ammunition', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      categories: ['live-ammo'],
-      reasons: ['Live ammunition is offered for sale in photo 2.'],
-    });
-    const r = await screen(svc);
-    expect(r.decision).toBe('REJECT');
-  });
-
-  it('keeps the live-ammo hard block even when categories are missing', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      reasons: ['Ammunition offered for sale in photo 2.'],
-    });
-    const r = await screen(svc);
-    expect(r.decision).toBe('REJECT');
-  });
-
-  it('still sends an unsure verdict to HUMAN_REVIEW', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: true,
-      categories: ['contact-info'],
-      reasons: ['Could not tell whether the label is original packaging.'],
-    });
-    const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
-  });
-
-  it('approves a clean photo', async () => {
-    const { svc } = makeService({
-      violation: false,
-      unsure: false,
-      categories: [],
-      reasons: [],
-    });
-    const r = await screen(svc);
     expect(r.decision).toBe('APPROVE');
-  });
-
-  it('exposes the single-image early screen', async () => {
-    const { svc } = makeService({
-      violation: true,
-      unsure: false,
-      categories: ['photo-address'],
-      reasons: ['Street address visible in the photo'],
-    });
-    const r = await svc.screenImage('image/jpeg', 'abc');
-    expect(r.decision).toBe('HUMAN_REVIEW');
-    expect(r.photoFlags?.[0]).toMatchObject({
-      index: 1,
-      categories: ['photo-address'],
-    });
-  });
-
-  it('tells the model to ignore an intentional seller redaction', async () => {
-    const { svc, complete } = makeService({
-      violation: false,
-      unsure: false,
-      categories: [],
-      reasons: [],
-    });
-    await svc.screenImage('image/jpeg', 'abc', true);
-
-    const request = complete.mock.calls[0][0] as {
-      messages: { content: { type: string; text?: string }[] }[];
-    };
-    const text = request.messages[0].content
-      .map((part) => part.text ?? '')
-      .join(' ');
-    expect(text).toMatch(/intentionally blurred or pixelated/i);
-    expect(text).toMatch(/not contact information/i);
+    expect(decide).not.toHaveBeenCalled();
   });
 });

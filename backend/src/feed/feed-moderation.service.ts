@@ -14,10 +14,11 @@
 //   - graphic — FIELD (normal field photos) is allowed with warning/blur;
 //     EXTREME (viscera, dismemberment, severe injury) is blurred + reviewed.
 //
-// ⚠️ RUNS ON DEEPSEEK (routed per-purpose in LlmService) AND ITS JSON IS NOT
-// SCHEMA-ENFORCED. The model guarantees valid JSON only. This service validates
-// the shape itself and fails closed on anything unexpected — an empty body,
-// malformed JSON, or a field the model invented means PENDING_MODERATION.
+// ⚠️ THE LIVE PATH IS A SPLIT: Jev answers typed questions for the text and
+// for each photo; Gemini answers the clip. The pre-split single call — and its
+// untyped JSON, validated below — stays behind FEED_MOD_ENGINE=legacy as the
+// rollback lever. Every path fails closed: an empty body, malformed JSON, a
+// missing answer or a field the model invented means PENDING_MODERATION.
 // ────────────────────────────────────────────────────────────────────
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -31,6 +32,11 @@ import {
   JEV_CATEGORY_REASONS,
   jevLadder,
 } from '../moderation/jev-battery';
+import {
+  evaluateFeedPhoto,
+  feedPhotoQuestions,
+  toJevPhotoAsset,
+} from '../moderation/jev-image-battery';
 import { FEED_MAX_IMAGES, POST_TYPE_LABELS } from './feed.types';
 
 export const FEED_MODERATION_PURPOSE = 'feed.moderation';
@@ -39,9 +45,9 @@ export const FEED_MODERATION_PURPOSE = 'feed.moderation';
 export const FEED_VIDEO_MODERATION_PURPOSE = 'feed.moderation.video';
 
 /**
- * Model for video moderation. Gemini reads video; DeepSeek does not, and
- * LlmService pins this purpose to the Gemini provider. Default is the
- * operator's choice (Gemini 3.1 Flash-Lite), overridable without a deploy.
+ * Model for video moderation. JEV has no video input, so the clip stays on
+ * Gemini, pinned to that provider by LlmService. Default is the operator's
+ * choice (Gemini 3.1 Flash-Lite), overridable without a deploy.
  * ⚠️ If a key does not serve this id, set `LLM_MODEL_VIDEO_MODERATION` to a
  * video-capable model (e.g. `gemini-3.5-flash-lite`).
  */
@@ -70,6 +76,16 @@ export interface FeedModerationVerdict {
   illegalDetected: boolean;
   otherViolation: boolean;
   reasons: string[];
+}
+
+/** One axis's contribution to the final verdict. */
+interface FeedAxisVerdict {
+  promoDetected: boolean;
+  illegalDetected: boolean;
+  otherViolation: boolean;
+  graphicTier: GraphicTier;
+  reasons: string[];
+  uncertain: boolean;
 }
 
 const SYSTEM_PROMPT = `You are the content moderation classifier for ALL Outdoor, a South African outdoor and firearms community. You classify a POST — its text, any attached photos, and any attached video's PICTURE and on-screen text (the video's audio is not provided) — and return json.
@@ -114,23 +130,6 @@ const RESPONSE_SCHEMA = {
   ],
 } as const;
 
-// ─── Image axis (DeepSeek Flash) ────────────────────────────────────
-//
-// ⚠️ JEV CANNOT SEE, so the photo side of a post is a separate DeepSeek
-// call. It carries the same categories as the text battery PLUS the graphic
-// tier, which is a purely visual judgement. Its JSON is not schema-enforced
-// either, and moderateFeedImages fails closed to PENDING on any doubt.
-const FEED_IMAGE_SYSTEM = `You are the photo screener for the ALL Outdoor community feed, a South African outdoor and firearms community. You see the attached photos and return json. Judge INTENT, not pixels alone: incidental manufacturer branding or a business number printed on a vehicle/equipment is normal and NOT a violation.
-
-Return exactly these fields:
-{"promoDetected":bool,"illegalDetected":bool,"otherViolation":bool,"graphicTier":"NONE"|"FIELD"|"EXTREME","unsure":bool,"reasons":["..."]}
-
-- promoDetected: the photos advertise, sell or self-promote a shop/channel/service (a price offered, a sale pitch, "DM me" text burned into the image). Incidental branding is NOT this.
-- illegalDetected: live ammunition/primers/propellant offered for sale, threats, doxxing, animal cruelty, anything unlawful.
-- otherViolation: contact details in the image (phone/email/handle/URL/QR code) or a street address / storefront that identifies a person.
-- graphicTier: NONE = ordinary content; FIELD = normal hunting/fishing field content (blood on a carcass/hide, field dressing) which is allowed behind a content warning; EXTREME = exposed viscera/guts, dismemberment, or a severely damaged body, which is held for a human.
-Set unsure=true if you genuinely cannot tell. No prose, no markdown.`;
-
 /** The more severe of two graphic tiers. */
 function maxGraphicTier(a: GraphicTier, b: GraphicTier): GraphicTier {
   const rank: Record<GraphicTier, number> = {
@@ -148,32 +147,28 @@ export class FeedModerationService {
   constructor(private readonly llm: LlmService) {}
 
   async moderate(input: FeedModerationInput): Promise<FeedModerationVerdict> {
-    const pending = (reasons: string[]): FeedModerationVerdict => ({
-      decision: 'PENDING_MODERATION',
-      graphicTier: GraphicTier.NONE,
-      promoDetected: false,
-      illegalDetected: false,
-      otherViolation: false,
-      reasons,
-    });
+    const { parts, posterUsed } = await this.buildParts(input);
 
-    const { parts, videoAttached } = await this.buildParts(input);
-
-    // ⚠️ TEXT + IMAGES NOW SPLIT: Jev reads the text, DeepSeek Flash reads the
-    // photos (operator decision 2026-10-01). VIDEO KEEPS THE SINGLE GEMINI
-    // CALL — DeepSeek cannot take video and Jev cannot see anything, so a
-    // clip-bearing post has no split to make and is moderated whole.
     // FEED_MOD_ENGINE=legacy restores the single-call moderator (rollback
-    // lever, matching MOD_ENGINE on the listing side).
-    if (!videoAttached && process.env.FEED_MOD_ENGINE !== 'legacy') {
-      return this.moderateSplit(input, parts);
+    // lever, matching MOD_ENGINE on the listing side). The live path is the
+    // split: Jev reads the text AND the photos, Gemini reads the clip.
+    if (process.env.FEED_MOD_ENGINE === 'legacy') {
+      return this.moderateWhole(input, parts);
     }
+    return this.moderateSplit(input, parts, posterUsed);
+  }
 
+  /** The pre-split single call, kept only as the rollback lever. */
+  private async moderateWhole(
+    input: FeedModerationInput,
+    parts: LlmPart[],
+  ): Promise<FeedModerationVerdict> {
     const purpose = FEED_VIDEO_MODERATION_PURPOSE;
+    const videoAttached = parts.some((p) => p.type === 'video');
 
     if (!this.llm.isConfiguredFor(purpose)) {
       // Fail closed: no key means a human must look, not that it publishes.
-      return pending(['moderation_unavailable']);
+      return this.pendingVerdict(['moderation_unavailable']);
     }
 
     const mediaExpected = input.imageUrls.length > 0 || !!input.video;
@@ -181,7 +176,7 @@ export class FeedModerationService {
       (p) => p.type === 'image' || p.type === 'video',
     );
     if (mediaExpected && !mediaReadable) {
-      return pending(['images_unreadable']);
+      return this.pendingVerdict(['images_unreadable']);
     }
 
     let raw: string;
@@ -201,7 +196,7 @@ export class FeedModerationService {
     } catch (err) {
       const code = err instanceof LlmError ? err.code : 'unknown';
       this.logger.warn(`feed moderation call failed (${code}) — holding for review`);
-      return pending([`moderation_error:${code}`]);
+      return this.pendingVerdict([`moderation_error:${code}`]);
     }
 
     let parsed: unknown;
@@ -209,90 +204,121 @@ export class FeedModerationService {
       parsed = this.parseJson(raw);
     } catch {
       this.logger.warn('feed moderation returned unparseable JSON — holding for review');
-      return pending(['moderation_shape_invalid']);
+      return this.pendingVerdict(['moderation_shape_invalid']);
     }
 
     const verdict = this.validate(parsed);
     if (!verdict) {
       this.logger.warn('feed moderation returned an unexpected shape — holding for review');
-      return pending(['moderation_shape_invalid']);
+      return this.pendingVerdict(['moderation_shape_invalid']);
     }
 
     return this.decide(verdict, input.authorIsOfficial);
   }
 
-  // ─── The split path: Jev text + DeepSeek images ────────────────────
+  // ─── The split path: Jev text + Jev photos, Gemini clip ─────────────
 
   private async moderateSplit(
     input: FeedModerationInput,
     parts: LlmPart[],
+    posterUsed: boolean,
   ): Promise<FeedModerationVerdict> {
-    const pendingVerdict = (reasons: string[]): FeedModerationVerdict => ({
+    const imageParts = parts.filter(
+      (p): p is Extract<LlmPart, { type: 'image' }> => p.type === 'image',
+    );
+    const videoPart = parts.find(
+      (p): p is Extract<LlmPart, { type: 'video' }> => p.type === 'video',
+    );
+
+    // ⚠️ A VIDEO THAT COULD NOT BE READ AND HAS NO POSTER ARRIVES HERE AS NO
+    // MEDIA PART AT ALL — `input.video` is set, so the post still expected
+    // media. Hold it rather than screening the text alone and publishing.
+    const mediaExpected = input.imageUrls.length > 0 || !!input.video;
+    if (mediaExpected && imageParts.length === 0 && !videoPart) {
+      return this.pendingVerdict(['images_unreadable']);
+    }
+
+    // ⚠️ A FAILED CLIP DOES NOT BECOME A PUBLISHED POST JUST BECAUSE THE POST
+    // ALSO HAS PHOTOS. The photos can be screened, but the clip was not; the
+    // only fallback that counts is a poster frame, which arrives as an image.
+    if (input.video && !videoPart && !posterUsed) {
+      return this.pendingVerdict(['images_unreadable']);
+    }
+
+    // A photo-only post has no text to screen — don't spend a Jev call on an
+    // empty string (operator decision 2026-10-09: media-only posts are valid).
+    const textHasContent = (input.text ?? '').trim().length > 0;
+    // A clip-only post has nothing for Jev to judge, so it must not be held
+    // just because the Jev key is absent: Gemini alone can clear the clip.
+    const needsJev = textHasContent || imageParts.length > 0;
+    if (needsJev && !process.env.JEV_API_KEY) {
+      return this.pendingVerdict(['moderation_unavailable']);
+    }
+
+    const [text, images, video] = await Promise.all([
+      textHasContent
+        ? this.moderateFeedText(input)
+        : Promise.resolve(this.cleanAxis()),
+      this.moderateFeedImages(imageParts, input),
+      videoPart
+        ? this.moderateFeedVideo(videoPart, input)
+        : Promise.resolve(this.cleanAxis()),
+    ]);
+
+    const promoDetected =
+      text.promoDetected || images.promoDetected || video.promoDetected;
+    const illegalDetected =
+      text.illegalDetected || images.illegalDetected || video.illegalDetected;
+    const otherViolation =
+      text.otherViolation || images.otherViolation || video.otherViolation;
+    const graphicTier = maxGraphicTier(
+      maxGraphicTier(text.graphicTier, images.graphicTier),
+      video.graphicTier,
+    );
+    const reasons = [...text.reasons, ...images.reasons, ...video.reasons].slice(
+      0,
+      10,
+    );
+    const uncertain = text.uncertain || images.uncertain || video.uncertain;
+
+    const verdict = this.decide(
+      { promoDetected, illegalDetected, otherViolation, graphicTier, reasons },
+      input.authorIsOfficial,
+    );
+    // A confident REJECT stands. Otherwise, any uncertainty on any axis holds
+    // for a human rather than publishing.
+    if (verdict.decision !== 'REJECT' && uncertain) {
+      return this.pendingVerdict([...reasons, 'moderation_unsure']);
+    }
+    return verdict;
+  }
+
+  private pendingVerdict(reasons: string[]): FeedModerationVerdict {
+    return {
       decision: 'PENDING_MODERATION',
       graphicTier: GraphicTier.NONE,
       promoDetected: false,
       illegalDetected: false,
       otherViolation: false,
       reasons,
-    });
+    };
+  }
 
-    const imageParts = parts.filter((p): p is Extract<LlmPart, { type: 'image' }> => p.type === 'image');
-    // ⚠️ A VIDEO THAT COULD NOT BE READ AND HAS NO POSTER ARRIVES HERE AS NO
-    // PARTS AT ALL — `videoAttached` is false, but the post still expected
-    // media. Hold it rather than screening the text alone and publishing.
-    const mediaExpected = input.imageUrls.length > 0 || !!input.video;
-    if (mediaExpected && imageParts.length === 0) {
-      return pendingVerdict(['images_unreadable']);
-    }
-    if (!process.env.JEV_API_KEY) {
-      return pendingVerdict(['moderation_unavailable']);
-    }
-
-    // A photo-only post has no text to screen — don't spend a Jev call on an
-    // empty string (operator decision 2026-10-09: media-only posts are valid).
-    const textHasContent = (input.text ?? '').trim().length > 0;
-    const [text, images] = await Promise.all([
-      textHasContent
-        ? this.moderateFeedText(input)
-        : Promise.resolve({
-            promoDetected: false,
-            illegalDetected: false,
-            otherViolation: false,
-            graphicTier: GraphicTier.NONE,
-            reasons: [] as string[],
-            uncertain: false,
-          }),
-      this.moderateFeedImages(imageParts, input),
-    ]);
-
-    const promoDetected = text.promoDetected || images.promoDetected;
-    const illegalDetected = text.illegalDetected || images.illegalDetected;
-    const otherViolation = text.otherViolation || images.otherViolation;
-    const graphicTier = maxGraphicTier(text.graphicTier, images.graphicTier);
-    const reasons = [...text.reasons, ...images.reasons].slice(0, 10);
-    const uncertain = text.uncertain || images.uncertain;
-
-    const verdict = this.decide(
-      { promoDetected, illegalDetected, otherViolation, graphicTier, reasons },
-      input.authorIsOfficial,
-    );
-    // A confident REJECT stands. Otherwise, any uncertainty on either axis
-    // holds for a human rather than publishing.
-    if (verdict.decision !== 'REJECT' && uncertain) {
-      return pendingVerdict([...reasons, 'moderation_unsure']);
-    }
-    return verdict;
+  private cleanAxis(): FeedAxisVerdict {
+    return {
+      promoDetected: false,
+      illegalDetected: false,
+      otherViolation: false,
+      graphicTier: GraphicTier.NONE,
+      reasons: [],
+      uncertain: false,
+    };
   }
 
   /** Text axis — the Jev battery (contact) plus the feed policy nouls. */
-  private async moderateFeedText(input: FeedModerationInput): Promise<{
-    promoDetected: boolean;
-    illegalDetected: boolean;
-    otherViolation: boolean;
-    graphicTier: GraphicTier;
-    reasons: string[];
-    uncertain: boolean;
-  }> {
+  private async moderateFeedText(
+    input: FeedModerationInput,
+  ): Promise<FeedAxisVerdict> {
     const questions: Record<string, JevQuestion> = {
       ...contactQuestions(),
       ...conductQuestions(),
@@ -377,86 +403,173 @@ export class FeedModerationService {
     };
   }
 
-  /** Image axis — DeepSeek Flash reads the photos. */
+  // ─── Image axis — Jev ──────────────────────────────────────────────
+  //
+  // One decide call per photo. JEV is the photo judge now; Gemini keeps the
+  // clip. The single-asset path is the one document filing already uses, and
+  // it keeps the per-photo answers unambiguous. Any unusable photo fails the
+  // whole axis closed — a partially screened post is not a screened post.
+
   private async moderateFeedImages(
     imageParts: Extract<LlmPart, { type: 'image' }>[],
     input: FeedModerationInput,
-  ): Promise<{
-    promoDetected: boolean;
-    illegalDetected: boolean;
-    otherViolation: boolean;
-    graphicTier: GraphicTier;
-    reasons: string[];
-    uncertain: boolean;
-  }> {
-    const clean = {
-      promoDetected: false,
-      illegalDetected: false,
-      otherViolation: false,
-      graphicTier: GraphicTier.NONE,
-      reasons: [] as string[],
-      uncertain: false,
-    };
-    if (imageParts.length === 0) return clean;
+  ): Promise<FeedAxisVerdict> {
+    if (imageParts.length === 0) return this.cleanAxis();
 
-    const content: LlmPart[] = [
-      { type: 'text', text: 'Screen the attached photos. Return the JSON verdict only.' },
-      ...imageParts,
-    ];
+    const results = await Promise.all(
+      imageParts.map(async (part, index) => {
+        try {
+          const asset = await toJevPhotoAsset(part);
+          const res = await this.llm.decide({
+            state: {
+              photo: 'photo',
+              postType: input.postType
+                ? POST_TYPE_LABELS[input.postType]
+                : 'General',
+              authorType: input.authorIsOfficial
+                ? 'Official staff account'
+                : 'Member',
+            },
+            questions: feedPhotoQuestions(),
+            assets: { photo: asset },
+            purpose: 'moderation.feed.images',
+            timeoutMs: 30_000,
+          });
+          return evaluateFeedPhoto(res.answers);
+        } catch (err) {
+          const code = err instanceof LlmError ? err.code : 'unknown';
+          this.logger.warn(
+            `feed photo ${index + 1} screening failed (${code}) — holding for review`,
+          );
+          return null;
+        }
+      }),
+    );
 
-    let raw = '';
-    try {
-      const msg = await this.llm.complete({
-        system: FEED_IMAGE_SYSTEM,
-        messages: [{ role: 'user', content }],
-        maxTokens: 500,
-        temperature: 0,
-        json: {},
-        thinking: { budgetTokens: 0 },
-        purpose: 'moderation.feed.images',
-        // ⚠️ No explicit model. The purpose is pinned to gemini-3.1-flash-lite
-        // in LlmService (providerFor + the modelFor backstop), so a global
-        // LLM_MODEL cannot redirect this vision call.
-        timeoutMs: 30_000,
-      });
-      raw = msg.text;
-    } catch {
-      // No image verdict = no publish decision. Fail closed.
-      return { ...clean, uncertain: true, reasons: ['images_unreadable'] };
+    if (results.some((result) => result === null)) {
+      return {
+        ...this.cleanAxis(),
+        uncertain: true,
+        reasons: ['images_unreadable'],
+      };
     }
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(this.extractJson(raw)) as Record<string, unknown>;
-    } catch {
-      return { ...clean, uncertain: true, reasons: ['moderation_shape_invalid'] };
+    let promoDetected = false;
+    let illegalDetected = false;
+    let otherViolation = false;
+    let graphicTier: GraphicTier = GraphicTier.NONE;
+    let uncertain = false;
+    const reasons: string[] = [];
+
+    for (const result of results) {
+      const r = result!;
+      promoDetected ||= r.promoDetected;
+      illegalDetected ||= r.illegalDetected;
+      otherViolation ||= r.otherViolation;
+      graphicTier = maxGraphicTier(graphicTier, r.graphicTier as GraphicTier);
+      uncertain ||= r.uncertain;
+
+      if (r.promoDetected) {
+        reasons.push('a photo advertises a shop, channel or service');
+      }
+      if (r.illegalDetected) {
+        reasons.push('a photo contains prohibited or unlawful content');
+      }
+      if (r.otherViolation) {
+        reasons.push('a photo shows contact details or another rule breach');
+      }
+      if (r.graphicTier === 'EXTREME') {
+        reasons.push('a photo shows extreme graphic content');
+      } else if (r.graphicTier === 'FIELD') {
+        reasons.push('a photo shows field content');
+      }
     }
 
-    const tier =
-      parsed.graphicTier === 'FIELD'
-        ? GraphicTier.FIELD
-        : parsed.graphicTier === 'EXTREME'
-          ? GraphicTier.EXTREME
-          : GraphicTier.NONE;
     return {
-      promoDetected: parsed.promoDetected === true,
-      illegalDetected: parsed.illegalDetected === true,
-      otherViolation: parsed.otherViolation === true,
-      graphicTier: tier,
-      reasons: Array.isArray(parsed.reasons)
-        ? parsed.reasons.filter((r): r is string => typeof r === 'string').slice(0, 8)
-        : [],
-      uncertain: parsed.unsure === true,
+      promoDetected,
+      illegalDetected,
+      otherViolation,
+      graphicTier,
+      reasons: Array.from(new Set(reasons)).slice(0, 8),
+      uncertain,
     };
   }
 
-  /** Slice a balanced JSON object out of a reply that may carry prose. */
-  private extractJson(text: string): string {
-    const trimmed = (text ?? '').trim();
-    const first = trimmed.indexOf('{');
-    const last = trimmed.lastIndexOf('}');
-    if (first >= 0 && last > first) return trimmed.slice(first, last + 1);
-    return trimmed;
+  // ─── Video axis — Gemini ───────────────────────────────────────────
+  //
+  // The clip is the only thing Gemini sees. The caption goes with it for
+  // context, but the still photos stay on JEV. A clip that cannot be read, or
+  // a Gemini failure, holds the post.
+
+  private async moderateFeedVideo(
+    videoPart: Extract<LlmPart, { type: 'video' }>,
+    input: FeedModerationInput,
+  ): Promise<FeedAxisVerdict> {
+    if (!this.llm.isConfiguredFor(FEED_VIDEO_MODERATION_PURPOSE)) {
+      return {
+        ...this.cleanAxis(),
+        uncertain: true,
+        reasons: ['moderation_unavailable'],
+      };
+    }
+
+    const content: LlmPart[] = [
+      {
+        type: 'text',
+        text:
+          `Post caption:\n${(input.text ?? '').trim() || '(none)'}\n\n` +
+          "Judge the attached clip. The post's still photos are screened " +
+          'separately; judge the clip and the caption.',
+      },
+      videoPart,
+    ];
+
+    let raw: string;
+    try {
+      const res = await this.llm.complete({
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content }],
+        maxTokens: 400,
+        temperature: 0,
+        thinking: { budgetTokens: 0 },
+        json: { schema: RESPONSE_SCHEMA as unknown as Record<string, unknown> },
+        purpose: FEED_VIDEO_MODERATION_PURPOSE,
+        model: videoModel(),
+        timeoutMs: 45_000,
+      });
+      raw = res.text;
+    } catch (err) {
+      const code = err instanceof LlmError ? err.code : 'unknown';
+      this.logger.warn(
+        `feed video screening failed (${code}) — holding for review`,
+      );
+      return {
+        ...this.cleanAxis(),
+        uncertain: true,
+        reasons: ['moderation_unavailable'],
+      };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = this.parseJson(raw);
+    } catch {
+      return {
+        ...this.cleanAxis(),
+        uncertain: true,
+        reasons: ['moderation_shape_invalid'],
+      };
+    }
+    const verdict = this.validate(parsed);
+    if (!verdict) {
+      return {
+        ...this.cleanAxis(),
+        uncertain: true,
+        reasons: ['moderation_shape_invalid'],
+      };
+    }
+
+    return { ...verdict, reasons: verdict.reasons.slice(0, 8), uncertain: false };
   }
 
   /**
@@ -540,7 +653,11 @@ export class FeedModerationService {
 
   private async buildParts(
     input: FeedModerationInput,
-  ): Promise<{ parts: LlmPart[]; videoAttached: boolean }> {
+  ): Promise<{
+    parts: LlmPart[];
+    videoAttached: boolean;
+    posterUsed: boolean;
+  }> {
     const header =
       `Post type: ${input.postType ? POST_TYPE_LABELS[input.postType] : 'General'}\n` +
       `Author type: ${input.authorIsOfficial ? 'Official staff account' : 'Member'}\n\n` +
@@ -553,6 +670,7 @@ export class FeedModerationService {
     }
 
     let videoAttached = false;
+    let posterUsed = false;
     if (input.video) {
       const video = await this.fetchVideo(input.video.url);
       if (video) {
@@ -562,11 +680,14 @@ export class FeedModerationService {
         // The clip could not be inlined (too large / unfetchable), so screen
         // its poster frame instead of publishing unmoderated.
         const poster = await this.fetchImage(input.video.thumbnailUrl);
-        if (poster) parts.push(poster);
+        if (poster) {
+          parts.push(poster);
+          posterUsed = true;
+        }
       }
     }
 
-    return { parts, videoAttached };
+    return { parts, videoAttached, posterUsed };
   }
 
   private async fetchImage(url: string): Promise<LlmPart | null> {

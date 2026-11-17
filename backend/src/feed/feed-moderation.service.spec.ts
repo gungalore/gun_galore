@@ -95,14 +95,24 @@ describe('FeedModerationService — video', () => {
   const okJson =
     '{"promoDetected":false,"illegalDetected":false,"otherViolation":false,"graphicTier":"NONE","reasons":[]}';
 
+  beforeEach(() => {
+    process.env.JEV_API_KEY = 'test-jev';
+  });
+
   afterEach(() => {
+    delete process.env.JEV_API_KEY;
     jest.restoreAllMocks();
   });
 
-  it('routes a post with a video to the video purpose and the Gemini video model', async () => {
+  it('routes the clip to the video purpose and the Gemini video model', async () => {
     const calls: Array<{ purpose: string; model?: string }> = [];
     const llm = {
       isConfiguredFor: () => true,
+      decide: async () => ({
+        model: 'jev-1.13.0',
+        answers: {},
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }),
       complete: async (req: { purpose: string; model?: string }) => {
         calls.push(req);
         return { text: okJson };
@@ -123,6 +133,7 @@ describe('FeedModerationService — video', () => {
     });
 
     expect(v.decision).toBe('PUBLISH');
+    expect(calls).toHaveLength(1);
     expect(calls[0].purpose).toBe('feed.moderation.video');
     expect(calls[0].model).toBe('gemini-3.1-flash-lite');
   });
@@ -130,6 +141,11 @@ describe('FeedModerationService — video', () => {
   it('holds a video post when the clip cannot be read and there is no poster', async () => {
     const llm = {
       isConfiguredFor: () => true,
+      decide: async () => ({
+        model: 'jev-1.13.0',
+        answers: {},
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }),
       complete: async () => ({ text: okJson }),
     };
     (global as unknown as { fetch: unknown }).fetch = jest.fn().mockResolvedValue({

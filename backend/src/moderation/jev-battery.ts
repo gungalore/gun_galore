@@ -12,24 +12,24 @@
 // ~12× cheaper and ~10× faster than one call per question. So a surface asks
 // the whole battery at once and reads the probabilities back.
 //
-// ⚠️ THE LADDER IS THE OPERATOR'S, VERBATIM (2026-10-01):
+// ⚠️ THE LADDER IS THE OPERATOR'S, EXCEPT THE 60–80 % SECOND OPINION (removed
+// 2026-11: "let Jev do everything, keep videos with Gemini"). The band now goes
+// straight to the surface's human-review state:
 //   - Jev ≥ 80 % sure  -> BLOCK and notify the user with a reason.
-//   - 60–80 %          -> appeal to admin, but first ask Gemini for a
-//                         second opinion; Gemini sure -> follow it, Gemini
-//                         unsure -> admin review.
-//   - < 60 %           -> pass.
+//    - 60–80 %          -> admin review (no second model).
+//    - < 60 %           -> pass.
 // "Admin review" is the surface's own holding state (listing HUMAN_REVIEW,
 // feed PENDING_MODERATION, conversation T&S queue). The thresholds are env
 // overridable so they can be tuned without a deploy.
 //
 // ⚠️ THE MODEL NEVER DECIDES ALONE. Every branch here is code reading a
-// number Jev or DeepSeek returned — see how-to-build-with-system-one. That
-// is also why a Jev failure does not silently pass: the caller names its
-// fail posture (`onError`) and this honors it.
+// number Jev returned — see how-to-build-with-system-one. That is also why a
+// Jev failure does not silently pass: the caller names its fail posture
+// (`onError`) and this honors it.
 // ────────────────────────────────────────────────────────────────────
 
 import type { LlmService } from '../common/llm/llm.service';
-import { LlmError, type JevQuestion } from '../common/llm/llm.types';
+import type { JevQuestion } from '../common/llm/llm.types';
 
 /** Jev probability at or above which a category is a BLOCK. */
 export function blockThreshold(): number {
@@ -37,19 +37,12 @@ export function blockThreshold(): number {
   return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.8;
 }
 
-/** Jev probability at or above which a category is escalated for a second
- *  opinion (and, if that is unsure, sent to admin). */
+/** Jev probability at or above which a category is held for human review
+ *  (the 60–80 % band; there is no second model any more). */
 export function reviewThreshold(): number {
   const raw = Number(process.env.JEV_REVIEW_THRESHOLD);
   return Number.isFinite(raw) && raw >= 0 && raw < 1 ? raw : 0.6;
 }
-
-/** The model that answers the second opinion. Operator decision 2026-10-12:
- *  moderation moved off DeepSeek; the second opinion is Gemini at the cheap
- *  flash-lite. Named explicitly so a global LLM_MODEL cannot redirect it, and
- *  matched by the modelFor backstop in LlmService. */
-export const ESCALATION_MODEL = 'gemini-3.1-flash-lite';
-export const ESCALATION_PURPOSE = 'moderation.escalation';
 
 export type JevCategory =
   | 'contact_details'
@@ -185,10 +178,8 @@ export interface JevTextVerdict {
   reason: string | null;
   /** Per-category probability Jev returned, for the audit trail. */
   scores: Record<string, number>;
-  /** True when the 60–80 % band sent the text for a second opinion. */
-  escalated: boolean;
   /** Which model produced the deciding answer. */
-  source: 'jev' | 'gemini' | 'none';
+  source: 'jev' | 'none';
 }
 
 export interface JevLadderInput {
@@ -233,7 +224,6 @@ export async function jevLadder(
         ? null
         : 'We could not check this automatically — it has been sent for review.',
     scores: {},
-    escalated: false,
     source: 'none',
   });
 
@@ -246,10 +236,7 @@ export async function jevLadder(
       timeoutMs: input.timeoutMs ?? 10_000,
     });
     answers = res.answers as Record<string, { type: string; noul?: number }>;
-  } catch (err) {
-    if (err instanceof LlmError) {
-      // A refusal to answer is not a finding either — same posture as an error.
-    }
+  } catch {
     return fail();
   }
 
@@ -277,39 +264,20 @@ export async function jevLadder(
         topId as JevCategory
       ] ?? 'This message is not allowed on ALL Outdoor.',
       scores,
-      escalated: false,
       source: 'jev',
     };
   }
 
   if (topId && topProb >= review) {
-    // 60–80 %: ask for a second opinion before troubling an admin.
-    const second = await secondOpinion(llm, input.state, topId).catch(
-      () => 'UNSURE' as const,
-    );
-    if (second === 'VIOLATION') {
-      return {
-        decision: 'BLOCK',
-        category: topId,
-        reason: input.reasons[topId] ?? JEV_CATEGORY_REASONS[
-          topId as JevCategory
-        ] ?? 'This message is not allowed on ALL Outdoor.',
-        scores,
-        escalated: true,
-        source: 'gemini',
-      };
-    }
-    if (second === 'CLEAN') {
-      return { decision: 'PASS', category: null, reason: null, scores, escalated: true, source: 'gemini' };
-    }
-    // UNSURE (or the call failed) -> admin.
+    // 60–80 %: a human looks. There is no second model any more (see the
+    // ladder note at the top of the file) — asking Jev again is not a second
+    // opinion, and a Gemini call here would leave Gemini judging text.
     return {
       decision: 'REVIEW',
       category: topId,
       reason: null,
       scores,
-      escalated: true,
-      source: 'gemini',
+      source: 'jev',
     };
   }
 
@@ -318,47 +286,6 @@ export async function jevLadder(
     category: null,
     reason: null,
     scores,
-    escalated: false,
     source: 'jev',
   };
-}
-
-/**
- * The 60–80 % second opinion. Returns the model's confidence-limited
- * decision: VIOLATION, CLEAN, or UNSURE (which includes an unparseable
- * answer — "we could not tell" routes to a human, never to a block or a
- * pass). Throws only on a transport error; the caller maps that to UNSURE.
- */
-async function secondOpinion(
-  llm: LlmService,
-  state: string,
-  category: string,
-): Promise<'VIOLATION' | 'CLEAN' | 'UNSURE'> {
-  const system = `You are the second-opinion reviewer for ALL Outdoor, a South African outdoor and firearms marketplace. A first model was 60–80% sure the message below violates the platform's no-off-platform-contact rule for the category "${category}".
-
-Reply with JSON ONLY, no prose:
-{"decision":"VIOLATION"|"CLEAN"|"UNSURE","category":"<one of: contact_details, social_handles, real_name, physical_address, offplatform_coordination, third_party_advertising>"}
-
-VIOLATION means the message plainly gives, requests or invites a way to contact a person off-platform (a number, email, link, social handle, a full name, a precise address, or "contact me directly"). CLEAN means it is normal on-platform negotiation, product talk, or legitimate post-sale logistics. UNSURE means you genuinely cannot tell. Do not explain.`;
-  const msg = await llm.complete({
-    system,
-    messages: [{ role: 'user', content: state }],
-    maxTokens: 100,
-    temperature: 0,
-    json: {},
-    thinking: { budgetTokens: 0 },
-    purpose: ESCALATION_PURPOSE,
-    model: ESCALATION_MODEL,
-    timeoutMs: 15_000,
-  });
-  const match = msg.text.match(/\{[\s\S]*\}/);
-  if (!match) return 'UNSURE';
-  try {
-    const parsed = JSON.parse(match[0]) as { decision?: string };
-    if (parsed.decision === 'VIOLATION') return 'VIOLATION';
-    if (parsed.decision === 'CLEAN') return 'CLEAN';
-    return 'UNSURE';
-  } catch {
-    return 'UNSURE';
-  }
 }

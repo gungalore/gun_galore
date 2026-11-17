@@ -9,29 +9,39 @@ import {
 type DecideArgs = {
   questions: Record<string, unknown>;
 };
-type CompleteArgs = { system?: string; messages: Array<{ content: unknown }> };
 
-/** A fake LlmService good enough for the ladder. */
+/** A fake LlmService good enough for the ladder. `complete` must never run:
+ *  the 60–80 % band is a human-review handoff, not a second-model call. */
 function fakeLlm(opts: {
   noul?: Record<string, number>;
   decideThrows?: boolean;
-  escalate?: string;
 }) {
-  return {
+  const complete = jest.fn(async () => {
+    throw new Error('the ladder must not call a second model');
+  });
+  const llm = {
     decide: async (_args: DecideArgs) => {
       if (opts.decideThrows) throw new Error('down');
       const answers: Record<string, unknown> = {};
       for (const id of Object.keys(opts.noul ?? {})) {
         answers[id] = { type: 'noul', noul: opts.noul![id] };
       }
-      return { model: 'jev-1.13.0', answers, usage: { inputTokens: 1, outputTokens: 0 } };
+      return {
+        model: 'jev-1.13.0',
+        answers,
+        usage: { inputTokens: 1, outputTokens: 0 },
+      };
     },
-    complete: async (_args: CompleteArgs) => ({ text: opts.escalate ?? '{"decision":"UNSURE"}' }),
+    complete,
   } as never;
+  return { llm, complete };
 }
 
-function run(opts: Parameters<typeof fakeLlm>[0], onError: 'pass' | 'review' | 'block' = 'review') {
-  return jevLadder(fakeLlm(opts), {
+function run(
+  opts: Parameters<typeof fakeLlm>[0],
+  onError: 'pass' | 'review' | 'block' = 'review',
+) {
+  return jevLadder(fakeLlm(opts).llm, {
     state: 'text',
     questions: contactQuestions(),
     reasons: JEV_CATEGORY_REASONS,
@@ -63,7 +73,7 @@ describe('jevLadder', () => {
     expect(v.decision).toBe('BLOCK');
     expect(v.category).toBe('contact_details');
     expect(v.reason).toContain('phone');
-    expect(v.escalated).toBe(false);
+    expect(v.source).toBe('jev');
   });
 
   it('passes below the review threshold', async () => {
@@ -71,37 +81,19 @@ describe('jevLadder', () => {
     expect(v.decision).toBe('PASS');
   });
 
-  it('escalates the 60–80 band and blocks on a DeepSeek VIOLATION', async () => {
-    const v = await run({
-      noul: { social_handles: 0.7 },
-      escalate: '{"decision":"VIOLATION"}',
-    });
-    expect(v.decision).toBe('BLOCK');
-    expect(v.escalated).toBe(true);
-    expect(v.source).toBe('gemini');
-  });
-
-  it('escalates the 60–80 band and passes on a DeepSeek CLEAN', async () => {
-    const v = await run({
-      noul: { social_handles: 0.7 },
-      escalate: '{"decision":"CLEAN"}',
-    });
-    expect(v.decision).toBe('PASS');
-    expect(v.escalated).toBe(true);
-  });
-
-  it('sends an unsure escalation to admin review', async () => {
-    const v = await run({
-      noul: { social_handles: 0.7 },
-      escalate: '{"decision":"UNSURE"}',
+  it('⚠️ holds the 60–80 band for a human and calls no second model', async () => {
+    const { llm, complete } = fakeLlm({ noul: { social_handles: 0.7 } });
+    const v = await jevLadder(llm, {
+      state: 'text',
+      questions: contactQuestions(),
+      reasons: JEV_CATEGORY_REASONS,
+      purpose: 'test',
+      onError: 'review',
     });
     expect(v.decision).toBe('REVIEW');
     expect(v.category).toBe('social_handles');
-  });
-
-  it('treats an unparseable escalation as unsure', async () => {
-    const v = await run({ noul: { social_handles: 0.7 }, escalate: 'not json' });
-    expect(v.decision).toBe('REVIEW');
+    expect(v.source).toBe('jev');
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('honours the fail posture on a Jev outage', async () => {

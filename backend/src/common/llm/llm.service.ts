@@ -66,7 +66,8 @@ import {
 // `gemini-3.8-flash` and `gemini-3.1-flash-lite` both answered 200.
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
-/** The cheap flash-lite the moderation path is pinned to (images, escalation). */
+/** The cheap flash-lite the video moderation path is pinned to. Still images
+ *  and text are moderated by Jev, not by this model. */
 const MODERATION_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
 /**
@@ -264,18 +265,11 @@ export class LlmService {
     if (purpose === 'motivation.interview.agent') return this.gemini;
     // ⚠️ EVERY `.video` MODERATION PURPOSE IS GEMINI-ONLY, for the same
     // reason: DeepSeek and Anthropic both reject a `video` LlmPart. This
-    // covers marketplace video (`moderation.listing.video`) and seller
-    // replies in a listing inquiry (`moderation.inquiry.video`).
+    // covers marketplace video (`moderation.listing.video`), feed video
+    // (`feed.moderation.video`) and seller replies in a listing inquiry
+    // (`moderation.inquiry.video`). Image moderation now runs on Jev, so there
+    // is no `.images` pin any more.
     if (purpose.endsWith('.video')) return this.gemini;
-    // ⚠️ IMAGE SCREENING AND THE ESCALATION SECOND OPINION ARE GEMINI-ONLY.
-    // Operator decision 2026-10-12: moderation moved off DeepSeek. Every image
-    // (listing, feed, uploaded document page) and the 60–80 % escalation are
-    // served by Gemini at `gemini-3.1-flash-lite` — the model backstop lives in
-    // modelFor below. Pinned here so a global LLM_PROVIDER switch cannot move a
-    // safety call onto the wrong provider. An explicit per-purpose env var
-    // still wins, above.
-    if (purpose === 'moderation.escalation') return this.gemini;
-    if (purpose.endsWith('.images')) return this.gemini;
     // ⚠️ THE LICENCE-CARD OCR IS GEMINI-ONLY. Operator decision 2026-10-09:
     // the seller's consent link reads the licence card on Gemini, and that must
     // not move. It is a vision call, so a global LLM_PROVIDER switch (or a
@@ -351,13 +345,10 @@ export class LlmService {
     const key = `LLM_MODEL_${purpose.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
     const explicit = process.env[key];
     if (explicit) return explicit;
-    // ⚠️ THE CODE BACKSTOP THE DOCSTRING ABOVE PROMISES. Moderation is pinned
-    // to Gemini in providerFor; the MODEL has to pin with it, or a global
-    // LLM_MODEL of gemini-3.8-flash would drag the safety pass onto the bigger
-    // model. `feed.moderation.video` names its own model and never reaches here.
-    if (purpose === 'moderation.escalation' || purpose.endsWith('.images')) {
-      return MODERATION_GEMINI_MODEL;
-    }
+    // ⚠️ THE CODE BACKSTOP THE DOCSTRING ABOVE PROMISES. Video moderation is
+    // pinned to Gemini in providerFor; the MODEL has to pin with it, or a global
+    // LLM_MODEL of gemini-3.8-flash would drag the clip onto the bigger model.
+    // `feed.moderation.video` names its own model and never reaches here.
     // Video moderation shares the pinned budget. A caller that needs a
     // specific video model (the feed's `videoModel()`) passes it explicitly,
     // and `req.model` wins over this.
