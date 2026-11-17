@@ -7,7 +7,6 @@ import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { VideoDropzone } from '@/components/video-dropzone';
-import { ImageBlurModal } from '@/components/media/image-blur-modal';
 import { VideoDecisionModal } from '@/components/media/video-decision-modal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -84,11 +83,6 @@ export default function EditListingPage() {
   const effectiveVideoHero =
     videoIsHero ?? (listing?.video ? (listing.video.isHero ?? false) : false);
 
-  const [redactTarget, setRedactTarget] = useState<
-    | { kind: 'existing'; imageId: string; file: File }
-    | { kind: 'new'; index: number; file: File }
-    | null
-  >(null);
   const [videoDecision, setVideoDecision] = useState<{
     file: File;
     reason: string;
@@ -272,114 +266,6 @@ export default function EditListingPage() {
 
   function set(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
-  }
-
-  async function loadPhotoFile(url: string, name: string): Promise<File> {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Could not open that photo.');
-    const blob = await res.blob();
-    return new File([blob], name, { type: blob.type || 'image/jpeg' });
-  }
-
-  async function openExistingRedact(image: Listing['images'][number]) {
-    try {
-      const file = await loadPhotoFile(
-        image.url,
-        `listing-photo-${image.id}.jpg`,
-      );
-      setRedactTarget({ kind: 'existing', imageId: image.id, file });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not open that photo.',
-      );
-    }
-  }
-
-  function openNewRedact(file: File, index: number) {
-    setRedactTarget({ kind: 'new', index, file });
-  }
-
-  async function applyRedaction(next: File) {
-    const target = redactTarget;
-    setRedactTarget(null);
-    if (!target) return;
-    if (target.kind === 'new') {
-      setNewImages((prev) =>
-        prev.map((file, index) => (index === target.index ? next : file)),
-      );
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error('Sign in again to save this photo.');
-      const fd = new FormData();
-      fd.append('image', next);
-      const res = await fetch(
-        `${API_URL}/listings/${id}/images/${target.imageId}`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        },
-      );
-      if (!res.ok) throw new Error(await failureReason(res));
-      const updated = (await res.json()) as Listing['images'][number];
-      setListing((prev) =>
-        prev
-          ? {
-              ...prev,
-              images: prev.images.map((image) =>
-                image.id === target.imageId ? updated : image,
-              ),
-            }
-          : prev,
-      );
-
-      // The edit form has no separate Preview pass. Re-screen the redacted
-      // bytes; if the detail is still there, take the live listing down until
-      // an admin approves it.
-      try {
-        const screenFd = new FormData();
-        screenFd.append('image', next);
-        screenFd.append('redacted', 'true');
-        const screenRes = await fetch(`${API_URL}/listings/image-screen`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: screenFd,
-        });
-        const screen = (await screenRes.json().catch(() => ({}))) as {
-          decision?: string;
-          reasons?: string[];
-        };
-        if (screenRes.ok && screen.decision && screen.decision !== 'APPROVE') {
-          await fetch(`${API_URL}/listings/${id}/request-review`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ reasons: screen.reasons ?? [] }),
-          });
-          setListing((prev) =>
-            prev ? { ...prev, status: 'PENDING_REVIEW' } : prev,
-          );
-          setError(
-            'The photo still needs an admin check. The listing is hidden until it is approved (up to 24 hours).',
-          );
-        }
-      } catch {
-        // The replacement itself succeeded; the normal next save/preview will
-        // screen it again if this check could not complete.
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not save the redacted photo.',
-      );
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   async function checkNewVideo(file: File, audioEnabled = effectiveVideoAudio) {
@@ -931,24 +817,6 @@ export default function EditListingPage() {
                   <img src={img.url} alt="" className="w-20 h-20 rounded-[4px] object-cover" />
                   <button
                     type="button"
-                    onClick={() => void openExistingRedact(img)}
-                    style={{
-                      position: 'absolute',
-                      left: 2,
-                      bottom: 2,
-                      padding: '2px 5px',
-                      borderRadius: 3,
-                      background: 'rgba(10,10,10,0.85)',
-                      color: '#fff',
-                      border: '0.5px solid rgba(255,255,255,0.15)',
-                      fontSize: 9,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Hide details
-                  </button>
-                  <button
-                    type="button"
                     onClick={() =>
                       setRemovedImageIds((s) => {
                         const next = new Set(s);
@@ -1349,20 +1217,13 @@ export default function EditListingPage() {
               </p>
               <div className="flex flex-wrap gap-2 mt-1">
                 {newImages.map((file, index) => (
-                  <button
+                  <span
                     key={`${file.name}-${index}`}
-                    type="button"
-                    onClick={() => openNewRedact(file, index)}
-                    className="text-xs px-2 py-1 rounded-[4px]"
-                    style={{
-                      background: 'transparent',
-                      color: 'var(--text-secondary)',
-                      border: '0.5px solid var(--border)',
-                      cursor: 'pointer',
-                    }}
+                    className="text-xs"
+                    style={{ color: 'var(--text-secondary)' }}
                   >
-                    Hide details in {file.name}
-                  </button>
+                    {file.name}
+                  </span>
                 ))}
               </div>
             </div>
@@ -1468,18 +1329,6 @@ export default function EditListingPage() {
         </div>
       </form>
 
-      {redactTarget && (
-        <ImageBlurModal
-          file={redactTarget.file}
-          reason="Drag over the address, number or website you want to hide."
-          onApply={(next) => void applyRedaction(next)}
-          onReplace={() => {
-            setRedactTarget(null);
-            setError('Use Add more photos to choose a replacement photo.');
-          }}
-          onCancel={() => setRedactTarget(null)}
-        />
-      )}
       {videoDecision && (
         <VideoDecisionModal
           reason={videoDecision.reason}

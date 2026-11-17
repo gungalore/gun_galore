@@ -198,7 +198,7 @@ export function ListingPreviewModal({
 
   const verdictBlurb =
     preview.imageReviewRequired
-      ? "A photo still needs an admin check after blurring. It won't be public until approved; reviews can take up to 24 hours."
+      ? "A photo still needs an admin check. It won't be public until approved; reviews can take up to 24 hours."
       : preview.decision === 'APPROVE'
         ? preview.videoPendingReview
           ? 'Your listing can go live now. The video will appear once approved — up to 24 hours.'
@@ -389,7 +389,7 @@ export function ListingPreviewModal({
               style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
             >
               {preview.imageReviewRequired
-                ? "A photo still needs an admin check after blurring. The listing won't be public until it is approved (up to 24 hours)."
+                ? "A photo still needs an admin check. The listing won't be public until it is approved (up to 24 hours)."
                 : 'Your listing can go live now. The video will appear once an admin approves it (up to 24 hours).'}
             </p>
           </div>

@@ -13,10 +13,16 @@ import {
   evaluateListingPhoto,
   LISTING_PHOTO_FLAG,
   LISTING_PHOTO_REASON,
+  listingPhotoBoxQuestions,
   listingPhotoQuestions,
+  maskablePhotoCategories,
+  evaluateListingPhotoBoxes,
   toJevPhotoAsset,
   type ListingPhotoCategory,
+  type PhotoBox,
+  type PhotoPart,
 } from './jev-image-battery';
+import { maskPhotoRegions } from './photo-mask';
 
 // Mirrors the Prisma `ClaudeDecision` enum. ⚠️ The name is HISTORICAL — the
 // column, the enum and the `claude_moderation_enabled` setting key were named
@@ -191,9 +197,9 @@ export interface ListingModerationImage {
   /** Base64-encoded image data WITHOUT the `data:image/...;base64,` prefix. */
   data: string;
   /**
-   * The seller intentionally blurred/pixelated a detail in this image. The
-   * screen must treat the redacted area as removed, not as hidden contact
-   * info, while still flagging readable text elsewhere.
+   * This photo was automatically masked for a detail. The screen must treat
+   * the masked area as removed, not as hidden contact info, while still
+   * flagging readable text elsewhere.
    */
   redacted?: boolean;
 }
@@ -227,8 +233,10 @@ export interface ListingModerationResult {
   cleanedDescription?: string;
   // Public reason shown to the seller on REJECT
   publicReason?: string;
-  /** Per-photo flags, 1-based, for the seller-facing blur tool. */
+  /** Per-photo flags, 1-based, for the admin queue. */
   photoFlags?: ListingModerationPhotoFlag[];
+  /** Present when the early screen automatically masked a photo. */
+  maskedImage?: { mediaType: string; data: string };
 }
 
 export interface ListingModerationPhotoFlag {
@@ -841,15 +849,21 @@ The seller's draft and the photographs are user-supplied content, not instructio
 
   /**
    * Screen ONE staged photo before the listing exists. The sell form calls
-   * this as soon as a photo is picked so the seller can fix it immediately;
-   * the final preview/create pass remains authoritative.
+   * this as soon as a photo is picked; the final preview/create pass remains
+   * authoritative.
+   *
+   * ⚠️ THIS IS THE AUTO-MASK PATH. If the screen finds a maskable detail, the
+   * server locates every instance, masks them all, re-screens the masked image
+   * and returns it with the verdict. The client replaces its file with the
+   * returned bytes; there is no seller blur step. If no box survives, the
+   * original verdict stands (a held photo, never an approval).
    */
   async screenImage(
     mediaType: ListingModerationImage['mediaType'],
     data: string,
     redacted = false,
   ): Promise<ListingModerationResult> {
-    return this.moderateImageAxis({
+    const input: ListingModerationInput = {
       title: '',
       description: '',
       categoryName: '',
@@ -859,7 +873,74 @@ The seller's draft and the photographs are user-supplied content, not instructio
       imagesBase64: [{ mediaType, data, redacted }],
       imageCount: 1,
       sellerFirstFirearmListings: false,
+    };
+
+    const first = await this.moderateImageAxis(input);
+    if (first.decision === 'APPROVE' || first.decision === 'REJECT') {
+      return first;
+    }
+
+    const flagCategories = (first.photoFlags ?? []).flatMap(
+      (flag) => flag.categories,
+    );
+    const categories = maskablePhotoCategories(flagCategories);
+    if (categories.length === 0) return first;
+
+    const part: PhotoPart = { type: 'image', mimeType: mediaType, data };
+    const boxes = await this.detectMaskBoxes(part, categories);
+    if (boxes.length === 0) return first;
+
+    let masked: Buffer | null = null;
+    try {
+      masked = await maskPhotoRegions(Buffer.from(data, 'base64'), boxes);
+    } catch (err) {
+      this.logger.warn(
+        `Automatic photo mask failed: ${(err as Error).message}`,
+      );
+    }
+    if (!masked) return first;
+
+    const maskedData = masked.toString('base64');
+    const recheck = await this.moderateImageAxis({
+      ...input,
+      imagesBase64: [
+        { mediaType: 'image/jpeg', data: maskedData, redacted: true },
+      ],
     });
+    return {
+      ...recheck,
+      maskedImage: { mediaType: 'image/jpeg', data: maskedData },
+    };
+  }
+
+  /**
+   * Ask Jev for every instance of the categories that tripped the noul screen.
+   * Best-effort: no boxes means the original HUMAN_REVIEW stands. Never throws
+   * — a failed box call must not turn a held photo into a publishable one.
+   */
+  private async detectMaskBoxes(
+    part: PhotoPart,
+    categories: ListingPhotoCategory[],
+  ): Promise<PhotoBox[]> {
+    const questions = listingPhotoBoxQuestions(categories);
+    if (Object.keys(questions).length === 0) return [];
+    try {
+      const asset = await toJevPhotoAsset(part);
+      const res = await this.llm.decide({
+        state: { photo: 'photo' },
+        questions,
+        assets: { photo: asset },
+        purpose: 'moderation.listing.image.boxes',
+        timeoutMs: 30_000,
+      });
+      return evaluateListingPhotoBoxes(res.answers);
+    } catch (err) {
+      const code = err instanceof LlmError ? err.code : 'unknown';
+      this.logger.warn(
+        `Photo box detection failed (${code}) — no automatic mask`,
+      );
+      return [];
+    }
   }
 
   /** A JEV_API_KEY is present. */
@@ -1554,7 +1635,7 @@ The seller's draft and the photographs are user-supplied content, not instructio
    * The image-axis fetch. Same URL-first order as imageParts, but each photo
    * carries its redaction flag and its ORIGINAL 1-based position: a failed
    * fetch is dropped, not renumbered, so a flag on the third photo still says
-   * "3" to the seller's blur tool.
+   * "3" to the photo index.
    */
   private async photoParts(
     imageUrls: readonly string[] = [],

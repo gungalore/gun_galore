@@ -21,8 +21,7 @@ import {
   type JevChoiceAnswer,
   type JevQuestion,
   type LlmPart,
-} from '../common/llm/llm.types';
-import { blockThreshold, reviewThreshold } from './jev-battery';
+} from '../common/llm/llm.types';import { blockThreshold, reviewThreshold } from './jev-battery';
 
 export type ListingPhotoCategory =
   | 'contact'
@@ -34,7 +33,7 @@ export type ListingPhotoCategory =
 /** The one photo shape the image axis carries. */
 export type PhotoPart = Extract<LlmPart, { type: 'image' }>;
 
-/** Flag value the admin queue / seller blur tool already understands. */
+/** Flag value the admin queue already understands. */
 export const LISTING_PHOTO_FLAG: Record<ListingPhotoCategory, string> = {
   contact: 'photo-contact-info',
   qr: 'qr-code',
@@ -321,4 +320,152 @@ function requireChoice(
     );
   }
   return answer;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// BOX QUESTIONS — locating every maskable detail on one photo.
+//
+// One `box` answer is one rectangle, so "everything on this photo" means
+// several questions: per category, an ordinal series. Three is enough for the
+// real cases (a number in the listing, a shop URL on the packaging, a QR on a
+// flyer); the evaluator drops an ordinal that returns the same rectangle again
+// and dedupes by overlap. Only categories that already tripped the noul screen
+// are asked about, so a clean photo costs nothing extra.
+// ────────────────────────────────────────────────────────────────────
+
+const MASKABLE_CATEGORIES: readonly ListingPhotoCategory[] = [
+  'contact',
+  'qr',
+  'address',
+  'advertising',
+];
+
+const BOX_ORDINALS = ['first', 'second', 'third'] as const;
+
+const BOX_LABELS: Record<ListingPhotoCategory, string> = {
+  contact:
+    'readable phone number, email address, website URL or social handle',
+  qr: 'QR code',
+  address: 'street address, shop sign or storefront name',
+  advertising:
+    'piece of advertising text (a price, a sale pitch, "DM me" or a shop/channel name)',
+  live_ammo: 'live ammunition',
+};
+
+const BOX_POLICIES: Record<ListingPhotoCategory, string> = {
+  contact:
+    'Product markings such as a brand, model, calibre, serial number or proof mark are not contact details.',
+  qr: 'A QR code counts even if its destination cannot be read.',
+  address: 'Ordinary scenery and vehicle number plates are not this.',
+  advertising: 'Incidental manufacturer branding on the product is not this.',
+  live_ammo: '',
+};
+
+/** Map the flag names the admin queue uses back to the internal categories. */
+export function maskablePhotoCategories(
+  flagCategories: readonly string[],
+): ListingPhotoCategory[] {
+  const map: Record<string, ListingPhotoCategory> = {
+    'photo-contact-info': 'contact',
+    'qr-code': 'qr',
+    'photo-address': 'address',
+    advertising: 'advertising',
+  };
+  const found = new Set<ListingPhotoCategory>();
+  for (const flag of flagCategories) {
+    const category = map[flag];
+    if (category) found.add(category);
+  }
+  return MASKABLE_CATEGORIES.filter((category) => found.has(category));
+}
+
+export function listingPhotoBoxQuestions(
+  categories: readonly ListingPhotoCategory[],
+): Record<string, JevQuestion> {
+  const questions: Record<string, JevQuestion> = {};
+  for (const category of MASKABLE_CATEGORIES) {
+    if (!categories.includes(category)) continue;
+    BOX_ORDINALS.forEach((ordinal, index) => {
+      questions[`mask_${category}_${index + 1}`] = {
+        type: 'box',
+        instructions: `Locate the ${ordinal} ${BOX_LABELS[category]} in \`photo\`. ${BOX_POLICIES[category]}`,
+      };
+    });
+  }
+  return questions;
+}
+
+export interface PhotoBox {
+  category: ListingPhotoCategory;
+  /** Normalized to the upright image, 0..1. */
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  confidence: number;
+}
+
+/**
+ * Validate, filter and dedupe the box answers. A missing/odd box is skipped,
+ * not fatal: the noul finding already holds the listing if no box survives.
+ */
+export function evaluateListingPhotoBoxes(
+  answers: Record<string, JevAnswer>,
+): PhotoBox[] {
+  const rawFloor = Number(process.env.JEV_BOX_MIN_CONFIDENCE ?? 0.45);
+  const floor =
+    Number.isFinite(rawFloor) && rawFloor >= 0 && rawFloor <= 1
+      ? rawFloor
+      : 0.45;
+
+  const found: PhotoBox[] = [];
+  for (const [key, answer] of Object.entries(answers)) {
+    const match = key.match(/^mask_(contact|qr|address|advertising)_\d+$/);
+    if (!match) continue;
+    if (!answer || answer.type !== 'box') continue;
+    const confidence = answer.confidence;
+    if (confidence === null || confidence < floor) continue;
+    const { top, bottom, left, right } = answer.box;
+    if (![top, bottom, left, right].every((n) => Number.isFinite(n))) continue;
+    if (left < 0 || top < 0 || right > 1 || bottom > 1) continue;
+    if (right <= left || bottom <= top) continue;
+    const width = right - left;
+    const height = bottom - top;
+    const area = width * height;
+    if (width < 0.02 || height < 0.012 || area < 0.0005 || area > 0.9) {
+      continue;
+    }
+    found.push({
+      category: match[1] as ListingPhotoCategory,
+      top,
+      bottom,
+      left,
+      right,
+      confidence,
+    });
+  }
+
+  // A repeated ordinal returns the same rectangle again; keep the more
+  // confident one and drop near-duplicates of the same category.
+  const kept: PhotoBox[] = [];
+  for (const box of found.sort((a, b) => b.confidence - a.confidence)) {
+    const duplicate = kept.some(
+      (other) => other.category === box.category && iou(other, box) >= 0.5,
+    );
+    if (!duplicate) kept.push(box);
+  }
+  return kept;
+}
+
+function iou(a: PhotoBox, b: PhotoBox): number {
+  const left = Math.max(a.left, b.left);
+  const right = Math.min(a.right, b.right);
+  const top = Math.max(a.top, b.top);
+  const bottom = Math.min(a.bottom, b.bottom);
+  if (right <= left || bottom <= top) return 0;
+  const intersection = (right - left) * (bottom - top);
+  const areaA = (a.right - a.left) * (a.bottom - a.top);
+  const areaB = (b.right - b.left) * (b.bottom - b.top);
+  const union = areaA + areaB - intersection;
+  return union > 0 ? intersection / union : 0;
 }

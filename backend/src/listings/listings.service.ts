@@ -16,6 +16,7 @@ import { ClaudeDecision, Listing, ListingStatus, ListingType, ListingVideoStatus
 import {
   ListingModerationService,
   ListingModerationResult,
+  ListingModerationImage,
   hashAttempt,
   categorizeReason,
 } from '../moderation/listing-moderation.service';
@@ -1085,6 +1086,9 @@ export class ListingsService {
       categories: Array.from(
         new Set(photoFlags.flatMap((flag) => flag.categories)),
       ),
+      // Present when the server masked a detail automatically. The client
+      // replaces the seller's file with this image; there is no blur step.
+      maskedImage: verdict.maskedImage ?? null,
     };
   }
 
@@ -4088,6 +4092,31 @@ export class ListingsService {
     return { renewed: true, lastRenewedAt: updated.lastRenewedAt };
   }
 
+  /**
+   * Screen a photo attached outside the sell form and return the bytes to
+   * store: the original when it is clean, the server-masked JPEG when the
+   * automatic mask cleared it. A photo that still holds, or that cannot be
+   * masked, is refused — there is no seller blur step any more.
+   */
+  private async screenedImageBytes(file: Express.Multer.File): Promise<Buffer> {
+    const verdict = await this.moderation.screenImage(
+      file.mimetype as ListingModerationImage['mediaType'],
+      file.buffer.toString('base64'),
+    );
+    if (
+      verdict.decision !== 'APPROVE' &&
+      verdict.decision !== 'AUTO_FIX_AND_APPROVE'
+    ) {
+      throw new BadRequestException(
+        verdict.publicReason ??
+          'This photo still needs an admin check. Choose another photo.',
+      );
+    }
+    return verdict.maskedImage
+      ? Buffer.from(verdict.maskedImage.data, 'base64')
+      : file.buffer;
+  }
+
   async addImage(id: string, userId: string, file: Express.Multer.File) {
     const listing = await this.assertOwner(id, userId);
     // Photos can't change after commitment — buyers commit on the
@@ -4101,8 +4130,9 @@ export class ListingsService {
       throw new BadRequestException('Maximum 10 images per listing');
     }
 
+    const bytes = await this.screenedImageBytes(file);
     const { url, publicId } = await this.cloudinary.uploadImage(
-      file.buffer,
+      bytes,
       'listings',
     );
 
@@ -4130,9 +4160,9 @@ export class ListingsService {
   }
 
   /**
-   * Replace an existing photo in place. Used by the seller redaction tool on
-   * the edit page: the row keeps its order and primary flag, and the old
-   * Cloudinary asset is deleted only after the new one is stored.
+   * Replace an existing photo in place: the row keeps its order and primary
+   * flag, and the old Cloudinary asset is deleted only after the new one is
+   * stored.
    */
   async replaceImage(
     listingId: string,
@@ -4148,8 +4178,9 @@ export class ListingsService {
     });
     if (!image) throw new NotFoundException('Image not found');
 
+    const bytes = await this.screenedImageBytes(file);
     const { url, publicId } = await this.cloudinary.uploadImage(
-      file.buffer,
+      bytes,
       'listings',
     );
     const updated = await this.prisma.listingImage.update({
@@ -4467,7 +4498,7 @@ export class ListingsService {
   }
 
   /**
-   * Seller-triggered hold: an image still failed its post-blur screen, so the
+   * Seller-triggered hold: an image still failed its post-mask screen, so the
    * listing must not stay public while an admin decides. Used by the edit
    * flow, where there is no create/preview pass to set the status.
    */

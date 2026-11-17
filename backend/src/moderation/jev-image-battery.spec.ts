@@ -2,8 +2,11 @@ import { LlmError, type JevAnswer } from '../common/llm/llm.types';
 import {
   evaluateFeedPhoto,
   evaluateListingPhoto,
+  evaluateListingPhotoBoxes,
   feedPhotoQuestions,
+  listingPhotoBoxQuestions,
   listingPhotoQuestions,
+  maskablePhotoCategories,
 } from './jev-image-battery';
 
 function noul(value: number): JevAnswer {
@@ -95,8 +98,7 @@ describe('listing photo battery', () => {
   });
 });
 
-describe('feed photo battery', () => {
-  it('asks three nouls and the graphic choice', () => {
+describe('feed photo battery', () => {  it('asks three nouls and the graphic choice', () => {
     expect(Object.keys(feedPhotoQuestions()).sort()).toEqual(
       ['graphic', 'illegal', 'other_violation', 'promotional'].sort(),
     );
@@ -136,5 +138,64 @@ describe('feed photo battery', () => {
     expect(() => evaluateFeedPhoto(feedAnswers({ graphic: 'GORE' }))).toThrow(
       LlmError,
     );
+  });
+});
+
+describe('listing photo boxes', () => {
+  it('maps flag names to the maskable categories', () => {
+    expect(
+      maskablePhotoCategories([
+        'photo-contact-info',
+        'qr-code',
+        'live-ammo',
+        'advertising',
+      ]),
+    ).toEqual(['contact', 'qr', 'advertising']);
+  });
+
+  it('asks three boxes per requested category', () => {
+    const questions = listingPhotoBoxQuestions(['contact']);
+    expect(Object.keys(questions).sort()).toEqual([
+      'mask_contact_1',
+      'mask_contact_2',
+      'mask_contact_3',
+    ]);
+    for (const question of Object.values(questions)) {
+      expect(question.type).toBe('box');
+    }
+  });
+
+  it('only asks about the categories that tripped', () => {
+    const questions = listingPhotoBoxQuestions(['qr']);
+    expect(Object.keys(questions)).toHaveLength(3);
+    expect(
+      Object.keys(questions).every((key) => key.startsWith('mask_qr_')),
+    ).toBe(true);
+  });
+
+  it('filters bad boxes and dedupes a repeated ordinal', () => {
+    const box = (
+      left: number,
+      right: number,
+      top: number,
+      bottom: number,
+      confidence: number | null,
+    ) =>
+      ({
+        type: 'box',
+        box: { left, right, top, bottom },
+        confidence,
+      }) as JevAnswer;
+
+    const out = evaluateListingPhotoBoxes({
+      mask_contact_1: box(0.1, 0.4, 0.1, 0.2, 0.9),
+      mask_contact_2: box(0.11, 0.39, 0.11, 0.19, 0.8),
+      mask_contact_3: box(0.5, 0.6, 0.5, 0.6, 0.2),
+      mask_qr_1: box(0.7, 0.99, 0.7, 0.9, null),
+    });
+
+    expect(out).toEqual([
+      expect.objectContaining({ category: 'contact', confidence: 0.9 }),
+    ]);
   });
 });

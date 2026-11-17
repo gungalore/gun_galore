@@ -10,7 +10,47 @@ function file(name: string, type: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('useMediaReview', () => {
-  it('screens a photo and enqueues a fix when it is flagged', async () => {
+  it('swaps in the server-masked photo and records it as clear', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          decision: 'APPROVE',
+          reasons: [],
+          categories: ['photo-contact-info'],
+          photoFlags: [
+            {
+              index: 1,
+              categories: ['photo-contact-info'],
+              reason: 'Phone number visible in photo 1',
+            },
+          ],
+          maskedImage: {
+            mediaType: 'image/jpeg',
+            data: btoa('masked bytes'),
+          },
+        }),
+      }),
+    );
+    const onMasked = vi.fn();
+    const { result } = renderHook(() =>
+      useMediaReview(async () => 'token', 'http://api', onMasked),
+    );
+    const photo = file('one.jpg', 'image/jpeg');
+
+    act(() => result.current.syncImages([photo]));
+
+    await waitFor(() => expect(onMasked).toHaveBeenCalledTimes(1));
+    const masked = onMasked.mock.calls[0][1] as File;
+    expect(masked).toBeInstanceOf(File);
+    expect(masked.type).toBe('image/jpeg');
+    expect(result.current.imageStatusFor(masked)).toBe('clear');
+    expect(result.current.current).toBeNull();
+    expect(result.current.allSettled).toBe(true);
+  });
+
+  it('holds a flagged photo for admin when the server could not mask it', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -36,9 +76,9 @@ describe('useMediaReview', () => {
 
     act(() => result.current.syncImages([photo]));
 
-    await waitFor(() => expect(result.current.current?.kind).toBe('image'));
-    expect(result.current.imageStatusFor(photo)).toBe('needs-fix');
-    expect(result.current.allSettled).toBe(false);
+    await waitFor(() => expect(result.current.imageStatusFor(photo)).toBe('review'));
+    expect(result.current.current).toBeNull();
+    expect(result.current.allSettled).toBe(true);
   });
 
   it('turns a flagged video into the admin-review decision', async () => {

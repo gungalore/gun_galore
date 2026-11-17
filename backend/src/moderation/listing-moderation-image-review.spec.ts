@@ -15,6 +15,10 @@ jest.mock('../common/llm/jev-image', () => ({
   })),
 }));
 
+jest.mock('./photo-mask', () => ({
+  maskPhotoRegions: jest.fn(async () => Buffer.from('masked-image')),
+}));
+
 const ORIGINAL_KEY = process.env.JEV_API_KEY;
 
 beforeEach(() => {
@@ -130,6 +134,38 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
       purpose: 'moderation.listing.images',
     });
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('automatically masks a boxed finding and re-screens the result', async () => {
+    const { svc, decide } = makeService([
+      photoAnswers({ contact: 0.92 }),
+      {
+        model: 'jev-1.14.0',
+        provider: 'typesafe',
+        usage: { inputTokens: 1, outputTokens: 0 },
+        answers: {
+          mask_contact_1: {
+            type: 'box',
+            box: { top: 0.2, bottom: 0.28, left: 0.1, right: 0.5 },
+            confidence: 0.9,
+          },
+        },
+      },
+      photoAnswers(),
+    ]);
+
+    const r = await svc.screenImage('image/jpeg', 'abc');
+
+    expect(r.decision).toBe('APPROVE');
+    expect(r.maskedImage).toEqual({
+      mediaType: 'image/jpeg',
+      data: Buffer.from('masked-image').toString('base64'),
+    });
+    expect(decide.mock.calls.map((call) => call[0].purpose)).toEqual([
+      'moderation.listing.images',
+      'moderation.listing.image.boxes',
+      'moderation.listing.images',
+    ]);
   });
 
   it('flags a QR code, a storefront address and third-party advertising', async () => {

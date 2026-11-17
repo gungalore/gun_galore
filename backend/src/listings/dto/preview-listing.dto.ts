@@ -143,7 +143,7 @@ export class PreviewListingDto {
   images?: Array<{
     mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
     data: string;
-    /** Seller intentionally blurred/pixelated this photo before re-screening. */
+    /** This photo was automatically masked before re-screening. */
     redacted?: boolean;
   }>;
 

@@ -20,8 +20,6 @@ interface Props {
   maxFiles?: number;
   /** Early moderation status for the small badge on each thumbnail. */
   statusFor?: (file: File) => string | undefined;
-  /** Open the manual blur tool for this thumbnail. */
-  onRedact?: (index: number) => void;
 }
 
 function Thumbnail({ file }: { file: File }) {
@@ -52,7 +50,6 @@ export function PhotoDropzone({
   accept = 'image/jpeg,image/png,image/webp',
   maxFiles = 5,
   statusFor,
-  onRedact,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOverDrop, setDragOverDrop] = useState(false);
@@ -303,25 +300,6 @@ export function PhotoDropzone({
                     </span>
                   );
                 })()}
-                {onRedact && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRedact(idx);
-                    }}
-                    className="absolute bottom-7 left-1.5 text-xs px-1.5 py-0.5 rounded-[3px]"
-                    style={{
-                      background: 'rgba(10,10,10,0.85)',
-                      color: '#fff',
-                      border: '0.5px solid rgba(255,255,255,0.15)',
-                      cursor: 'pointer',
-                      fontSize: 9,
-                    }}
-                  >
-                    Hide details
-                  </button>
-                )}
 
                 <span
                   className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center"

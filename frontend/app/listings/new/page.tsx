@@ -53,7 +53,6 @@ import {
 import { HelpTip } from '@/components/help-tip';
 import { useMediaReview } from '@/lib/use-media-review';
 import { requiresAdminReview } from '@/lib/listing-publish-review';
-import { ImageBlurModal } from '@/components/media/image-blur-modal';
 import { VideoDecisionModal } from '@/components/media/video-decision-modal';
 import { MediaNoticeModal } from '@/components/media/media-notice-modal';
 
@@ -549,14 +548,11 @@ export default function NewListingPage() {
   const [videoIsHero, setVideoIsHero] = useState(false);
 
   // Early media moderation: photos and video are screened as soon as they are
-  // picked, and the failure queue opens the right fixing tool immediately.
-  const media = useMediaReview(getToken, API_URL);
+  // picked. Photos with a maskable detail come back already masked by the
+  // server; this callback swaps the seller's file for the masked one. There is
+  // no manual blur step.
+  const media = useMediaReview(getToken, API_URL, handleAutoMasked);
   const redactedImagesRef = useRef<Set<File>>(new Set());
-  const replaceInputRef = useRef<HTMLInputElement | null>(null);
-  const [replaceTarget, setReplaceTarget] = useState<
-    { kind: 'image'; file: File } | { kind: 'video' } | null
-  >(null);
-  const [manualRedact, setManualRedact] = useState<File | null>(null);
   const [fixHidden, setFixHidden] = useState(false);
   const [strippedVideoNotice, setStrippedVideoNotice] = useState<{
     listingId: string;
@@ -2372,45 +2368,17 @@ export default function NewListingPage() {
     media.syncVideo(video, next);
   }
 
-  function handleBlurApplied(nextFile: File) {
-    const current = media.current;
-    if (!current || current.kind !== 'image') return;
-    const oldFile = current.review.file;
+  function handleAutoMasked(oldFile: File, maskedFile: File) {
     const idx = images.indexOf(oldFile);
     if (idx < 0) return;
     redactedImagesRef.current.delete(oldFile);
-    redactedImagesRef.current.add(nextFile);
-    media.applyBlur(oldFile, nextFile);
+    redactedImagesRef.current.add(maskedFile);
     const next = [...images];
-    next[idx] = nextFile;
+    next[idx] = maskedFile;
     setImages(next);
     media.syncImages(next);
     setAuditResult(null);
     setPreviewResult(null);
-  }
-
-  function requestReplaceImage(file: File) {
-    setReplaceTarget({ kind: 'image', file });
-    replaceInputRef.current?.click();
-  }
-
-  function handleReplacementFile(file: File) {
-    const target = replaceTarget;
-    setReplaceTarget(null);
-    if (!target) return;
-    if (target.kind === 'video') {
-      handleVideoChange(file);
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      setAuditError('Choose a JPEG, PNG or WebP replacement photo.');
-      return;
-    }
-    const idx = images.indexOf(target.file);
-    if (idx < 0) return;
-    const next = [...images];
-    next[idx] = file;
-    handleImagesChange(next);
   }
 
   // "Preview listing" - the media was screened when it was picked. If
@@ -2450,12 +2418,12 @@ export default function NewListingPage() {
           hardBlocked: false,
           reasons: [
             ...next.reasons,
-            'A photo still needs an admin check after blurring.',
+            'A photo still needs an admin check.',
           ],
           reasonCategories: [
             ...next.reasonCategories,
             {
-              reason: 'A photo still needs an admin check after blurring.',
+              reason: 'A photo still needs an admin check.',
               category: 'photo-flag',
             },
           ],
@@ -3203,7 +3171,6 @@ export default function NewListingPage() {
               onChange={handleImagesChange}
               maxFiles={10}
               statusFor={media.imageStatusFor}
-              onRedact={(idx) => setManualRedact(images[idx] ?? null)}
             />
             {/* One optional clip. Photos stay mandatory; the clip is a
                 seller's best answer to "can you show me it working?", and it
@@ -5017,76 +4984,28 @@ export default function NewListingPage() {
       </PageReveal>
 
       {/* Preview modal — driven by previewResult from POST /listings/preview */}
-      {/* Early media checks: one fixing window at a time. */}
-      <input
-        ref={replaceInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = '';
-          if (file) handleReplacementFile(file);
-        }}
-      />
-      {!fixHidden &&
-        media.current &&
-        !manualRedact &&
-        !media.notice &&
-        (media.current.kind === 'image' ? (
-          <ImageBlurModal
-            file={media.current.review.file}
-            reason={
-              media.current.review.reason ??
-              'A detail in this photo needs hiding.'
-            }
-            onApply={handleBlurApplied}
-            onReplace={() => requestReplaceImage(media.current!.review.file)}
-            onCancel={() => setFixHidden(true)}
-          />
-        ) : (
-          <VideoDecisionModal
-            reason={
-              media.current.review.reason ??
-              'It shows contact details or advertising.'
-            }
-            onReupload={() => {
-              setVideo(null);
-              media.chooseVideoReupload();
-              setTimeout(() => {
-                document
-                  .getElementById('sell-video')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }, 0);
-            }}
-            onReview={() => media.chooseVideoReview()}
-            onDelete={() => {
-              setVideo(null);
-              media.chooseVideoDelete();
-            }}
-          />
-        ))}
-      {manualRedact && (
-        <ImageBlurModal
-          file={manualRedact}
-          reason="Hide an address, number or website before publishing."
-          onApply={(next) => {
-            const idx = images.indexOf(manualRedact);
-            if (idx >= 0) {
-              redactedImagesRef.current.delete(manualRedact);
-              redactedImagesRef.current.add(next);
-              media.applyBlur(manualRedact, next);
-              const nextImages = [...images];
-              nextImages[idx] = next;
-              handleImagesChange(nextImages);
-            }
-            setManualRedact(null);
+      {/* Video fixing window. Photos are masked by the server, so there is no
+          image-fix dialog any more. */}
+      {!fixHidden && media.current?.kind === 'video' && !media.notice && (
+        <VideoDecisionModal
+          reason={
+            media.current.review.reason ??
+            'It shows contact details or advertising.'
+          }
+          onReupload={() => {
+            setVideo(null);
+            media.chooseVideoReupload();
+            setTimeout(() => {
+              document
+                .getElementById('sell-video')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 0);
           }}
-          onReplace={() => {
-            requestReplaceImage(manualRedact);
-            setManualRedact(null);
+          onReview={() => media.chooseVideoReview()}
+          onDelete={() => {
+            setVideo(null);
+            media.chooseVideoDelete();
           }}
-          onCancel={() => setManualRedact(null)}
         />
       )}
       {media.notice && (
@@ -5094,7 +5013,9 @@ export default function NewListingPage() {
           title={
             media.notice.startsWith('A photo shows live ammunition')
               ? 'Remove that photo'
-              : 'This photo still needs a review'
+              : media.notice.startsWith('We automatically blurred')
+                ? 'We blurred a detail'
+                : 'This photo still needs a review'
           }
           body={media.notice}
           onClose={media.dismissNotice}

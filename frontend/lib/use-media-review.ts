@@ -9,6 +9,8 @@ export type ImageScreenResult = {
   publicReason?: string;
   categories?: string[];
   photoFlags?: { index: number; categories: string[]; reason: string }[];
+  /** Present when the server masked a detail itself. */
+  maskedImage?: { mediaType: string; data: string } | null;
 };
 
 export type VideoScreenResult = {
@@ -55,6 +57,15 @@ function blurrable(flags: { categories: string[] }[] | undefined): boolean {
   );
 }
 
+function base64ToFile(data: string, name: string, mediaType: string): File {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], `${name.replace(/\.\w+$/, '')}-masked.jpg`, {
+    type: mediaType || 'image/jpeg',
+  });
+}
+
 function reasonFor(result: ImageScreenResult): string {
   return (
     result.photoFlags?.[0]?.reason ??
@@ -74,6 +85,7 @@ function reasonFor(result: ImageScreenResult): string {
 export function useMediaReview(
   getToken: () => Promise<string | null>,
   apiUrl: string,
+  onMasked?: (original: File, masked: File) => void,
 ) {
   const [version, setVersion] = useState(0);
   const [queue, setQueue] = useState<File[]>([]);
@@ -86,10 +98,11 @@ export function useMediaReview(
   const videoRef = useRef<VideoReview | null>(null);
   const inFlightImages = useRef(new Set<File>());
   const inFlightVideo = useRef(false);
-  const blurAttempted = useRef(new Set<File>());
   const videoGeneration = useRef(0);
   const apiRef = useRef(apiUrl);
   apiRef.current = apiUrl;
+  const onMaskedRef = useRef(onMasked);
+  onMaskedRef.current = onMasked;
 
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
@@ -102,10 +115,9 @@ export function useMediaReview(
   }, []);
 
   const screenImage = useCallback(
-    async (file: File, wasBlur = false) => {
+    async (file: File) => {
       if (inFlightImages.current.has(file)) return;
       inFlightImages.current.add(file);
-      if (wasBlur) blurAttempted.current.add(file);
       const existing = imagesRef.current.get(file);
       imagesRef.current.set(file, {
         file,
@@ -120,7 +132,6 @@ export function useMediaReview(
         if (!token) throw new Error('Sign in again to check this photo.');
         const fd = new FormData();
         fd.append('image', file);
-        if (wasBlur) fd.append('redacted', 'true');
         const res = await fetch(`${apiRef.current}/listings/image-screen`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
@@ -143,7 +154,45 @@ export function useMediaReview(
             ...flags.flatMap((flag) => flag.categories),
           ]),
         );
-        if (data.decision === 'APPROVE') {
+
+        // ⚠️ THE SERVER MASKS, NOT THE SELLER. The image-screen response can
+        // carry a masked replacement; it has already been re-screened, so the
+        // masked file inherits the verdict. The page swaps the seller's file
+        // for this one; there is no blur dialog.
+        if (data.maskedImage) {
+          const maskedFile = base64ToFile(
+            data.maskedImage.data,
+            file.name,
+            data.maskedImage.mediaType,
+          );
+          imagesRef.current.delete(file);
+          imagesRef.current.set(maskedFile, {
+            file: maskedFile,
+            status:
+              data.decision === 'APPROVE'
+                ? 'clear'
+                : data.decision === 'REJECT'
+                  ? 'blocked'
+                  : 'review',
+            reason: reasonFor(data),
+            categories,
+          });
+          dropFromQueue(file);
+          onMaskedRef.current?.(file, maskedFile);
+          if (data.decision === 'REJECT' && categories.includes('live-ammo')) {
+            setNotice(
+              'A photo shows live ammunition. Remove or replace it before publishing.',
+            );
+          } else if (data.decision === 'APPROVE') {
+            setNotice(
+              'We automatically blurred a detail in a photo. Remove or replace that photo if the blur is wrong.',
+            );
+          } else {
+            setNotice(
+              'We automatically blurred a detail. Our team will check the rest before the listing goes live.',
+            );
+          }
+        } else if (data.decision === 'APPROVE') {
           imagesRef.current.set(file, { file, status: 'clear', categories: [] });
           dropFromQueue(file);
         } else if (data.decision === 'REJECT' && categories.includes('live-ammo')) {
@@ -157,41 +206,21 @@ export function useMediaReview(
           setNotice(
             'A photo shows live ammunition. Remove or replace it before publishing.',
           );
-        } else if (blurAttempted.current.has(file)) {
-          // The seller already blurred this file and it still trips. Stop the
-          // blur loop; the listing goes to admin review.
-          imagesRef.current.set(file, {
-            file,
-            status: 'review',
-            reason: reasonFor(data),
-            categories,
-          });
-          dropFromQueue(file);
-          setNotice(
-            'We can still see a possible contact detail. This listing will be checked by our team and will not be public until approved.',
-          );
-        } else if (
-          data.decision === 'HUMAN_REVIEW' &&
-          !blurrable(flags) &&
-          !blurrable([{ categories }])
-        ) {
-          // Unreadable/unsure but nothing the seller can paint over: the
-          // admin has to judge it.
-          imagesRef.current.set(file, {
-            file,
-            status: 'review',
-            reason: reasonFor(data),
-            categories,
-          });
-          dropFromQueue(file);
         } else {
+          // No safe automatic mask: the only remaining outcome is a human
+          // check. There is no manual blur step to send the seller to.
           imagesRef.current.set(file, {
             file,
-            status: 'needs-fix',
+            status: 'review',
             reason: reasonFor(data),
             categories,
           });
-          reviewQueue(file);
+          dropFromQueue(file);
+          if (blurrable(flags) || blurrable([{ categories }])) {
+            setNotice(
+              'We could not mask a photo detail automatically. Our team will check this photo before the listing goes live.',
+            );
+          }
         }
       } catch (err) {
         imagesRef.current.set(file, {
@@ -208,7 +237,7 @@ export function useMediaReview(
         bump();
       }
     },
-    [bump, dropFromQueue, getToken, reviewQueue],
+    [bump, dropFromQueue, getToken],
   );
 
   const screenVideo = useCallback(
@@ -287,7 +316,6 @@ export function useMediaReview(
       for (const file of Array.from(imagesRef.current.keys())) {
         if (!keep.has(file)) {
           imagesRef.current.delete(file);
-          blurAttempted.current.delete(file);
           dropFromQueue(file);
         }
       }
@@ -323,17 +351,6 @@ export function useMediaReview(
       void screenVideo(file, audioEnabled);
     },
     [bump, screenVideo],
-  );
-
-  const applyBlur = useCallback(
-    (oldFile: File, newFile: File) => {
-      imagesRef.current.delete(oldFile);
-      blurAttempted.current.add(newFile);
-      dropFromQueue(oldFile);
-      bump();
-      void screenImage(newFile, true);
-    },
-    [bump, dropFromQueue, screenImage],
   );
 
   const chooseVideoReview = useCallback(() => {
@@ -408,7 +425,6 @@ export function useMediaReview(
     dismissNotice: () => setNotice(null),
     syncImages,
     syncVideo,
-    applyBlur,
     chooseVideoReview,
     chooseVideoDelete,
     chooseVideoReupload,

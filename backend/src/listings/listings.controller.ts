@@ -435,7 +435,7 @@ export class ListingsController {
   }
 
   // Screen ONE staged photo as soon as the seller picks it. The sell form
-  // uses the verdict to open the blur tool immediately; the final
+  // swaps in the masked image when the server returns one; the final
   // preview/create pass still screens the files that are actually published.
   @Post('image-screen')
   @UseGuards(AuthGuard)
