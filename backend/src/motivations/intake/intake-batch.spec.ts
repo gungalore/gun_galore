@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
+import { fieldsFor } from '../motivation-fields';
 import { MotivationIntakeService } from './intake.service';
 import { planGroup } from './intake-planner';
 
@@ -50,7 +51,7 @@ const ROW = {
  * validated in full and written once, so the rest is stubbed and the state
  * rebuild is replaced.
  */
-function makeService() {
+function makeService(answers: Record<string, string> = {}) {
   const svc = Object.create(
     MotivationIntakeService.prototype,
   ) as MotivationIntakeService;
@@ -66,7 +67,7 @@ function makeService() {
     sheets: { sheetFor: async () => SHEET },
     shared: {
       requireUser: async () => ({ id: 'user-1' }),
-      answersFor: async () => ({}),
+      answersFor: async () => answers,
     },
     documents: { library: async () => ({ items: [] }) },
     motivations: {
@@ -149,5 +150,31 @@ describe('answering a group', () => {
       ]),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(writes).toHaveLength(0);
+  });
+
+  /**
+   * ⚠️ A DATE SENT AS A TYPED MESSAGE IS STILL A DATE. The card used to post
+   * the chosen date in `message`, which fell through to the chip matcher and
+   * was refused with "choose one of the options" — so a date question could not
+   * be saved at all. The card posts `value` now; this keeps the older bundle
+   * working and closes the failure for good.
+   */
+  it('accepts a date sent as a typed message', async () => {
+    const answers: Record<string, string> = {};
+    for (const field of fieldsFor(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      answers[field.key] =
+        field.key === 'shooting_history'
+          ? Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ')
+          : 'x';
+    }
+    delete answers.competency_issued;
+    const { svc, writes } = makeService(answers);
+
+    await svc.answerBatch('user-1', 'mo-1', [
+      { fieldKey: 'competency_issued', message: '2020-01-01' },
+    ]);
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ competency_issued: '2020-01-01' });
   });
 });

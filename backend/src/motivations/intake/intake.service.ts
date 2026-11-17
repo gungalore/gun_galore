@@ -666,6 +666,17 @@ const sourceText = (body.message ?? body.value ?? '').trim();
          * introduced me" and then typing the rest threw the tick away.
          */
         patch[key] = patch[key] ? addCustomChoice(patch[key], message) : message;
+      } else if (field.kind === 'date') {
+        /**
+         * ⚠️ A DATE IS AN ANSWER, NOT A CHIP. The card used to send the chosen
+         * date as `message`; it fell into the chip matcher below, found no
+         * custom key for a date field and refused it with "choose one of the
+         * options" — a date question could not be saved at all. The card sends
+         * `value` now, but an older bundle still sends `message`, and the batch
+         * door must accept the answer either way. Validity is still the
+         * registry's job (sanitiseAnswers), not this branch's.
+         */
+        patch[key] = message;
       } else {
         const matched = this.matchChoices(current.choices, message);
         if (matched.length) {
