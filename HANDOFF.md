@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-11-17**.
 
+## 2026-11-17 (LATEST) — INTERVIEW CARD: CONTINUE ARMS ON THE FIRST ANSWER
+
+Shipped `5608cf42` (**full deploy**). Two defects the operator caught on the
+live interview card:
+
+- **Continue stayed disabled after a tap.** It required every required question
+  on the card, so selecting "Main firearm licence holder" left the button dead
+  until the occupation further down was typed. Continue now saves whatever has
+  been answered and the unanswered required questions stay pending and are
+  served again on the same card; the generation gate is unchanged and still
+  refuses without them. The footer now says how many are left.
+- **The type box read "Or type your own answerâ€¦".** The ellipsis in
+  `intake-planner.ts` had been mis-decoded into mojibake in the source. Both
+  placeholders now carry a real ellipsis, and a planner test pins the string.
+  The deployed `dist` has two real ellipses and zero mojibake sequences.
+
+Verified before deploy: backend `tsc` clean, **419 suites / 6 222 tests passed**
+(8 skipped); frontend `tsc` clean, **168 files / 1 947 tests passed**; foreground
+production build clean. One DRAFT motivation existed at deploy time and none was
+generating, so the reload touched nothing in flight. Rollback point
+`alloutdoor-20261117-131531.dump` (34,368,038 bytes). `deploy.sh` exited 0;
+backend health 200 ×2, frontend 200 ×2, public 200 ×2, all three PM2 services
+online.
+
 ## 2026-11-17 (NEWEST) — RESEARCH-FIRST INTERVIEW AND DISCIPLINE-TRUE RANGES
 
 Shipped `e584262c` (**full deploy**; backend changed and the first migration
