@@ -1,5 +1,6 @@
 import type { MotivationLicenceType } from '@prisma/client';
 import {
+  CASE_NOTE_KEYS,
   fieldByKey,
   fieldsFor,
   isVisible,
@@ -141,11 +142,23 @@ function visibleFields(
   type: MotivationLicenceType,
   strategy: IntakeStrategy,
   answers: Record<string, string>,
+  brief?: InterviewBrief | null,
 ): { key: string; field: MotivationField }[] {
   const purpose =
     (answers.firearm_use_kind ?? '').trim() ||
     resolveSportingPurpose(answers);
-  const keys = sportingFields(strategy, purpose);
+  const keys = [...sportingFields(strategy, purpose)];
+  /**
+   * ⚠️ THE BRIEF'S FOLLOW-UP SLOTS JOIN THE LIST ONLY WHEN IT WROTE THEM.
+   * They belong to no strategy — they are the researcher's own questions — so
+   * they are appended here when the brief names them, and never otherwise.
+   */
+  const briefKeys = new Set(
+    (brief?.questions ?? []).map((q) => q.fieldKey),
+  );
+  for (const key of CASE_NOTE_KEYS) {
+    if (briefKeys.has(key) && !keys.includes(key)) keys.push(key);
+  }
   const out: { key: string; field: MotivationField }[] = [];
   /**
    * ⚠️ A KEY LISTED TWICE IS STILL ONE QUESTION.
@@ -441,7 +454,7 @@ function plannerContext(input: PlannerInput) {
   const items = new Map(input.sheet.items.map((i) => [i.key, i]));
   const merged = { ...input.answers };
   for (const item of input.sheet.items) merged[item.key] = item.value;
-  const fields = visibleFields(input.type, strategy, merged);
+  const fields = visibleFields(input.type, strategy, merged, input.brief);
   /**
    * ⚠️ A SKIPPED OPTIONAL QUESTION IS SETTLED, NOT OUTSTANDING. Counting only
    * values would leave the progress bar permanently short of 100% on a member
@@ -589,18 +602,38 @@ export function planGroup(
       gap.code.slice(gap.code.indexOf(':') + 1),
     ),
   );
-  const asked = (entry: { key: string; field: MotivationField }): boolean =>
-    entry.field.required === true ||
-    detailKeys.has(entry.key) ||
+  /**
+   * The brief's own question list. Only the follow-up slots consult it — the
+   * fixed registry questions are asked because the gate needs them, not
+   * because a model chose them.
+   */
+  const briefKeys = new Set(
+    (input.brief?.questions ?? []).map((q) => q.fieldKey),
+  );
+  const asked = (entry: { key: string; field: MotivationField }): boolean => {
     /**
-     * ⚠️ THE CASE QUESTIONS ARE OFFERED, ONCE. These are optional in the
-     * registry (the sheet may still show them), but a document written without
-     * them is the thin one: the security paragraph, the routine, the ground and
-     * the discipline. `CASE_KEYS` is the list of fields the interview puts on
-     * screen even though nobody is forced to answer; Skip records the decision
-     * so the question is not repeated. See intake-strategies.ts.
+     * ⚠️ THE BRIEF'S OWN FOLLOW-UPS ARE ASKED ONLY WHEN IT WROTE THEM. Every
+     * other question is bound to the registry; these three slots exist so the
+     * researcher can ask something no fixed field covers. An omitted slot is
+     * not a skipped question — it was never needed.
      */
-    CASE_KEYS.has(entry.key);
+    if ((CASE_NOTE_KEYS as readonly string[]).includes(entry.key)) {
+      return briefKeys.has(entry.key);
+    }
+    return (
+      entry.field.required === true ||
+      detailKeys.has(entry.key) ||
+      /**
+       * ⚠️ THE CASE QUESTIONS ARE OFFERED, ONCE. These are optional in the
+       * registry (the sheet may still show them), but a document written without
+       * them is the thin one: the security paragraph, the routine, the ground and
+       * the discipline. `CASE_KEYS` is the list of fields the interview puts on
+       * screen even though nobody is forced to answer; Skip records the decision
+       * so the question is not repeated. See intake-strategies.ts.
+       */
+      CASE_KEYS.has(entry.key)
+    );
+  };
 
   /**
    * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED — EXCEPT THE CASE ONES.
@@ -658,7 +691,9 @@ export function planGroup(
       topicForField(f.key) === id &&
       (f.field.required === true ||
         countedDetail.has(f.key) ||
-        CASE_KEYS.has(f.key)),
+        CASE_KEYS.has(f.key) ||
+        ((CASE_NOTE_KEYS as readonly string[]).includes(f.key) &&
+          briefKeys.has(f.key))),
   );
   return {
     id,

@@ -710,3 +710,66 @@ describe('the brief guides the walk', () => {
     expect(question?.fieldKey).toBe('safe_type');
   });
 });
+
+describe('the researcher follow-up slots', () => {
+  function filledS13(): Record<string, string> {
+    const answers: Record<string, string> = {};
+    for (const { key } of pendingFields({
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      sheet: EMPTY_SHEET,
+    })) {
+      answers[key] =
+        key === 'shooting_history' ? 'word '.repeat(20).trim() : 'x';
+    }
+    return answers;
+  }
+
+  const followUp: InterviewBrief = {
+    version: 'test',
+    hash: 'h',
+    at: new Date().toISOString(),
+    facts: [],
+    sources: [],
+    researched: true,
+    questions: [
+      {
+        fieldKey: 'case_note_1',
+        question: 'Where on your person do you carry it, and in what holster?',
+        why: 'The DFO reads how the firearm is actually carried.',
+        priority: 0,
+      },
+    ],
+    chips: {},
+  };
+
+  it('asks a slot only when the brief wrote a question for it', () => {
+    const answers = filledS13();
+    expect(
+      planGroup({
+        type: MotivationLicenceType.S13_SELF_DEFENCE,
+        answers,
+        sheet: EMPTY_SHEET,
+      }),
+    ).toBeNull();
+
+    const group = planGroup({
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      sheet: EMPTY_SHEET,
+      brief: followUp,
+    });
+    expect(group?.questions.map((q) => q.key)).toContain('case_note_1');
+    expect(
+      questionForField(
+        {
+          type: MotivationLicenceType.S13_SELF_DEFENCE,
+          answers,
+          sheet: EMPTY_SHEET,
+          brief: followUp,
+        },
+        'case_note_1',
+      )?.optional,
+    ).toBe(true);
+  });
+});

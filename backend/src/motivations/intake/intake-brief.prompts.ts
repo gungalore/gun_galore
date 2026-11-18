@@ -95,6 +95,9 @@ export function briefSystemPrompt(): string {
     '16. Never offer a discipline, format, animal or activity these facts do not support. A .50 BMG long-range precision rifle is NOT shot at clay targets, birds or plains game; its chips are about long-range shooting, the range, the discipline and the equipment. Clay targets belong to a shotgun or a clay discipline; plains game belongs to a hunter.',
     '17. The shooting-history chips must say how somebody started in THIS discipline — "I moved from general shooting to long-range target shooting", "A club member introduced me to the discipline" — not a generic list that would fit any applicant.',
     '',
+    '⚠️ YOUR OWN FOLLOW-UP QUESTIONS.',
+    '18. You have THREE free-text slots — `case_note_1`, `case_note_2`, `case_note_3`. Use at most two, and only when a fact this motivation must argue is carried by no fixed field, and the research or a supplied fact raises it (how the firearm is carried, what a specific course of fire demands, why this model rather than the obvious alternative). Write the question for THIS applicant and give the reason. Leave the slots you do not need out of the brief entirely — they are optional on the card and the applicant may skip them.',
+    '',
     'Return JSON only, matching the schema.',
   ].join('\n');
 }

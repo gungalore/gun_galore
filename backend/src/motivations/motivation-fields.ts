@@ -227,6 +227,22 @@ export const PRESS_CLIPPINGS_KEY = 'press_clippings';
 export const TRAVELLED_AREAS_TEXT_KEY = 'travelled_areas_text';
 
 /**
+ * The researcher's own follow-up slots.
+ *
+ * ⚠️ THE INTERVIEW'S ONLY FREE-FORM QUESTIONS. Every other question is bound to
+ * a registry field, which is why the brief can reword but not invent. These
+ * three carry a question the brief wrote for THIS applicant — a fact the
+ * research raised that no fixed field holds — and the answer is plain text the
+ * writer receives. They are optional and only asked when the brief includes
+ * them; see BRIEF_ONLY_KEYS in the planner.
+ */
+export const CASE_NOTE_KEYS = [
+  'case_note_1',
+  'case_note_2',
+  'case_note_3',
+] as const;
+
+/**
  * How many clippings a member may attach.
  *
  * Not arbitrary generosity: eight is the operator's own limit on how many
@@ -2317,6 +2333,27 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     help: 'Say so plainly if it has happened, with the reason given. Concealing it is far worse than explaining it.',
     maxLength: 2000,
   },
+  /**
+   * ⚠️ THE FOLLOW-UP SLOTS ARE IN THE REGISTRY SO THEIR ANSWERS HAVE SOMEWHERE
+   * TO GO. The question text comes from the brief, not from these labels; the
+   * labels are only the fallback. Nothing asks them unless the brief names
+   * them — see the planner.
+   */
+  ...CASE_NOTE_KEYS.map((key, index) => ({
+    key,
+    label: `Follow-up ${index + 1}`,
+    kind: 'long' as const,
+    section: 'Your circumstances',
+    help: 'A follow-up the researcher chose from this application’s own facts. Optional.',
+    /**
+     * ⚠️ HIDDEN FROM THE SHEET, ASKED IN THE INTERVIEW. `internal` keeps three
+     * empty “Follow-up” boxes off the review sheet; the planner strips the flag
+     * when it builds the questions, and the writer receives the answers through
+     * PROMPTED_DESPITE_INTERNAL.
+     */
+    internal: true as const,
+    maxLength: 1200,
+  })),
 ];
 
 /**
@@ -3676,7 +3713,7 @@ const PROMPTED_DESPITE_FORM_ONLY = new Set(['firearm_serial']);
  * keeps shut.
  */
 const PROMPTED_DESPITE_INTERNAL =
-  /^(firearm_fit_reason|s13_reasons|s13_movements|s13_carry_style|threat_circumstances|daily_movements|alternatives_considered|hunting_history|intended_quarry|hunting_locations|activity_record|competition_record|continued_use|existing_firearm_\d+_(use|primary_use))$/;
+  /^(case_note_\d+|firearm_fit_reason|s13_reasons|s13_movements|s13_carry_style|threat_circumstances|daily_movements|alternatives_considered|hunting_history|intended_quarry|hunting_locations|activity_record|competition_record|continued_use|existing_firearm_\d+_(use|primary_use))$/;
 
 export function factPackFields(
   type: MotivationLicenceType,

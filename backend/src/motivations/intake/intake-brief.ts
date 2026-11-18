@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { MotivationLicenceType } from '@prisma/client';
 import {
+  CASE_NOTE_KEYS,
   FIELD_REGISTRY_VERSION,
   fieldsFor,
   type MotivationField,
@@ -39,7 +40,7 @@ import { CASE_KEYS, sportingFields, strategyFor } from './intake-strategies';
  * phrasing until the row is forgotten. Same discipline as
  * RESEARCH_ASK_VERSION.
  */
-export const INTERVIEW_BRIEF_VERSION = '2026-11-17b';
+export const INTERVIEW_BRIEF_VERSION = '2026-11-18a';
 
 /** How long a brief stays good. The answers it depends on rarely move. */
 export const INTERVIEW_BRIEF_TTL_DAYS = 14;
@@ -112,6 +113,7 @@ export function askableFields(
       !field.sensitive &&
       (strategyKeys.has(field.key) ||
         CASE_KEYS.has(field.key) ||
+        (CASE_NOTE_KEYS as readonly string[]).includes(field.key) ||
         field.required === true),
   );
 }
