@@ -5,7 +5,29 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-17**.
+Last updated: **2026-11-18**.
+
+## 2026-11-18 (LATEST) — THE COMPARISON QUESTION IS OPTIONAL
+
+Shipped `3fc2ed56` (**full deploy**). A section 13 member was held on "Which
+other models did you consider, and why did you choose this one for your
+townhouse?" — red cross, "1 still to answer", and the generation gate behind it.
+A first firearm, or a calibre they simply wanted, has no honest answer.
+
+`alternative_considered` is now an **optional case question**: offered once on
+every type, carrying Optional and Skip, never counted as still to answer. It is
+no longer `required: true` (the field type only ever spells the word
+"required"), it is in `CASE_KEYS`, and `missingDetail` no longer demands it — so
+the comparison section falls back to the held battery and the rest of the facts
+when it is skipped. Pinned with a planner test (offered, `optional: true`) and a
+field test (no longer required, still visible on every type).
+
+Verified: backend `tsc` clean, **420 suites / 6 238 tests passed** (8 skipped);
+frontend build clean (its 1 954 tests unchanged and green). The box already ran
+`ae43a0e4` (the other session's Peach fix) before this deploy, so the deploy
+continued from live code rather than introducing it. Rollback point
+`alloutdoor-20261118-082837.dump` (34,524,774 bytes). `deploy.sh` exited 0;
+backend 200, frontend 200 ×2, public 200 ×2, three PM2 services online.
 
 ## 2026-11-17 (PEACH) — CHECKOUT LIVE-READY, WAITING ON DOMAIN APPROVAL
 
