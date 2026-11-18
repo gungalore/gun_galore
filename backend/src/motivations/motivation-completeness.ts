@@ -227,18 +227,8 @@ export function missingDetail(
   }
 
   // ── the exercise, and its published rulebook ───────────────────────────
-  /**
-   * ⚠️ THE S16 FAMILY TYPE IS NOT THE PURPOSE. The one S16 entry point stores
-   * `S16_DEDICATED_HUNTER`; a handgun resolves to sport, and a sport motivation
-   * without the exercise it is entered in falls back to the class courses —
-   * MO000115 printed IPSC, SADPA, Steel Challenge and Natshoot 20 m although
-   * the applicant had named none of them. The exercise is required whenever
-   * the resolved purpose includes sport.
-   */
   const needsExercise =
     licenceType === MotivationLicenceType.S16_DEDICATED_SPORT ||
-    (licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER &&
-      purpose !== 'hunting') ||
     (licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER &&
       isSporting(answers));
   if (needsExercise && !has(answers, 'discipline_exercise')) {

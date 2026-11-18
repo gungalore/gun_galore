@@ -79,9 +79,10 @@ describe('missingDetail', () => {
     expect(codes(gaps)).not.toContain('association:association_name');
   });
 
-  it('demands the exercise on a sport-purpose section 16 family application', () => {
-    // MO000117: the handgun resolves to sport, but the exercise was optional,
-    // so the exhibits fell back to IPSC, SADPA and Steel Challenge.
+  it('does not gate the S16 family on an exercise the association may not publish', () => {
+    // The one S16 entry point stores S16_DEDICATED_HUNTER. The exercise picker
+    // only has options for an association that publishes a list; the gate must
+    // not demand a question the card cannot show.
     const answers = {
       ...completeS13(),
       association_name: 'NHSA',
@@ -94,7 +95,7 @@ describe('missingDetail', () => {
       answers,
       MotivationLicenceType.S16_DEDICATED_HUNTER,
     );
-    expect(codes(gaps)).toContain('exercise:discipline_exercise');
+    expect(codes(gaps)).not.toContain('exercise:discipline_exercise');
     expect(codes(gaps)).not.toContain('purpose:intended_quarry');
   });
 
