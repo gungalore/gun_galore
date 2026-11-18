@@ -7,7 +7,42 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — PRINT-READY S13/S16 AND THE CARTRIDGE ON PAGE ONE
+## 2026-11-18 (LATEST) — MODEL NONE AND A SELF-DEFENCE HISTORY THAT HUNTS
+
+Shipped `5b2e069d` (**full deploy**). Rollback point:
+`alloutdoor-20261118-171706.dump` (37,828,505 bytes).
+
+Two P0s from the document audit.
+
+- **A licence model of NONE is a value.** MO000127 (the supplied Section 15
+  Howa, model NONE) re-asked the model card until `1500` was invented. The
+  member's answer was run through `answerValue()` in the review sheet, which
+  blanks a card placeholder, so the planner saw a required field with no
+  answer. `shownValue` now keeps a member-entered NONE for `firearm_model`
+  only; the writer still never sees "Model NONE". Live check: a fresh S15 with
+  model NONE reached the pack and generation; its title reads "HOWA 6.5mm
+  Creedmoor", not "NONE". (It then failed on unrelated S15 writer wording —
+  "dedicated" and "efficiently" — which is the next content item, not the
+  model.)
+- **A self-defence history may say the applicant hunts.** MO000121 failed on
+  "a self-defence application says 'hunt' outside any sentence about a firearm
+  already held"; the model repair did not mend it. `repairHuntingOnSelfDefence`
+  now replaces the hunting vocabulary with shooting vocabulary on S13/S14,
+  keeps the activity and the facts, and the full gate runs again. Live check:
+  MO000130, with `I also hunt plains game...` in the history, COMPLETED — 21
+  pages, zero "hunt", 11 "shoot".
+
+Verification: backend 6,252 passed / 8 skipped; frontend production build clean;
+health ×2 and public ×2 200. `26d2298e` carries the logic and `5b2e069d`
+restores the sheet service's UTF-8 comments after the edit.
+
+**Still open from the audit:** the virgin sign-up SMS failure, address
+auto-link/re-link (the missing-details link exists but needs a live test),
+batch-upload sticky confirm/progress, training-certificate duplicates, the S15
+"Association and dedicated status" label on the game question, and the
+endorsement date prompt.
+
+## 2026-11-18 (LATEST-1) — PRINT-READY S13/S16 AND THE CARTRIDGE ON PAGE ONE
 
 Shipped `268bec0e` (**full deploy**; `1179675f` restored the cover on the way).
 Rollback point: `alloutdoor-20261118-145557.dump` (37,412,098 bytes).
