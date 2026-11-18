@@ -763,6 +763,11 @@ function sectionVocabularyRule(licenceType: MotivationLicenceType): string {
       '   document is not filed at all. Reloading is refused outright, held firearm',
       '   or not. Argue the threat, the premises, the routine and the response',
       '   instead.',
+      '   ⚠️ AND THE APPLICANT’S OWN ANSWERS MAY USE THESE WORDS — "I hunt",',
+      '   "hunting farms", "I shoot competitively". DO NOT COPY THE WORD AND DO NOT',
+      '   DROP THE FACT: keep the routine and neutralise it — "trips to farms",',
+      '   "time in the field", "recreational trips out of town", "weekends at the',
+      '   range". The fact is theirs; the vocabulary is the section’s.',
     ].join('\n');
   }
   return '';

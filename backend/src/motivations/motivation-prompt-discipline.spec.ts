@@ -260,3 +260,17 @@ describe('the discipline range constraint', () => {
     expect(p).not.toContain('<discipline-ranges>');
   });
 });
+
+describe('the self-defence vocabulary and the applicant’s own words', () => {
+  it('tells the writer to keep the fact and drop the word', () => {
+    // MO000113 failed three drafts on "a self-defence application says
+    // "hunting"" because the applicant's own routine answer says "I hunt, and
+    // travel to and from farms to do it". The fact is theirs; the section's
+    // vocabulary is not.
+    const prompt = generationSystemPrompt(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+    );
+    expect(prompt).toContain('DO NOT COPY THE WORD');
+    expect(prompt).toContain('trips to farms');
+  });
+});
