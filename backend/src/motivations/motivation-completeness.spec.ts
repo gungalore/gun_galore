@@ -79,6 +79,46 @@ describe('missingDetail', () => {
     expect(codes(gaps)).not.toContain('association:association_name');
   });
 
+  it('demands the exercise on a sport-purpose section 16 family application', () => {
+    // MO000117: the handgun resolves to sport, but the exercise was optional,
+    // so the exhibits fell back to IPSC, SADPA and Steel Challenge.
+    const answers = {
+      ...completeS13(),
+      association_name: 'NHSA',
+      association_number: '9407315019081',
+      association_joined: '2019-08-17',
+      dedicated_since: '2019-09-01',
+    };
+    delete (answers as Record<string, string | undefined>).discipline_exercise;
+    const gaps = missingDetail(
+      answers,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    );
+    expect(codes(gaps)).toContain('exercise:discipline_exercise');
+    expect(codes(gaps)).not.toContain('purpose:intended_quarry');
+  });
+
+  it('does not ask a hunting section 16 family application for a sport exercise', () => {
+    const answers = {
+      ...completeS13(),
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_calibre: '.30-06 Springfield',
+      association_name: 'NHSA',
+      association_number: '9407315019081',
+      association_joined: '2019-08-17',
+      dedicated_since: '2019-09-01',
+      firearm_use_kind: 'hunting',
+      intended_quarry: 'Kudu',
+    };
+    delete (answers as Record<string, string | undefined>).discipline_exercise;
+    const gaps = missingDetail(
+      answers,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    );
+    expect(codes(gaps)).not.toContain('exercise:discipline_exercise');
+  });
+
   it('does not ask a sport-purpose section 16 for a hunting species', () => {
     /**
      * ⚠️ S16_DEDICATED_HUNTER IS THE WHOLE SECTION 16 FAMILY. The interview
