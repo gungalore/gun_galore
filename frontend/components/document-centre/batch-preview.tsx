@@ -118,7 +118,7 @@ export default function BatchReview({
         </>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center gap-3 border-t border-[var(--border-divider)] bg-[var(--bg-card)] py-3">
         <button
           type="button"
           disabled={!canFile}

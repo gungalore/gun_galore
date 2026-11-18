@@ -322,7 +322,7 @@ export function phraseIn(issue: string): string | null {
    * both are parseable here.
    */
   const scope =
-    /^(?:a hunting or sport application|a self-defence application) says "([^"]+)"/.exec(
+    /^(?:a hunting or sport application|a self-defence application|a section 15 document) says "([^"]+)"/.exec(
       issue,
     );
   return scope ? scope[1] : null;

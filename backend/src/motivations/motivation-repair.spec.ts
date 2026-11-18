@@ -53,6 +53,20 @@ describe('what is worth mending', () => {
     expect(targets![0].sentence).toContain('not a defensive firearm');
   });
 
+  it('mends the section 15 "dedicated" complaint too', () => {
+    // MO000129: a section 15 draft said "dedicated" and "efficiently"; the
+    // dedicated message did not match phraseIn, so the whole repair was
+    // abandoned and the pair failed the pack.
+    const text =
+      'I am a dedicated sports person and I shoot at the Kuils River range efficiently.';
+    const targets = repairTargets(text, [
+      'a section 15 document says "dedicated"; section 15 is for an occasional hunter or sports person, and a claim of dedicated status argues the applicant out of the section they are applying under',
+      'the document says "efficiently", which is catalogue copy rather than a reason',
+    ]);
+    expect(targets).toHaveLength(1);
+    expect(targets![0].phrases.sort()).toEqual(['dedicated', 'efficiently']);
+  });
+
   it('gathers two complaints about one sentence into one rewrite', () => {
     const text =
       'Its terminal ballistics prevent it from engaging targets at range.';
