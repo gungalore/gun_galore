@@ -7,7 +7,36 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE RESEARCHER CAN ASK ITS OWN FOLLOW-UP QUESTIONS
+## 2026-11-18 (LATEST) — THE BRIEF IS REBUILT AFTER EVERY ANSWER
+
+Shipped `2efba9d0` (**full deploy**). The brief was keyed only on core facts
+(firearm, purpose, association, discipline, province), so it was built once and
+never reacted to what the member said.
+
+- `answersDigest` projects the **non-sensitive** answers into the brief prompt
+  under "WHAT THE APPLICANT HAS TOLD YOU SO FAR" — no ID, serial, address,
+  spouse, declaration or JSON blob.
+- The digest is part of `briefHash`, so every answered question changes the hash
+  and forces a rebuild; a sensitive answer never does.
+- `ensureNow` **awaits** the rebuild. The card after an answer gets the fresh
+  brief instead of a label-only card while a background build catches up. The
+  first card of a session still uses the fire-and-forget door.
+- Brief version bumped to `2026-11-18b`.
+
+⚠️ **COST AND LATENCY.** One brief model call (~3 seconds) per answered card.
+The research call is cached on the core facts and is not repeated. A card that
+takes longer than usual after an answer is this rebuild, not a hang.
+
+⚠️ The fixed registry questions still gate the interview — `shooting_history`
+remains required by completeness and can be reworded, not dropped. That is a
+product/legal decision still open.
+
+Verified: backend `tsc` clean, **420 suites / 6,249 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-113234.dump`
+(34,543,147 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — THE RESEARCHER CAN ASK ITS OWN FOLLOW-UP QUESTIONS
 
 Shipped `b955d240` (**full deploy**). The interview's questions were all bound
 to registry fields; the brief could reword and chip them but could not ask
