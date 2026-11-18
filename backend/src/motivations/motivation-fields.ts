@@ -1328,9 +1328,16 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // the licences held in that type, rolling forward whenever one is granted
     // or renewed (§5.3), falling back to five years from issue only where the
     // category holds no licence. See common/sa-competency deriveExpiry.
+    // ⚠️ FORM-ONLY: THE WRITER MUST NEVER SEE THIS DATE. A competency has no
+    // printed expiry; every date here is derived, and the vet refuses a document
+    // that states one. MO000119 (print-ready S13) failed on exactly that, plus
+    // "platform", and the pair stopped the targeted vocabulary repair. Keeping
+    // the date in the sheet is useful for renewals; keeping it in the writer's
+    // facts is an invitation to state a fact the certificate does not carry.
     label: 'Competency expires on',
     kind: 'date',
     section: 'Your competency',
+    formOnly: true,
     help: 'Your certificate does not print this. It follows your longest-running licence in the same firearm type — leave it blank if you are not sure.',
     // âš ï¸ formOnly REMOVED — see competency_for. A competency with years left
     // on it is worth saying; one close to expiry is worth the writer knowing
