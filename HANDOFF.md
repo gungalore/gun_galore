@@ -7,7 +7,50 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE BRIEF IS REBUILT AFTER EVERY ANSWER
+## 2026-11-18 (LATEST) — THE S16 PURPOSE, THE SHEET/GATE SPLIT, AND THE CARTRIDGE
+
+Shipped `fd5b38e6` (**full deploy**; `f308991e` and `dc0074c7` were deployed on
+the way). Rollback point: `alloutdoor-20261118-132329.dump` (38,483,541 bytes).
+
+Driving MO000114 (S13) and MO000115 (S16) on production found five things:
+
+- **The S16 purpose was gated on a question nobody asked.** `missingDetail`
+  still demanded `firearm_use_kind` and "the species you intend to hunt" for
+  `S16_DEDICATED_HUNTER`, although the router was retired as a question in
+  October and a handgun resolves to sport in `resolveSportingPurpose`. The gate
+  now resolves the purpose from the firearm/battery/explicit answer and demands
+  quarry only when that purpose hunts. MO000117 and MO000118 generated with no
+  API patch.
+- **The sheet disagreed with the gate.** `missing` is now
+  `missingRequired ∪ missingDetail`, and the sheet renders a non-required detail
+  row when the gate names it, so "Nothing is missing" can no longer precede a
+  409.
+- **Bare "9mm" resolved no cartridge.** MO000114 printed no dimensions because
+  `9mm` is ambiguous. The calibre field's help and the brief now ask for the
+  stamped name (9mm Parabellum/9×19, 9mm Short/.380 ACP, 9mm Makarov). With
+  "9mm Parabellum", MO000117 prints the full C.I.P. **9 mm Luger** sheet on
+  page 8.
+- **The 3D cartridge was the cover.** `cartridgeDrawing.hero` is no longer
+  passed to the renderer; page one is applicant and firearm. The drawing still
+  prints in the cartridge section beside the dimension sheet.
+- **The 10 m exercise had no course plate.** `10m-centrefire-handgun` now
+  exists, so an applicant who names the 10 m Centre-Fire Handgun Exercise gets
+  that one exhibit rather than the class fallback. The class fallback still
+  runs when no discipline is named at all.
+
+**Reverted on purpose:** `de3bf125` required `discipline_exercise` for every
+sport-purpose S16 family row. An SA Hunters application had no exercise card
+(the picker only has options when the association publishes a list), so the
+last optional follow-up could not advance and hit a 409. `dc0074c7` restores
+the legacy `S16_DEDICATED_SPORT`/S15 gate; the 10 m plate is the fix for a named
+exercise.
+
+Verification: backend 6,251 passed / 8 skipped before the final help-text change,
+targeted 108 passed after it; frontend build clean; health ×2 and public ×2 200.
+MO000114 (S13) and MO000117/MO000118 (S16) are test rows on the operator's
+profile and are expected to be erased.
+
+## 2026-11-18 (LATEST-1) — THE BRIEF IS REBUILT AFTER EVERY ANSWER
 
 Shipped `2efba9d0` (**full deploy**). The brief was keyed only on core facts
 (firearm, purpose, association, discipline, province), so it was built once and
