@@ -7,7 +7,38 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — PER-FILE PROGRESS, AN ENDORSEMENT WITHOUT A DEADLINE, AND THE TRAINING PAIRS
+## 2026-11-18 (LATEST) — THE LICENCE PROFILE IS 20 FACTS, NOT A SECOND 271
+
+Shipped `557b9228` (**full deploy**). Rollback point:
+`alloutdoor-20261118-221134.dump` (37,226,591 bytes).
+
+Operator: *"The Review profile details. Neaten that up and also remove the 271
+information gathered there that is not necessary."* The page had grown to 190
+fields: postal address, home/work dialling codes, employer address, marital
+status, spouse ID and passport, reloading, secondary associations, the
+licence-holder role and fourteen existing-firearm rows (140 fields).
+
+- `PROFILE_KEYS` is now the complete allowlist. Registry `scope: 'profile'` is
+  no longer sufficient on its own: identity/contact, residence and employer
+  name, premises, safe custody, one association and its dedicated dates.
+- The removed SAPS 271-only fields are **pruned from the stored blob** on the
+  next profile read (`pruneToProfileKeys`), so they stop prefilling future
+  applications; they are not merely hidden.
+- The page is four sections — **About you**, **Your premises**, **Your safe and
+  storage**, **Dedicated status** — and links to the Document Centre for
+  licences, competencies, training and endorsements. Live profile: **20 details
+  remembered**, down from 71.
+- Existing firearms are no longer a profile section. The six licences live in
+  the Document Centre and auto-link into an application; the 271 Part F rows are
+  asked on the application that needs them.
+
+Verification: full backend **6,255 passed / 8 skipped**; frontend production
+build clean; health ×2 and public ×2 200.
+
+**Still open:** the virgin sign-up SMS/email verification failure, which is the
+only audit item that isn't code we control.
+
+## 2026-11-18 (LATEST-1) — PER-FILE PROGRESS, AN ENDORSEMENT WITHOUT A DEADLINE, AND THE TRAINING PAIRS
 
 Shipped `655a4097` (**full deploy**). Rollback point:
 `alloutdoor-20261118-181114.dump` (37,240,744 bytes).
