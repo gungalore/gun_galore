@@ -372,7 +372,20 @@ export function autoClippingIds(
   if (!answered) {
     for (const area of areas) if (area.onRoute) selected.add(area.key);
     if (!selected.size) {
-      for (const area of areas.slice(0, 2)) selected.add(area.key);
+      /**
+       * ⚠️ NEAREST, NOT BUSIEST, WHEN THERE IS NO STATEMENT. The roll-up is
+       * ordered by report count, so taking its head picked Bellville and
+       * Khayelitsha for a Durbanville applicant while the report in their own
+       * suburb sat further down. Distance from the station is the only
+       * relevance signal a silent member has given us.
+       */
+      const nearest = [...areas]
+        .filter((a) => a.distanceKm !== null)
+        .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+        .slice(0, 2);
+      for (const area of nearest.length ? nearest : areas.slice(0, 2)) {
+        selected.add(area.key);
+      }
     }
   }
   return clippingIdsFor(

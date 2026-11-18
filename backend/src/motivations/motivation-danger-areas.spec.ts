@@ -245,9 +245,27 @@ describe('the hybrid auto selection', () => {
 
   it('⚠️ FALLS BACK TO THE NEAREST TWO WHEN NOTHING WAS TYPED OR TICKED', () => {
     // The operator wants the area's recent reports in the pack without a
-    // picker; with no statement, the roll-up's head is the least arbitrary
-    // choice.
-    expect(autoClippingIds(areas, [], '', false, 2)).toEqual(['a1', 'b1']);
+    // picker; with no statement, distance from the station is the only
+    // relevance signal. The busiest areas are not necessarily the nearest:
+    // taking the roll-up's head picked Bellville for a Durbanville applicant.
+    const near = (key: string, name: string, id: string, distanceKm: number) =>
+      ({
+        key,
+        name,
+        incidentIds: [id],
+        count: 1,
+        distanceKm,
+        crimeTypes: [],
+        latestHeadline: '',
+        latestOn: '',
+        onRoute: false,
+      }) as never;
+    const areas = [
+      near('FAR', 'Far', 'f1', 40),
+      near('NEAR', 'Near', 'n1', 2),
+      near('MID', 'Mid', 'm1', 10),
+    ];
+    expect(autoClippingIds(areas, [], '', false, 2)).toEqual(['n1', 'm1']);
   });
 
   it('prefers the commute route while the member has not answered', () => {
