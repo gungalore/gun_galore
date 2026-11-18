@@ -1313,6 +1313,21 @@ export class MotivationGenerationService {
           try {
             const auto = await this.areasFor(row.userId, row.id);
             if (auto.clippings.length) {
+              /**
+               * ⚠️ THE AUTO SELECTION MUST BE STORED, NOT JUST USED.
+               *
+               * The writer gets the clippings from this run, but the PRINTED
+               * pack is rebuilt later from `answers.press_clippings` — and with
+               * that key empty the annexure list named the cuttings while the
+               * renderer printed none. MO000113 shipped with four clippings
+               * selected here and no clipping page at all. Persist the ids
+               * before either the fact pack or the render reads them.
+               */
+              answers[PRESS_CLIPPINGS_KEY] = JSON.stringify(auto.clippings);
+              await this.prisma.motivation.update({
+                where: { id: row.id },
+                data: { answersEncrypted: encryptJson(answers) },
+              });
               pressClips = packableIncidents(
                 await this.news.byIds(auto.clippings),
               );
