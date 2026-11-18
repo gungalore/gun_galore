@@ -30,8 +30,11 @@ fixes; MO000130 (S13 with a hunting history) completed, 21 pages, zero "hunt".
 Verification: backend 6,252 passed / 8 skipped; frontend production build clean;
 health ×2 and public ×2 200.
 
-**Still open:** virgin sign-up SMS, address auto-link/re-link live test, batch
-per-file progress, training-certificate duplicates, endorsement date prompt.
+**Still open:** virgin sign-up SMS, batch per-file progress, training-certificate
+duplicates, endorsement date prompt. The address path was re-tested on a
+print-ready draft with one safe photograph removed: the final interview step
+offers **Add now** and its DFO-documents count, and the missing-details screen
+links back to that step, so the flow exists; it is not a missing upload control.
 
 ## 2026-11-18 (LATEST-1) — MODEL NONE AND A SELF-DEFENCE HISTORY THAT HUNTS
 
