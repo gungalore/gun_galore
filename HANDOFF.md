@@ -7,7 +7,37 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — A REJECTED ALTERNATIVE IS NOT THE FIREARM APPLIED FOR
+## 2026-11-18 (LATEST) — MO000113 FAILED ON THE WORD "HUNTING", NOT ON A MODEL OUTAGE
+
+Shipped `760c3b45` (**full deploy**). MO000113 (section 13) ended `FAILED` at
+10:08:53. The stored `failureReason` is:
+
+> a self-defence application says "hunting" outside any sentence about a
+> firearm already held
+
+⚠️ **THE APPLICANT'S OWN ROUTINE ANSWER USED THE WORD.** `daily_movements` says
+"I hunt, and travel to and from farms to do it", and `s13_movements` includes
+"hunting". The writer honoured absolute rule 1 ("use every answer as given") and
+copied the word into all three drafts ("I travel to and from various farms for
+hunting purposes"), and the scope verifier refused every one. Three attempts,
+then FAILED and the failure SMS. It was not a model, provider or document gate.
+
+The self-defence scope block now tells the writer to **keep the fact and drop
+the word**: do not copy "hunting"/"hunt"/"quarry"/"sport"/"competition" out of
+the applicant's own answer, and do not omit the routine either — neutralise it
+("trips to farms", "time in the field", "recreational trips out of town",
+"weekends at the range"). Pinned with a prompt test.
+
+⚠️ **MO000113 STILL NEEDS A RETRY.** The row is FAILED with its answers intact;
+regenerate it after this deploy. If it fails again, the new failureReason will
+name the next word rather than this one.
+
+Verified: backend `tsc` clean, **420 suites / 6 246 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-101456.dump`
+(36,435,508 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — A REJECTED ALTERNATIVE IS NOT THE FIREARM APPLIED FOR
 
 Shipped `2a8cb5f6` (**full deploy**). MO000112 was written for a Glock 42; the
 operator's handgun is a **Smith & Wesson Bodyguard 2.0 in 9mm short**.
