@@ -76,6 +76,7 @@ import type { NewsIncident } from '../news/news.types';
 import {
   type DangerArea,
   type TravelledArea,
+  autoClippingIds,
   clippingIdsFor,
   dangerAreas,
   parseTravelledAreas,
@@ -200,6 +201,7 @@ import {
   PRESS_CLIPPINGS_KEY,
   PRESS_CLIPPINGS_MAX,
   TRAVELLED_AREAS_KEY,
+  TRAVELLED_AREAS_TEXT_KEY,
   SOURCE_DEALER,
   SOURCE_ESTATE,
   SOURCE_PRIVATE,
@@ -1293,6 +1295,31 @@ export class MotivationGenerationService {
           } catch (err) {
             this.logger.warn(
               `Motivation ${row.id}: press clippings lookup skipped â€” ${(err as Error).message}`,
+            );
+          }
+        } else {
+          /**
+           * ⚠️ THE AUTO HALF OF THE HYBRID PICKER. The recent reports for the
+           * applicant's area are selected at generation when they have not
+           * chosen any: typed areas and ticked areas first, the commute's
+           * areas where they have not answered, and the nearest two areas when
+           * there is nothing to go on. Without this the pack argued from the
+           * quarterly table alone — the operator, 2026-11-18: "why are those
+           * news articles not included".
+           *
+           * Fail-soft: an area lookup that throws costs the cuttings, never the
+           * pack.
+           */
+          try {
+            const auto = await this.areasFor(row.userId, row.id);
+            if (auto.clippings.length) {
+              pressClips = packableIncidents(
+                await this.news.byIds(auto.clippings),
+              );
+            }
+          } catch (err) {
+            this.logger.warn(
+              `Motivation ${row.id}: automatic clippings skipped — ${(err as Error).message}`,
             );
           }
         }
@@ -2534,6 +2561,13 @@ export class MotivationGenerationService {
       ticked: boolean;
       reason?: string;
     })[];
+    /**
+     * The cuttings the auto selection would attach: the typed/ticked areas,
+     * the commute's areas where the member has not answered, and — when none
+     * of those exist — the nearest two areas. Empty only when the member
+     * deliberately ticked none.
+     */
+    clippings: string[];
   }> {
     const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
@@ -2547,6 +2581,7 @@ export class MotivationGenerationService {
         withinKm: AREA_RADIUS_KM,
         answered: false,
         areas: [],
+        clippings: [],
       };
     }
 
@@ -2554,7 +2589,7 @@ export class MotivationGenerationService {
     const answered = (answers[TRAVELLED_AREAS_KEY] ?? '').trim() !== '';
     const station = (answers.police_station ?? '').trim();
     if (!station) {
-      return { station: null, withinKm: AREA_RADIUS_KM, answered, areas: [] };
+      return { station: null, withinKm: AREA_RADIUS_KM, answered, areas: [], clippings: [] };
     }
 
     let incidents: NewsIncident[] = [];
@@ -2579,7 +2614,7 @@ export class MotivationGenerationService {
       this.logger.warn(
         `Motivation ${id}: area lookup failed â€” ${(err as Error).message}`,
       );
-      return { station, withinKm: AREA_RADIUS_KM, answered, areas: [] };
+      return { station, withinKm: AREA_RADIUS_KM, answered, areas: [], clippings: [] };
     }
 
     /**
@@ -2676,6 +2711,21 @@ export class MotivationGenerationService {
       }),
     );
 
+    /**
+     * ⚠️ THE HYBRID SELECTION. Typed areas and ticked areas are statements;
+     * the commute pre-selects only until the member has answered; and when
+     * none of those exist the two nearest areas carry the pack, so a member who
+     * never saw the picker still gets the area's recent reports instead of a
+     * motivation with the quarterly table and no cuttings.
+     */
+    const clippings = autoClippingIds(
+      areas,
+      [...ticked].map(([key, reason]) => (reason ? { key, reason } : { key })),
+      answers[TRAVELLED_AREAS_TEXT_KEY] ?? '',
+      answered,
+      PRESS_CLIPPINGS_MAX,
+    );
+
     return {
       station,
       withinKm: AREA_RADIUS_KM,
@@ -2689,6 +2739,7 @@ export class MotivationGenerationService {
           ticked: ticked.has(a.key),
           ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
         })),
+      clippings,
     };
   }
 

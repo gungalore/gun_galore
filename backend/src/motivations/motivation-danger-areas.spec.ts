@@ -3,6 +3,7 @@ import {
   MAX_AREAS,
   TOO_BROAD,
   areaKey,
+  autoClippingIds,
   clippingIdsFor,
   dangerAreas,
   isVenue,
@@ -225,6 +226,43 @@ describe('which clippings the ticks buy', () => {
   it('stops when the areas run out, without looping', () => {
     const out = clippingIdsFor(areas, [{ key: 'CHARLIE' }], 8);
     expect(out).toEqual(['c1']);
+  });
+});
+
+describe('the hybrid auto selection', () => {
+  const areas = dangerAreas([
+    inc({ id: 'a1', places: ['Alpha'] }),
+    inc({ id: 'a2', places: ['Alpha'] }),
+    inc({ id: 'b1', places: ['Bravo'] }),
+    inc({ id: 'b2', places: ['Bravo'] }),
+    inc({ id: 'c1', places: ['Charlie'] }),
+  ]);
+
+  it('takes the area the member typed, case and partial words included', () => {
+    expect(autoClippingIds(areas, [], 'bravo', false, 8)).toEqual(['b1', 'b2']);
+    expect(autoClippingIds(areas, [], 'CHARLIE', false, 8)).toEqual(['c1']);
+  });
+
+  it('⚠️ FALLS BACK TO THE NEAREST TWO WHEN NOTHING WAS TYPED OR TICKED', () => {
+    // The operator wants the area's recent reports in the pack without a
+    // picker; with no statement, the roll-up's head is the least arbitrary
+    // choice.
+    expect(autoClippingIds(areas, [], '', false, 2)).toEqual(['a1', 'b1']);
+  });
+
+  it('prefers the commute route while the member has not answered', () => {
+    const routed = dangerAreas(
+      [inc({ id: 'a1', places: ['Alpha'] }), inc({ id: 'c1', places: ['Charlie'] })],
+      { onRoute: ['CHARLIE'] },
+    );
+    expect(autoClippingIds(routed, [], '', false, 8)).toEqual(['c1']);
+  });
+
+  it('⚠️ HONOURS AN EXPLICIT NONE — no auto clippings once they answered', () => {
+    expect(autoClippingIds(areas, [], '', true, 8)).toEqual([]);
+    expect(autoClippingIds(areas, [{ key: 'CHARLIE' }], '', true, 8)).toEqual([
+      'c1',
+    ]);
   });
 });
 

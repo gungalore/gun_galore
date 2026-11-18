@@ -82,6 +82,7 @@ export function topicForField(key: string): IntakeTopicId {
   if (key === 'alternative_considered') return 'firearm';
   if (/^competency_|^proficiency_/.test(key)) return 'credentials';
   if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';
+  if (key === 'travelled_areas_text') return 'activities';
   if (
     /^association_|^dedicated_since$|^discipline_|^hunting_|^competition_record$|^activity_record$|^intended_quarry$|^sport_/.test(
       key,

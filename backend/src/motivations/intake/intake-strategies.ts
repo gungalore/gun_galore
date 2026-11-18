@@ -197,6 +197,12 @@ export const CASE_KEYS: ReadonlySet<string> = new Set([
    * it — it was `required: true` and held the whole card behind a red cross.
    */
   'alternative_considered',
+  /**
+   * ⚠️ THE OPTIONAL HALF OF THE CLIPPING PICKER. The area's reports are
+   * selected automatically; this is where a member names a road or suburb they
+   * know. Optional and skippable — the auto selection stands without it.
+   */
+  'travelled_areas_text',
   'premises_enclosure',
   'premises_access_control',
   'alarm_present',

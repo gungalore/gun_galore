@@ -339,3 +339,45 @@ export function clippingIdsFor(
   }
   return out.slice(0, max);
 }
+
+/**
+ * The HYBRID selection: the areas a member typed, the areas they ticked, and —
+ * where they have not answered — the commute's route and, failing that, the
+ * nearest two areas. The operator, 2026-11-18: "auto select within the area and
+ * also optionally give the user a option to type which dangerous areas they
+ * visit".
+ *
+ * ⚠️ AN EXPLICIT "NONE" IS HONOURED. When the member has answered the ticker
+ * and chosen nothing, the pack carries no cuttings; the auto fallback only
+ * runs while they have not answered.
+ */
+export function autoClippingIds(
+  areas: readonly DangerArea[],
+  ticked: readonly TravelledArea[],
+  typedText: string,
+  answered: boolean,
+  max: number,
+): string[] {
+  const selected = new Set(ticked.map((t) => t.key));
+  for (const typed of (typedText ?? '')
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean)) {
+    const want = typed.toLowerCase();
+    for (const area of areas) {
+      const name = area.name.toLowerCase();
+      if (name.includes(want) || want.includes(name)) selected.add(area.key);
+    }
+  }
+  if (!answered) {
+    for (const area of areas) if (area.onRoute) selected.add(area.key);
+    if (!selected.size) {
+      for (const area of areas.slice(0, 2)) selected.add(area.key);
+    }
+  }
+  return clippingIdsFor(
+    areas,
+    [...selected].map((key) => ({ key })),
+    max,
+  );
+}

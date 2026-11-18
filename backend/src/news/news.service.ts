@@ -379,6 +379,17 @@ export function clippingFactLines(clips: readonly NewsIncident[]): string[] {
       '— common robbery, house robbery, hijacking, murder, assault, burglary. ' +
       'Never translate a headline’s own word for a crime, and never invent a ' +
       'category name. Quote a headline only inside quotation marks.',
+    /**
+     * ⚠️ A SHORT QUOTE OF THE PUBLISHED PREVIEW, NEVER THE BODY. The operator
+     * asked for direct snippets in the motivation (2026-11-18); the standfirst
+     * is the newspaper's own summary line, already printed under the cutting,
+     * and quoting a phrase of it is fair use with attribution. The article
+     * body is the publisher's and stays out.
+     */
+    'You may also quote one short phrase from the standfirst — the paper’s ' +
+      'own preview line — in quotation marks, attributed to the paper and the ' +
+      'date. Never quote more than a sentence, never reproduce the article ' +
+      'body, and never let the paper’s words read as the applicant’s own.',
   );
   return lines;
 }

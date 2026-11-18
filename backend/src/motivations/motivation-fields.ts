@@ -216,6 +216,16 @@ export const OVERLAP_ANGLE_KEY = 'overlap_angle';
  * `PRESS_CLIPPINGS_MAX` for the cap.
  */
 export const PRESS_CLIPPINGS_KEY = 'press_clippings';
+
+/**
+ * The optional free-text half of the hybrid clipping picker.
+ *
+ * The area's recent reports are selected automatically; this lets a member
+ * name a road or suburb they actually pass. Optional by design — see the field
+ * in S13_SELF_DEFENCE.
+ */
+export const TRAVELLED_AREAS_TEXT_KEY = 'travelled_areas_text';
+
 /**
  * How many clippings a member may attach.
  *
@@ -2494,6 +2504,24 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Your circumstances',
       help: 'The station whose figures will be cited. We fill this in from your address — change it if it is not the one you actually report to.',
       maxLength: 120,
+    },
+    /**
+     * ⚠️ THE OPTIONAL HALF OF THE HYBRID CLIPPING PICKER.
+     *
+     * The recent reports are selected automatically from the station's area;
+     * this is where a member who knows a specific road or suburb can say so.
+     * It is NOT required and it is NOT the only way in — a member who types
+     * nothing still gets the area's reports. Operator, 2026-11-18: "use a
+     * hybrid model, auto select within the area and also optionally give the
+     * user a option to type which dangerous areas they visit".
+     */
+    {
+      key: 'travelled_areas_text',
+      label: 'Dangerous areas you travel through',
+      kind: 'short',
+      section: 'Your circumstances',
+      help: 'Optional. Suburbs, roads or places you pass regularly — we look for recent reports there and attach them. Separate them with commas.',
+      maxLength: 300,
     },
     // âš ï¸ A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION. See
     // COMPETENCY_RENEWS_KEY for the two-gate trick this reuses: formOnly hides
