@@ -1494,6 +1494,14 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Calibre',
     kind: 'short',
     section: 'The firearm',
+    /**
+     * ⚠️ "9mm" ALONE CANNOT BE MATCHED TO A CARTRIDGE SHEET. The C.I.P. index
+     * holds 9 mm Luger, 9 mm Short/.380 ACP and 9 mm Makarov as different
+     * rounds; a bare "9mm" deliberately resolves to no sheet, and MO000114
+     * printed no dimensions because of it. The help asks for the stamped name
+     * before the member types.
+     */
+    help: 'As it is stamped — 9mm Parabellum / 9×19, 9mm Short / .380 ACP or 9mm Makarov. "9mm" alone cannot be matched to a cartridge sheet.',
     required: true,
     maxLength: 60,
   },
