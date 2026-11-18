@@ -567,7 +567,8 @@ export class MotivationsService {
   async getProfile(userId: string) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
-    const stored = await this.profileAnswers.backfillFromHistory(user.id);
+    await this.profileAnswers.backfillFromHistory(user.id);
+    const pruned = await this.profileAnswers.pruneToProfileKeys(user.id);
     const byKey = new Map<string, ReturnType<typeof fieldsFor>[number]>();
     for (const type of Object.values(MotivationLicenceType)) {
       for (const field of fieldsFor(type)) {
@@ -576,7 +577,16 @@ export class MotivationsService {
         }
       }
     }
-    return { ...stored, fields: [...byKey.values()] };
+    /**
+     * ⚠️ OLD PROFILES STILL HOLD SAPS 271 FIELDS THE PAGE NO LONGER ASKS FOR.
+     * `pruneToProfileKeys` removes them from the blob; this filter keeps the
+     * response clean even if a later write reintroduces one.
+     */
+    const visible = new Set(byKey.keys());
+    const answers = Object.fromEntries(
+      Object.entries(pruned.answers).filter(([key]) => visible.has(key)),
+    );
+    return { ...pruned, answers, fields: [...byKey.values()] };
   }
 
   /**

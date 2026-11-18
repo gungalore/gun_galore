@@ -10,12 +10,7 @@ import {
 const PROFILE_SECTION_ORDER = [
   'About you',
   'Your premises',
-  'Firearms you already own',
   'Dedicated status',
-  'Experience',
-  'The firearm',
-  'The SAPS 271 form',
-  'History',
 ];
 
 function Input({
@@ -144,6 +139,19 @@ export default function LicenceProfilePage() {
         These are the facts that stay the same between applications — your
         details, your safe, your premises and your association. Change one here
         and every future motivation starts with it already filled in.
+      </p>
+      <p className="mt-1 max-w-[62ch] text-[12.5px] leading-5 text-[var(--text-tertiary)]">
+        Your licences, competencies, training and endorsements live in the{' '}
+        <a
+          href="/documents"
+          className="font-medium underline"
+          style={{ color: 'var(--red)' }}
+        >
+          Document Centre
+        </a>
+        . The 271-only facts — postal address, spouse details, employer address,
+        reloading and existing-firearm rows — are asked on the application that
+        needs them and are not remembered here.
       </p>
       <p className="mt-1 text-[12.5px] text-[var(--text-tertiary)]">
         {filled} detail{filled === 1 ? '' : 's'} remembered

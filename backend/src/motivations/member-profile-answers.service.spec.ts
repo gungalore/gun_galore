@@ -63,14 +63,16 @@ function build(stored?: { answers?: Record<string, string>; provenance?: unknown
 }
 
 describe('which keys are profile-scoped', () => {
-  it('combines the registry scope with the reusable profile list', () => {
+  it('keeps only the reusable profile list, not every scope=profile field', () => {
     const keys = profileKeys(T);
-    expect(keys.has('marital_status')).toBe(true);
     expect(keys.has('safe_present')).toBe(true);
     expect(keys.has('premises_enclosure')).toBe(true);
-    expect(keys.has('existing_firearm_1_primary_use')).toBe(true);
     expect(keys.has('full_name')).toBe(true);
     expect(keys.has('occupation')).toBe(true);
+    // The SAPS 271-only facts are no longer remembered.
+    expect(keys.has('marital_status')).toBe(false);
+    expect(keys.has('postal_address')).toBe(false);
+    expect(keys.has('existing_firearm_1_primary_use')).toBe(false);
     expect(
       profileKeys(MotivationLicenceType.S16_DEDICATED_HUNTER).has(
         'association_name',
@@ -89,11 +91,9 @@ describe('which keys are profile-scoped', () => {
   it('includes a key this licence type does not ask, because the person still answered it', () => {
     // ⚠️ allFieldsFor, NOT fieldsFor. The profile is shared across every
     // application a member makes, so a key a section 13 does not ask is still
-    // a key their section 16 answered. Filtering here would make the premises
-    // invisible across licence types, which is the entire thing this service
-    // exists to prevent.
+    // a key their section 16 answered.
     for (const type of Object.values(MotivationLicenceType)) {
-      expect(profileKeys(type).has('marital_status')).toBe(true);
+      expect(profileKeys(type).has('safe_present')).toBe(true);
     }
   });
 
@@ -106,12 +106,10 @@ describe('which keys are profile-scoped', () => {
     });
     expect(Object.keys(application).sort()).toEqual([
       'firearm_make',
+      'marital_status',
       'threat_circumstances',
     ]);
-    expect(Object.keys(profile).sort()).toEqual([
-      'marital_status',
-      'premises_enclosure',
-    ]);
+    expect(Object.keys(profile).sort()).toEqual(['premises_enclosure']);
   });
 });
 

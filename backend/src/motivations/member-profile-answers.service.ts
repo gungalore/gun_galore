@@ -57,7 +57,7 @@ export interface ProfileAnswers {
 export function profileKeys(type: MotivationLicenceType): Set<string> {
   return new Set(
     allFieldsFor(type)
-      .filter((f) => f.scope === 'profile' || isProfileKey(f.key))
+      .filter((f) => isProfileKey(f.key))
       .map((f) => f.key),
   );
 }
@@ -228,6 +228,31 @@ export class MemberProfileAnswersService {
 
     await this.persist(userId, merged, provenance);
     return { answers: merged, provenance };
+  }
+
+  /**
+   * Drop remembered keys the profile no longer owns.
+   *
+   * The page used to collect the whole SAPS 271: postal address, spouse ID,
+   * employer address, reloading and the existing-firearm rows. Those keys are
+   * no longer in PROFILE_KEYS, but an old profile row still carries them. A
+   * read that only filters the display would leave the values in the encrypted
+   * blob and keep prefilling them into applications, so this removes them once,
+   * on the next profile read.
+   */
+  async pruneToProfileKeys(userId: string): Promise<ProfileAnswers> {
+    const before = await this.readFor(userId);
+    const answers = Object.fromEntries(
+      Object.entries(before.answers).filter(([key]) => isProfileKey(key)),
+    );
+    if (Object.keys(answers).length === Object.keys(before.answers).length) {
+      return before;
+    }
+    const provenance = Object.fromEntries(
+      Object.entries(before.provenance).filter(([key]) => isProfileKey(key)),
+    ) as ProvenanceMap;
+    await this.persist(userId, answers, provenance);
+    return { answers, provenance };
   }
 
   private async persist(

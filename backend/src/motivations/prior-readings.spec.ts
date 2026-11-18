@@ -404,9 +404,12 @@ describe('answers carried forward from a previous application', () => {
     expect(carriesForwardAsAnswer('association_name')).toBe(true);
     expect(carriesForwardAsAnswer('association_expiry')).toBe(true);
     expect(carriesForwardAsAnswer('occupation')).toBe(true);
+    // The existing battery and the 271-only facts are no longer remembered in
+    // the profile; they are asked on the application that needs them.
     expect(carriesForwardAsAnswer('existing_firearm_2_primary_use')).toBe(
-      true,
+      false,
     );
+    expect(carriesForwardAsAnswer('marital_status')).toBe(false);
     // The firearm being applied for is this application's fact.
     expect(carriesForwardAsAnswer('firearm_make')).toBe(false);
   });
