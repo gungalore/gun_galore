@@ -7,7 +7,37 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE S15 WRITER REPAIR, THE TOPIC LABEL, AND THE STICKY CONFIRM
+## 2026-11-18 (LATEST) — PER-FILE PROGRESS, AN ENDORSEMENT WITHOUT A DEADLINE, AND THE TRAINING PAIRS
+
+Shipped `655a4097` (**full deploy**). Rollback point:
+`alloutdoor-20261118-181114.dump` (37,240,744 bytes).
+
+- **Per-file reading state.** The batch review used to show "Filed as …" while
+  a file was still being read and a single global "0 of 23". Each card now says
+  **Reading this file…**, **Waiting to be read…** or **Could not read this
+  file.** until the verdict is real.
+- **An endorsement has no renewal date.** The supplied SA Hunters endorsement
+  carries an issue date (15 Apr 2025) and no expiry. It was asking for a date
+  forever ("1 date to check"). `ASSOCIATION_ENDORSEMENT` joins the dateless
+  kinds: the issue date is still read, no renewal reminder is armed. The live
+  row was confirmed as never expiring; the Document Centre now reads **0 dates
+  to check**.
+- **The "training duplicates" were pairs, not duplicates.** The seven
+  proficiency rows are three certificate + statement pairs (linked by
+  `otherSideId`: manual rifle, semi-auto rifle, shotgun) plus a handgun
+  certificate whose statement has not been uploaded. They are deliberately two
+  pages of one qualification, not a dedupe job; the handgun row correctly
+  carries `side-missing`. No merge code was added, because merging them would
+  delete half of a qualification.
+
+Verification: credential-dates 19 passed; batch-preview 9 passed; frontend
+production build clean; health ×2 and public ×2 200.
+
+**Still open:** the virgin sign-up SMS/email verification failure. Everything
+else on the audit list is either shipped or was a misdiagnosis (the training
+"duplicates" and the earlier "no upload control" note).
+
+## 2026-11-18 (LATEST-1) — THE S15 WRITER REPAIR, THE TOPIC LABEL, AND THE STICKY CONFIRM
 
 Shipped `84b9f012` (**full deploy**). Rollback point:
 `alloutdoor-20261118-175851.dump` (38,905,020 bytes).
