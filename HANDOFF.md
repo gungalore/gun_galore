@@ -7,7 +7,35 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE COMPARISON QUESTION IS OPTIONAL
+## 2026-11-18 (LATEST) — 9MM SHORT NOW RESOLVES TO .380 ACP; NEWS CLIPPINGS STILL ORPHANED
+
+Shipped `0f7aeeb2` (**full deploy**). The operator read MO000112 (Glock 42,
+section 13) and asked two questions.
+
+- **The cartridge page was missing because "9mm short" resolved to nothing.**
+  The card prints the South African trade name; The Bench files the round as
+  "9 mm Browning court" with `.380 ACP` and "380 Automatic (9mm Kurz)" aliases,
+  and no alias says "short". `findCartridge` now resolves "9mm short", "9mm
+  kurz", "9mmK" and ".380 ACP" to that sheet, and `displayCalibre` prints
+  "9mm Short (.380 ACP)" / ".380 ACP (9mm Short)" so the signed document names
+  both. A regenerated pack will carry the cartridge feature.
+- **⚠️ THE NEWS ARTICLES ARE NOT IN THE PACK BECAUSE NOTHING ASKED FOR THEM.**
+  The press-clippings feature is fully wired server-side — `press_clippings`,
+  `POST :id/areas`, `GET :id/incidents`, the writer block, the annexure printing
+  — but its only UI, `components/licence-centre/danger-areas.tsx` and
+  `components/motivation/clippings-picker.tsx`, is **rendered nowhere**. No
+  picker means no `travelled_areas`, no `press_clippings`, no cuttings, and the
+  pack falls back to the SAPS quarterly precinct table it already cites. Open
+  decision for the operator: mount the area picker (member chooses the
+  exhibits) or auto-select recent local reports at generation (no member
+  statement, but nothing to click).
+
+Verified: backend `tsc` clean, **420 suites / 6 240 tests passed** (8 skipped);
+frontend build clean (unchanged). Rollback point
+`alloutdoor-20261118-084616.dump` (36,351,321 bytes). `deploy.sh` exited 0;
+backend 200, frontend 200 ×2, public 200 ×2.
+
+## 2026-11-18 (LATEST-1) — THE COMPARISON QUESTION IS OPTIONAL
 
 Shipped `3fc2ed56` (**full deploy**). A section 13 member was held on "Which
 other models did you consider, and why did you choose this one for your
