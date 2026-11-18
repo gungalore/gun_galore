@@ -208,6 +208,21 @@ describe('the six history questions', () => {
       expect(missingRequired(T, {})).not.toContain(h);
     }
   });
+
+  it('no longer puts the declarations on the interview or the missing sheet', () => {
+    // Operator, 2026-11-18: "we don't do 271 anymore". The six history
+    // questions and the spouse's ID question filled the 271's G and D; the
+    // form is gone, so no screen may ask them again.
+    const visible = fieldsFor(T)
+      .filter((f) => isVisible(f, { marital_status: 'Married' }))
+      .map((f) => f.key);
+    for (const h of HISTORY) expect(visible).not.toContain(h);
+    expect(visible).not.toContain('spouse_id_type');
+    expect(visible).not.toContain('spouse_id_number');
+    expect(visible).not.toContain('spouse_passport_number');
+    // The spouse's name stays — it is the one spouse fact the writer can use.
+    expect(visible).toContain('spouse_name');
+  });
 });
 
 describe('what reaches the writer', () => {

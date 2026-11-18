@@ -3501,6 +3501,25 @@ export function isVisible(
   // flag itself.
   if (field.internal) return false;
 
+  /**
+   * ⚠️ THE SAPS 271 DECLARATIONS AND SPOUSE IDENTIFICATION LEFT WITH THE FORM.
+   *
+   * Operator, 2026-11-18: "why is this questions still required, we don't do
+   * 271 anymore". The six history questions and the spouse's ID type/number
+   * existed only to fill section G and D of the 271. The product no longer
+   * produces that form, so they are hidden from the interview and the review
+   * sheet; the keys stay in the registry so a draft that already holds an
+   * answer still saves, and `spouse_name` stays visible because it is the one
+   * spouse fact the writer can use.
+   */
+  if (
+    field.key.startsWith('history_') ||
+    field.key.startsWith('spouse_id') ||
+    field.key === 'spouse_passport_number'
+  ) {
+    return false;
+  }
+
   // âš ï¸ formOnly NO LONGER DECIDES WHAT IS ASKED — 2026-09-08, brief §2.6.
   //
   // It used to hide every SAPS-271-only field behind the the retired form opt-in opt-in,
