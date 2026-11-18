@@ -1467,6 +1467,25 @@ export default function IntakeInterviewPage() {
                     </label>
                   );
                 }
+                if (d.kind === 'date') {
+                  return (
+                    <div key={d.key} className="block">
+                      {label}
+                      <DateField
+                        value={value}
+                        onChange={(next) => setDetail(d.key, next)}
+                        label={d.label}
+                        allowClear
+                        className="mt-1 min-h-[44px] w-full rounded-lg border px-2 text-[13px]"
+                        style={{
+                          borderColor: 'var(--border)',
+                          background: 'var(--bg-inset)',
+                          color: 'var(--text-primary)',
+                        }}
+                      />
+                    </div>
+                  );
+                }
                 if (d.kind === 'long') {
                   return (
                     <label key={d.key} className="block">
@@ -1486,7 +1505,7 @@ export default function IntakeInterviewPage() {
                   <label key={d.key} className="block">
                     {label}
                     <input
-                      type={d.kind === 'date' ? 'date' : 'text'}
+                      type="text"
                       value={value}
                       onChange={(e) => setDetail(d.key, e.target.value)}
                       placeholder={d.customPlaceholder}

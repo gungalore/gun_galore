@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { motivationsApi } from '@/lib/motivations-api';
+import DateField from '@/components/date-field';
 import type {
   SheetItem,
   SheetResponse,
@@ -214,9 +215,23 @@ export default function EditMissingSheet() {
                             </option>
                           ))}
                         </select>
+                      ) : item.kind === 'date' ? (
+                        <DateField
+                          value={values[item.key] ?? ''}
+                          onChange={(value) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [item.key]: value,
+                            }))
+                          }
+                          label={item.label}
+                          allowClear
+                          className={CONTROL}
+                          style={CONTROL_STYLE}
+                        />
                       ) : (
                         <input
-                          type={item.kind === 'date' ? 'date' : 'text'}
+                          type="text"
                           value={values[item.key] ?? ''}
                           onChange={(e) =>
                             setValues((prev) => ({

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import DateField from '@/components/date-field';
 import {
   motivationsApi,
   type MotivationField,
@@ -54,9 +55,26 @@ function Input({
     );
   }
 
+  if (field.kind === 'date') {
+    return (
+      <DateField
+        value={value}
+        onChange={onChange}
+        label={field.label}
+        allowClear
+        className="w-full rounded-lg border px-3 py-2 text-[13.5px]"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--bg-card)',
+          color: 'var(--text-primary)',
+        }}
+      />
+    );
+  }
+
   return (
     <input
-      type={field.kind === 'date' ? 'date' : 'text'}
+      type="text"
       value={value}
       maxLength={field.maxLength}
       onChange={(e) => onChange(e.target.value)}
