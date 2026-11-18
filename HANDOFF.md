@@ -5,9 +5,42 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-18**.
+Last updated: **2026-11-19**.
 
-## 2026-11-18 (LATEST) — EVERY DATE PICKER IS THE INTERVIEW PICKER
+## 2026-11-19 (LATEST) — THE OWNED-FIREARMS GATE
+
+Shipped `5a6541d5` (**full deploy**; feature `2e8b7d58`, topic fix `5a6541d5`).
+Rollback point: `alloutdoor-20261119-002834.dump` (34,771,365 bytes).
+
+A cold applicant — no vault documents, no saved answers — is now asked
+**“Do you already own any firearms?”** before the interview can finish. It sits
+in the `existing` topic, under “Firearms you already hold”.
+
+- **No** → no owned-firearms questions; the letter is written for a first-time
+  applicant.
+- **Yes** → asks **how many** (1–14), then one row per firearm:
+  type, make, model, calibre, serial and the section it is held under.
+- If the vault or a saved application already filled an owned-firearm row, the
+  gate is skipped: the rows are the answer, and the member is not asked to
+  confirm what we just read off their own card.
+- The gate is optional (the member can skip it); the count is required only
+  when the gate is Yes. The legal detail gate is unchanged.
+
+No schema change. `has_existing_firearms` and `existing_firearm_count` are
+ordinary answer keys.
+
+Verification: full backend **6,258 passed / 8 skipped**; planner/topic/field
+specs green; frontend production build clean; health ×2 and public ×2 200.
+
+## 2026-11-19 (LATEST-1) — LETTER + DFO CHECKLIST ROLLED BACK
+
+The checklist feature was reverted and production was redeployed at
+`ac2eac25`. The start page is back to the two deliverables:
+**Motivation letter only** and **Print-ready pack**. Rollback backup:
+`alloutdoor-20261119-000411.dump`. The two completed verification packs
+(MO000141 / MO000142) are inert test data.
+
+## 2026-11-18 — EVERY DATE PICKER IS THE INTERVIEW PICKER
 
 Shipped `1e187e2d` (**full deploy**). Rollback point:
 `alloutdoor-20261118-222205.dump` (34,759,388 bytes).
