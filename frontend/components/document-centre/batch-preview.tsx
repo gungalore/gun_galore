@@ -222,8 +222,16 @@ function DocumentRow({
           {card.file.name}
         </p>
         <p className="mt-1 text-[13.5px] text-[var(--text-primary)]">
-          {label ? `Filed as ${label}.` : 'We think this is a document.'}
-          {!card.verdict.confident && (
+          {card.state === 'working'
+            ? 'Reading this file…'
+            : card.state === 'waiting'
+              ? 'Waiting to be read…'
+              : card.state === 'failed'
+                ? 'Could not read this file.'
+                : label
+                  ? `Filed as ${label}.`
+                  : 'We think this is a document.'}
+          {card.state === 'ready' && !card.verdict.confident && (
             <span className="ml-1 text-[11.5px] text-[var(--warning)]">
               (check this)
             </span>
@@ -284,7 +292,15 @@ function EvidenceRow({
           {card.file.name}
         </p>
         <p className="mt-1 text-[13.5px] text-[var(--text-primary)]">
-          {label ? `Evidence — ${label}.` : 'We think this is evidence.'}
+          {card.state === 'working'
+            ? 'Reading this file…'
+            : card.state === 'waiting'
+              ? 'Waiting to be read…'
+              : card.state === 'failed'
+                ? 'Could not read this file.'
+                : label
+                  ? `Evidence — ${label}.`
+                  : 'We think this is evidence.'}
         </p>
 
         <label className="mt-2 block">

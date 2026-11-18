@@ -122,6 +122,14 @@ export const DATELESS_DOCUMENT_KINDS: readonly CredentialKind[] = [
   CredentialKind.ADDRESS_CONFIRMATION,
   CredentialKind.EMPLOYMENT_CONFIRMATION,
   CredentialKind.SHOOTING_ACTIVITY_LOG,
+  /**
+   * ⚠️ AN ENDORSEMENT IS ISSUED, NOT RENEWED. The supplied SA Hunters
+   * endorsement names a firearm and carries an issue date only; treating the
+   * blank expiry as a date to check left a permanent "1 date to check" on the
+   * Document Centre. It goes stale because the firearm or the discipline
+   * changes, not on a calendar deadline.
+   */
+  CredentialKind.ASSOCIATION_ENDORSEMENT,
 ];
 
 const NEVER_EXPIRES: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
