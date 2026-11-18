@@ -119,6 +119,7 @@ export function topicsFor(
   );
   const hasExisting =
     Object.keys(answers).some((key) => key.startsWith('existing_firearm_')) ||
+    (answers.has_existing_firearms ?? '').trim() === 'Yes' ||
     documentKinds.includes('CURRENT_LICENCE');
   return TOPIC_ORDER.filter((topic) => {
     if (topic === 'existing') return hasExisting;

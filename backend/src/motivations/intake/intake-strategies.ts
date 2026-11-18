@@ -63,6 +63,14 @@ const COMMON_FIRST = [
    * both the pack gate and the threat argument short.
    */
   'residence_type',
+  /**
+   * Asked before the owned-firearms table. Without it a cold applicant with no
+   * vault and no saved answers was never asked what he already owns, and the
+   * motivation read as if the safe were empty. A "No" skips the table; a "Yes"
+   * asks for the count and then one row per firearm.
+   */
+  'has_existing_firearms',
+  'existing_firearm_count',
 ];
 
 const SAFE = [
@@ -173,6 +181,8 @@ const S24_FIELDS = [
   'existing_licence_number',
   'licence_expiry',
   'continued_use',
+  'has_existing_firearms',
+  'existing_firearm_count',
   ...PREMISES,
   ...SAFE,
   ...DECLARATIONS,

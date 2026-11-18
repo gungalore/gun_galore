@@ -2183,6 +2183,24 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     formOnly: true,
     maxLength: 200,
   },
+  {
+    key: 'has_existing_firearms',
+    label: 'Do you already own any firearms?',
+    kind: 'choice',
+    choices: ['Yes', 'No'],
+    section: OWNED_SECTION,
+    help: 'If yes, we will ask for each one — make, model, calibre, serial and the section it is licensed under. If no, we skip that table.',
+  },
+  {
+    key: 'existing_firearm_count',
+    label: 'How many firearms do you already own?',
+    kind: 'choice',
+    choices: Array.from({ length: OWNED_ROWS }, (_, i) => String(i + 1)),
+    section: OWNED_SECTION,
+    help: 'Add up to 14. Anything beyond the table can be added on the review sheet.',
+    required: true,
+    showIf: { key: 'has_existing_firearms', equals: 'Yes' },
+  },
   ...OWNED_FIREARM_FIELDS,
 
   // â”€â”€ the rest of what the SAPS 271 asks and we did not collect â”€â”€â”€â”€â”€

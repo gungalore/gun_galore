@@ -208,9 +208,48 @@ function visibleFields(
     if (field.formOnly || field.key.startsWith('history_')) continue;
     if (!isVisible({ ...field, internal: undefined }, answers)) continue;
     out.push({ key: field.key, field });
+    covered.add(field.key);
+  }
+
+  /**
+   * ⚠️ THE OWNED-FIREARMS TABLE IS ASKED ONLY WHEN THE GATE SAYS YES.
+   *
+   * The registry has fourteen rows × eight columns for the SAPS 271, and none
+   * of them is required. Asking all of them would put a hundred questions on a
+   * first-time applicant who owns nothing. The gate and the count turn it into
+   * a short table: one row per firearm, six facts each, and only the rows the
+   * member said they have. The old review sheet still owns the rest.
+   */
+  if ((answers.has_existing_firearms ?? '').trim() === 'Yes') {
+    const count = Number.parseInt(
+      (answers.existing_firearm_count ?? '').trim(),
+      10,
+    );
+    if (Number.isFinite(count) && count > 0) {
+      for (let n = 1; n <= Math.min(count, 14); n++) {
+        for (const column of OWNED_ASKED_COLUMNS) {
+          const key = `existing_firearm_${n}_${column}`;
+          if (covered.has(key)) continue;
+          const field = fieldByKey(type, key);
+          if (!field) continue;
+          out.push({ key, field });
+          covered.add(key);
+        }
+      }
+    }
   }
   return out;
 }
+
+/** The six facts that make the owned table useful to the DFO and the writer. */
+const OWNED_ASKED_COLUMNS = [
+  'type',
+  'make',
+  'model',
+  'calibre',
+  'serial',
+  'section_held',
+] as const;
 
 export interface PlannerInput {
   type: MotivationLicenceType;
@@ -411,6 +450,17 @@ function isPending(
   items: Map<string, SheetItem>,
   provenance: PlannerInput['provenance'],
 ): boolean {
+  /**
+   * ⚠️ A VAULT LICENCE IS THE ANSWER TO THE GATE. When the table already holds
+   * a firearm, asking "do you already own any?" would make the member say yes
+   * to facts we just read off their own card. The rows speak for themselves.
+   */
+  if (
+    key === 'has_existing_firearms' &&
+    Object.keys(merged).some((k) => k.startsWith('existing_firearm_'))
+  ) {
+    return false;
+  }
   const existing = valueOf(key, merged, items);
   /**
    * ⚠️ A SKIP IS AN ANSWER TO "DO YOU WANT TO ANSWER THIS".

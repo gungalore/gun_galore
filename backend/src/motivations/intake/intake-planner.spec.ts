@@ -80,6 +80,50 @@ const COMMON = {
 };
 
 describe('the intake planner', () => {
+  it('⚠️ ASKS THE EXISTING-FIREARMS GATE ON A COLD START', () => {
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: COMMON,
+      sheet: EMPTY_SHEET,
+    });
+    expect(pending.map((entry) => entry.key)).toContain(
+      'has_existing_firearms',
+    );
+  });
+
+  it('⚠️ ASKS ONE ROW PER FIREARM ONLY WHEN THE GATE SAYS YES', () => {
+    const withTwo = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {
+        ...COMMON,
+        has_existing_firearms: 'Yes',
+        existing_firearm_count: '2',
+      },
+      sheet: EMPTY_SHEET,
+    }).map((entry) => entry.key);
+    expect(withTwo).toContain('existing_firearm_1_make');
+    expect(withTwo).toContain('existing_firearm_2_calibre');
+    expect(withTwo).not.toContain('existing_firearm_3_make');
+
+    const withNone = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...COMMON, has_existing_firearms: 'No' },
+      sheet: EMPTY_SHEET,
+    }).map((entry) => entry.key);
+    expect(withNone.some((key) => key.startsWith('existing_firearm_'))).toBe(
+      false,
+    );
+  });
+
+  it('⚠️ DOES NOT ASK THE GATE WHEN THE VAULT ALREADY FILLED A ROW', () => {
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...COMMON, existing_firearm_1_make: 'Howa' },
+      sheet: EMPTY_SHEET,
+    }).map((entry) => entry.key);
+    expect(pending).not.toContain('has_existing_firearms');
+  });
+
   it('resolves the section 16 purpose from the firearm, not a router question', () => {
     // `firearm_use_kind` was retired as a question: a handgun is sport, and
     // the interview asks the sport branch directly.
