@@ -7,7 +7,39 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — HYBRID PRESS CLIPPINGS: AUTO BY AREA, OPTIONAL TYPED AREAS
+## 2026-11-18 (LATEST) — A REJECTED ALTERNATIVE IS NOT THE FIREARM APPLIED FOR
+
+Shipped `2a8cb5f6` (**full deploy**). MO000112 was written for a Glock 42; the
+operator's handgun is a **Smith & Wesson Bodyguard 2.0 in 9mm short**.
+
+⚠️ **THE EXTRACTOR TOOK THE ALTERNATIVE FOR THE CHOICE.** The stored answer is
+`alternative_considered = "I did consider a glock 42 but it was a little too
+bulky"`, and `firearm_make`/`firearm_model` held `glock` / `42`. The cross-field
+fact extractor reads a typed answer for facts about other fields — right for
+"Mauser M96 .30-06" — and it treated the REJECTED alternative as the firearm
+applied for. The cover, the firearm section and the comparison then all
+described the Glock, and the comparison had no distinct alternative left, so it
+went generic.
+
+The extractor no longer runs on `alternative_considered`, or on answers about a
+firearm already held (`existing_firearm_*` / `existing_licence_*`). The
+comparison brief now names both sides by make and model and refuses "other
+compact handguns" when an alternative was named. Prompt baseline re-baselined
+(same line counts, all six hashes moved).
+
+⚠️ **MO000112'S DATA STILL NEEDS CORRECTING BY THE MEMBER.** The stored
+applied-for is still `glock 42`, serial `54892166`; that serial may be the
+Glock's. The member must set make **Smith & Wesson**, model **Bodyguard 2.0**,
+calibre **9mm Short (.380 ACP)** and the serial from the dealer's invoice /
+350(a) on the review sheet, then regenerate. The Glock 42 stays as the
+alternative.
+
+Verified: backend `tsc` clean, **420 suites / 6 245 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-094453.dump`
+(36,351,709 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — HYBRID PRESS CLIPPINGS: AUTO BY AREA, OPTIONAL TYPED AREAS
 
 Shipped `a05fc7ee` (**full deploy**). The operator's model: "auto select within
 the area and also optionally give the user a option to type which dangerous
