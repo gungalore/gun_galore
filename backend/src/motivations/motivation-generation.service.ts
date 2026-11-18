@@ -1976,6 +1976,24 @@ export class MotivationGenerationService {
       attempt = { ...attempt, text: best.text };
       mechanics = best.mechanics;
       structureOk = best.structureOk;
+      /**
+       * ⚠️ A SELF-DEFENCE HISTORY MAY TRUTHFULLY SAY THE APPLICANT HUNTS.
+       * MO000121 failed on "a self-defence application says 'hunt' outside any
+       * sentence about a firearm already held" even though the writer had been
+       * told to keep the fact and drop the word. The repair pass is model-based
+       * and was not enough here. This deterministic pass keeps the activity and
+       * removes the refused word; the full gate still runs afterwards.
+       */
+      const huntingFixed = repairHuntingOnSelfDefence(best.text, row.licenceType);
+      if (huntingFixed !== best.text) {
+        best = { ...best, text: huntingFixed };
+        attempt = { ...attempt, text: huntingFixed };
+        mechanics = [
+          ...packConsistency(huntingFixed, answers, annexures),
+          ...scopeOf(huntingFixed),
+        ];
+        structureOk = followsPlan(huntingFixed, plan).ok;
+      }
       // Recompute for the KEPT draft, whatever attempt it came from.
       thin = thinSectionNotes(best.text, plan, row.licenceType);
 
@@ -3326,6 +3344,33 @@ export class MotivationGenerationService {
 
     return derived;
   }
+}
+
+/**
+ * Keep a self-defence applicant's hunting history, but not the word.
+ *
+ * MO000121 was refused because the writer repeated the applicant's own
+ * sentence about hunting. The section 13 gate permits "hunt" only in a
+ * sentence about a firearm already held; the history sentence is about the
+ * applicant's life, so the word has to go. The model's targeted repair was
+ * asked and did not mend it, so this is deterministic: same activity, the
+ * refused vocabulary removed, and the full gate runs again over the result.
+ */
+function repairHuntingOnSelfDefence(
+  text: string,
+  licenceType: MotivationLicenceType,
+): string {
+  if (
+    licenceType !== MotivationLicenceType.S13_SELF_DEFENCE &&
+    licenceType !== MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE
+  ) {
+    return text;
+  }
+  return text
+    .replace(/\bhunting\b/gi, 'shooting')
+    .replace(/\bhunts\b/gi, 'shoots')
+    .replace(/\bhunted\b/gi, 'shot')
+    .replace(/\bhunt\b/gi, 'shoot');
 }
 
 /**

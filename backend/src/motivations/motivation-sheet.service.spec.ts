@@ -394,6 +394,19 @@ describe('ownedRowsFor', () => {
     });
   });
 
+  it('shows a member-entered model NONE as answered', async () => {
+    // The supplied Section 15 Howa licence prints "Model NONE". Stored as a
+    // member answer, it must count as the model or the interview re-asks it
+    // forever. The writer still never sees it.
+    const { svc } = build({ firearm_model: 'NONE' });
+    const item = itemFor(
+      (await svc.sheetFor('c1', 'mo-1')).items,
+      'firearm_model',
+    );
+    expect(item.value).toBe('NONE');
+    expect(item.state).toBe('filled');
+  });
+
   it('⚠️ COUNTS A "NONE" ROW AS TAKEN AND STILL DOES NOT PRINT IT', () => {
     // A card printing NONE against the frame is evidence somebody has been in
     // the row, and is not a serial. ownedRowTaken must see it; the header
