@@ -31,6 +31,15 @@ describe('displayCalibre', () => {
     expect(displayCalibre('.38 Special')).toBe('.38 Special');
   });
 
+  it('names 9mm short as the .380 ACP it is', () => {
+    // The Glock 42 card prints "9MM SHORT"; the same round is sold as .380
+    // ACP. A signed document should say both rather than leave the reader to
+    // know they are the same cartridge.
+    expect(displayCalibre('9mm short')).toBe('9mm Short (.380 ACP)');
+    expect(displayCalibre('9MM SHORT')).toBe('9mm Short (.380 ACP)');
+    expect(displayCalibre('.380 ACP')).toBe('.380 ACP (9mm Short)');
+  });
+
   it('⚠️ NEVER RESOLVES AN AMBIGUOUS NAME — that is findCartridge’s job', () => {
     // "9 mm" touches Luger, Makarov and Browning court. A printer quietly
     // deciding which would put a cartridge nobody chose into a signed document.

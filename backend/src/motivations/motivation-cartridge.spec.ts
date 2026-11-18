@@ -168,6 +168,17 @@ describe('finding the cartridge a member typed', () => {
     expect(found('.40 S&W')).toBe('40 S&W');
   });
 
+  it('⚠️ RESOLVES 9MM SHORT TO THE .380 ACP SHEET', () => {
+    // The operator's Glock 42 prints "9mm short". The Bench files it as
+    // "9 mm Browning court" with .380 ACP aliases, and no alias says "short" —
+    // so the pack went out with no cartridge page at all.
+    for (const printed of ['9mm short', '9 mm Short', '9mmK', '.380 ACP']) {
+      expect(found(printed)).toBe('9 mm Browning court');
+    }
+    // It is not a Luger, and the ambiguity guard must not fold it into one.
+    expect(found('9mm short')).not.toBe('9 mm Luger');
+  });
+
   it('⚠️ CONTRACTS AS WELL AS EXPANDS, or ".357 Magnum" matches nothing', () => {
     // The sheet is filed as "357 Mag.". Expanding MAG → Magnum only ever
     // helped the rounds already filed under the long name, and ".357 Magnum"

@@ -205,6 +205,25 @@ export function calibreCandidates(raw: string): string[] {
   if (/9\s*(?:mm\s*(?:par(?:abellum)?|luger)|[xX]\s*19)/i.test(text)) {
     push('9 mm Luger');
   }
+
+  /**
+   * ⚠️ 9MM SHORT IS .380 ACP, AND THE BENCH FILES IT AS 9 MM BROWNING COURT.
+   *
+   * A SAPS licence card for a Glock 42 prints "9MM SHORT"; the C.I.P. sheet is
+   * filed under "9 mm Browning court" with `.380 ACP` and "380 Automatic
+   * (9mm Kurz)" as aliases. Neither alias is "short", so the lookup found no
+   * row at all and the pack went out with no cartridge page — the operator,
+   * 2026-11-18: "why is the 9mm or 380 ACP not the listed bullet and there is
+   * nothing about the cartridge". The names are the same round; say so here.
+   */
+  if (
+    /9\s*mm\s*(?:short|kurz|k)\b/i.test(text) ||
+    /\.?380\s*(?:acp|auto|automatic)\b/i.test(text)
+  ) {
+    push('9 mm Browning court');
+    push('.380 ACP');
+    push('380 Automatic (9mm Kurz)');
+  }
   return out;
 }
 

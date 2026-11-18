@@ -103,6 +103,18 @@ export function displayCalibre(raw: string | undefined | null): string {
     .replace(/\bMag\b\.?/g, 'Magnum')
     .replace(/\bGovt?\b\.?/g, 'Government');
 
+  /**
+   * ⚠️ 9MM SHORT IS .380 ACP, AND A DOCUMENT SHOULD SAY BOTH.
+   *
+   * A Glock 42's card prints "9MM SHORT"; the same round is sold and
+   * referenced as .380 ACP (C.I.P. "9 mm Browning court"). The operator,
+   * 2026-11-18: "why is the 9mm or 380 ACP not the listed bullet". Printing
+   * only the South African trade name leaves the reader to know they are the
+   * same cartridge.
+   */
+  if (/^9\s*mm\s*short$/i.test(v)) return '9mm Short (.380 ACP)';
+  if (/^\.?380\s*(?:acp|auto)$/i.test(v)) return '.380 ACP (9mm Short)';
+
   return v.trim();
 }
 
