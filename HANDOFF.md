@@ -7,7 +7,32 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE S16 PURPOSE, THE SHEET/GATE SPLIT, AND THE CARTRIDGE
+## 2026-11-18 (LATEST) — PRINT-READY S13/S16 AND THE CARTRIDGE ON PAGE ONE
+
+Shipped `268bec0e` (**full deploy**; `1179675f` restored the cover on the way).
+Rollback point: `alloutdoor-20261118-145557.dump` (37,412,098 bytes).
+
+Operator: *"Why isnt the rendered cartridge not showing on the first page?"*
+Because the previous change removed `cartridgeDrawing.hero` — the wrong reading
+of the earlier note. `1179675f` restores it: page one carries the drawn 9 mm
+cartridge with its two dimensions and "Glock · 9mm Parabellum"; the C.I.P. sheet
+still prints separately at 6.1.
+
+Print-ready runs (both `PRINT_READY`, `9mm Parabellum`):
+
+- **MO000119 — S13.** 21 pages, A–F, cover cartridge, C.I.P. 9 mm Luger at 6.1.
+  The first attempt FAILED on two vet complaints: the word "platform" and a
+  date until which the competency is valid. The pair also stopped the targeted
+  vocabulary repair. `268bec0e` marks `competency_expiry` form-only, so the
+  derived date never reaches the writer and "platform" repairs on its own. The
+  retry completed.
+- **MO000120 — S16.** 23 pages, A–G, cover cartridge, C.I.P. 9 mm Luger at 6.1.
+
+The two packs are the acceptance evidence for print-ready annexure assembly and
+for the cover/CIP split. MO000119/MO000120 are test rows on the operator's
+profile and are expected to be erased.
+
+## 2026-11-18 (LATEST-1) — THE S16 PURPOSE, THE SHEET/GATE SPLIT, AND THE CARTRIDGE
 
 Shipped `fd5b38e6` (**full deploy**; `f308991e` and `dc0074c7` were deployed on
 the way). Rollback point: `alloutdoor-20261118-132329.dump` (38,483,541 bytes).
