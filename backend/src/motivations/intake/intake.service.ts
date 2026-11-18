@@ -43,6 +43,7 @@ import {
 } from './intake-planner';
 import { strategyFor } from './intake-strategies';
 import {
+  isLetterChecklist,
   normaliseOutputMode,
   type MotivationOutputMode,
 } from '../motivation-output';
@@ -199,6 +200,7 @@ export class MotivationIntakeService {
     const strategy = strategyFor(row.licenceType);
     const motivationOnly =
       normaliseOutputMode(row.outputMode) === 'MOTIVATION_ONLY';
+    const letterChecklist = isLetterChecklist(row.outputMode);
     const blocked = this.blockedFor(row.licenceType, answers);
 
     const inInterview = Boolean(
@@ -305,7 +307,12 @@ export class MotivationIntakeService {
     }
 
 
-    const documents = this.documentState(sheet, library, answers);
+    const documents = this.documentState(
+      sheet,
+      library,
+      answers,
+      letterChecklist,
+    );
     const evidence = this.evidenceState(library, row.licenceType, answers);
     const topic = this.topicState(
       sheet,
@@ -313,6 +320,7 @@ export class MotivationIntakeService {
       answers,
       question,
       motivationOnly,
+      letterChecklist,
       row.licenceType,
     );
     /**
@@ -324,6 +332,7 @@ export class MotivationIntakeService {
      */
     const requiredDocsMissing =
       !motivationOnly &&
+      !letterChecklist &&
       documents.needs.some(
         (need) => need.tier === 'required' && !need.have,
       );
@@ -468,7 +477,8 @@ export class MotivationIntakeService {
     const next = normaliseOutputMode(outputMode);
     if (
       outputMode !== 'PRINT_READY' &&
-      outputMode !== 'MOTIVATION_ONLY'
+      outputMode !== 'MOTIVATION_ONLY' &&
+      outputMode !== 'LETTER_CHECKLIST'
     ) {
       throw new BadRequestException('Choose what you need us to produce.');
     }
@@ -871,7 +881,10 @@ export class MotivationIntakeService {
      *
      * Fail-soft: a vault lookup that fails must not cost the answer just given.
      */
-    if (key === 'firearm_type' || key === 'firearm_action') {
+    if (
+      (key === 'firearm_type' || key === 'firearm_action') &&
+      !isLetterChecklist(row.outputMode)
+    ) {
       try {
         await this.motivations.autolink(userId, id);
       } catch (err) {
@@ -1064,7 +1077,10 @@ export class MotivationIntakeService {
         }
       }
     }
-    if (seen.has('firearm_type') || seen.has('firearm_action')) {
+    if (
+      (seen.has('firearm_type') || seen.has('firearm_action')) &&
+      !isLetterChecklist(row.outputMode)
+    ) {
       try {
         await this.motivations.autolink(userId, id);
       } catch (err) {
@@ -1220,6 +1236,7 @@ export class MotivationIntakeService {
     sheet: SheetResponse,
     library: Awaited<ReturnType<MotivationDocumentsService['library']>>,
     answers: Record<string, string>,
+    letterChecklist: boolean,
   ): IntakeState['documents'] {
     const firearmKnown =
       Boolean(answers.firearm_type?.trim()) &&
@@ -1272,14 +1289,16 @@ export class MotivationIntakeService {
       };
     });
 
-    const missing = sheet.needs.needs
-      .filter(
-        (n) =>
-          n.tier === 'required' &&
-          !n.have &&
-          !items.some((i) => i.kind === n.kind),
-      )
-      .map((n) => ({ kind: n.kind, label: n.label, why: n.why }));
+    const missing = letterChecklist
+      ? []
+      : sheet.needs.needs
+          .filter(
+            (n) =>
+              n.tier === 'required' &&
+              !n.have &&
+              !items.some((i) => i.kind === n.kind),
+          )
+          .map((n) => ({ kind: n.kind, label: n.label, why: n.why }));
 
     /**
      * The ANNEXURE list the interview asks for. Required and expected only:
@@ -1331,6 +1350,7 @@ export class MotivationIntakeService {
     answers: Record<string, string>,
     question: IntakeQuestion | null,
     motivationOnly: boolean,
+    letterChecklist: boolean,
     type: MotivationLicenceType,
   ): IntakeTopicState | null {
     if (!question) return null;
@@ -1365,7 +1385,7 @@ export class MotivationIntakeService {
         kind: need.kind,
         label: need.label,
         have: need.have,
-        required: !motivationOnly && need.tier === 'required',
+        required: !motivationOnly && !letterChecklist && need.tier === 'required',
       }));
     const missingRequired = docs.some((doc) => doc.required && !doc.have);
     return {
@@ -1603,7 +1623,12 @@ export class MotivationIntakeService {
       summary: strategyFor(row.licenceType).intro,
       knownFacts: this.knownFacts(answers),
       question: base,
-      documents: this.documentState(sheet, library, answers),
+      documents: this.documentState(
+        sheet,
+        library,
+        answers,
+        isLetterChecklist(row.outputMode),
+      ),
       evidence: this.evidenceState(library, row.licenceType, answers),
       previousQuestion: previousQuestion ?? undefined,
       previousAnswer: previousAnswer ?? undefined,

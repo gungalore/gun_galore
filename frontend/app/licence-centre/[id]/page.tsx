@@ -90,12 +90,25 @@ export default function EditMissingSheet() {
     return [...bySection.entries()];
   }, [sheet, missingKeys]);
 
+  const letterChecklist =
+    sheet?.application.outputMode === 'LETTER_CHECKLIST';
   const missingDocuments = useMemo(
     () =>
-      (sheet?.needs.needs ?? []).filter(
-        (need) => need.tier === 'required' && !need.have,
-      ),
-    [sheet],
+      letterChecklist
+        ? []
+        : (sheet?.needs.needs ?? []).filter(
+            (need) => need.tier === 'required' && !need.have,
+          ),
+    [sheet, letterChecklist],
+  );
+  const checklistDocuments = useMemo(
+    () =>
+      letterChecklist
+        ? (sheet?.needs.needs ?? []).filter(
+            (need) => need.tier !== 'strengthens' && !need.have,
+          )
+        : [],
+    [sheet, letterChecklist],
   );
 
   async function save() {
@@ -255,7 +268,22 @@ export default function EditMissingSheet() {
             </section>
           ))}
 
-          {missingDocuments.length ? (
+          {letterChecklist && checklistDocuments.length ? (
+            <section className="mt-6">
+              <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
+                Bring these originals
+              </h2>
+              <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
+                {checklistDocuments.map((need) => (
+                  <li key={need.kind}>{need.label}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[12.5px] leading-5 text-[var(--text-tertiary)]">
+                No copies were supplied for this pack. The motivation and this
+                checklist print; take these originals to the DFO.
+              </p>
+            </section>
+          ) : missingDocuments.length ? (
             <section className="mt-6">
               <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
                 Documents still needed

@@ -263,7 +263,7 @@ export interface SheetResponse {
     id: string;
     referenceNumber: string;
     licenceType: string;
-    outputMode?: 'MOTIVATION_ONLY' | 'PRINT_READY';
+    outputMode?: 'MOTIVATION_ONLY' | 'PRINT_READY' | 'LETTER_CHECKLIST';
     licenceTypeLabel: string;
     label: string | null;
     /**
