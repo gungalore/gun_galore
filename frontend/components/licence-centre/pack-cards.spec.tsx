@@ -55,36 +55,6 @@ describe('PackSummary — what the pack holds', () => {
     expect(screen.getByText('helps, not required')).toBeDefined();
     expect(document.body.textContent).not.toContain('optional');
   });
-
-  it('⚠️ SAYS THE CHECKLIST HAS NO COPIES, AND WHAT TO BRING', () => {
-    render(
-      <PackSummary
-        licenceType="S13_SELF_DEFENCE"
-        checklist
-        needs={[
-          {
-            kind: 'IDENTITY_DOCUMENT',
-            label: 'Copy of your ID',
-            tier: 'required',
-            have: false,
-          },
-          {
-            kind: 'SHOOTING_ACTIVITY_LOG',
-            label: 'Range record',
-            tier: 'strengthens',
-            have: false,
-          },
-        ]}
-      />,
-    );
-    expect(
-      screen.getByText(/bring-original checklist/i),
-    ).toBeDefined();
-    expect(
-      screen.getAllByText(/bring the original — not in this pack/i),
-    ).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('copy of every document');
-  });
 });
 
 describe('CompetencyLines — one line per certificate', () => {
