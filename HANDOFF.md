@@ -7,7 +7,40 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE 271 DECLARATIONS AND SPOUSE ID LEFT THE SCREENS
+## 2026-11-18 (LATEST) — THE AUTO CLIPPINGS WERE SELECTED BUT NEVER STORED
+
+Shipped `24ae8278` and `b549dbb2` (**full deploys**). MO000113 was regenerated
+and still had no press-clipping annexure.
+
+⚠️ **TWO SEPARATE FAULTS.**
+
+1. **The selection was not persisted.** The generation selected four cuttings
+   — the live area lookup returns them — but only put them in that run's fact
+   pack. The PRINTED pack is rebuilt later from `answers.press_clippings`, which
+   was still empty, so the annexure list named cuttings the renderer never
+   printed. The auto branch now stores the ids into the answer before the fact
+   pack is built, so the writer, the annexure list and the renderer all read the
+   same list.
+2. **The fallback picked the busiest areas, not the nearest.** The roll-up is
+   ordered by report count, so a Durbanville applicant got Bellville and
+   Khayelitsha while the report in their own suburb sat further down. With no
+   typed or ticked area, distance from the station is the only relevance signal,
+   so the fallback now takes the two nearest placed areas.
+
+⚠️ **MO000113 MUST BE REGENERATED AGAIN.** Its `press_clippings` is still empty
+from the previous run; the existing PDF will not gain pages. Regenerate after
+this deploy and the pack will print the clipping pages (headline, paper, date,
+standfirst, picture, link) and the body may quote a standfirst phrase.
+
+Live check after the deploy: the area lookup returns one clipping for the
+Durbanville station — the nearby report — rather than the four far-flung ones.
+
+Verified: backend `tsc` clean, **420 suites / 6,247 tests passed** (8 skipped);
+frontend build clean. Rollback points `alloutdoor-20261118-104927.dump` and
+`alloutdoor-20261118-105500.dump`. `deploy.sh` exited 0; backend 200, frontend
+200 ×2, public 200 ×2.
+
+## 2026-11-18 (LATEST-1) — THE 271 DECLARATIONS AND SPOUSE ID LEFT THE SCREENS
 
 Shipped `196481d8` (**full deploy**). The MO000113 "Finish what is missing"
 sheet was still asking the six SAPS 271 declarations ("ever convicted", "case
