@@ -191,6 +191,12 @@ const S24_FIELDS = [
  * the same question is not put again. See `isPending` in intake-planner.ts.
  */
 export const CASE_KEYS: ReadonlySet<string> = new Set([
+  /**
+   * ⚠️ OFFERED, NEVER FORCED. "What else did you consider" stays on the card
+   * for every type, but a member with nothing to compare must be able to Skip
+   * it — it was `required: true` and held the whole card behind a red cross.
+   */
+  'alternative_considered',
   'premises_enclosure',
   'premises_access_control',
   'alarm_present',

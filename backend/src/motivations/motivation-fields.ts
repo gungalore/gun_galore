@@ -3392,15 +3392,20 @@ const SHOOTING_LIFE_FIELDS: readonly MotivationField[] = [
   },
   {
     /**
-     * ⚠️ REQUIRED ON EVERY TYPE, INCLUDING SELF-DEFENCE. "Why this one" is the
-     * question a DFO asks of every application; the comparison section is
-     * built from this answer and from the battery where one exists.
+     * ⚠️ OFFERED ON EVERY TYPE, BUT NOT MANDATORY.
+     *
+     * "Why this one" is the question a DFO asks of every application, and the
+     * comparison section is built from it and from the battery where one
+     * exists. Operator, 2026-11-18: a member with nothing to compare (a
+     * first firearm, or a calibre they simply wanted) was held on the card by
+     * a red cross and could not continue. It is a case question now: offered
+     * once, skippable, and the section is written from the battery and the
+     * rest of the facts when it is skipped.
      */
     key: 'alternative_considered',
     label: 'What else you considered, and why this one',
     kind: 'short',
     section: 'The firearm',
-    required: true,
     help: 'The other model, calibre or type you weighed up — and the reason this firearm won.',
     maxLength: 300,
   },

@@ -395,6 +395,25 @@ describe('the document gate decides what the conversation asks', () => {
     );
   });
 
+  it('offers the comparison as an optional case question', () => {
+    const answers = filled(MotivationLicenceType.S13_SELF_DEFENCE);
+    delete answers.alternative_considered;
+
+    const input = {
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      sheet: EMPTY_SHEET,
+    };
+    const group = planGroup(input);
+    expect(group?.questions.map((q) => q.key)).toContain(
+      'alternative_considered',
+    );
+    const question = questionForField(input, 'alternative_considered');
+    // Offered once, skippable — the card's red cross and "still to answer"
+    // footer must not treat it as required.
+    expect(question?.optional).toBe(true);
+  });
+
   it('asks the quarry even though the registry does not mark it required', () => {    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
     delete answers.intended_quarry;
     const group = planGroup({

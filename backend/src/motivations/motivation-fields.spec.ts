@@ -1408,7 +1408,7 @@ describe('the shooting-life fields', () => {
    * page on every licence type - a section 13 applicant has a shooting life
    * too - so these fields are asked everywhere, not only on section 16.
    */
-  it('asks the shooting history and the comparison on every type', () => {
+  it('offers the shooting history and the comparison on every type — only the history is required', () => {
     for (const type of TYPES) {
       const history = fieldByKey(type, 'shooting_history');
       const comparison = fieldByKey(type, 'alternative_considered');
@@ -1416,7 +1416,9 @@ describe('the shooting-life fields', () => {
       expect(history!.required).toBe(true);
       expect(history!.kind).toBe('long');
       expect(comparison).toBeDefined();
-      expect(comparison!.required).toBe(true);
+      // ⚠️ OFFERED, NOT FORCED. A member with nothing to compare must be able
+      // to skip it; the comparison section falls back to the battery.
+      expect(comparison!.required).not.toBe(true);
       expect(isVisible(history!, {})).toBe(true);
       expect(isVisible(comparison!, {})).toBe(true);
     }

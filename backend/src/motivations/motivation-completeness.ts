@@ -110,15 +110,13 @@ export function missingDetail(
       ),
     );
   }
-  if (!has(answers, 'alternative_considered')) {
-    gaps.push(
-      GAP(
-        'firearm:alternative_considered',
-        'what else you considered',
-        'The other model, calibre or type you weighed up, and the reason this firearm won.',
-      ),
-    );
-  }
+  /**
+   * ⚠️ THE COMPARISON IS NOT A GATE ANY MORE. "What else did you consider"
+   * stays on the card as an optional case question, but a member with nothing
+   * to compare was held here — and on the card — behind a red cross. The
+   * comparison section is written from the battery and the rest of the facts
+   * when it is skipped (operator, 2026-11-18).
+   */
 
   // ── safe storage ───────────────────────────────────────────────────────
   /**
