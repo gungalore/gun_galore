@@ -90,7 +90,7 @@ export default function PackSummary({
                     <span className="ml-[6px] text-[11px] text-[var(--success)]">
                       copy in your pack — bring the original
                     </span>
-                  ) : checklist ? (
+                  ) : checklist && n.tier !== 'strengthens' ? (
                     <span className="ml-[6px] text-[11px] text-[var(--gold-strong)]">
                       bring the original — not in this pack
                     </span>
