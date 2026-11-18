@@ -7,42 +7,7 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — LETTER + DFO CHECKLIST
-
-Shipped `c2d4fb7e` (**full deploy**; `c452ec63` feature and `db82523b` PDF
-index). Rollback point: `alloutdoor-20261118-235147.dump` (37,625,920 bytes).
-
-The third deliverable is live: **Letter + DFO checklist**. It uses the same
-interview, pulls **facts** from the Document Centre/profile as before, and does
-not attach **copies**.
-
-- `outputMode = LETTER_CHECKLIST`; no schema change. `MOTIVATION_ONLY` and
-  `PRINT_READY` are unchanged.
-- Checklist mode skips the required-document gate and the proficiency-page gate,
-  and skips both autolink call sites, so a vault licence/competency/association
-  fills answers without creating a `MotivationUpload`.
-- The PDF prints an **ANNEXURES** page even with no attached copies, headed
-  **“Bring the original — not included in this pack”**, with required and
-  expected rows (strengthens stays optional). No blank annexure pages and no
-  invented letters.
-- Pack page, pack summary and missing-details sheet distinguish
-  “copy in your pack” from “bring the original”.
-- The start screen has the third card; print-ready has a “No documents? Switch
-  to Letter + DFO checklist” action.
-
-Live verification:
-
-- **MO000141 — S13 checklist.** 15 pages, no uploads, checklist with ID,
-  competency, address, safe, existing licence, proficiency, source.
-- **MO000142 — S16 checklist.** 16 pages, no uploads, checklist with the
-  dedicated-status and good-standing originals; facts (association, discipline)
-  came from the vault.
-- Print-ready and motivation-only paths still pass their existing tests.
-
-Verification: full backend **6,256 passed / 8 skipped**; pack-cards **10 passed**;
-frontend production build clean; health ×2 and public ×2 200.
-
-## 2026-11-18 (LATEST-1) — EVERY DATE PICKER IS THE INTERVIEW PICKER
+## 2026-11-18 (LATEST) — EVERY DATE PICKER IS THE INTERVIEW PICKER
 
 Shipped `1e187e2d` (**full deploy**). Rollback point:
 `alloutdoor-20261118-222205.dump` (34,759,388 bytes).
