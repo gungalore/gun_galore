@@ -7,7 +7,36 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE LICENCE PROFILE IS 20 FACTS, NOT A SECOND 271
+## 2026-11-18 (LATEST) — EVERY DATE PICKER IS THE INTERVIEW PICKER
+
+Shipped `1e187e2d` (**full deploy**). Rollback point:
+`alloutdoor-20261118-222205.dump` (34,759,388 bytes).
+
+Operator, with a screenshot of the browser's August 2019 calendar: *"this is
+still the old date picker, change all the date pickers that is like this to the
+new one the interview uses."*
+
+Three native `<input type="date">` controls remained:
+
+- the licence **profile** (`licence-centre/profile`) — the one in the
+  screenshot, for member-since, dedicated-since and membership-valid-until;
+- the **review sheet** (`licence-centre/[id]`, the missing-details fallback);
+- the **source-detail form** in the interview (`interview` manual-entry details).
+
+All three now use `components/date-field.tsx`, the same control as the
+interview: a typeable `yyyy-mm-dd` box plus the site-themed **year → month →
+day** sheet, with the complete-value commit contract. Live check on the profile:
+clicking the calendar for "Member of that association since" opens a dialog
+reading **"Choose the year first, then the month, then the day"**, year 2019,
+month Aug, day — not the browser calendar.
+
+No native `type="date"` input remains in the frontend (only the explanatory
+comments in DateField/intake-group-card/sheet-row).
+
+Verification: frontend type-check and production build clean; health ×2 and
+public ×2 200.
+
+## 2026-11-18 (LATEST-1) — THE LICENCE PROFILE IS 20 FACTS, NOT A SECOND 271
 
 Shipped `557b9228` (**full deploy**). Rollback point:
 `alloutdoor-20261118-221134.dump` (37,226,591 bytes).
