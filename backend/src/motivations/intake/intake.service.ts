@@ -217,13 +217,29 @@ export class MotivationIntakeService {
       row,
       briefHash(row.licenceType, answers),
     );
-    if (inInterview) {
-      this.briefs.ensure({
-        motivationId: id,
-        licenceType: row.licenceType,
-        answers,
-        stored: row,
-      });
+    let briefForCard = brief;
+    if (inInterview && !brief) {
+      /**
+       * ⚠️ AWAIT A REBUILD ONCE A BRIEF HAS EXISTED. After an answer the hash
+       * changes, and the card that comes next is the one that should react to
+       * it. A session's first card still uses the background door so a member
+       * never waits for research before their first question.
+       */
+      if (row.intakeBriefAt) {
+        briefForCard = await this.briefs.ensureNow({
+          motivationId: id,
+          licenceType: row.licenceType,
+          answers,
+          stored: row,
+        });
+      } else {
+        this.briefs.ensure({
+          motivationId: id,
+          licenceType: row.licenceType,
+          answers,
+          stored: row,
+        });
+      }
     }
     const grouped = inInterview
       ? await this.phrasedGroup(
@@ -234,7 +250,7 @@ export class MotivationIntakeService {
           previousQuestion,
           previousFieldKey,
           library,
-          brief,
+          briefForCard,
         )
       : null;
     const phrased = grouped

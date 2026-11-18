@@ -11,6 +11,7 @@ import {
   INTERVIEW_BRIEF_TTL_DAYS,
   INTERVIEW_BRIEF_VERSION,
   askableFields,
+  answersDigest,
   briefFacts,
   briefHash,
   deterministicBrief,
@@ -158,10 +159,44 @@ export class MotivationIntakeBriefService {
       });
   }
 
+  /**
+   * Rebuild the brief and WAIT for it.
+   *
+   * ⚠️ PER-ANSWER REBRIEFING. After an answer the hash no longer matches, so
+   * the next card would otherwise be served label-only while a background
+   * build catches up. The card after an answer awaits this instead: the brief
+   * sees the answer, and the question that comes next is a reaction to it.
+   * The cost is one model call per answered card (~3 seconds); the first card
+   * of a session still uses the fire-and-forget door.
+   */
+  async ensureNow(
+    args: EnsureBriefArgs,
+  ): Promise<InterviewBrief | null> {
+    if (!this.isEnabled()) return null;
+    if (!(args.answers.firearm_type ?? '').trim()) return null;
+    const hash = briefHash(args.licenceType, args.answers);
+    const existing = this.current(args.stored, hash);
+    if (existing) return existing;
+    if (this.inFlight.has(args.motivationId)) return null;
+    this.inFlight.add(args.motivationId);
+    try {
+      return await this.buildAndStore(args, hash);
+    } catch (err) {
+      this.logger.warn(
+        `Interview brief (awaited) failed for ${args.motivationId}: ${
+          (err as Error).message
+        }`,
+      );
+      return null;
+    } finally {
+      this.inFlight.delete(args.motivationId);
+    }
+  }
+
   private async buildAndStore(
     args: EnsureBriefArgs,
     hash: string,
-  ): Promise<void> {
+  ): Promise<InterviewBrief> {
     const brief = await this.build(args.licenceType, args.answers, hash);
     await this.prisma.motivation.update({
       where: { id: args.motivationId },
@@ -176,6 +211,7 @@ export class MotivationIntakeBriefService {
       `Interview brief ${brief.researched ? 'built' : 'local only'} ` +
         `(${brief.questions.length} questions, ${Object.keys(brief.chips).length} chipped fields)`,
     );
+    return brief;
   }
 
   /**
@@ -234,6 +270,7 @@ export class MotivationIntakeBriefService {
                 hint: gap.hint,
               })),
               fields,
+              answers: answersDigest(licenceType, answers),
             }),
           },
         ],

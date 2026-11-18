@@ -40,7 +40,7 @@ import { CASE_KEYS, sportingFields, strategyFor } from './intake-strategies';
  * phrasing until the row is forgotten. Same discipline as
  * RESEARCH_ASK_VERSION.
  */
-export const INTERVIEW_BRIEF_VERSION = '2026-11-18a';
+export const INTERVIEW_BRIEF_VERSION = '2026-11-18b';
 
 /** How long a brief stays good. The answers it depends on rarely move. */
 export const INTERVIEW_BRIEF_TTL_DAYS = 14;
@@ -229,8 +229,44 @@ export function briefHash(
     norm('association_name'),
     norm('discipline_exercise'),
     norm('police_station_province'),
+    /**
+     * ⚠️ THE ANSWERS ARE PART OF THE HASH NOW. Without them the brief was built
+     * once per firearm and never reacted to anything the member said. The
+     * digest is the same non-sensitive projection sent to the model, so a
+     * changed answer changes the hash and a sensitive answer never does.
+     */
+    answersDigest(type, answers)
+      .map((fact) => `${fact.label}:${fact.value}`)
+      .join('|'),
   ];
   return createHash('sha256').update(parts.join('|')).digest('hex');
+}
+
+/**
+ * The applicant's answers, as the brief may see them.
+ *
+ * ⚠️ SENSITIVE, FORM-ONLY AND PROFILE PII ARE EXCLUDED — the same boundary as
+ * `briefFacts`. This is what lets the researcher react to what the member has
+ * actually said without sending an ID number, a serial or an address to the
+ * brief model.
+ */
+export function answersDigest(
+  type: MotivationLicenceType,
+  answers: Record<string, string>,
+): BriefFact[] {
+  const out: BriefFact[] = [];
+  for (const field of fieldsFor(type)) {
+    if (field.sensitive || field.formOnly) continue;
+    if (/^history_|^spouse_/.test(field.key)) continue;
+    if (field.key === 'press_clippings' || field.key === 'travelled_areas') {
+      continue;
+    }
+    const value = (answers[field.key] ?? '').trim();
+    if (!value || value.length > 400) continue;
+    out.push({ label: field.label, value: value.slice(0, 300) });
+  }
+  // The newest answers are the ones the next question should react to.
+  return out.slice(-10);
 }
 
 /**

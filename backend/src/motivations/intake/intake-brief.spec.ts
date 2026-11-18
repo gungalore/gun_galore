@@ -15,13 +15,25 @@ import { fieldByKey } from '../motivation-fields';
 const S16 = MotivationLicenceType.S16_DEDICATED_HUNTER;
 
 describe('the brief hash', () => {
-  it('ignores answers that do not change the questions', () => {
+  it('changes when the applicant answers a non-sensitive question', () => {
+    // ⚠️ THE BRIEF IS REBUILT AFTER EVERY ANSWER. The digest is part of the
+    // hash, so an answer the next question should react to forces a rebuild.
+    const base = {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.30-06 Springfield',
+    };
+    expect(briefHash(S16, base)).not.toBe(
+      briefHash(S16, { ...base, occupation: 'Farmer' }),
+    );
+  });
+
+  it('never lets a sensitive answer change the hash', () => {
     const base = {
       firearm_type: 'Rifle',
       firearm_calibre: '.30-06 Springfield',
     };
     expect(briefHash(S16, base)).toBe(
-      briefHash(S16, { ...base, marital_status: 'Married', occupation: 'Farmer' }),
+      briefHash(S16, { ...base, id_number: '8905125220089' }),
     );
   });
 

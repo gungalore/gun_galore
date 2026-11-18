@@ -108,6 +108,11 @@ export function briefUserPrompt(args: {
   research: string;
   gaps: { code: string; label: string; hint: string }[];
   fields: { key: string; label: string; help?: string; kind: string }[];
+  /**
+   * What the member has already said, non-sensitive only. This is what makes
+   * the brief answer-reactive: the next question can build on these words.
+   */
+  answers?: { label: string; value: string }[];
 }): string {
   const factLines = args.facts.length
     ? args.facts.map((fact) => `- ${fact.label}: ${fact.value}`)
@@ -115,6 +120,9 @@ export function briefUserPrompt(args: {
   const gapLines = args.gaps.length
     ? args.gaps.map((gap) => `- ${gap.label} — ${gap.hint}`)
     : ['(none outstanding)'];
+  const answerLines = (args.answers ?? []).length
+    ? (args.answers ?? []).map((fact) => `- ${fact.label}: ${fact.value}`)
+    : ['(nothing yet)'];
   const fieldLines = args.fields.map(
     (field) =>
       `- ${field.key} — ${field.label}${field.help ? ` (${field.help})` : ''} [${field.kind}]`,
@@ -124,6 +132,9 @@ export function briefUserPrompt(args: {
     '',
     'WHAT THE FILE ALREADY HOLDS',
     ...factLines,
+    '',
+    'WHAT THE APPLICANT HAS TOLD YOU SO FAR',
+    ...answerLines,
     '',
     'WHAT THE DETAIL GATE STILL NEEDS',
     ...gapLines,
