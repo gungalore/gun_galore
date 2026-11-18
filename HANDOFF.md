@@ -7,7 +7,33 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — MODEL NONE AND A SELF-DEFENCE HISTORY THAT HUNTS
+## 2026-11-18 (LATEST) — THE S15 WRITER REPAIR, THE TOPIC LABEL, AND THE STICKY CONFIRM
+
+Shipped `84b9f012` (**full deploy**). Rollback point:
+`alloutdoor-20261118-175851.dump` (38,905,020 bytes).
+
+- **`phraseIn` now parses "a section 15 document says ...".** MO000129 failed on
+  "dedicated" and "efficiently", but the dedicated complaint did not match the
+  matcher, so `repairTargets` returned null and the whole repair was abandoned.
+  Both are now parseable and one targeted rewrite removes the pair. MO000129
+  retried to COMPLETED — 21 pages, model **NONE** printed on the licence table
+  (the cover reads "Howa · 6.5mm Creedmoor"), no "efficiently" in the prose.
+- **The batch review's confirm is sticky.** A 23-file upload no longer needs a
+  scroll past every card to reach "Confirm and file".
+- **The game species question belongs to the hunting topic.** `intended_quarry`
+  was grouped under "Association and dedicated status" on S15; it now groups
+  with activities, so the card reads "Your hunting and shooting".
+
+The earlier `5b2e069d` deploy carries the model-NONE and self-defence hunting
+fixes; MO000130 (S13 with a hunting history) completed, 21 pages, zero "hunt".
+
+Verification: backend 6,252 passed / 8 skipped; frontend production build clean;
+health ×2 and public ×2 200.
+
+**Still open:** virgin sign-up SMS, address auto-link/re-link live test, batch
+per-file progress, training-certificate duplicates, endorsement date prompt.
+
+## 2026-11-18 (LATEST-1) — MODEL NONE AND A SELF-DEFENCE HISTORY THAT HUNTS
 
 Shipped `5b2e069d` (**full deploy**). Rollback point:
 `alloutdoor-20261118-171706.dump` (37,828,505 bytes).
