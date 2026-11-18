@@ -36,48 +36,48 @@ import { previewFor, type PreviewSection } from './motivation-preview';
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ────────────────────────────────────────────────────────────────────
 // EVERYTHING THE REVIEW SHEET NEEDS, IN ONE CALL.
 //
-// `GET /motivations/:id/sheet` â€” the one read behind the whole of
-// `/licence-centre/[id]`. MOTIVATION-REBUILD-BRIEF.md Â§5.2.
+// `GET /motivations/:id/sheet` — the one read behind the whole of
+// `/licence-centre/[id]`. MOTIVATION-REBUILD-BRIEF.md §5.2.
 //
-// âš ï¸ THIS SERVICE COMPUTES `state`, AND NOTHING ELSE IN THE SYSTEM MAY.
+// ⚠️ THIS SERVICE COMPUTES `state`, AND NOTHING ELSE IN THE SYSTEM MAY.
 // That is the point of the endpoint existing at all. Until today the frontend
-// carried `visibleFields()` â€” a hand-written mirror of isVisible() including
-// the SAPS 271 gate â€” and the two had to be kept in step by a comment saying
+// carried `visibleFields()` — a hand-written mirror of isVisible() including
+// the SAPS 271 gate — and the two had to be kept in step by a comment saying
 // so. A flag honoured by one side and not the other puts a question in front
 // of somebody that we have already answered, or hides one the server insists
 // on. There is one implementation now, it is this one, and the screen renders
 // what it is told.
 //
-// âš ï¸ IT COMPOSES; IT DOES NOT DECIDE. Visibility comes from isVisible(),
+// ⚠️ IT COMPOSES; IT DOES NOT DECIDE. Visibility comes from isVisible(),
 // completeness from missingRequired(), documents from documentStatus(),
 // the overlap from overlapFromAnswers(), the prose from previewFor(). A rule
 // implemented HERE would be a second copy of one that already exists somewhere
 // better tested.
 //
-// âš ï¸ NOTHING IS MASKED. `sensitive` drives masking in logs, in admin views and
-// in anything another person can see â€” never on the applicant's own screen.
+// ⚠️ NOTHING IS MASKED. `sensitive` drives masking in logs, in admin views and
+// in anything another person can see — never on the applicant's own screen.
 // They are about to sign these values onto a police form and they have to be
 // able to read them. The live walkthrough found a full name rendered
-// "GEâ€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" and an ID as "8905 â€¢â€¢â€¢â€¢ â€¢â€¢â€¢" on the applicant's own
+// "GE••••••••" and an ID as "8905 •••• •••" on the applicant's own
 // application; that is what this rule exists to stop repeating.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ────────────────────────────────────────────────────────────────────
 
 /**
  * Sources that mean "this came off a document".
  *
- * âš ï¸ A CARD PLACEHOLDER IS A REAL ANSWER WHEN A CARD IS WHAT SAID IT. The
+ * ⚠️ A CARD PLACEHOLDER IS A REAL ANSWER WHEN A CARD IS WHAT SAID IT. The
  * operator's Glock licence prints "Model NONE"; the consent stored NONE, the
- * SAPS 271 prints NONE â€” and this sheet blanked it, so the row read "Still
+ * SAPS 271 prints NONE — and this sheet blanked it, so the row read "Still
  * needed" and asked him to fill in a box that was already correctly answered.
  * Operator, 2026-09-08: "Model is still not filled for sellers firearm", and
  * before that: "DO NOT LEAVE A NONE BLANK EVER unless I tell you to."
  *
- * âš ï¸ SCOPED TO DOCUMENT SOURCES, NOT APPLIED EVERYWHERE. `answerValue()` is
- * still what stops a placeholder becoming an answer at every OFFER boundary â€”
- * that rule is why "Firearm 6 â€” frame serial NONE" stopped being proposed. It
+ * ⚠️ SCOPED TO DOCUMENT SOURCES, NOT APPLIED EVERYWHERE. `answerValue()` is
+ * still what stops a placeholder becoming an answer at every OFFER boundary —
+ * that rule is why "Firearm 6 — frame serial NONE" stopped being proposed. It
  * was never meant to blank a value we had already accepted and printed. The
  * card-placeholder module says so itself: "the readers and the vault keep the
  * card verbatim". This screen is a reader.
@@ -92,7 +92,7 @@ const FROM_A_DOCUMENT: ReadonlySet<string> = new Set([
  * The value to SHOW, and whether it counts as answered.
  *
  * Returns the card's own word where a document gave us one, and '' where a
- * placeholder arrived from anywhere else â€” a profile, a derivation, or a blob
+ * placeholder arrived from anywhere else — a profile, a derivation, or a blob
  * old enough to carry no provenance at all.
  */
 function shownValue(
@@ -104,12 +104,12 @@ function shownValue(
   if (!text) return '';
   if (FROM_A_DOCUMENT.has(entry?.source ?? '')) return text;
   /**
-   * âš ï¸ THE APPLIED-FOR MODEL IS THE ONE MEMBER TYPED VALUE THAT MAY BE "NONE".
+   * ⚠️ THE APPLIED-FOR MODEL IS THE ONE MEMBER-TYPED VALUE THAT MAY BE "NONE".
    * A SAPS card prints "Model NONE" on many rifles, and the member types that
    * word in answer to "What is the model?". Running it through answerValue()
    * blanked the sheet item, so the planner saw an unanswered required field and
    * re-asked the model card forever (MO000127, the supplied Section 15 Howa).
-   * The writer still never sees "Model NONE" â€” this is the sheet only.
+   * The writer still never sees "Model NONE" - this is the sheet only.
    */
   if (key === 'firearm_model' && /^none$/i.test(text)) return text;
   return answerValue(text);
@@ -127,7 +127,7 @@ export interface SheetItem {
   value: string;
   /** Where it came from, or null when the member typed it or nobody has. */
   provenance: AnswerProvenance | null;
-  /** Which sheet section it belongs under â€” see SECTION_OF. */
+  /** Which sheet section it belongs under — see SECTION_OF. */
   section: string;
   scope: 'profile' | 'application';
   required: boolean;
@@ -141,7 +141,7 @@ export interface SheetItem {
   /**
    * The optional "in your own words" box that belongs under a card grid.
    *
-   * âš ï¸ A PAIRING, NOT A FIELD PROPERTY. Both halves are ordinary registry
+   * ⚠️ A PAIRING, NOT A FIELD PROPERTY. Both halves are ordinary registry
    * fields; what makes them a pair is a rendering decision, so it is stated
    * here rather than in the registry, where it would be a layout hint sitting
    * in the contract between the form, the fact pack and the quality gate.
@@ -174,9 +174,9 @@ export interface SheetResponse {
     /**
      * When the applicant confirmed the declaration, or null.
      *
-     * âš ï¸ THE SHEET HAD NO IDEA THIS GATE EXISTED. `generate()` refuses with a
+     * ⚠️ THE SHEET HAD NO IDEA THIS GATE EXISTED. `generate()` refuses with a
      * 409 until it is set, and the wizard screen that asked has been deleted
-     * since Phase 4 â€” so every section read Done, the button was enabled, and
+     * since Phase 4 — so every section read Done, the button was enabled, and
      * the click failed. It is served so the footer can ask once and never ask
      * again.
      */
@@ -184,7 +184,7 @@ export interface SheetResponse {
     /**
      * How the document is set, if they have chosen.
      *
-     * âš ï¸ NULL MEANS "NEVER CHOSEN", NOT "DEFAULT". The renderer validates on
+     * ⚠️ NULL MEANS "NEVER CHOSEN", NOT "DEFAULT". The renderer validates on
      * READ - asLayout/asScheme map anything unrecognised, null included, onto
      * the current defaults - so serving the raw column lets the picker show
      * what is stored without a second copy of that fallback on the client, and
@@ -208,8 +208,8 @@ export interface SheetResponse {
   /**
    * What the pack still wants, by tier.
    *
-   * âš ï¸ SEPARATE FROM `documents` ABOVE, AND THE TWO ANSWER DIFFERENT QUESTIONS.
-   * `documents` is what is ATTACHED â€” the shelf across the top. This is what
+   * ⚠️ SEPARATE FROM `documents` ABOVE, AND THE TWO ANSWER DIFFERENT QUESTIONS.
+   * `documents` is what is ATTACHED — the shelf across the top. This is what
    * is still WANTED, and it is what "Your pack" renders. A member with an
    * empty vault has an empty shelf and a full list here; that is the correct
    * appearance of a first-timer, not an error state.
@@ -218,8 +218,8 @@ export interface SheetResponse {
   /**
    * The competency and its proficiency, as one pair.
    *
-   * âš ï¸ ITS OWN BLOCK BECAUSE THE PAIR IS NOT A FIELD. The registry carries
-   * four competency ANSWERS â€” number, covers, issued, expiry â€” and no
+   * ⚠️ ITS OWN BLOCK BECAUSE THE PAIR IS NOT A FIELD. The registry carries
+   * four competency ANSWERS — number, covers, issued, expiry — and no
    * question at all about the two DOCUMENTS behind them, so a member who had
    * never uploaded a statement of results saw a section that looked finished.
    * Operator, 2026-09-08: "the proficiency needs to be added with the
@@ -231,29 +231,29 @@ export interface SheetResponse {
   /**
    * Required keys still unanswered, across the whole sheet.
    *
-   * âš ï¸ ONE NUMBER, THREE VIEWS. The progress pill, the dot on each section chip
+   * ⚠️ ONE NUMBER, THREE VIEWS. The progress pill, the dot on each section chip
    * and the footer's disabled button all read THIS list and nothing else. The
    * live walkthrough found four separate progress systems that could and did
-   * contradict each other â€” a step showing a green tick while its own panel
+   * contradict each other — a step showing a green tick while its own panel
    * read "0%". Three views of one number cannot disagree.
    */
   missing: string[];
   /**
    * The owned-firearm rows that actually hold a firearm, in order.
    *
-   * âš ï¸ THE SERVER DECIDES THIS, LIKE EVERY OTHER VISIBILITY DECISION ON THE
+   * ⚠️ THE SERVER DECIDES THIS, LIKE EVERY OTHER VISIBILITY DECISION ON THE
    * SHEET. The registry serves all fourteen rows whatever a member owns, and
    * the live sheet rendered every one of them flat: five real firearms and
    * NINE empty ones, no heading between them, and each empty row carrying the
-   * full eleven-tile "what it is for" grid â€” ninety-nine dead tap targets.
+   * full eleven-tile "what it is for" grid — ninety-nine dead tap targets.
    * "Firearms you own" alone measured 15,840px, sixty per cent of a 26,351px
    * page.
    *
-   * âš ï¸ AND IT USES ownedRowTaken, WHICH IS THE ONE RULE. That function's own
+   * ⚠️ AND IT USES ownedRowTaken, WHICH IS THE ONE RULE. That function's own
    * note records what happened when three readers disagreed about whether a
    * row was in use: the next licence uploaded was proposed straight over a
    * firearm that was already there. A fourth reader in the browser, working
-   * off whichever keys happen to reach it, is exactly that bug again â€” so the
+   * off whichever keys happen to reach it, is exactly that bug again — so the
    * page is told, not left to work it out.
    */
   ownedRows: SheetOwnedRow[];
@@ -272,7 +272,7 @@ export interface SheetOwnedRow {
 /**
  * The owned rows a member actually holds, headed the way a licence card reads.
  *
- * âš ï¸ answerValue ON EVERY DISPLAYED FIELD, ownedRowTaken ON THE DECISION. The
+ * ⚠️ answerValue ON EVERY DISPLAYED FIELD, ownedRowTaken ON THE DECISION. The
  * two disagree deliberately: a card printing "NONE" against the frame is
  * EVIDENCE somebody has been in the row (so the row is taken) and is NOT a
  * serial (so the header must not print it). Running answerValue on the
@@ -308,9 +308,9 @@ export function ownedRowsFor(
 }
 
 /**
- * Registry section â†’ the eight sections the sheet renders, in order.
+ * Registry section → the eight sections the sheet renders, in order.
  *
- * âš ï¸ THE SHEET HAS EIGHT AND THE REGISTRY HAS ELEVEN, DELIBERATELY. The
+ * ⚠️ THE SHEET HAS EIGHT AND THE REGISTRY HAS ELEVEN, DELIBERATELY. The
  * registry groups by SUBJECT because that is what the fact pack and the
  * coverage meter need; the sheet groups by WHAT A MEMBER IS DOING, and a
  * section 16 sport applicant does not experience "Dedicated status" and
@@ -331,7 +331,7 @@ const SECTION_OF: Record<string, string> = {
   'The existing licence': 'case',
 };
 
-/** The eight, in the order brief Â§6.1 lists them. One sentence each. */
+/** The eight, in the order brief §6.1 lists them. One sentence each. */
 const SECTIONS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'firearm',
@@ -345,13 +345,13 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   },
   {
     id: 'competency',
-    // âš ï¸ THE WORD "PROFICIENCY" IS IN THE TITLE ON PURPOSE. The section
+    // ⚠️ THE WORD "PROFICIENCY" IS IN THE TITLE ON PURPOSE. The section
     // carried four competency ANSWERS and never named the statement of results
     // behind them, so the operator asked for a proficiency section three times
     // while looking straight at the section it belongs in. The chip strip
     // scrolls; a longer chip costs nothing.
     title: 'Competency and proficiency',
-    // âš ï¸ TRUE IN BOTH STATES. It read "there is usually nothing to do here"
+    // ⚠️ TRUE IN BOTH STATES. It read "there is usually nothing to do here"
     // above a row marked "Still needed", which is the page arguing with
     // itself. This says what we do without promising what is left.
     blurb: 'Read off your certificates wherever we hold them.',
@@ -374,7 +374,7 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'declarations',
     title: 'Declarations',
-    // âš ï¸ FIVE AND THE SIXTH, BECAUSE THE TWO NUMBERS ON THIS SCREEN DISAGREED.
+    // ⚠️ FIVE AND THE SIXTH, BECAUSE THE TWO NUMBERS ON THIS SCREEN DISAGREED.
     // The registry carries six history questions and the 271 coverage meter
     // counts six, correctly; `history_negligence` only appears once a firearm
     // has been lost or stolen, so five is what most members are asked. Saying
@@ -393,7 +393,7 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
 ];
 
 /**
- * Card set â†’ the optional long box that belongs under it.
+ * Card set → the optional long box that belongs under it.
  *
  * See SheetItem.ownWordsKey for why this is here and not in the registry.
  */
@@ -417,9 +417,9 @@ export class MotivationSheetService {
   /**
    * Decide how one field renders.
    *
-   * âš ï¸ FOUR STATES, AND `suggested` IS THE ONLY ONE THAT ASKS FOR ANYTHING.
+   * ⚠️ FOUR STATES, AND `suggested` IS THE ONLY ONE THAT ASKS FOR ANYTHING.
    * The operator's standing rule (2026-08-25) is fill it in, arm it, let them
-   * change it â€” so a value we are confident about is `filled` and carries no
+   * change it — so a value we are confident about is `filled` and carries no
    * task. `suggested` is reserved for a value we INFERRED rather than read,
    * which is the one case where a confirm step is not work we invented.
    */
@@ -430,9 +430,9 @@ export class MotivationSheetService {
   ): SheetItemState {
     if (!isVisible(field, answers)) return 'na';
     /**
-     * âš ï¸ A CARD THAT SAYS "NONE" HAS ANSWERED THE QUESTION. Reading this
+     * ⚠️ A CARD THAT SAYS "NONE" HAS ANSWERED THE QUESTION. Reading this
      * through answerValue made a licence printing "Model NONE" render as
-     * `needs_you` â€” a row marked Still needed, in the outstanding count, on a
+     * `needs_you` — a row marked Still needed, in the outstanding count, on a
      * fact the seller had already signed for and the 271 already prints.
      */
     if (!shownValue(answers[field.key], provenance[field.key], field.key).trim()) {
@@ -444,14 +444,14 @@ export class MotivationSheetService {
   /**
    * The competency/proficiency pair, and what the Document Centre could add.
    *
-   * âš ï¸ A COUNT, NOT A LIST. `GET :id/library` is the list, and it folds a
+   * ⚠️ A COUNT, NOT A LIST. `GET :id/library` is the list, and it folds a
    * two-page proficiency into one entry, hides what is already attached and
    * respects the across-applications consent. Rebuilding any of that here
    * would be a second implementation of the machinery whose absence produced
    * the operator's "the proficiencies are still double in that dropdown". All
    * this decides is whether the door is worth showing.
    *
-   * âš ï¸ AND THE FOLD IS WHY THE COUNT IS NOT `prisma.count()`. A proficiency
+   * ⚠️ AND THE FOLD IS WHY THE COUNT IS NOT `prisma.count()`. A proficiency
    * certificate and its statement of results are TWO Credential rows joined
    * by `otherSideId` and ONE document; counting rows would offer a member with
    * one proficiency "2 in your Licence Centre" and then show them one entry.
@@ -494,7 +494,7 @@ export class MotivationSheetService {
       let n = 0;
       for (const r of mine) {
         // Only the page whose id sorts first counts, and only when its
-        // partner is present â€” a lone follower whose lead was deleted is
+        // partner is present — a lone follower whose lead was deleted is
         // still a document the member can attach.
         if (r.otherSideId && ids.has(r.otherSideId) && r.otherSideId < r.id) {
           continue;
@@ -542,7 +542,7 @@ export class MotivationSheetService {
           select: {
             id: true,
             kind: true,
-            // âš ï¸ THE SECOND ROLE THIS DOCUMENT PLAYS, and it was not selected.
+            // ⚠️ THE SECOND ROLE THIS DOCUMENT PLAYS, and it was not selected.
             // One membership certificate is the association card AND the
             // letter of good standing; without this the sheet's checklist
             // could only ever count the first. See the documentStatus call.
@@ -553,10 +553,10 @@ export class MotivationSheetService {
             // when the member added it here. It is the whole of `origin`.
             sourceCredentialId: true,
             /**
-             * âš ï¸ WHAT AN EVIDENCE ITEM IS, SO THE PANEL CAN COUNT THE CAPS.
+             * ⚠️ WHAT AN EVIDENCE ITEM IS, SO THE PANEL CAN COUNT THE CAPS.
              * The shelf only counts what is ON the application, and the
              * "2 own-page items" cap has to be counted from this list. The
-             * shape is assembled below to match the uploads endpoint exactly â€”
+             * shape is assembled below to match the uploads endpoint exactly —
              * two mappings of one row is how the same photograph reads
              * "Activities page" here and "annexure K" in the pack.
              */
@@ -569,7 +569,7 @@ export class MotivationSheetService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
-    // âš ï¸ THE PROFILE UNDERNEATH, THE APPLICATION ON TOP â€” the same layering
+    // ⚠️ THE PROFILE UNDERNEATH, THE APPLICATION ON TOP — the same layering
     // findOne uses, and for the same reason: a profile answer is an offer, and
     // a value on this application is the member having changed it here.
     const profile = await this.profileAnswers.readFor(user.id);
@@ -583,28 +583,28 @@ export class MotivationSheetService {
       ...parseProvenance(row.answerProvenance),
     };
 
-    // âš ï¸ BEFORE THE ITEMS, because stateOf reads it â€” the overlap question is
+    // ⚠️ BEFORE THE ITEMS, because stateOf reads it — the overlap question is
     // not applicable to somebody who holds nothing similar.
     const overlap = overlapFromAnswers(row.licenceType, answers);
 
     /**
-     * âš ï¸ THE SIX COMPONENT ROWS STAY OFF THE SHEET UNTIL SOMETHING FILLS ONE.
+     * ⚠️ THE SIX COMPONENT ROWS STAY OFF THE SHEET UNTIL SOMETHING FILLS ONE.
      *
-     * Barrel, frame and receiver â€” serial and make each â€” are SAPS 271 section
-     * E 1.7â€“1.12, and on a real card two of the three read NONE. Walking an
+     * Barrel, frame and receiver — serial and make each — are SAPS 271 section
+     * E 1.7–1.12, and on a real card two of the three read NONE. Walking an
      * S13 handgun with no licence card read yet, they sat there as six empty
      * boxes asking a member to describe parts of a firearm they have not
      * bought, on a form where a wrong answer is an offence under section
      * 120(9)(f).
      *
-     * âš ï¸ THE READER IS THE TRIGGER, NOT THE MEMBER. `common/firearm-identity`
+     * ⚠️ THE READER IS THE TRIGGER, NOT THE MEMBER. `common/firearm-identity`
      * reads all four serials off a licence card or a dealer's invoice, so the
-     * moment one is read every one of the six appears â€” including the empty
+     * moment one is read every one of the six appears — including the empty
      * ones, because a card that prints NONE against the barrel is a fact worth
      * showing and correcting. Before that they are the 271's to fill and
      * nobody's to type.
      *
-     * âš ï¸ SERVED, NOT REGISTERED. `showIf` takes ONE key, and gating each row on
+     * ⚠️ SERVED, NOT REGISTERED. `showIf` takes ONE key, and gating each row on
      * one of its five siblings either loops or hides everything when the card
      * happened to number a different component. The condition is "has any of
      * these six been filled", which the server can ask and a per-field clause
@@ -633,7 +633,7 @@ export class MotivationSheetService {
         label: f.label,
         kind: f.kind,
         state,
-        // âš ï¸ IN FULL. See the masking note at the top of this file.
+        // ⚠️ IN FULL. See the masking note at the top of this file.
         value: shownValue(answers[f.key], provenance[f.key], f.key),
         provenance: provenance[f.key] ?? null,
         section: SECTION_OF[f.section] ?? 'case',
@@ -641,7 +641,7 @@ export class MotivationSheetService {
         required: !!f.required,
       };
       if (f.help) item.help = f.help;
-      // âš ï¸ THE OVERLAP-ANGLE FILTERING THAT USED TO LIVE HERE IS GONE WITH THE
+      // ⚠️ THE OVERLAP-ANGLE FILTERING THAT USED TO LIVE HERE IS GONE WITH THE
       // FIELD (2026-09-20). There is no per-licence option list to compute any
       // more; a field's options are its registry options.
       if (f.options) item.options = f.options;
@@ -659,7 +659,7 @@ export class MotivationSheetService {
     });
 
     /**
-     * âš ï¸ THE SHEET AND THE GENERATION GATE MUST AGREE. `missingRequired` alone
+     * ⚠️ THE SHEET AND THE GENERATION GATE MUST AGREE. `missingRequired` alone
      * said "Nothing is missing" on MO000115 while the gate refused it for a
      * purpose and a quarry. The detail gate is the one that blocks the write,
      * so its keys join this list.
@@ -680,7 +680,7 @@ export class MotivationSheetService {
       missing: missing.filter((k) => sectionOfKey.get(k) === s.id),
     })).filter(
       (s) =>
-        // âš ï¸ AN EMPTY SECTION IS DROPPED (2026-10-17). The purpose questions
+        // ⚠️ AN EMPTY SECTION IS DROPPED (2026-10-17). The purpose questions
         // that used to fill "Your case" on a section 15 were retired, and a
         // heading over nothing invites the member to hunt for a question that
         // no longer exists. The pack section always prints: it is the summary.
@@ -689,7 +689,7 @@ export class MotivationSheetService {
         items.some((i) => i.section === s.id && i.state !== 'na'),
     );
 
-    // âš ï¸ A REQUIRED KEY WITH NO SHEET SECTION WOULD BE UNREACHABLE â€” a member
+    // ⚠️ A REQUIRED KEY WITH NO SHEET SECTION WOULD BE UNREACHABLE — a member
     // told something is outstanding with nowhere on the page to answer it,
     // which is the exact failure frontend/lib/wizard-coverage.spec.ts was
     // written for. SECTION_OF falls back to 'case' precisely so this cannot
@@ -703,7 +703,7 @@ export class MotivationSheetService {
     }
 
     // Where the seller's half stands, for the coverage below. One copy, on the
-    // shared service â€” see its own note about the two screens that disagreed.
+    // shared service — see its own note about the two screens that disagreed.
     const seller = await this.shared.sellerState(row.id);
 
     const annexures = buildAnnexures((row.uploads ?? []).map((u) => u.kind));
@@ -722,7 +722,7 @@ export class MotivationSheetService {
         outputMode: row.outputMode,
         licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
         label: row.label,
-        // âš ï¸ THE NAME THE HEADING AND THE VAULT SHOW. See motivation-title.ts.
+        // ⚠️ THE NAME THE HEADING AND THE VAULT SHOW. See motivation-title.ts.
         title: motivationTitle(row.licenceType, answers, row.label),
         status: row.status,
         declarationAcceptedAt: row.declarationAcceptedAt
@@ -737,9 +737,9 @@ export class MotivationSheetService {
         id: u.id,
         kind: u.kind,
         letter: byKind.get(u.kind) ?? null,
-        // âš ï¸ THE MEMBER'S WORDS, NOT THE ENUM'S. This shipped as `u.kind`,
+        // ⚠️ THE MEMBER'S WORDS, NOT THE ENUM'S. This shipped as `u.kind`,
         // so the shelf rendered "ADDRESS_CONFIRMATION" and
-        // "PROFICIENCY_CERTIFICATE" â€” clipped to "ADDRESS_CO" in a 72px tile.
+        // "PROFICIENCY_CERTIFICATE" — clipped to "ADDRESS_CO" in a 72px tile.
         // UPLOAD_KIND_LABELS is the one place those names are written for a
         // person and it is already imported for the annexures.
         label: UPLOAD_KIND_LABELS[u.kind] ?? u.kind,
@@ -748,16 +748,16 @@ export class MotivationSheetService {
         // still goes in the pack. It is a "look at this", never a failure.
         state: u.extractionOk ? ('read' as const) : ('check' as const),
         /**
-         * âš ï¸ DERIVED, NOT STORED, AND `sourceCredentialId` IS ALREADY THE
+         * ⚠️ DERIVED, NOT STORED, AND `sourceCredentialId` IS ALREADY THE
          * ANSWER. A page copied in from the Document Centre carries the
          * credential it came from; one the member scanned or uploaded here
-         * carries null. No column and no migration â€” the fact was on the row
+         * carries null. No column and no migration — the fact was on the row
          * the whole time, it had simply never been shown.
          *
          * Operator, 2026-09-08: "indicate where a document origin is from,
          * Added by License centre or User added."
          *
-         * âš ï¸ AND IT DECIDES WHO IS OFFERED THE SAVE. Only a `member` document
+         * ⚠️ AND IT DECIDES WHO IS OFFERED THE SAVE. Only a `member` document
          * can be saved INTO the Centre; a `vault` one is already there, and
          * offering to save it again is an invitation to make a duplicate.
          */
@@ -765,14 +765,14 @@ export class MotivationSheetService {
           ? ('vault' as const)
           : ('member' as const),
         /**
-         * âš ï¸ WHAT THE SHELF NEEDS TO COUNT THE CAPS AND NAME THE ITEM. Comes
+         * ⚠️ WHAT THE SHELF NEEDS TO COUNT THE CAPS AND NAME THE ITEM. Comes
          * from the ONE builder every surface uses (evidence-taxonomy.ts), not
          * from a second mapping here: this shelf and the motivation page's
          * upload list are two views of one row, and a photo that reads
          * "on its own page" on one and "Activities" on the other is how a
          * member comes to pick a third annexure item the server will refuse.
          *
-         * The description is decrypted here because the builder is pure â€” see
+         * The description is decrypted here because the builder is pure — see
          * its own note.
          */
         evidence:
@@ -800,24 +800,24 @@ export class MotivationSheetService {
         documentStatus(
           row.licenceType,
         /**
-         * âš ï¸ kind AND coversKinds, WHICH THIS ONE CALLER WAS DROPPING. One
+         * ⚠️ kind AND coversKinds, WHICH THIS ONE CALLER WAS DROPPING. One
          * membership certificate is both the association card and the letter
-         * of good standing â€” that is why DEDICATED_DISCIPLINE maps to both
+         * of good standing — that is why DEDICATED_DISCIPLINE maps to both
          * upload kinds, and why the vault records the second role in
          * `coversKinds`. Counting only `kind` leaves the review sheet asking
          * for a paper already in the pack.
          *
          * Operator, 2026-09-09: "it askes for my letter of good standing if my
          * status says its valid until next year." Their MO000075 carries
-         * exactly one such row â€” ASSOCIATION_CARD with {GOOD_STANDING_LETTER}
-         * against it â€” and the sheet was reading past the second half of it.
+         * exactly one such row — ASSOCIATION_CARD with {GOOD_STANDING_LETTER}
+         * against it — and the sheet was reading past the second half of it.
          *
-         * âš ï¸ THE OTHER TWO CALLERS ALREADY DID THIS and say so in as many
+         * ⚠️ THE OTHER TWO CALLERS ALREADY DID THIS and say so in as many
          * words (motivation-documents.service.ts, motivation-generation
          * .service.ts). The sheet is the surface the member actually reads,
          * so it was the one place the mistake was visible.
          *
-         * âš ï¸ buildAnnexures STILL SEES `kind` ALONE, deliberately: the
+         * ⚠️ buildAnnexures STILL SEES `kind` ALONE, deliberately: the
          * document gets ONE annexure letter, because it is one page.
          */
           (row.uploads ?? []).flatMap((u) => [
@@ -835,7 +835,7 @@ export class MotivationSheetService {
     };
   }
 
-  /** The preview alone â€” the drawer refetches this on every saved answer. */
+  /** The preview alone — the drawer refetches this on every saved answer. */
   async previewOnly(userId: string, id: string): Promise<PreviewSection[]> {
     const user = await this.shared.requireUser(userId);
     const row = await this.prisma.motivation.findFirst({
@@ -852,4 +852,3 @@ export class MotivationSheetService {
     return previewFor(row.licenceType, answers).sections;
   }
 }
-
