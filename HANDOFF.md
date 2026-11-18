@@ -7,7 +7,38 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — 9MM SHORT NOW RESOLVES TO .380 ACP; NEWS CLIPPINGS STILL ORPHANED
+## 2026-11-18 (LATEST) — HYBRID PRESS CLIPPINGS: AUTO BY AREA, OPTIONAL TYPED AREAS
+
+Shipped `a05fc7ee` (**full deploy**). The operator's model: "auto select within
+the area and also optionally give the user a option to type which dangerous
+areas they visit".
+
+- **Generation auto-selects the area's clippings when none are chosen.** Typed
+  areas first, then ticked areas, then the commute's on-route areas while the
+  member has not answered, and the nearest two areas when there is nothing to
+  go on. An explicit "none" (the ticker answered empty) is honoured.
+- **`travelled_areas_text`** is a new optional question — "Dangerous areas you
+  travel through", comma-separated — offered once and skippable on S13/S14.
+  It is matched case-insensitively against the area names the news roll-up
+  produced, and feeds the same selection.
+- **The clipping page already prints the paper, date, headline, picture and
+  standfirst.** The writer is now allowed to quote one short phrase from the
+  standfirst, attributed — the direct snippet — while the article **body**
+  stays out (the publisher's right, and the standing product rule).
+- The auto path fails soft: a lookup that throws costs the cuttings, never the
+  pack. One area derivation per generation.
+
+⚠️ **AN EXISTING PACK DOES NOT CHANGE.** MO000112 is already COMPLETED and its
+`press_clippings` is empty; regenerating (or a new pack) is what runs the
+selection. The clippings only appear where the news pool already holds reports
+for the applicant's station/areas.
+
+Verified: backend `tsc` clean, **420 suites / 6 244 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-092515.dump`
+(36,351,526 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — 9MM SHORT NOW RESOLVES TO .380 ACP; NEWS CLIPPINGS STILL ORPHANED
 
 Shipped `0f7aeeb2` (**full deploy**). The operator read MO000112 (Glock 42,
 section 13) and asked two questions.
