@@ -10,6 +10,7 @@ import {
 const PROFILE_SECTION_ORDER = [
   'About you',
   'Your premises',
+  'Your safe and storage',
   'Dedicated status',
 ];
 
@@ -99,9 +100,14 @@ export default function LicenceProfilePage() {
   const groups = useMemo(() => {
     const bySection = new Map<string, MotivationField[]>();
     for (const field of fields) {
-      const list = bySection.get(field.section) ?? [];
+      // The registry keeps the safe under "Your premises"; on the profile the
+      // two are separate jobs and read better apart.
+      const section = field.key.startsWith('safe_')
+        ? 'Your safe and storage'
+        : field.section;
+      const list = bySection.get(section) ?? [];
       list.push(field);
-      bySection.set(field.section, list);
+      bySection.set(section, list);
     }
     return [...bySection.entries()].sort((a, b) => {
       const ai = PROFILE_SECTION_ORDER.indexOf(a[0]);
