@@ -7,7 +7,40 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — THE AUTO CLIPPINGS WERE SELECTED BUT NEVER STORED
+## 2026-11-18 (LATEST) — THE RESEARCHER CAN ASK ITS OWN FOLLOW-UP QUESTIONS
+
+Shipped `b955d240` (**full deploy**). The interview's questions were all bound
+to registry fields; the brief could reword and chip them but could not ask
+anything the registry did not hold. Operator, 2026-11-18: "the research model
+must be able to think and ask questions dynamically".
+
+Three free-text slots — `case_note_1..3` — are now in the brief's question
+list. When the researcher finds a fact the motivation must argue and no fixed
+field carries it (how the firearm is carried, what a course of fire demands,
+why this model rather than the obvious alternative), it writes the question,
+reason and priority against an empty slot. The planner asks a slot **only when
+the brief named it**; an unused slot is never shown. Answers are optional,
+skippable, hidden from the review sheet and delivered to the writer as facts.
+Brief version bumped to `2026-11-18a`.
+
+⚠️ **WHAT THIS DOES NOT YET DO.**
+
+- The fixed registry questions still gate the interview. `shooting_history`
+  remains required by the completeness gate, so "who got you into shooting"
+  can be reworded by the brief but not dropped. Removing it is a product/legal
+  call, not a prompt change.
+- The brief is still built once per core-fact hash (firearm, purpose,
+  association, discipline, province), not re-briefed after every answer. The
+  follow-ups therefore react to the research and the initial facts, not to
+  each answer in turn. Per-answer re-briefing needs the brief to see the
+  answers and a rebuild (and its latency) on each card.
+
+Verified: backend `tsc` clean, **420 suites / 6,248 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-112307.dump`
+(34,543,043 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — THE AUTO CLIPPINGS WERE SELECTED BUT NEVER STORED
 
 Shipped `24ae8278` and `b549dbb2` (**full deploys**). MO000113 was regenerated
 and still had no press-clipping annexure.
