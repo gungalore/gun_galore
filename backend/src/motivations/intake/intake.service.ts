@@ -593,10 +593,25 @@ export class MotivationIntakeService {
       }
     }
 
-const sourceText = (body.message ?? body.value ?? '').trim();
+    const sourceText = (body.message ?? body.value ?? '').trim();
+    /**
+     * ⚠️ AN ALTERNATIVE IS NOT THE FIREARM APPLIED FOR.
+     *
+     * The cross-field extractor reads a typed answer for facts about OTHER
+     * fields — which is right for "Mauser M96 .30-06" filling make and model.
+     * It is wrong for "I considered a Glock 42 but it was too bulky": that
+     * sentence names a firearm the applicant did NOT choose, and MO000112's
+     * applied-for make and model were filled with the Glock 42 from exactly
+     * that answer. The same applies to a sentence about a firearm already
+     * held: it is not this application's firearm.
+     */
+    const anotherFirearm =
+      key === 'alternative_considered' ||
+      /^existing_firearm_|^existing_licence_/.test(key);
     let extracted: Record<string, string> = {};
     if (
       sourceText &&
+      !anotherFirearm &&
       !field.sensitive &&
       !field.formOnly &&
       sourceText.split(/\s+/).length > 1

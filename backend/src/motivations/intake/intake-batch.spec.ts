@@ -177,4 +177,39 @@ describe('answering a group', () => {
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatchObject({ competency_issued: '2020-01-01' });
   });
+
+  /**
+   * ⚠️ AN ALTERNATIVE IS NOT THE FIREARM APPLIED FOR. MO000112's applied-for
+   * make and model were filled with the Glock 42 from the applicant's answer
+   * "I considered a Glock 42 but it was too bulky" — the cross-field extractor
+   * read a rejected alternative as the choice.
+   */
+  it('never fills the applied-for firearm from the alternative considered', async () => {
+    const answers: Record<string, string> = {};
+    for (const field of fieldsFor(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      answers[field.key] = field.key === 'shooting_history' ? 'word '.repeat(20).trim() : 'x';
+    }
+    delete answers.alternative_considered;
+    const { svc, writes } = makeService(answers);
+    const extract = jest.fn(async () => ({
+      firearm_make: 'Glock',
+      firearm_model: '42',
+    }));
+    (svc as unknown as { agent: { extractFacts: typeof extract } }).agent.extractFacts =
+      extract;
+
+    await svc.answerBatch('user-1', 'mo-1', [
+      {
+        fieldKey: 'alternative_considered',
+        message: 'I considered a Glock 42 but it was a little too bulky',
+      },
+    ]);
+
+    expect(extract).not.toHaveBeenCalled();
+    expect(writes[0]).toMatchObject({
+      alternative_considered: 'I considered a Glock 42 but it was a little too bulky',
+    });
+    expect(writes[0]).not.toHaveProperty('firearm_make');
+    expect(writes[0]).not.toHaveProperty('firearm_model');
+  });
 });
