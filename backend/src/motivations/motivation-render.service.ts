@@ -1805,15 +1805,12 @@ export class MotivationRenderService {
       // header, footer and page numbers stay with it. See dimensionSheet.
       cipSheet: undefined,
       /**
-       * ⚠️ THE CARTRIDGE IS NOT THE COVER ANY MORE. Operator, 2026-11-18:
-       * "why ... gave the 9mm cartridge in 3d on the first page" — the first
-       * page is the applicant and the firearm, and the cartridge belongs in
-       * its own section with the C.I.P. dimension sheet. The drawing still
-       * prints beside the article; it is only the cover hero that is removed.
+       * ⚠️ THE CARTRIDGE HERO BELONGS ON PAGE ONE. Operator, 2026-11-18: "why
+       * isnt the rendered cartridge not showing on the first page?" — removing
+       * it was the wrong reading of the earlier note. The cover keeps the
+       * drawn cartridge; the C.I.P. sheet prints separately at 6.1.
        */
-      cartridgeDrawing: cartridge
-        ? { ...cartridge, hero: undefined }
-        : undefined,
+      cartridgeDrawing: cartridge,
       /**
        * âš ï¸ THE FIGURES GO WHERE THE PICTURE NO LONGER IS. The drawing is the
        * cover's hero and carries two lengths; the set a reviewer checks a
