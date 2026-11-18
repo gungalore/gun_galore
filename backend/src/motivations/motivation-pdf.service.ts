@@ -2432,12 +2432,8 @@ export class MotivationPdfService {
         .filter(Boolean);
       const estimatedEntries =
         bodyBlocks.filter(isHeading).length +
-        // One line for ANNEXURES plus one per lettered annexure, and the
-        // checklist-only index gets its own contents line as well.
-        (input.annexures?.length ||
-        (input.checklistMode && input.checklistDocuments?.length)
-          ? 1 + (input.annexures?.length ?? 0)
-          : 0) +
+        // One line for ANNEXURES plus one per lettered annexure.
+        (input.annexures?.length ? 1 + input.annexures.length : 0) +
         (input.characterStatements?.length ?? 0) +
         (input.priorNotice ? 1 : 0) +
         // The cartridge feature's own heading(s): the new spread takes two
@@ -5064,16 +5060,13 @@ export class MotivationPdfService {
       }; ${certificationPhrase(a.certification)})`;
 
     // ── Annexure index ────────────────────────────────────────────────
-    if (
-      input.annexures?.length ||
-      (input.checklistMode && input.checklistDocuments?.length)
-    ) {
+    if (input.annexures?.length) {
       doc.addPage();
       doc.x = MARGIN;
       doc.y = bodyTop;
       const annexureIndexPage = doc.bufferedPageRange().count;
       toc.push({ heading: 'ANNEXURES', page: annexureIndexPage });
-      for (const annexure of input.annexures ?? []) {
+      for (const annexure of input.annexures) {
         toc.push({
           heading: annexureContentsHeading(annexure),
           page: annexureIndexPage,
@@ -5154,7 +5147,7 @@ export class MotivationPdfService {
       };
       drawTableHead(false);
 
-      for (const a of input.annexures ?? []) {
+      for (const a of input.annexures) {
         const label = a.count > 1 ? `${a.label} (${a.count} items)` : a.label;
         doc.font(B.body).fontSize(K.px(13));
         const need =
