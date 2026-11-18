@@ -28,7 +28,15 @@ function optionsFor(item: SheetItem): string[] {
 }
 
 function isMissing(item: SheetItem, missingKeys: Set<string>): boolean {
-  if (item.state === 'na' || !item.required) return false;
+  if (item.state === 'na') return false;
+  /**
+   * ⚠️ A DETAIL GATE CAN OUTRANK `required`. `firearm_use_kind` and
+   * `intended_quarry` are not marked required in the registry, but the
+   * generation gate refuses without them; the sheet must show the row so the
+   * member can answer it instead of reading "Nothing is missing" and then a
+   * 409.
+   */
+  if (!item.required && !missingKeys.has(item.key)) return false;
   if (item.state === 'needs_you' || item.state === 'suggested') return true;
   return missingKeys.has(item.key) && !item.value;
 }

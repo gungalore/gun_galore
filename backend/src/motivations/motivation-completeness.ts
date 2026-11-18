@@ -1,5 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { isSportingLicence } from './motivation-purpose';
+import { resolveSportingPurpose } from './motivation-purpose';
 
 /**
  * ⚠️ THE DETAIL A MOTIVATION NEEDS TO EXIST, AS OPPOSED TO THE FORM BEING FILLED.
@@ -170,34 +170,21 @@ export function missingDetail(
 
   // ── the purpose ────────────────────────────────────────────────────────
   /**
-   * ⚠️ ONLY THE SPORTING SECTIONS ARE ASKED WHAT THE FIREARM IS FOR. On a
-   * section 13 the section answers it, and the registry itself retired
-   * `firearm_use_kind` as a question on 2026-10-17 ("the route is decided from
-   * the applicant's paperwork, their battery and the firearm itself"). Demanding
-   * it anyway left a section 13 applicant gated on a question no card asked.
+   * ⚠️ `firearm_use_kind` IS NOT A GATE ANY MORE. The registry retired it as a
+   * question on 2026-10-17 ("the route is decided from the applicant's
+   * paperwork, their battery and the firearm itself"), and `resolveSportingPurpose`
+   * is that rule: a handgun or self-loader is sport, a dangerous-game chambering
+   * is hunting, and an explicit answer wins where the interview asked one.
+   *
+   * ⚠️ AND THE QUARRY FOLLOWS THE RESOLVED PURPOSE, NOT THE RAW ANSWER. It used
+   * to demand "the species you intend to hunt" of every S16-hunter row, so a
+   * Glock 43X for dedicated sport was gated on hunting quarry — a question its
+   * sport branch never asks. MO000115 could not generate until the purpose was
+   * written through the API.
    */
-  if (isSportingLicence(licenceType) && !has(answers, 'firearm_use_kind')) {
-    gaps.push(
-      GAP(
-        'purpose:firearm_use_kind',
-        'what the firearm is for',
-        'Hunting, sport shooting, or both.',
-      ),
-    );
-  }
-  /**
-   * ⚠️ THE SECTION 16 TYPE IS THE FAMILY; THE PURPOSE DECIDES THE ARGUMENT.
-   * S16_DEDICATED_HUNTER stores the whole section 16 family (its label is
-   * "Dedicated hunting or sport-shooting"), and the interview branches on
-   * `firearm_use_kind`. A sport-purpose application was still gated on "the
-   * species you intend to hunt" — a question the sport branch never asks — so
-   * the interview finished and the review screen refused to move on. Quarry is
-   * a hunting fact; ask for it only when the applicant says they hunt (or say
-   * both).
-   */
+  const purpose = resolveSportingPurpose(answers);
   const hunts =
-    HUNTING_TYPES.includes(licenceType) &&
-    (answers.firearm_use_kind ?? '').trim().toLowerCase() !== 'sport';
+    HUNTING_TYPES.includes(licenceType) && purpose !== 'sport';
   if (hunts && !has(answers, 'intended_quarry')) {
     gaps.push(
       GAP(

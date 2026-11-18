@@ -80,18 +80,18 @@ const COMMON = {
 };
 
 describe('the intake planner', () => {
-  it('asks the section 16 purpose router before the branch facts', () => {
+  it('resolves the section 16 purpose from the firearm, not a router question', () => {
+    // `firearm_use_kind` was retired as a question: a handgun is sport, and
+    // the interview asks the sport branch directly.
     const q = planQuestion({
       type: MotivationLicenceType.S16_DEDICATED_HUNTER,
       answers: COMMON,
       sheet: EMPTY_SHEET,
     });
-    expect(q?.fieldKey).toBe('firearm_use_kind');
-    expect(q?.choices.map((c) => c.value)).toEqual([
-      'hunting',
-      'sport',
-      'both',
-    ]);
+    expect(q?.fieldKey).not.toBe('firearm_use_kind');
+    expect(
+      purposeForAnswers(MotivationLicenceType.S16_DEDICATED_HUNTER, COMMON),
+    ).toBe('hunting');
   });
 
   it('filters the hunting branch out of a sport answer', () => {

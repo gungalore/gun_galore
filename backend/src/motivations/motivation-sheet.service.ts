@@ -20,6 +20,7 @@ import {
   ownedRowTaken,
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
+import { missingDetail } from './motivation-completeness';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
 import { evidenceRow } from './evidence-taxonomy';
 import { tryDecryptText } from '../common/blob-crypto';
@@ -647,7 +648,20 @@ export class MotivationSheetService {
       return item;
     });
 
-    const missing = missingRequired(row.licenceType, answers);
+    /**
+     * ⚠️ THE SHEET AND THE GENERATION GATE MUST AGREE. `missingRequired` alone
+     * said "Nothing is missing" on MO000115 while the gate refused it for a
+     * purpose and a quarry. The detail gate is the one that blocks the write,
+     * so its keys join this list.
+     */
+    const missing = [
+      ...new Set([
+        ...missingRequired(row.licenceType, answers),
+        ...missingDetail(answers, row.licenceType).map((gap) =>
+          gap.code.slice(gap.code.indexOf(':') + 1),
+        ),
+      ]),
+    ];
     const missingSet = new Set(missing);
     const sectionOfKey = new Map(items.map((i) => [i.key, i.section]));
 

@@ -1804,12 +1804,16 @@ export class MotivationRenderService {
       // renderer places it under its own numbered heading so the running
       // header, footer and page numbers stay with it. See dimensionSheet.
       cipSheet: undefined,
-      // âš ï¸ AND THE DRAWING, WHICH TAKES PRECEDENCE OVER THAT PAGE. Operator,
-      // 2026-09-09: "why arent we pulling in the dimension sheet of the
-      // cartridge its using from The Bench?" Both are still built because the
-      // spliced page is the fallback when we hold no figures for the round;
-      // the renderer prints one or the other, never both.
-      cartridgeDrawing: cartridge,
+      /**
+       * ⚠️ THE CARTRIDGE IS NOT THE COVER ANY MORE. Operator, 2026-11-18:
+       * "why ... gave the 9mm cartridge in 3d on the first page" — the first
+       * page is the applicant and the firearm, and the cartridge belongs in
+       * its own section with the C.I.P. dimension sheet. The drawing still
+       * prints beside the article; it is only the cover hero that is removed.
+       */
+      cartridgeDrawing: cartridge
+        ? { ...cartridge, hero: undefined }
+        : undefined,
       /**
        * âš ï¸ THE FIGURES GO WHERE THE PICTURE NO LONGER IS. The drawing is the
        * cover's hero and carries two lengths; the set a reviewer checks a

@@ -62,6 +62,9 @@ describe('missingDetail', () => {
   it('refuses a hunting application with no quarry named', () => {
     const answers = {
       ...completeS13(),
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_calibre: '.30-06 Springfield',
       association_name: 'NHSA',
       association_number: '9407315019081',
       association_joined: '2019-08-17',
@@ -160,14 +163,17 @@ describe('the gate asks only what a card can show', () => {
     expect(codes(gaps)).not.toContain('purpose:firearm_use_kind');
   });
 
-  it('still demands it on the sporting sections, where it chooses the branch', () => {
+  it('does not demand the retired router on a sporting section', () => {
+    // A handgun resolves to sport from the firearm itself. The router was
+    // retired as a question, so it cannot be a gate either.
     const answers = { ...completeS13(), association_name: 'NHSA' };
     delete (answers as Record<string, string | undefined>).firearm_use_kind;
     const gaps = missingDetail(
       answers,
       MotivationLicenceType.S16_DEDICATED_HUNTER,
     );
-    expect(codes(gaps)).toContain('purpose:firearm_use_kind');
+    expect(codes(gaps)).not.toContain('purpose:firearm_use_kind');
+    expect(codes(gaps)).not.toContain('purpose:intended_quarry');
   });
 
   it('demands the security paragraph on a self-defence application', () => {

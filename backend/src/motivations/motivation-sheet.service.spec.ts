@@ -7,6 +7,7 @@ import {
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { missingRequired } from './motivation-fields';
+import { missingDetail } from './motivation-completeness';
 
 // ────────────────────────────────────────────────────────────────────
 // GET /motivations/:id/sheet — the one read behind the review screen.
@@ -231,10 +232,18 @@ describe('the sections', () => {
 });
 
 describe('one number, three views', () => {
-  it('agrees with missingRequired for an empty application', async () => {
+  it('agrees with the generation gate for an empty application', async () => {
     const { svc } = build();
     const sheet = await svc.sheetFor('c1', 'mo-1');
-    expect([...sheet.missing].sort()).toEqual([...missingRequired(S13, {})].sort());
+    const gate = [
+      ...new Set([
+        ...missingRequired(S13, {}),
+        ...missingDetail({}, S13).map((gap) =>
+          gap.code.slice(gap.code.indexOf(':') + 1),
+        ),
+      ]),
+    ];
+    expect([...sheet.missing].sort()).toEqual(gate.sort());
   });
 
   it('accounts for every missing key in exactly one section', async () => {

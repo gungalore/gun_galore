@@ -196,6 +196,23 @@ const COURSES: readonly CourseSpec[] = [
       EMPTY,
   },
   {
+    key: '10m-centrefire-handgun',
+    title: '10 m Centre-Fire Handgun',
+    classes: ['handgun'],
+    match: ['10 m', '10m', 'centre-fire', 'center-fire', 'centrefire', 'centerfire'],
+    description:
+      'The 10 m centre-fire handgun exercise is a static precision shoot: a ' +
+      'fixed number of shots on a paper target from the 10 m line, scored on ' +
+      'group and score. It is the short-range handgun discipline in which a ' +
+      'compact pistol is shot against the same standard as a full-size one.',
+    prompt:
+      'An empty 10 m indoor handgun range in South Africa: a clean concrete ' +
+      'firing line with five numbered lanes and low dividers, a row of paper ' +
+      'precision targets at the 10 m line, a steel bullet trap behind them and ' +
+      'even overhead lighting. ' +
+      EMPTY,
+  },
+  {
     key: 'natshoot-handgun',
     title: 'Natshoot / SA Jagters 20 m handgun',
     classes: ['handgun'],

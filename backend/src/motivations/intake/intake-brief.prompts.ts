@@ -98,6 +98,9 @@ export function briefSystemPrompt(): string {
     '⚠️ YOUR OWN FOLLOW-UP QUESTIONS.',
     '18. You have THREE free-text slots — `case_note_1`, `case_note_2`, `case_note_3`. Use at most two, and only when a fact this motivation must argue is carried by no fixed field, and the research or a supplied fact raises it (how the firearm is carried, what a specific course of fire demands, why this model rather than the obvious alternative). Write the question for THIS applicant and give the reason. Leave the slots you do not need out of the brief entirely — they are optional on the card and the applicant may skip them.',
     '',
+    '⚠️ THE CARTRIDGE NEEDS ITS EXACT NAME.',
+    '19. If the calibre is written only as "9mm", ask which 9mm — 9mm Parabellum / 9×19, 9mm Short / .380 ACP, or 9mm Makarov. The C.I.P. dimension sheet and the 3D drawing depend on the exact designation; "9mm" alone resolves to no cartridge sheet.',
+    '',
     'Return JSON only, matching the schema.',
   ].join('\n');
 }
