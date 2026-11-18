@@ -66,7 +66,9 @@ export function topicForField(key: string): IntakeTopicId {
    * membership numbers rather than beside the shooting it belongs to.
    */
   if (
-    /^(shooting_history|training_history|discipline_exercise)$/.test(key)
+    /^(shooting_history|training_history|discipline_exercise|intended_quarry)$/.test(
+      key,
+    )
   ) {
     return 'activities';
   }
@@ -84,7 +86,7 @@ export function topicForField(key: string): IntakeTopicId {
   if (/^residential_|^postal_|^residence_type$/.test(key)) return 'address';
   if (key === 'travelled_areas_text') return 'activities';
   if (
-    /^association_|^dedicated_since$|^discipline_|^hunting_|^competition_record$|^activity_record$|^intended_quarry$|^sport_/.test(
+    /^association_|^dedicated_since$|^discipline_|^hunting_|^competition_record$|^activity_record$|^sport_/.test(
       key,
     )
   ) {
