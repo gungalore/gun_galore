@@ -7,7 +7,32 @@ overwritten.
 
 Last updated: **2026-11-18**.
 
-## 2026-11-18 (LATEST) — MO000113 FAILED ON THE WORD "HUNTING", NOT ON A MODEL OUTAGE
+## 2026-11-18 (LATEST) — THE 271 DECLARATIONS AND SPOUSE ID LEFT THE SCREENS
+
+Shipped `196481d8` (**full deploy**). The MO000113 "Finish what is missing"
+sheet was still asking the six SAPS 271 declarations ("ever convicted", "case
+pending", "firearm lost or stolen", "declared unfit", "confiscated") and "What
+your spouse or partner is identified by".
+
+They were `required: true` in the registry and `isVisible` did not exclude them,
+so the sheet kept them even though **the 271 is no longer produced** and
+`missingRequired` already excluded them from generation. The comment claiming
+the declarations "left the interview on 2026-11-05" was true of the intent and
+not of the code.
+
+`isVisible` now hides every `history_*` field and `spouse_id_type` /
+`spouse_id_number` / `spouse_passport_number` from both the interview and the
+review sheet. The keys stay in the registry so a draft that already holds an
+answer still saves, and `spouse_name` stays visible — the one spouse fact the
+writer can use. Pinned with a field test: not visible on any type, spouse name
+still visible.
+
+Verified: backend `tsc` clean, **420 suites / 6 247 tests passed** (8 skipped);
+frontend build clean. Rollback point `alloutdoor-20261118-102432.dump`
+(36,436,131 bytes). `deploy.sh` exited 0; backend 200, frontend 200 ×2, public
+200 ×2.
+
+## 2026-11-18 (LATEST-1) — MO000113 FAILED ON THE WORD "HUNTING", NOT ON A MODEL OUTAGE
 
 Shipped `760c3b45` (**full deploy**). MO000113 (section 13) ended `FAILED` at
 10:08:53. The stored `failureReason` is:
