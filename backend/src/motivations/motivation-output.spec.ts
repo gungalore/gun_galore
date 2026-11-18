@@ -1,7 +1,5 @@
 import {
-  isLetterChecklist,
   isMotivationOnly,
-  isPackMode,
   isPrintReady,
   normaliseOutputMode,
 } from './motivation-output';
@@ -31,15 +29,5 @@ describe('the output mode', () => {
     expect(normaliseOutputMode('PRINT_READY')).toBe('PRINT_READY');
     expect(isPrintReady('PRINT_READY')).toBe(true);
     expect(isMotivationOnly('PRINT_READY')).toBe(false);
-    expect(isPackMode('PRINT_READY')).toBe(true);
-    expect(isLetterChecklist('PRINT_READY')).toBe(false);
-  });
-
-  it('recognises the typed letter + DFO checklist', () => {
-    expect(normaliseOutputMode('LETTER_CHECKLIST')).toBe('LETTER_CHECKLIST');
-    expect(isLetterChecklist('LETTER_CHECKLIST')).toBe(true);
-    expect(isPrintReady('LETTER_CHECKLIST')).toBe(false);
-    expect(isPackMode('LETTER_CHECKLIST')).toBe(true);
-    expect(isMotivationOnly('LETTER_CHECKLIST')).toBe(false);
   });
 });

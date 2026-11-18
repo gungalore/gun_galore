@@ -920,13 +920,6 @@ export interface MotivationPdfInput {
    */
   missingDocuments?: string[];
   /**
-   * The typed-details pack's bring-original rows. Printed under their own
-   * heading, with no annexure letter and no blank page — the copy was never
-   * supplied, and the pack must not pretend otherwise.
-   */
-  checklistMode?: boolean;
-  checklistDocuments?: { label: string; tier: string }[];
-  /**
    * The scanned copies themselves, reprinted after the index.
    *
    * ⚠️ THIS IS WHAT THE APPLICANT WALKS INTO THE DFO'S OFFICE WITH. They take
@@ -5198,35 +5191,20 @@ export class MotivationPdfService {
        * the certified copies carry — so every required document, present or not,
        * is accounted for in one column.
        */
-      const bringRows = input.checklistMode
-        ? (input.checklistDocuments ?? []).map((need) => ({
-            label:
-              need.tier === 'required'
-                ? `${need.label} \u2014 SAPS requires this`
-                : `${need.label} \u2014 usually asked for`,
-            tier: need.tier,
-          }))
-        : (input.missingDocuments ?? []).map((label) => ({
-            label,
-            tier: '',
-          }));
-
-      if (bringRows.length) {
+      if (input.missingDocuments?.length) {
         doc.y += K.mm(2);
         K.label(
           chrome,
-          input.checklistMode
-            ? 'Bring the original \u2014 not included in this pack'
-            : 'Required \u2014 still to be attached',
+          'Required — still to be attached',
           MARGIN,
           doc.y,
           contentWidth,
         );
         doc.y += K.px(8.5) * 1.2 + K.mm(2);
-        for (const row of bringRows) {
+        for (const label of input.missingDocuments) {
           doc.font(B.body).fontSize(K.px(13));
           const need =
-            doc.heightOfString(row.label, { width: labelW, lineGap: K.px(2) }) +
+            doc.heightOfString(label, { width: labelW, lineGap: K.px(2) }) +
             K.mm(6);
           if (doc.y + need > K.BODY_BOTTOM) {
             doc.addPage();
@@ -5238,12 +5216,12 @@ export class MotivationPdfService {
             .font(F.sansBold)
             .fontSize(K.px(11))
             .fillColor(C.deep)
-            .text('\u2014', MARGIN, y + 1, { width: letterW, lineBreak: false });
+            .text('—', MARGIN, y + 1, { width: letterW, lineBreak: false });
           doc
             .font(B.body)
             .fontSize(K.px(13))
             .fillColor(C.ink)
-            .text(row.label, MARGIN + letterW, y, {
+            .text(label, MARGIN + letterW, y, {
               width: labelW,
               lineGap: K.px(2),
             });

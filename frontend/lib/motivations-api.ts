@@ -515,10 +515,7 @@ export interface LibraryItem {
 // own answers.
 
 export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
-export type MotivationOutputMode =
-  | 'MOTIVATION_ONLY'
-  | 'PRINT_READY'
-  | 'LETTER_CHECKLIST';
+export type MotivationOutputMode = 'MOTIVATION_ONLY' | 'PRINT_READY';
 export type IntakeStage =
   | 'MODE'
   | 'DOCUMENTS'

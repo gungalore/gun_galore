@@ -70,6 +70,7 @@ export default function IntakeInterviewPage() {
   const [detailFor, setDetailFor] = useState<IntakeQuestion | null>(null);
   const [detailValues, setDetailValues] = useState<Record<string, string>>({});
   const [deferredDocs, setDeferredDocs] = useState(false);
+  const [manualDocs, setManualDocs] = useState<Set<string>>(new Set());
   const sourceFile = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetResponse | null>(null);
@@ -237,7 +238,6 @@ export default function IntakeInterviewPage() {
   );
 
   const motivationOnly = data?.outputMode === 'MOTIVATION_ONLY';
-  const letterChecklist = data?.outputMode === 'LETTER_CHECKLIST';
   const missingDocs = data?.documents.missing ?? [];
   const sourceMissing = data ? !data.documents.sourceProofAttached : false;
   const sourceInTopic = !data?.topic || data.topic.id === 'firearm';
@@ -248,12 +248,12 @@ export default function IntakeInterviewPage() {
     (n) =>
       !n.have &&
       n.kind !== 'FIREARM_SOURCE_PROOF' &&
+      !manualDocs.has(n.kind) &&
       (topicDocKinds === null || topicDocKinds.has(n.kind)),
   );
   const showDocs =
     !!data &&
     !motivationOnly &&
-    !letterChecklist &&
     !deferredDocs &&
     ((sourceMissing && sourceInTopic) ||
       missingDocs.length > 0 ||
@@ -567,24 +567,6 @@ export default function IntakeInterviewPage() {
       setError((err as Error).message);
     } finally {
       setManualSaving(false);
-    }
-  }
-
-  async function switchToChecklist() {
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await motivationsApi.setIntakeOutput(
-        getToken,
-        id,
-        'LETTER_CHECKLIST',
-      );
-      setData(next);
-      setDeferredDocs(false);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -1001,28 +983,7 @@ export default function IntakeInterviewPage() {
                 </ul>
               </div>
             ) : null}
-            {letterChecklist ? (
-              <div
-                className="mt-2 rounded-lg border px-3 py-2"
-                style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)' }}
-              >
-                <p className="m-0 text-[12.5px] font-medium text-[var(--text-primary)]">
-                  Bring these originals to the DFO
-                </p>
-                <ul className="m-0 mt-1 list-disc pl-5 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-                  {data.documents.needs
-                    .filter((need) => need.tier !== 'strengthens')
-                    .map((need) => (
-                      <li key={need.kind}>{need.label}</li>
-                    ))}
-                </ul>
-                <p className="m-0 mt-1 text-[12px] leading-5 text-[var(--text-tertiary)]">
-                  No copies are needed now. This application will print the
-                  motivation and this checklist, not the documents.
-                </p>
-              </div>
-            ) : null}
-            {!motivationOnly && !letterChecklist && (missingDocs.length || sourceMissing) ? (
+            {!motivationOnly && (missingDocs.length || sourceMissing) ? (
               <div className="mt-2 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)' }}>
                 <p className="m-0 text-[12.5px] text-[var(--text-secondary)]">
                   {sourceMissing
@@ -1080,14 +1041,6 @@ export default function IntakeInterviewPage() {
               className="shrink-0 text-[12px] text-[var(--text-secondary)] underline"
             >
               Skip for now
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void switchToChecklist()}
-              className="shrink-0 text-[12px] text-[var(--red)] underline disabled:opacity-50"
-            >
-              No documents? Switch to Letter + DFO checklist
             </button>
           </div>
 
@@ -1345,6 +1298,21 @@ export default function IntakeInterviewPage() {
                         }}
                       />
                     </label>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        setManualDocs((prev) => {
+                          const next = new Set(prev);
+                          next.add(d.kind);
+                          return next;
+                        })
+                      }
+                      className="rounded-lg border px-3 py-2 text-[12.5px] font-medium disabled:opacity-50"
+                      style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-secondary)' }}
+                    >
+                      Enter details instead
+                    </button>
                   </div>
                 </div>
               ))}

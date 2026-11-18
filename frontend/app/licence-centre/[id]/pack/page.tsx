@@ -322,13 +322,9 @@ export default function PackPage() {
 
   // A renewal is lodged on the SAPS 518(a), which we do not fill.
   const isRenewal = sheet.application.licenceType === 'S24_RENEWAL';
-  const letterChecklist =
-    sheet.application.outputMode === 'LETTER_CHECKLIST';
-  const missingDocuments = letterChecklist
-    ? 0
-    : sheet.needs.needs.filter(
-        (need) => need.tier === 'required' && !need.have,
-      ).length;
+  const missingDocuments = sheet.needs.needs.filter(
+    (need) => need.tier === 'required' && !need.have,
+  ).length;
   const missingCount = sheet.missing.length + missingDocuments;
 
   return (
@@ -500,7 +496,6 @@ export default function PackPage() {
         <PackSummary
           licenceType={sheet.application.licenceType}
           needs={sheet.needs.needs}
-          checklist={letterChecklist}
         />
       </section>
     </main>

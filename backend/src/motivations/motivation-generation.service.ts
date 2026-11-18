@@ -208,7 +208,7 @@ import {
   missingRequired,
   parsePressClippingIds,
 } from './motivation-fields';
-import { isLetterChecklist, isMotivationOnly } from './motivation-output';
+import { isMotivationOnly } from './motivation-output';
 import { rulebookForAnswers } from './association-rules';
 import { missingDetail, missingDetailMessage } from './motivation-completeness';
 import { readSaId } from './sa-id';
@@ -594,7 +594,6 @@ export class MotivationGenerationService {
      */
     const answers = await this.shared.answersFor(row.userId, row.answersEncrypted);
     const motivationOnly = isMotivationOnly(row.outputMode);
-    const letterChecklist = isLetterChecklist(row.outputMode);
 
     /**
      * âš ï¸ EVERY LICENSED FIREARM IN THE VAULT GOES ON THE FORM, WITHOUT
@@ -791,7 +790,7 @@ export class MotivationGenerationService {
       answers,
     );
     const missingDocuments = docStatus.missingRequired;
-    if (missingDocuments.length && !motivationOnly && !letterChecklist) {
+    if (missingDocuments.length && !motivationOnly) {
       throw new ConflictException({
         message:
           missingDocuments.length === 1
@@ -847,7 +846,7 @@ export class MotivationGenerationService {
       });
     const needed = requiredEndorsement(answers);
     const proficiencyGap = proficiencyPackGap(proficiencyPages, needed);
-    if (!motivationOnly && !letterChecklist && hasProficiencyPackGap(proficiencyGap)) {
+    if (!motivationOnly && hasProficiencyPackGap(proficiencyGap)) {
       const label = needed ? (endorsementSpec(needed)?.label ?? needed) : '';
       const problems: string[] = [];
       if (proficiencyGap.missingLaw) {

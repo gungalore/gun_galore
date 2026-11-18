@@ -125,7 +125,7 @@ import {
   PRESS_CLIPPINGS_KEY,
   parsePressClippingIds,
 } from './motivation-fields';
-import { isLetterChecklist, isMotivationOnly } from './motivation-output';
+import { isMotivationOnly } from './motivation-output';
 import {
   MotivationSharedService,
   TEMPLATE_VERSION,
@@ -1385,7 +1385,6 @@ export class MotivationRenderService {
     }
 
     const motivationOnly = isMotivationOnly(row.outputMode);
-    const letterChecklist = isLetterChecklist(row.outputMode);
     const body = tryDecryptText(row.documentTextEncrypted);
     if (!body) {
       throw new ConflictException(
@@ -1573,23 +1572,10 @@ export class MotivationRenderService {
       u.kind,
       ...(u.coversKinds ?? []),
     ]);
-    const docStatus = documentStatus(
-      row.licenceType,
-      coveredKinds,
-      answers,
-    );
-    const missingDocuments = motivationOnly || letterChecklist
+    const missingDocuments = motivationOnly
       ? []
-      : docStatus.missingRequired.map((kind) => documentLabel(kind));
-    /**
-     * The typed pack's bring-original rows. Required and expected only —
-     * "strengthens" is optional evidence, not DFO paperwork.
-     */
-    const checklistDocuments = letterChecklist
-      ? docStatus.needs
-          .filter((need) => !need.have && need.tier !== 'strengthens')
-          .map((need) => ({ label: need.label, tier: need.tier }))
-      : [];
+      : documentStatus(row.licenceType, coveredKinds, answers)
+          .missingRequired.map((kind) => documentLabel(kind));
     const printable = motivationOnly
       ? { images: [], pdfs: [], notPrinted: [] }
       : await this.annexureImages(packUploads, annexures);
@@ -1734,8 +1720,6 @@ export class MotivationRenderService {
       // built: a required document that is absent is named, so the applicant
       // knows what to bring and the DFO sees it was not withheld.
       missingDocuments,
-      checklistMode: letterChecklist,
-      checklistDocuments,
       priorNotice: motivationOnly ? undefined : priorNotice,
       pressClippings,
       // âš ï¸ THE MEMBER'S OWN EVIDENCE, IN THE BODY. Activity photographs are

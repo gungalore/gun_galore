@@ -20,8 +20,6 @@ export interface PackSummaryProps {
   licenceType: string;
   /** What SAPS wants, by tier — the take-to-SAPS list. */
   needs: { kind: string; label: string; tier: string; have: boolean }[];
-  /** The typed-details pack: no copies were attached automatically. */
-  checklist?: boolean;
   /**
    * How many answers are still outstanding on the sheet above this.
    *
@@ -34,7 +32,6 @@ export interface PackSummaryProps {
 export default function PackSummary({
   licenceType,
   needs,
-  checklist = false,
   outstanding,
 }: PackSummaryProps) {
   const isRenewal = licenceType === 'S24_RENEWAL';
@@ -43,9 +40,8 @@ export default function PackSummary({
   return (
     <div>
       <p className="m-0 text-[13.5px] leading-[1.45] text-[var(--text-secondary)]">
-        {checklist
-          ? 'Your pack is your motivation and a bring-original checklist. No document copies were attached, so take the originals to the DFO.'
-          : 'Your pack is your motivation, with a copy of every document we hold printed behind it as a lettered annexure.'}{' '}
+        Your pack is your motivation, with a copy of every document we hold
+        printed behind it as a lettered annexure.{' '}
         {isRenewal
           ? 'A renewal is lodged on the SAPS 518(a) your DFO issues — the motivation goes with it as it stands.'
           : 'The application form itself is the blank your DFO gives you; it must be signed in front of them, not beforehand.'}
@@ -66,9 +62,8 @@ export default function PackSummary({
             What to take to the DFO
           </p>
           <p className="m-0 mb-2 text-[12.5px] leading-[1.4] text-[var(--text-secondary)]">
-            {checklist
-              ? 'Take the originals with you. The rows marked below are not copies in the pack.'
-              : 'We print a copy of everything we hold into your pack. Take the originals with you — the DFO will want to see them.'}
+            We print a copy of everything we hold into your pack. Take the
+            originals with you — the DFO will want to see them.
           </p>
           <ul className="m-0 list-none p-0">
             {needs.map((n) => (
@@ -89,10 +84,6 @@ export default function PackSummary({
                   {n.have ? (
                     <span className="ml-[6px] text-[11px] text-[var(--success)]">
                       copy in your pack — bring the original
-                    </span>
-                  ) : checklist ? (
-                    <span className="ml-[6px] text-[11px] text-[var(--gold-strong)]">
-                      bring the original — not in this pack
                     </span>
                   ) : null}
                   {/*

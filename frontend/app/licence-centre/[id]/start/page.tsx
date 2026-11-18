@@ -386,8 +386,6 @@ export default function IntakeStartPage() {
   if (!data.mode) {
     const known = profile ? Object.keys(profile.answers).length : 0;
     const motivationOnly = data.outputMode === 'MOTIVATION_ONLY';
-    const printReady = data.outputMode === 'PRINT_READY';
-    const letterChecklist = data.outputMode === 'LETTER_CHECKLIST';
     return (
       <main className="mx-auto w-full max-w-[760px] px-4 pb-12 pt-5">
         <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
@@ -401,7 +399,7 @@ export default function IntakeStartPage() {
           what that result needs.
         </p>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <button
             type="button"
             disabled={busy}
@@ -428,8 +426,8 @@ export default function IntakeStartPage() {
             aria-busy={busy || undefined}
             className="rounded-xl border p-4 text-left"
             style={{
-              borderColor: printReady ? 'var(--red)' : 'var(--border)',
-              background: printReady ? 'var(--red-wash)' : 'var(--bg-card)',
+              borderColor: !motivationOnly ? 'var(--red)' : 'var(--border)',
+              background: !motivationOnly ? 'var(--red-wash)' : 'var(--bg-card)',
             }}
           >
             <span className="block text-[15px] font-medium text-[var(--text-primary)]">
@@ -439,28 +437,6 @@ export default function IntakeStartPage() {
               The same motivation plus every annexure, lettered in the order the
               DFO works through, with the document checks done — the pack you walk
               in with. It needs your documents uploaded.
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void chooseOutput('LETTER_CHECKLIST')}
-            aria-busy={busy || undefined}
-            className="rounded-xl border p-4 text-left"
-            style={{
-              borderColor: letterChecklist ? 'var(--red)' : 'var(--border)',
-              background: letterChecklist
-                ? 'var(--red-wash)'
-                : 'var(--bg-card)',
-            }}
-          >
-            <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              Letter + DFO checklist
-            </span>
-            <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              The motivation plus a list of originals to take to the DFO. Type
-              the details — no uploads. We still use the facts already in your
-              Document Centre; the copies simply stay out of the pack.
             </span>
           </button>
         </div>
