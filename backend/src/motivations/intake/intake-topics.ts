@@ -55,6 +55,7 @@ export const TOPIC_DOCUMENTS: Partial<Record<IntakeTopicId, string[]>> = {
 };
 
 export function topicForField(key: string): IntakeTopicId {
+  if (key === 'has_existing_firearms') return 'existing';
   if (/^history_/.test(key)) return 'declarations';
   if (/^existing_firearm_|^existing_licence_|^licence_expiry$|^continued_use$/.test(key)) {
     return 'existing';

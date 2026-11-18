@@ -11,4 +11,10 @@ describe('the intake topics', () => {
     expect(topicForField('association_name')).toBe('association');
     expect(topicForField('dedicated_since')).toBe('association');
   });
+
+  it('puts the ownership gate with the owned-firearms table', () => {
+    expect(topicForField('has_existing_firearms')).toBe('existing');
+    expect(topicForField('existing_firearm_count')).toBe('existing');
+    expect(topicForField('existing_firearm_1_make')).toBe('existing');
+  });
 });
