@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminAuditService } from './admin-audit.service';
 
@@ -320,10 +320,10 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'whatsapp_enabled',
     label: 'WhatsApp notifications enabled',
-    hint: 'Master switch for the WhatsApp channel. OFF = nothing is ever sent over WhatsApp, whatever a member has chosen — which is why the member toggle can sit ON while it is greyed out as "coming soon". The sender is live; leave this OFF until Meta has approved the sales and motivation templates. Scope is sales and document notifications only — shipping is sent by Bob Go directly.',
+    hint: 'Master switch for the WhatsApp channel. ON is the default: WhatsApp is the primary sales channel, with SMS and email as fallbacks. OFF stops every WhatsApp send, whatever a member has chosen. Scope is sales and document notifications only — shipping is sent by Bob Go directly.',
     group: 'Comms',
     type: 'boolean',
-    default: 'false',
+    default: 'true',
     // Opens an outbound channel to real phone numbers through a third party
     // whose trust in us is the entire reason for starting small.
     danger: true,

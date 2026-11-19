@@ -183,6 +183,13 @@ export class AuthService {
             usernameLower,
             passwordHash,
             phone: dto.phone?.trim() || null,
+            /**
+             * WhatsApp starts ON for every new member. It is the primary sales
+             * channel; SMS and email are the fallbacks. This is written
+             * explicitly rather than relying on the schema default so a later
+             * migration cannot silently turn new members off.
+             */
+            notifyWhatsappEnabled: true,
             campaignKey: dto.campaignKey?.trim().slice(0, 40) || null,
             ...consent,
           },

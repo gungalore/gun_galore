@@ -387,14 +387,15 @@ export const FLAGS = {
   // ⚠️ Also in admin-settings.service.ts — both registries, or neither.
   //
   // The kill switch for the entire WhatsApp rail. OFF = nothing goes out over
-  // WhatsApp no matter what any member has on `notifyWhatsappEnabled`, which
-  // is precisely why that column may default true while its toggle is greyed
-  // out. The sender is live; leave it OFF until Meta has approved the sales
-  // and motivation templates. Scope is sales/document notifications only —
-  // shipping is Bob Go's. It is also the "if WhatsApp misbehaves" switch.
+  // WhatsApp no matter what any member has on `notifyWhatsappEnabled`.
+  // ⚠️ DEFAULT ON since 2026-11-19 (operator): WhatsApp is the primary sales
+  // channel. The explicit Setting row still wins when an operator turns it
+  // off for an incident; this only removes the "forgot to flip it" failure on
+  // a fresh environment. Scope is sales/document notifications only —
+  // shipping is Bob Go's.
   whatsappEnabled: {
     key: 'whatsapp_enabled',
-    default: false,
+    default: true,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
 
