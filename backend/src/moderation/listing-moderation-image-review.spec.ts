@@ -190,6 +190,14 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     expect(r.photoFlags?.[0]?.categories).toContain('live-ammo');
   });
 
+  it('⚠️ hard-rejects full nudity, and names swimwear as allowed', async () => {
+    const { svc } = makeService([photoAnswers({ sexual: 0.94 })]);
+    const r = await screen(svc);
+    expect(r.decision).toBe('REJECT');
+    expect(r.publicReason).toMatch(/nudity|sexual/i);
+    expect(r.publicReason).toMatch(/swimwear/i);
+  });
+
   it('holds the 60–80 % band for a human', async () => {
     const { svc } = makeService([photoAnswers({ contact: 0.7 })]);
     const r = await screen(svc);
