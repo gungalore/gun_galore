@@ -39,6 +39,7 @@ function imageReply(
     promotional?: number;
     illegal?: number;
     other_violation?: number;
+    sexual_explicit?: number;
     graphic?: 'NONE' | 'FIELD' | 'EXTREME';
     confidence?: number;
   } = {},
@@ -51,6 +52,7 @@ function imageReply(
       promotional: noul(overrides.promotional ?? 0.05),
       illegal: noul(overrides.illegal ?? 0.05),
       other_violation: noul(overrides.other_violation ?? 0.05),
+      sexual_explicit: noul(overrides.sexual_explicit ?? 0.05),
       graphic: {
         type: 'choice',
         choice: overrides.graphic ?? 'NONE',
@@ -169,6 +171,29 @@ describe('feed split — Jev text + Jev photos', () => {
     const v = await svc.moderate(post);
     expect(v.decision).toBe('REJECT');
     expect(v.otherViolation).toBe(true);
+  });
+
+  it('⚠️ REJECTS FULL NUDITY IN A PHOTO', async () => {
+    const { svc } = build({
+      imageReplies: [imageReply({ sexual_explicit: 0.94 })],
+    });
+    const v = await svc.moderate(post);
+    expect(v.decision).toBe('REJECT');
+    expect(v.otherViolation).toBe(true);
+    expect(v.reasons.join(' ')).toMatch(/full nudity|explicit sexual/i);
+  });
+
+  it('⚠️ REJECTS EXPLICIT SEXUAL TEXT', async () => {
+    const { svc } = build({ textScores: { sexual_explicit: 0.95 } });
+    const v = await svc.moderate({ ...post, imageUrls: [] });
+    expect(v.decision).toBe('REJECT');
+    expect(v.otherViolation).toBe(true);
+  });
+
+  it('⚠️ DOES NOT BLOCK ON BAD LANGUAGE — IT IS MASKED', async () => {
+    const { svc } = build({ textScores: { bad_language: 0.99 } });
+    const v = await svc.moderate({ ...post, imageUrls: [] });
+    expect(v.decision).toBe('PUBLISH');
   });
 
   it('holds extreme graphic photos and publishes field photos with the tier', async () => {

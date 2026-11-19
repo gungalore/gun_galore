@@ -28,7 +28,8 @@ export type ListingPhotoCategory =
   | 'qr'
   | 'address'
   | 'advertising'
-  | 'live_ammo';
+  | 'live_ammo'
+  | 'sexual';
 
 /** The one photo shape the image axis carries. */
 export type PhotoPart = Extract<LlmPart, { type: 'image' }>;
@@ -40,6 +41,7 @@ export const LISTING_PHOTO_FLAG: Record<ListingPhotoCategory, string> = {
   address: 'photo-address',
   advertising: 'advertising',
   live_ammo: 'live-ammo',
+  sexual: 'photo-sexual',
 };
 
 /** Internal/admin reason for each category. Noun phrases: they read after
@@ -50,6 +52,7 @@ export const LISTING_PHOTO_REASON: Record<ListingPhotoCategory, string> = {
   address: 'a street address or storefront sign',
   advertising: 'advertising for a shop, channel or service',
   live_ammo: 'live ammunition offered for sale',
+  sexual: 'full nudity or explicit sexual content',
 };
 
 /**
@@ -136,6 +139,19 @@ export function listingPhotoQuestions(
         false: 'No offer of live ammunition or components',
       },
     },
+    sexual: {
+      type: 'noul',
+      instructions:
+        'In `photo`, is there FULL NUDITY or explicit sexual content — exposed ' +
+        'genitalia, exposed buttocks, exposed female breasts, a sexual act, or ' +
+        'pornography? Swimwear is FINE: a bikini, swimming costume, sports bra, ' +
+        'shirtless man, or underwear worn as ordinary outdoor, beach or swimming ' +
+        'attire is NOT this. Judge sexual exposure, not visible skin.',
+      criteria: {
+        true: 'Full nudity, exposed genitalia/buttocks/breasts, or a sexual act',
+        false: 'Swimwear, ordinary skin, or fully clothed',
+      },
+    },
   };
 }
 
@@ -171,6 +187,12 @@ export interface FeedPhotoVerdict {
   promoDetected: boolean;
   illegalDetected: boolean;
   otherViolation: boolean;
+  /**
+   * Full nudity or explicit sexual content. Kept apart from
+   * `otherViolation` so the reason can name the policy and so a bikini or
+   * swimwear photo can be deliberately allowed by the question itself.
+   */
+  sexualExplicit: boolean;
   graphicTier: FeedGraphicTier;
   uncertain: boolean;
   /** Raw probabilities, for the audit log / threshold tuning. */
@@ -211,11 +233,26 @@ export function feedPhotoQuestions(): Record<string, JevQuestion> {
       instructions:
         'Does this photo break the community rules in another way — contact ' +
         'details burned into the image (phone, email, handle, URL, QR code), a ' +
-        'street address or storefront that identifies a person, hate speech, or ' +
-        'sexual content? Normal hunting/fishing field content is NOT this.',
+        'street address or storefront that identifies a person, or hate speech? ' +
+        'Normal hunting/fishing field content is NOT this. Nudity and sexual ' +
+        'content are asked separately.',
       criteria: {
         true: 'A clear additional community-rules violation',
         false: 'No other violation',
+      },
+    },
+    sexual_explicit: {
+      type: 'noul',
+      instructions:
+        'Does this photo show FULL NUDITY or explicit sexual content — ' +
+        'exposed genitalia, exposed buttocks, exposed female breasts, a sexual ' +
+        'act, or pornography? Swimwear is FINE: a bikini, swimming costume, ' +
+        'sports bra, shirtless man, or underwear worn as ordinary outdoor, ' +
+        'beach or swimming attire is NOT this. Judge whether the body is ' +
+        'sexually exposed, not whether skin is visible.',
+      criteria: {
+        true: 'Full nudity, exposed genitalia/buttocks/breasts, or a sexual act',
+        false: 'Swimwear, ordinary skin, or fully clothed',
       },
     },
     graphic: {
@@ -250,17 +287,25 @@ export function evaluateFeedPhoto(
   const promotional = requireNoul(answers, 'promotional');
   const illegal = requireNoul(answers, 'illegal');
   const other = requireNoul(answers, 'other_violation');
+  const sexual = requireNoul(answers, 'sexual_explicit');
   const graphic = requireChoice(answers, 'graphic', FEED_GRAPHIC_TIERS);
 
-  const scores = { promotional, illegal, other_violation: other };
+  const scores = {
+    promotional,
+    illegal,
+    other_violation: other,
+    sexual_explicit: sexual,
+  };
   const uncertain =
-    [promotional, illegal, other].some((p) => p >= review && p < block) ||
-    graphic.confidence < review;
+    [promotional, illegal, other, sexual].some(
+      (p) => p >= review && p < block,
+    ) || graphic.confidence < review;
 
   return {
     promoDetected: promotional >= block,
     illegalDetected: illegal >= block,
     otherViolation: other >= block,
+    sexualExplicit: sexual >= block,
     graphicTier: graphic.choice as FeedGraphicTier,
     uncertain,
     scores,
@@ -350,6 +395,7 @@ const BOX_LABELS: Record<ListingPhotoCategory, string> = {
   advertising:
     'piece of advertising text (a price, a sale pitch, "DM me" or a shop/channel name)',
   live_ammo: 'live ammunition',
+  sexual: 'full nudity or explicit sexual content',
 };
 
 const BOX_POLICIES: Record<ListingPhotoCategory, string> = {
@@ -359,6 +405,7 @@ const BOX_POLICIES: Record<ListingPhotoCategory, string> = {
   address: 'Ordinary scenery and vehicle number plates are not this.',
   advertising: 'Incidental manufacturer branding on the product is not this.',
   live_ammo: '',
+  sexual: '',
 };
 
 /** Map the flag names the admin queue uses back to the internal categories. */

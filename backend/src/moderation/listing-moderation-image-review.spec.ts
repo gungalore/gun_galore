@@ -29,7 +29,7 @@ afterAll(() => {
   else process.env.JEV_API_KEY = ORIGINAL_KEY;
 });
 
-/** All five photo categories, clean unless overridden. */
+/** All six photo categories, clean unless overridden. */
 function photoAnswers(
   overrides: Partial<Record<ListingPhotoCategory, number>> = {},
 ) {
@@ -39,6 +39,7 @@ function photoAnswers(
     address: 0.05,
     advertising: 0.05,
     live_ammo: 0.05,
+    sexual: 0.05,
     ...overrides,
   };
   return {

@@ -18,6 +18,7 @@ import {
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { optimizedVideoUrl } from '../common/image-url';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import { maskBadLanguage } from '../moderation/bad-language';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -209,8 +210,8 @@ export class FeedService {
     return {
       id: post.id,
       type: post.type,
-      title: post.title,
-      body: post.body,
+      title: post.title ? maskBadLanguage(post.title) : null,
+      body: maskBadLanguage(post.body),
       tags: post.tags,
       location: post.location,
       locationPlaceId: post.locationPlaceId,
@@ -703,7 +704,7 @@ export class FeedService {
     return comments.map((c) => ({
       id: c.id,
       parentId: c.parentId,
-      body: c.body,
+      body: maskBadLanguage(c.body),
       likeCount: c.likeCount,
       dislikeCount: c.dislikeCount,
       createdAt: c.createdAt,
@@ -1265,7 +1266,7 @@ export class FeedService {
       comment: {
         id: comment.id,
         parentId: comment.parentId,
-        body: comment.body,
+        body: maskBadLanguage(comment.body),
         likeCount: comment.likeCount,
         dislikeCount: comment.dislikeCount,
         createdAt: comment.createdAt,

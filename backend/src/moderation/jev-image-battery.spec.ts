@@ -31,6 +31,7 @@ function listingAnswers(
     address: noul(overrides.address ?? 0.05),
     advertising: noul(overrides.advertising ?? 0.05),
     live_ammo: noul(overrides.live_ammo ?? 0.05),
+    sexual: noul(overrides.sexual ?? 0.05),
   };
 }
 
@@ -38,6 +39,7 @@ function feedAnswers(overrides: {
   promotional?: number;
   illegal?: number;
   other_violation?: number;
+  sexual_explicit?: number;
   graphic?: string;
   confidence?: number;
 }): Record<string, JevAnswer> {
@@ -45,15 +47,16 @@ function feedAnswers(overrides: {
     promotional: noul(overrides.promotional ?? 0.05),
     illegal: noul(overrides.illegal ?? 0.05),
     other_violation: noul(overrides.other_violation ?? 0.05),
+    sexual_explicit: noul(overrides.sexual_explicit ?? 0.05),
     graphic: choice(overrides.graphic ?? 'NONE', overrides.confidence ?? 0.9),
   };
 }
 
 describe('listing photo battery', () => {
-  it('asks five atomic questions about the one asset', () => {
+  it('asks six atomic questions about the one asset', () => {
     const questions = listingPhotoQuestions(false);
     expect(Object.keys(questions).sort()).toEqual(
-      ['address', 'advertising', 'contact', 'live_ammo', 'qr'].sort(),
+      ['address', 'advertising', 'contact', 'live_ammo', 'qr', 'sexual'].sort(),
     );
     for (const question of Object.values(questions)) {
       expect(question.type).toBe('noul');
@@ -98,10 +101,24 @@ describe('listing photo battery', () => {
   });
 });
 
-describe('feed photo battery', () => {  it('asks three nouls and the graphic choice', () => {
+describe('feed photo battery', () => {  it('asks four nouls and the graphic choice', () => {
     expect(Object.keys(feedPhotoQuestions()).sort()).toEqual(
-      ['graphic', 'illegal', 'other_violation', 'promotional'].sort(),
+      [
+        'graphic',
+        'illegal',
+        'other_violation',
+        'promotional',
+        'sexual_explicit',
+      ].sort(),
     );
+  });
+
+  it('⚠️ BLOCKS FULL NUDITY BUT LEAVES SWIMWEAR TO THE QUESTION', () => {
+    const v = evaluateFeedPhoto(feedAnswers({ sexual_explicit: 0.94 }));
+    expect(v.sexualExplicit).toBe(true);
+    expect(v.uncertain).toBe(false);
+    expect(JSON.stringify(feedPhotoQuestions())).toMatch(/bikini/i);
+    expect(JSON.stringify(feedPhotoQuestions())).toMatch(/swimwear/i);
   });
 
   it('maps the flags and tier', () => {

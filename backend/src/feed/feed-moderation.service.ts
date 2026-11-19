@@ -1,4 +1,4 @@
-﻿// ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
 // FEED MODERATION — fail-closed classification for posts and comments.
 //
 // Operator decision: every post and comment is screened before publish, and
@@ -98,6 +98,7 @@ Look for exactly these categories:
 - promotional: the post itself is advertising, selling or self-promoting — shop/website/channel links, "DM me", "visit my store", "link in bio", a price offered for sale, or the author promoting their OWN ALL Outdoor listing. Incidental branding on equipment is NOT promotional.
 - contact: the author shares or invites contact details to take a deal off-platform — a number/email/handle given for that purpose, or on-screen text asking to be contacted. A business number merely visible on a vehicle is NOT this unless the post is soliciting contact.
 - illegal: offers to sell live ammunition, primers or propellant; threats or harassment; doxxing (publishing someone's private details); animal cruelty; anything unlawful under South African law.
+- sexual: FULL NUDITY, exposed genitalia, exposed buttocks, exposed female breasts, a sexual act or pornography — set otherViolation true. Swimwear is FINE: a bikini, swimming costume, sports bra, shirtless man or underwear worn as ordinary outdoor/beach/swimming attire is NOT this.
 - graphic: "FIELD" is normal hunting/fishing field content (blood on a carcass or hide, field dressing) — ALLOWED behind a content warning. "EXTREME" is exposed viscera/guts, dismemberment, or a severely damaged head or body. A plain 4x4, camping or fishing clip is NONE.
 
 Set the boolean fields true only when that category is present. Set graphicTier to "NONE", "FIELD" or "EXTREME".
@@ -343,10 +344,28 @@ export class FeedModerationService {
       other_violation: {
         type: 'noul',
         instructions:
-          'Does this post break the community rules in some other way — hate speech, sexual content, or content that is plainly not allowed on a family-oriented outdoor community? Keep this narrow: disagreement, strong opinion and hunting content are NOT this.',
+          'Does this post break the community rules in some other way — hate speech, a threat, or content that is plainly not allowed on a family-oriented outdoor community? Keep this narrow: disagreement, strong opinion and hunting content are NOT this. Sexual content is asked separately.',
         criteria: {
           true: 'A clear additional community-rules violation',
           false: 'No other violation',
+        },
+      },
+      sexual_explicit: {
+        type: 'noul',
+        instructions:
+          'Does this text explicitly describe, request or promote sexual content — a sexual act, pornography, genitalia or nudity in a sexual context? A medical or technical mention, an ordinary clothing/swimwear reference, and a joke without explicit description are NOT this.',
+        criteria: {
+          true: 'Explicit sexual content is described or requested',
+          false: 'No explicit sexual content',
+        },
+      },
+      bad_language: {
+        type: 'noul',
+        instructions:
+          'Does this text contain swearing or coarse bad language (not abuse or a threat directed at a person — that is a separate question)? Mild exclamations such as "damn" or "hell" are NOT this. The words are masked rather than blocked, so judge the language itself.',
+        criteria: {
+          true: 'Swearing or coarse profanity is present',
+          false: 'No coarse profanity',
         },
       },
     };
@@ -359,6 +378,9 @@ export class FeedModerationService {
         'This post breaks the community rules (unlawful offer, threat or similar) and cannot be published.',
       other_violation:
         'This post breaks the community rules and cannot be published.',
+      sexual_explicit:
+        'Sexual content is not allowed in the community feed. Full nudity and explicit sexual content are blocked.',
+      bad_language: 'Bad language is masked in the community feed.',
     };
 
     const verdict = await jevLadder(this.llm, {
@@ -370,6 +392,8 @@ export class FeedModerationService {
       reasons,
       purpose: 'moderation.feed.text',
       onError: 'review',
+      // Bad language is masked in the feed, not blocked.
+      nonBlocking: ['bad_language'],
     });
 
     const s = verdict.scores;
@@ -392,6 +416,7 @@ export class FeedModerationService {
         (verdict.category === 'illegal' && verdict.decision === 'BLOCK'),
       otherViolation:
         (s.other_violation ?? 0) >= 0.8 ||
+        (s.sexual_explicit ?? 0) >= 0.8 ||
         blockedContact ||
         (verdict.decision === 'BLOCK' &&
           verdict.category !== null &&
@@ -465,7 +490,7 @@ export class FeedModerationService {
       const r = result!;
       promoDetected ||= r.promoDetected;
       illegalDetected ||= r.illegalDetected;
-      otherViolation ||= r.otherViolation;
+      otherViolation ||= r.otherViolation || r.sexualExplicit;
       graphicTier = maxGraphicTier(graphicTier, r.graphicTier as GraphicTier);
       uncertain ||= r.uncertain;
 
@@ -477,6 +502,11 @@ export class FeedModerationService {
       }
       if (r.otherViolation) {
         reasons.push('a photo shows contact details or another rule breach');
+      }
+      if (r.sexualExplicit) {
+        reasons.push(
+          'a photo shows full nudity or explicit sexual content',
+        );
       }
       if (r.graphicTier === 'EXTREME') {
         reasons.push('a photo shows extreme graphic content');

@@ -199,6 +199,12 @@ export interface JevLadderInput {
    */
   onError: 'pass' | 'review' | 'block';
   timeoutMs?: number;
+  /**
+   * Categories that are reported in `scores` but never drive the ladder.
+   * Bad language is the first one: it is MASKED, not blocked, so a high
+   * probability on it must not turn a post into a rejection or a human hold.
+   */
+  nonBlocking?: readonly string[];
 }
 
 /**
@@ -241,13 +247,14 @@ export async function jevLadder(
   }
 
   const scores: Record<string, number> = {};
+  const nonBlocking = new Set(input.nonBlocking ?? []);
   let topId: string | null = null;
   let topProb = 0;
   for (const [id, answer] of Object.entries(answers)) {
     if (answer?.type !== 'noul') continue;
     const p = typeof answer.noul === 'number' ? answer.noul : 0;
     scores[id] = p;
-    if (p > topProb) {
+    if (!nonBlocking.has(id) && p > topProb) {
       topProb = p;
       topId = id;
     }
