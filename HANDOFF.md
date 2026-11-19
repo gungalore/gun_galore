@@ -7,7 +7,26 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — WHATSAPP IS THE PRIMARY SALE-ACCEPT CHANNEL
+## 2026-11-19 (LATEST) — WHATSAPP ON BY DEFAULT
+
+Shipped `93c19c7f` (**full deploy**). Rollback point:
+`alloutdoor-20261119-085935.dump` (34,886,128 bytes).
+
+- `whatsapp_enabled` is now **ON by default** in both settings registries
+  (`settings.service.ts` and `admin-settings.service.ts`); the live Setting row
+  is `true`.
+- Every **new** member is created with `notifyWhatsappEnabled: true` explicitly
+  (schema default remains true), so they do not need to discover the toggle.
+- Existing members keep their own choice. A member who opted out is not
+  overwritten — the consent record is theirs.
+- WhatsApp eligibility still also needs a phone number and a Meta-approved
+  template; otherwise the sale notification falls back to SMS + email.
+
+Verified live: `whatsapp_enabled` true; `User.notifyWhatsappEnabled` column
+default `true`; full backend **6,270 passed / 8 skipped**; frontend build clean;
+health ×2 and public ×2 200.
+
+## 2026-11-19 (LATEST-1) — WHATSAPP IS THE PRIMARY SALE-ACCEPT CHANNEL
 
 Shipped `aa8c14d4` (**full deploy**). Rollback point:
 `alloutdoor-20261119-084938.dump` (34,886,125 bytes).
