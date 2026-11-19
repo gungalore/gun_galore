@@ -7,7 +7,37 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — WHATSAPP ON BY DEFAULT
+## 2026-11-19 (LATEST) — SELLER-FAILURE CHARGES NOW HAVE A ZOHO INVOICE
+
+Shipped `41002f81` (**full deploy**). Rollback point:
+`alloutdoor-20261119-150818.dump` (34,892,261 bytes).
+
+A seller-cancellation recovery is no longer only a payout deduction and a
+remittance-advice line. It gets a Books document too:
+
+- `createSellerChargeInvoice` raises a **seller-facing invoice** for every
+  `SellerCharge` that has no `zohoInvoiceId`.
+- `SELLER_CANCELLED` uses line **“Seller cancellation recovery”**, on a
+  seller-recovery / other-income account (fee-account fallback), with the
+  reason and transaction reference. It is explicitly noted as cost recovery,
+  not a platform fee.
+- `SHIPPING_VARIANCE` keeps its freight account and “Courier re-weigh charge”
+  wording through the compatibility wrapper.
+- The hourly Books sweep now picks up **any** seller charge without an invoice,
+  not just re-weighs, so a Books outage does not leave a seller debt invisible.
+- `settlePayoutDocuments` settles **all** seller-charge invoices when their
+  recovery slices are SETTLED (not when merely reserved), so the invoice is
+  marked paid at the same moment the payout is actually withheld.
+- Admin `zoho-retry` now forces any seller-charge invoice for the transaction.
+
+The deduction itself is unchanged: the charge remains on the `SellerCharge`
+ledger and is recovered FIFO from the seller’s next payout. Zoho now shows the
+debit note that corresponds to that recovery.
+
+Verified: targeted Zoho invoice specs green; full backend **6,272 passed / 8
+skipped**; frontend build clean; health ×2 and public ×2 200.
+
+## 2026-11-19 (LATEST-1) — WHATSAPP ON BY DEFAULT
 
 Shipped `93c19c7f` (**full deploy**). Rollback point:
 `alloutdoor-20261119-085935.dump` (34,886,128 bytes).
