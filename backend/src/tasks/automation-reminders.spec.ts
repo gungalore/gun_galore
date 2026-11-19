@@ -175,6 +175,7 @@ describe('AuctionsService.remindUnpaidWinners', () => {
       { resolveByEntity: jest.fn() } as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
+      { deleteDocument: jest.fn().mockResolvedValue(undefined) } as never,
     );
     const notify = jest
       .spyOn(
@@ -571,6 +572,7 @@ describe('AuctionsService.offerToRunnerUp', () => {
       { resolveByEntity: jest.fn() } as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
+      { deleteDocument: jest.fn().mockResolvedValue(undefined) } as never,
     );
     const notify = jest
       .spyOn(

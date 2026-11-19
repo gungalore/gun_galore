@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { ActivityService } from '../activity/activity.service';
+import { INDEXES, SearchService } from '../search/search.service';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import {
   assertAccountNotClosed,
@@ -28,10 +29,11 @@ import { Prisma } from '@prisma/client';
 const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
 const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
-// Mirror of ListingsService.PUBLICLY_VISIBLE_STATUSES. An auction's live
-// state is public data only while the listing itself would be visible at
-// /listings/:id; DRAFT / PENDING_REVIEW / CANCELLED must 404 here too rather
-// than confirm the row exists.
+// Superset of ListingsService.PUBLICLY_VISIBLE_STATUSES. The public PDP 404s
+// an EXPIRED listing, but this endpoint still serves its final state so a
+// bidder can see how the auction closed and the seller can make the runner-up
+// decision. DRAFT / PENDING_REVIEW / CANCELLED must 404 here too rather than
+// confirm the row exists.
 const AUCTION_PUBLIC_STATUSES = ['ACTIVE', 'PAYMENT_PENDING', 'SOLD', 'EXPIRED'];
 
 // How long the seller has to decide whether to offer an expired-win auction
@@ -129,6 +131,9 @@ export class AuctionsService {
     // / win SMS can act from the link without signing in.
     private readonly actionTokens: ActionTokensService,
     private readonly activity: ActivityService,
+    // @Global (SearchModule), so no module import is needed. Used to evict a
+    // finalized auction from the listings index — see finalizeAuction().
+    private readonly search: SearchService,
   ) {}
 
   // --- Public read endpoints --------------------------------------------
@@ -967,6 +972,13 @@ export class AuctionsService {
 
     if (!outcome) return null;
 
+    // The listing index is normally maintained by ListingsService on a status
+    // write. Finalization flips ACTIVE → PAYMENT_PENDING/EXPIRED right here,
+    // so without this the Meili document keeps saying ACTIVE and a ?q= search
+    // keeps returning an auction that ended days ago. Delete rather than
+    // update: every terminal auction state is non-searchable.
+    await this.removeFromSearchIndex(listingId);
+
     // Notifications fire only AFTER the transaction has committed. Firing them
     // inside the callback could announce a winner whose write then rolled back.
     if (outcome.kind === 'WON') {
@@ -1005,6 +1017,20 @@ export class AuctionsService {
     }
 
     return outcome;
+  }
+
+  // Best-effort eviction. The auction is already committed as ended, so a
+  // search-index failure (Meili down) must be logged, not thrown — the
+  // hydration gate in ListingsService.browseViaSearch is the second line of
+  // defence, and the unpaid-win sweep retries the delete once more.
+  private async removeFromSearchIndex(listingId: string): Promise<void> {
+    try {
+      await this.search.deleteDocument(INDEXES.LISTINGS, listingId);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to remove auction ${listingId} from search index: ${(err as Error).message}`,
+      );
+    }
   }
 
   // M30 — resolve losing bidders' stuck bid_outbid rows on an ended auction
@@ -1086,6 +1112,9 @@ export class AuctionsService {
       });
       if (claim.count === 0) continue; // winner claimed checkout in the gap
       expired += 1;
+      // Defensive: finalize already evicted the doc, but a Meili outage then
+      // (or a legacy row from before this sweep) must not leave it searchable.
+      await this.removeFromSearchIndex(l.id);
       // An accepted AUCTION offer is promoted to the winner state and shares
       // this 24h window. Expire the offer alongside the listing so /my/offers
       // never shows a live "pay now" link for a sale that has lapsed (the

@@ -27,6 +27,13 @@ const CAMPING_LISTING = {
   publicVisible: true,
   seller: { userId: 'SELLER' },
 };
+const EXPIRED_AUCTION = {
+  id: 'L3',
+  status: 'EXPIRED',
+  listingType: 'AUCTION',
+  publicVisible: true,
+  seller: { userId: 'SELLER' },
+};
 
 function makeListings(over: Record<string, unknown> = {}) {
   const prisma = {
@@ -40,7 +47,7 @@ function makeListings(over: Record<string, unknown> = {}) {
   };
   const service = new ListingsService(
     prisma as never,
-    { isConnected: false } as never,
+    (over.search ?? { isConnected: false }) as never,
     {} as never,
     {} as never,
     {} as never,
@@ -104,6 +111,37 @@ describe('ListingsService — signed-out visibility gate', () => {
   it('still serves a publicly-visible listing anonymously', async () => {
     const { service } = makeListings({ listing: CAMPING_LISTING });
     await expect(service.findById('L2')).resolves.toMatchObject({ id: 'L2' });
+  });
+
+  it('404s an expired auction for anonymous AND signed-in non-owners', async () => {
+    const { service } = makeListings({ listing: EXPIRED_AUCTION });
+    await expect(service.findById('L3')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(service.findById('L3', 'user_someone_else')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('re-checks ACTIVE + publicVisible when hydrating Meilisearch hits', async () => {
+    const search = {
+      isConnected: true,
+      search: jest.fn().mockResolvedValue({
+        hits: [{ id: 'L3' }],
+        estimatedTotalHits: 1,
+      }),
+    };
+    const { service, prisma } = makeListings({ search });
+    await service.browse({ q: 'inca' } as never);
+    const where = (prisma.listing.findMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    }).where;
+    expect(where).toMatchObject({
+      id: { in: ['L3'] },
+      status: 'ACTIVE',
+      isDealListing: false,
+      publicVisible: true,
+    });
   });
 
   // ── the crawler-facing feed ─────────────────────────────────────

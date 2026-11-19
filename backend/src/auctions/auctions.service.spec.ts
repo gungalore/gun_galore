@@ -1,4 +1,7 @@
+jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+
 import { AuctionsService, bidIncrement } from './auctions.service';
+import { INDEXES } from '../search/search.service';
 import {
   BadRequestException,
   ConflictException,
@@ -56,13 +59,15 @@ function makeMocks() {
     auctionWinnerLapsed: jest.fn().mockResolvedValue(undefined),
   };
   const actionTokens = { mint: jest.fn().mockResolvedValue('tok') };
+  const search = { deleteDocument: jest.fn().mockResolvedValue(undefined) };
   const service = new AuctionsService(
     prisma as never,
     notifications as never,
     actionTokens as never,
     { record: jest.fn() } as never,
+    search as never,
   );
-  return { service, prisma, tx, notifications };
+  return { service, prisma, tx, notifications, search };
 }
 
 // A live auction fixture — override per test.
@@ -351,7 +356,7 @@ describe('placeBid — concurrency (CAS + retry)', () => {
 
 describe('endStale / finalizeAuction — CAS-guarded finalization', () => {
   it('crowns the winner and marks the winning bid when the CAS holds', async () => {
-    const { service, prisma, tx } = makeMocks();
+    const { service, prisma, tx, search } = makeMocks();
     prisma.listing.findMany.mockResolvedValue([{ id: 'L1' }]);
     tx.listing.findUnique.mockResolvedValue(
       activeListing({
@@ -375,6 +380,8 @@ describe('endStale / finalizeAuction — CAS-guarded finalization', () => {
       where: { id: 'bid9' },
       data: { isWinner: true },
     });
+    // A won auction is no longer searchable — its stale ACTIVE doc must go.
+    expect(search.deleteDocument).toHaveBeenCalledWith(INDEXES.LISTINGS, 'L1');
   });
 
   it('does NOT mark a winner when a concurrent bid moved the auction (CAS count 0)', async () => {
@@ -394,7 +401,7 @@ describe('endStale / finalizeAuction — CAS-guarded finalization', () => {
   });
 
   it('expires a reserve-not-met auction instead of selling it', async () => {
-    const { service, prisma, tx } = makeMocks();
+    const { service, prisma, tx, search } = makeMocks();
     prisma.listing.findMany.mockResolvedValue([{ id: 'L1' }]);
     tx.listing.findUnique.mockResolvedValue(
       activeListing({
@@ -409,16 +416,18 @@ describe('endStale / finalizeAuction — CAS-guarded finalization', () => {
     await service.endStale();
     expect(tx.listing.updateMany.mock.calls[0][0].data.status).toBe('EXPIRED');
     expect(tx.bid.update).not.toHaveBeenCalled();
+    expect(search.deleteDocument).toHaveBeenCalledWith(INDEXES.LISTINGS, 'L1');
   });
 
   it('expires a no-bid auction', async () => {
-    const { service, prisma, tx } = makeMocks();
+    const { service, prisma, tx, search } = makeMocks();
     prisma.listing.findMany.mockResolvedValue([{ id: 'L1' }]);
     tx.listing.findUnique.mockResolvedValue(
       activeListing({ endTime: new Date(Date.now() - 1000) }),
     );
     await service.endStale();
     expect(tx.listing.updateMany.mock.calls[0][0].data.status).toBe('EXPIRED');
+    expect(search.deleteDocument).toHaveBeenCalledWith(INDEXES.LISTINGS, 'L1');
   });
 });
 

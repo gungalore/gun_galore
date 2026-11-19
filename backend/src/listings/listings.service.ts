@@ -303,11 +303,14 @@ const OWNER_LISTING_EXTRAS_SELECT = {
 // anonymous callers probing not-yet-approved or withdrawn listings by id.
 // PAYMENT_PENDING is public: a single-item listing sits here while a buyer
 // completes checkout and the "sale pending" PDP must still load.
+//
+// EXPIRED is deliberately NOT here. An expired auction (or a listing delisted
+// because the seller's licence lapsed) is dead inventory: the public PDP must
+// 404, not stay crawlable. The seller still sees it via the owner branch.
 const PUBLICLY_VISIBLE_STATUSES: ListingStatus[] = [
   ListingStatus.ACTIVE,
   ListingStatus.PAYMENT_PENDING,
   ListingStatus.SOLD,
-  ListingStatus.EXPIRED,
 ];
 
 // A card needs a cover photo (or an approved hero video). Listings are created
@@ -3027,7 +3030,17 @@ export class ListingsService {
     }
 
     const rows = await this.prisma.listing.findMany({
-      where: { id: { in: ids }, ...HAS_CARD_MEDIA },
+      // Re-assert the public-discovery contract on the hydrated rows. Meili is
+      // fed asynchronously and can briefly lag (or permanently lag if a delete
+      // failed), so a stale ACTIVE doc must never be enough to render a card:
+      // the database row still has to be ACTIVE and publicly visible.
+      where: {
+        id: { in: ids },
+        status: 'ACTIVE',
+        isDealListing: false,
+        ...HAS_CARD_MEDIA,
+        ...this.publicOnly(userId),
+      },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
