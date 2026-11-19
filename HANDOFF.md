@@ -29,9 +29,9 @@ for that model:
   statement/invoice is imported manually. The accountant report documents this.
 - The report was regenerated with the Bob Go float section and is 5 pages.
 
-Remaining: historical shipping journals that credited Bank need reclassification
-to the prepaid asset; seller payout/refund cash entries and gateway fee journals
-remain open (documented in the report).
+No historical shipping correction is needed: no shipment has yet moved between
+actual clients. Seller payout/refund cash entries and gateway fee journals remain
+open (documented in the report).
 
 ## 2026-11-19 (LATEST-1) — TAX: R2.3m, AGENT-ONLY MARKETPLACE, ACCOUNTANT PDF
 

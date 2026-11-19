@@ -137,6 +137,9 @@ balance reconciled to the Bob Go Prepaid Balance account. A shipment-derived
 reconciliation is a secondary check only; it cannot prove top-ups, fees, VAT or
 adjustments.
 
+No historical shipping reclassification is required: no shipment has yet moved
+between actual clients. The prepaid entries begin with the first live shipment.
+
 ## 7. VAT threshold: R2.3m
 
 - The registration threshold is **R2,300,000**, measured over a rolling 12 months.
