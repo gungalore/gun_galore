@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
+## 2026-11-19 — THEME: OCHRE LIGHT / ELECTRIC BLUE DARK, ARMORY COPY
+
+- **Theme** shipped in `baca6ff1`. Light is veld ochre `#B45309` on warm
+  canvas `#FAF8F3`; dark is electric blue `#0967F5` on `#131110`. The logo
+  stays red. Manifest `background_color`/`theme_color` and the layout viewport
+  colour were updated to `#FAF8F3` so the theme-sync gate stays clean.
+- **Armory copy** shipped in `54c5afd8` (frontend-only). "Motivations" is now
+  **Motivation Writer** in the account menu, Armory tile and page header. The
+  four tile blurbs are: `R300 per Motivation`, `Store all Motivation
+  Documents`, `Work up a load`, `Track your Application`.
+- Rollback points: `alloutdoor-20261119-213338.dump` (theme),
+  `alloutdoor-20261119-221134.dump` (copy).
+- Checks before the copy deploy: backend typecheck clean, **6,277 passed / 8
+  skipped**; frontend typecheck clean, **1,959 passed / 1 skipped**; frontend
+  production build clean. Both health checks and the public site returned 200
+  afterwards.
+
 ## 2026-11-19 (LATEST) — BOB GO PREPAID FLOAT AND MONTHLY BILLS
 
 Bob Go is a prepaid courier wallet, not a direct bank payee. Zoho is now set up
