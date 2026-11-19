@@ -7,7 +7,32 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — COMMUNITY MODERATION: NUDITY BLOCKED, BAD LANGUAGE MASKED
+## 2026-11-19 (LATEST) — WHATSAPP IS THE PRIMARY SALE-ACCEPT CHANNEL
+
+Shipped `aa8c14d4` (**full deploy**). Rollback point:
+`alloutdoor-20261119-084938.dump` (34,886,125 bytes).
+
+For the new-sale seller notification, the channel order is now:
+
+1. **WhatsApp** — `new_sale_seller` (or `new_sale_seller_courier` when a
+   courier accepts token exists), with Accept/Decline quick replies and the
+   `/a/<token>` link.
+2. **Only if WhatsApp is ineligible or fails:** **SMS and email together**.
+   The SMS carries the same one-tap `/a/<token>` link; the email is the record
+   and the CTA. In-app is always written.
+
+Previously email was sent unconditionally *before* WhatsApp was attempted, so
+the seller saw the email first and WhatsApp was effectively a parallel third
+channel. It is now a true fallback pair.
+
+WhatsApp eligibility is unchanged and deliberate: global `whatsapp_enabled`,
+member `notifyWhatsappEnabled`, matching phone, and an approved Meta template.
+If any is absent, the fallback is immediate.
+
+Verified: notification specs **19 passed**; full backend **6,270 passed / 8
+skipped**; frontend build clean; health ×2 and public ×2 200.
+
+## 2026-11-19 (LATEST-1) — COMMUNITY MODERATION: NUDITY BLOCKED, BAD LANGUAGE MASKED
 
 Shipped `91d4f2d6` (**full deploy**). Rollback point:
 `alloutdoor-20261119-082338.dump` (34,882,808 bytes).
