@@ -43,9 +43,7 @@ import { VerificationBadges } from '@/components/verification-badges';
 import { ShareListingButton } from '@/components/share-listing-button';
 import { ReportButton } from '@/components/report-button';
 import { LiveListingStats } from '@/components/live-listing-stats';
-import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
-import { RecordVisit } from '@/components/record-visit';
 import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
 import { ListingDescription } from '@/components/listing-description';
@@ -1207,13 +1205,6 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* Invisible — pushes this listing's ID into the
-              recently-viewed localStorage stack so other surfaces
-              (homepage rail, wishlist empty-state rail) pick it up. */}
-          <RecordVisit listingId={listing.id} />
-
-
-
           {/* Province */}
           <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
             {vicinityLabel(listing)}
@@ -1359,13 +1350,8 @@ export default async function ListingDetailPage({
         <CrossSellRow listingId={listing.id} title="Complete your kit" />
       </div>
 
-      {/* Recently-viewed rail — "More from your recent views". Self-
-          hides if the user has fewer than 2 entries (excluding this
-          listing) or if the fetch returns nothing. */}
-      <RecentlyViewedRail
-        title="More from your recent views"
-        excludeId={listing.id}
-      />
+      {/* Recently-viewed cross-sell removed: the product no longer surfaces
+          previously viewed listings on any page. */}
 
       {/* ── UX-28 · sticky mobile buy bar ──────────────────────────────
           Rendered inside <main> ON PURPOSE. <main> is position:relative

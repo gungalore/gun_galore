@@ -1,4 +1,4 @@
-﻿import Link from 'next/link';
+import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category } from '@/lib/types';
@@ -10,7 +10,6 @@ import { Hero } from '@/components/hero';
 import { PageReveal } from '@/components/page-reveal';
 import { HomeInfoPanel } from '@/components/home-info-panel';
 import { SellerPromoBand } from '@/components/seller-promo-band';
-import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
 import { CatalogLiveRefresh } from '@/components/catalog-live-refresh';
@@ -283,9 +282,8 @@ export default async function HomePage({
 
               {/* ─── Bare landing page: no filter, no pagination ───
                   When the user lands on "/" with no filters, the page shows the
-                  "Good to know" link strip, the recently-viewed rail, then the 24
-                  newest listings — intentionally curated, not a filtered
-                  browse. */}
+                  "Good to know" link strip, then the 24 newest listings —
+                  intentionally curated, not a filtered browse. */}
               <section className="max-w-[var(--page-max)] mx-auto px-4 pt-5 pb-10 sm:py-10">
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
               It was the fallback breadth entry, but the category tree
@@ -367,12 +365,6 @@ export default async function HomePage({
               rules in the Terms of Service). */}
           <HomeInfoPanel />
 
-          {/* Recently viewed — self-hides if the user has < 2 entries
-              on this device, so cold-start visitors don't see an empty
-              rail. Sits below the "Good to know" strip so returning
-              users get a quick re-entry into things they were looking
-              at. */}
-          <RecentlyViewedRail />
               </section>
         </>
       ) : hasBackground ? (

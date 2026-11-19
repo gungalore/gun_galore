@@ -1,10 +1,9 @@
-﻿import { redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
-import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { Listing } from '@/lib/types';
 import { WishlistRemoveButton } from './wishlist-remove-button';
 
@@ -130,11 +129,6 @@ export default async function WishlistPage() {
             >
               View auctions
             </Link>
-          </div>
-          {/* Recently viewed fills the dead space — a fresh user
-              with 0 saves still has *something* to come back to. */}
-          <div className="mt-8">
-            <RecentlyViewedRail title="Pick up where you left off" />
           </div>
         </div>
       ) : (
