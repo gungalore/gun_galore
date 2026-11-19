@@ -400,27 +400,26 @@ function ArmoryTile({
 // once at module level, not per render, since ACCOUNT_GROUPS is static.
 //
 // ⚠️ THE ORDER HERE IS DELIBERATELY NOT THE ORDER IN ACCOUNT_GROUPS. The
-// account menu runs Vault / Motivations / Reloading / Tracker; this panel
-// runs Motivations first and the Vault second, because the panel is a sales
-// surface — the thing we do for you leads. Adding a fourth was not a reason to
-// reshuffle the three that already convert.
+// account menu runs Vault / Motivation Writer / Reloading / Tracker; this
+// panel runs Motivation Writer first and the Vault second, because the panel
+// is a sales surface — the thing we do for you leads. Adding a fourth was not
+// a reason to reshuffle the three that already convert.
 const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
   {
     href: '/licence-centre/applications',
-    blurb: 'We write the motivation you sign and hand in.',
+    blurb: 'R300 per Motivation',
   },
   {
     href: '/documents',
-    blurb: 'Licences and ID kept safe, renewals tracked.',
+    blurb: 'Store all Motivation Documents',
   },
-  { href: '/bench', blurb: 'What you can load from what is on your shelf.' },
+  { href: '/bench', blurb: 'Work up a load' },
   {
     href: '/licence-centre/tracking',
-    // Shorter than the neighbours above on purpose: this blurb shares a row of
-    // four on desktop and sits as the last full-width card on a phone, and it
-    // must not read as a promise about the outcome. It says what the screen
-    // does — watch the enquiry — and nothing about what SAPS will answer.
-    blurb: 'Watch your SAPS application status.',
+    // Short enough to fit the tile without an ellipsis. It says what the
+    // screen does — follow the enquiry — and nothing about what SAPS will
+    // answer.
+    blurb: 'Track your Application',
   },
 ];
 

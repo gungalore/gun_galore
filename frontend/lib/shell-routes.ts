@@ -85,9 +85,9 @@ const PUSH_TITLES: Array<[string, string]> = [
   // would be headed "Licence Centre".
   ['/licence-centre', 'Licence Centre'],
   // Renamed with the nav label 2026-09-13: the Armory tile and the account
-  // menu both call this "Motivations", and a header that still said
+  // menu both call this "Motivation Writer", and a header that still said
   // "Applications" would be a different name for the screen you just tapped.
-  ['/licence-centre/applications', 'Motivations'],
+  ['/licence-centre/applications', 'Motivation Writer'],
   // ⚠️ A SIBLING OF `/licence-centre/applications`, NOT A CHILD OF IT, and the
   // longest-prefix rule is what keeps them apart. This row covers the whole
   // tracking subtree (list and a single application both), which is the

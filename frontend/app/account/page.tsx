@@ -529,12 +529,12 @@ export default async function AccountPage() {
         <ThemeChoice />
 
         {/* Grouped account cards — every ACCOUNT_GROUPS destination, one
-            flat tier. Motivations, the Paper Work Vault and the Reloading
-            Tool (the "Armory" group) used to get a hero + flanking-card
-            treatment here; as of 2026-09-13 they were promoted to their own
-            Armory tile on the landing page, so this hub no longer singles
-            them out — they render as ordinary rows below like everything
-            else. */}
+            flat tier. The Motivation Writer, the Paper Work Vault and the
+            Reloading Tool (the "Armory" group) used to get a hero +
+            flanking-card treatment here; as of 2026-09-13 they were promoted
+            to their own Armory tile on the landing page, so this hub no
+            longer singles them out — they render as ordinary rows below like
+            everything else. */}
         <PageReveal>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div

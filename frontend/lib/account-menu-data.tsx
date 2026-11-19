@@ -266,14 +266,14 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     // SERVICES. Three items, one group.
     //
     // ⚠️ RENAMED 2026-09-13: group title 'Licences' -> 'Armory', and its three
-    // labels to 'Motivations' / 'Paper Work Vault' / 'Reloading Tool'. Hrefs
-    // and icons are unchanged — this is copy only. The group is now also what
-    // renders as the Armory tile on the landing page, via findAccountItem
+    // labels to 'Paper Work Vault' / 'Motivation Writer' / 'Reloading Tool'.
+    // Hrefs and icons are unchanged — this is copy only. The group is now also
+    // what renders as the Armory tile on the landing page, via findAccountItem
     // below.
     title: 'Armory',
     items: [
       { href: '/documents', label: 'Paper Work Vault', Icon: ShieldDocIcon },
-      { href: '/licence-centre/applications', label: 'Motivations', Icon: DocIcon },
+      { href: '/licence-centre/applications', label: 'Motivation Writer', Icon: DocIcon },
       { href: '/bench', label: 'Reloading Tool', Icon: CartridgeIcon },
       // ⚠️ LAST, AND THE ORDER IS THE POINT. The three above are things we do
       // FOR the member; this one reports on what SAPS is doing with the
