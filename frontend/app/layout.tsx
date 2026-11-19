@@ -1,4 +1,4 @@
-﻿import type { Metadata, Viewport } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { av } from '@/lib/asset-version';
 import { fontDisplay, fontBody } from './fonts';
 import { BRAND_NAME, BRAND_BLURB, SITE_URL } from '@/lib/brand';
@@ -208,10 +208,10 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
   // Light and dark arms match globals.css --bg and the manifest route colours.
   // Dark: #131110 (warm near-black, dark theme canvas).
-  // Light: #F7F6F3 (warm off-white, brand pack stone-50).
+  // Light: #FAF8F3 (warm canvas, brand pack stone-50).
   themeColor: [
     { media: '(prefers-color-scheme: dark)', color: '#131110' },
-    { media: '(prefers-color-scheme: light)', color: '#F7F6F3' },
+    { media: '(prefers-color-scheme: light)', color: '#FAF8F3' },
   ],
 };
 

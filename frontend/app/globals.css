@@ -96,11 +96,11 @@
       left, at 1.30:1 on white — fainter than the edge GitHub draws (1.45:1),
       which is where "the cards dissolved" would have come from. #E4E2DC puts
       it back to 1.42:1 while keeping the warm hue. Measured, not eyeballed. */
-   --bg:          #F7F6F3;
+   --bg:          #FAF8F3;
    --bg-deep:     #FFFFFF;
    --bg-card:     #FFFFFF;
-   --bg-card-hover: #F7F6F3;
-   --bg-inset:    #EFEEE9;
+   --bg-card-hover: #F7F2E9;
+   --bg-inset:    #F1ECE2;
 
   /* Elevation. Warm-tinted (the ink, 26,22,19), never pure black — see the
      .gg-tile block below.
@@ -129,32 +129,30 @@
    /* Borders. --border-divider is SUBTLER than --border (it was darker on
       the dark theme for the same reason: closer to the surface it sits on).
       Aligned to brand pack stone-200 / stone-300 / stone-100. */
-   --border:      #E4E2DC;
-   --border-hover: #D2CFC7;
-   --border-divider: #EFEEE9;
+   --border:      #E7E0D5;
+   --border-hover: #D8CFC0;
+   --border-divider: #F0EAE0;
 
-   /* Brand — Outdoor Red (#E30613) aligns with brand pack v1.2.
-      The logo's road also uses this value now (was #E01B24).
-      The old `#C8102E` was inconsistent across CSS vs SVG — single source
-      of truth is the pack. */
-   --red:         #E30613;
-   --red-hover:   #C7050F;
-   /* Diluted red, for status chips and keylines. Same trap as before:
+   /* Brand — the light-mode accent is veld ochre, the warm contrast to the
+      dark-mode electric blue. The logo keeps its own red artwork. */
+   --red:         #B45309;
+   --red-hover:   #92400E;
+   /* Diluted accent, for status chips and keylines. Same trap as before:
       cannot alpha-dilute a var() by concatenation hex digits. */
-   --red-wash:    rgba(227, 6, 19, 0.09);
-   --red-line:    rgba(227, 6, 19, 0.25);
-   /* Links — red-700, deep enough for body-size on light. */
-   --link:        #B8050F;
+   --red-wash:    rgba(180, 83, 9, 0.09);
+   --red-line:    rgba(180, 83, 9, 0.25);
+   /* Links — ochre-800, deep enough for body-size on light. */
+   --link:        #92400E;
 
    /* Text. Contrast against --bg-card (#FFFFFF):
         --text-primary   16.4:1   --text-secondary 9.0:1
         --text-tertiary   4.5:1   --text-faint     3.0:1
       --text-faint therefore does NOT pass AA for body copy — it is for
       large text, disabled states and decorative meta only. */
-   --text-primary:   #1A1613;
-   --text-secondary: #4A443C;
+   --text-primary:   #1C1917;
+   --text-secondary: #57534E;
    --text-tertiary:  #7A7267;
-   --text-faint:     #9C948A;
+   --text-faint:     #A8A095;
    /* On the dark theme --text-tertiary fails AA on cards (3.2:1) so this
       token is the lighter stand-in. On white, --text-tertiary already passes
       at 4.5:1, so the two are deliberately identical: the alias is kept so
@@ -255,13 +253,14 @@
    --border-strong: var(--border-hover);
    --accent:        var(--red);
    --accent-hover:  var(--red-hover);
-   --accent-press:  #B8050F;
+   --accent-press:  #7C2D12;
    --accent-soft:   var(--red-wash);
+   --accent-line:   var(--red-line);
    --danger-bg:     var(--red-50);
    --warning-bg:    #fff7ed;
    --info-bg:       #eff6ff;
    --success-bg:    #ecfdf3;
-   --focus-ring:    0 0 0 3px rgb(227 6 19 / 0.28);
+   --focus-ring:    0 0 0 3px rgb(180 83 9 / 0.28);
 
    /* Radius + shadow aliases for pack components (ChipRail uses --radius-*). */
    --radius-xs:   var(--r-xs);
@@ -277,7 +276,7 @@
    --shadow-md:  0 2px 4px rgb(26 22 19 / 0.05), 0 8px 20px -4px rgb(26 22 19 / 0.10);
    --shadow-lg:  0 4px 8px rgb(26 22 19 / 0.05), 0 18px 40px -8px rgb(26 22 19 / 0.16);
    --shadow-xl:  0 8px 16px rgb(26 22 19 / 0.06), 0 32px 64px -12px rgb(26 22 19 / 0.24);
-   --shadow-red: 0 6px 18px -4px rgb(227 6 19 / 0.45);
+   --shadow-red: 0 6px 18px -4px rgb(180 83 9 / 0.45);
    --inner-highlight: inset 0 1px 0 rgb(255 255 255 / 0.18);
 
    /* Typefaces — League Spartan (display/headings) + Montserrat (body/UI).
@@ -362,6 +361,17 @@
    --border-hover: #3D3935;
    --border-divider: #242220;
 
+   /* Night-sky blue replaces the red accent in dark mode. The logo keeps
+      its own red artwork; this token drives primary actions and links. */
+   --red:         #0967F5;
+   --red-hover:   #3B82F6;
+   --red-wash:    rgba(9, 103, 245, 0.16);
+   --red-line:    rgba(9, 103, 245, 0.38);
+   --link:        #6FA8FF;
+   --accent-press: #1D4ED8;
+   --focus-ring:   0 0 0 3px rgb(9 103 245 / 0.38);
+   --shadow-red:   0 6px 18px -4px rgb(9 103 245 / 0.55);
+
    /* Hairline. Inverted: light ink on dark surface. */
    --hairline: rgba(244, 241, 237, 0.08);
 
@@ -378,9 +388,9 @@
    --success-line:  rgba(31, 122, 80, 0.45);
    --success-wash:  rgba(31, 122, 80, 0.12);
 
-   /* Red text/icons on dark surfaces: brand red fails contrast on near-black;
-      use red-400 (#ff4d57) instead, 5.8:1 on #111. DESIGN.md §3 rule. */
-   --accent-text: var(--red-400);
+   /* Red text/icons on dark surfaces: the old red failed contrast on
+      near-black; the blue light tint is 7.8:1 on #131110. */
+   --accent-text: #6FA8FF;
 }
 
 /* ── Theme-following brand logo ──────────────────────────────────────

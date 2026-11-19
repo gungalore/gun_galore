@@ -53,11 +53,11 @@ const manifest: MetadataRoute.Manifest & {
   // ⚠️ KEEP BOTH EQUAL TO --bg IN app/globals.css. Three places name this
   // colour (globals.css, here, and layout.tsx's viewport themeColor) and
   // scripts/theme-sync.cjs fails the build when they drift.
-  background_color: '#F7F6F3',
-  theme_color: '#F7F6F3',
+  background_color: '#FAF8F3',
+  theme_color: '#FAF8F3',
   // Chrome picks the splash / status bar colour that matches the current
   // theme. [light, dark].
-  colors: ['#F7F6F3', '#131110'],
+  colors: ['#FAF8F3', '#131110'],
   categories: ['shopping', 'sports', 'lifestyle'],
   lang: 'en-ZA',
   prefer_related_applications: false,
