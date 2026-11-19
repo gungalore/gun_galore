@@ -16,6 +16,8 @@ export const BUG_CATEGORIES = [
   'OFFERS',
   'LISTING',
   'DELIVERY',
+  'MOTIVATIONS',
+  'PAPERWORK_VAULT',
   'ACCOUNT',
   'OTHER',
 ] as const;
@@ -29,6 +31,8 @@ const CATEGORY_LABELS: Record<BugCategory, string> = {
   OFFERS: 'Offers',
   LISTING: 'Selling / Listing',
   DELIVERY: 'Delivery / Shipping',
+  MOTIVATIONS: 'Motivations',
+  PAPERWORK_VAULT: 'Paperwork Vault',
   ACCOUNT: 'Account & Login',
   OTHER: 'Other',
 };

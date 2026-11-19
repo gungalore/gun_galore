@@ -21,6 +21,8 @@ const CATEGORIES = [
   { value: 'OFFERS', label: 'Offers' },
   { value: 'LISTING', label: 'Selling / Listing' },
   { value: 'DELIVERY', label: 'Delivery / Shipping' },
+  { value: 'MOTIVATIONS', label: 'Motivations' },
+  { value: 'PAPERWORK_VAULT', label: 'Paperwork Vault' },
   { value: 'ACCOUNT', label: 'Account & Login' },
   { value: 'OTHER', label: 'Other' },
 ];

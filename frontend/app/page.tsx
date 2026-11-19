@@ -161,7 +161,7 @@ export default async function HomePage({
   // string straight through. The listings endpoint parses it; when absent
   // browse behaves exactly as before.
   if (params.attrs) qs.set('attrs', params.attrs);
-  qs.set('limit', '24');
+  qs.set('limit', '30');
 
   // Multiple independent data fetches for this page — run them in
   // parallel so the slowest doesn't block the others.
@@ -194,9 +194,16 @@ export default async function HomePage({
   // so they all work; the render sites branch on browseFailed.
   const browseFailed = browseRaw === null;
   const browse: BrowseResponse =
-    browseRaw ?? { listings: [], total: 0, page: 1, limit: 24 };
+    browseRaw ?? { listings: [], total: 0, page: 1, limit: 30 };
 
   const currentPage = browse.page;
+  /**
+   * The landing page shows at most 30 latest listings. Once the current page
+   * is exhausted, the load-more control takes over; only when there is no
+   * further page does the "Good to know" panel and the site footer form the
+   * end of the page.
+   */
+  const hasMoreLatest = browse.total > currentPage * browse.limit;
 
   // Empty page N of a non-empty result set — a bookmarked deep page whose
   // items have all sold, or a hand-edited ?page=. The generic "nothing
@@ -282,7 +289,7 @@ export default async function HomePage({
 
               {/* ─── Bare landing page: no filter, no pagination ───
                   When the user lands on "/" with no filters, the page shows the
-                  "Good to know" link strip, then the 24 newest listings —
+                  "Good to know" link strip, then up to 30 newest listings —
                   intentionally curated, not a filtered browse. */}
               <section className="max-w-[var(--page-max)] mx-auto px-4 pt-5 pb-10 sm:py-10">
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
@@ -295,10 +302,10 @@ export default async function HomePage({
               rendering it. */}
 
 
-          {/* Latest listings — the landing page previously ended here with
-              NO product grid at all: real ads were only reachable via the
-              nav. `browse` (24 newest, no filters) was already fetched for
-              this surface; render it. */}
+              {/* Latest listings — max 30 per page. The load-more control is
+                  the only thing after the grid while more listings exist;
+                  when the last page is in view, the Good to know panel and
+                  the site footer close the page. */}
           {browseFailed && (
             /* API failure on the landing page — without this the "Latest
                listings" grid silently vanishes and a live site reads dead. */
@@ -359,11 +366,27 @@ export default async function HomePage({
               </div>
             </div>
           )}
-          {/* Good to know — one-tap links to the selling guide, FAQ, fees
-              and condition guide. The duplicate explanations that used to be
-              folded away here now live only on those pages (and the binding
-              rules in the Terms of Service). */}
-          <HomeInfoPanel />
+          {hasMoreLatest ? (
+            <div className="mt-8 flex justify-center">
+              <Link
+                href={pageHref(currentPage + 1)}
+                rel="next"
+                className="inline-flex min-h-[44px] items-center rounded-[var(--r-sm)] border px-5 text-[13.5px] font-medium"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Load more listings →
+              </Link>
+            </div>
+          ) : (
+            /* Good to know — one-tap links to the selling guide, FAQ, fees
+                and condition guide. This is the end-of-page information once
+                every latest listing has been shown. */
+            <HomeInfoPanel />
+          )}
 
               </section>
         </>
