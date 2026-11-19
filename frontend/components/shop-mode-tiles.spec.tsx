@@ -154,3 +154,47 @@ describe('ShopModeBar — the Armory disclosure', () => {
     expect(delays).toEqual(['0ms', '200ms', '400ms', '600ms']);
   });
 });
+
+describe('ShopModeBar — the Armory panel closes with the page', () => {
+  function openArmory() {
+    auth.isSignedIn = true;
+    const view = render(<ShopModeBar />);
+    fireEvent.click(screen.getByRole('button', { name: /armory/i }));
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(4);
+    return view;
+  }
+
+  it('closes on a pointer press anywhere outside the bar', () => {
+    openArmory();
+    fireEvent.pointerDown(document.body);
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+  });
+
+  it('closes when the page scrolls', () => {
+    openArmory();
+    fireEvent.scroll(document);
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+  });
+
+  it('closes on Escape', () => {
+    openArmory();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+  });
+
+  it('closes when the route changes', () => {
+    const view = openArmory();
+    nav.path = '/documents';
+    view.rerender(<ShopModeBar />);
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+  });
+
+  it('stays open when the press is inside the bar', () => {
+    openArmory();
+    fireEvent.pointerDown(
+      document.querySelector('[data-shop-mode-bar]') as HTMLElement,
+    );
+    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(4);
+  });
+});
+

@@ -507,6 +507,77 @@ export function ShopModeBar() {
   const { isLoaded, isSignedIn } = useUser();
   const { viewerFetch } = useViewerFetch();
   const [open, setOpen] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * ⚠️ THE ARMORY PANEL IS A PAGE-LEVEL DISCLOSURE, NOT A MODE.
+   *
+   * It used to stay open until the member tapped Armory again. On a phone —
+   * and especially in the installed PWA, where the shell and this state
+   * survive route changes — that meant it sat over the feed while they
+   * scrolled, typed, opened the menu or moved to another tab. Closing it on
+   * the next real interaction is the behaviour a disclosure is expected to
+   * have; only a click INSIDE the bar (including the sub-tiles) is activity
+   * that belongs to it.
+   *
+   * The route effect below is separate because navigation can complete
+   * without a pointer event at all (a back gesture, a link from another
+   * surface, a programmatic push), and the bar is mounted in the shell rather
+   * than per page.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const closeIfOutside = (event: Event) => {
+      const bar = barRef.current;
+      if (bar && event.target instanceof Node && bar.contains(event.target)) {
+        return;
+      }
+      setOpen(false);
+    };
+    const close = () => setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') close();
+    };
+
+    document.addEventListener('pointerdown', closeIfOutside, true);
+    // iOS and some installed-PWA webviews do not always emit pointerdown for
+    // a touch that starts a scroll; touchstart is the one that always fires.
+    document.addEventListener('touchstart', closeIfOutside, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('focusin', closeIfOutside, true);
+    // Capture scroll, not bubble: the page may scroll a nested element and the
+    // window's own scroll event would not fire for it.
+    document.addEventListener('scroll', close, true);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('popstate', close);
+    window.addEventListener('hashchange', close);
+    window.addEventListener('resize', close);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside, true);
+      document.removeEventListener('touchstart', closeIfOutside, true);
+      document.removeEventListener('focusin', closeIfOutside, true);
+      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('popstate', close);
+      window.removeEventListener('hashchange', close);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  // Keep the panel from surviving a route change while the shell stays
+  // mounted. The comment on the sub-tiles used to assume this happened for
+  // free; in the App Router it does not.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   // A document, or a focused secure flow — not a shop surface. See
   // lib/fine-print-routes.ts for why the policy pages are enumerated.
@@ -634,6 +705,7 @@ export function ShopModeBar() {
     // which audience it is for, which is the property the whole shell is built
     // around. isTabRoute is the same allowlist the bottom tab bar uses.
     <div
+      ref={barRef}
       data-shop-mode-bar
       data-shop-scope={isTabRoute(pathname) ? 'tabs' : 'tabs-only'}
     >
