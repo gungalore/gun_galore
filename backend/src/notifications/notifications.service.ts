@@ -1304,7 +1304,6 @@ export class NotificationsService {
         : sellerRows.note,
       preheader: `New sale — ${d.listingTitle}`,
     });
-    await this.send(d.sellerEmail, 'New sale: ' + d.listingTitle, html);
     // SMS — when we have a token URL we replace the body with the
     // accept-first copy AND include the /a/<token> URL so the seller
     // can act with one tap. Character budget tight: title truncated
@@ -1325,48 +1324,78 @@ export class NotificationsService {
           : isCollection
             ? `ALL Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
             : `ALL Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
-    await this.sendSms(
-      d.sellerPhone,
-      smsBody,
-      `new-sale-${d.transactionId}`,
-      {
-        whatsapp: isDealerTransfer || isCollection || isPrivateArrange
+
+    // ── CHANNEL ORDER: WhatsApp → SMS + email ─────────────────────
+    //
+    // WhatsApp is the primary sales channel for the seller's accept
+    // decision. SMS and email are FALLBACKS, not parallel copies: if the
+    // WhatsApp template is accepted by Meta, the seller has the one-tap
+    // Accept/Decline in front of them and does not get three versions of
+    // the same sale.
+    //
+    // ⚠️ EMAIL IS INSIDE THE FALLBACK, NOT ABOVE IT. The old order sent email
+    // unconditionally and only then tried WhatsApp, so the "primary" channel
+    // was the third thing the seller saw. The fallback pair below is sent
+    // together when WhatsApp is ineligible or fails, because a seller with
+    // no WhatsApp must still get both the record (email) and the one-tap
+    // link (SMS).
+    const whatsapp: {
+      templateKey: string;
+      vars: Record<string, string>;
+    } =
+      isDealerTransfer || isCollection || isPrivateArrange
+        ? {
+            templateKey: 'new_sale_seller',
+            vars: {
+              ref: orderRef({
+                id: d.transactionId,
+                orderReference: d.orderReference,
+              }),
+              // a<token> opens the signed-out accept page; t<txId> is the
+              // fallback when the token mint failed.
+              code: d.acceptActionToken
+                ? `a${d.acceptActionToken}`
+                : `t${d.transactionId}`,
+              txId: d.transactionId,
+            },
+          }
+        : d.acceptActionToken
           ? {
-              templateKey: 'new_sale_seller',
+              templateKey: 'new_sale_seller_courier',
               vars: {
-                ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
-                // a<token> opens the signed-out accept page; t<txId> is the
-                // fallback when the token mint failed (and lands on the
-                // signed-in transaction page, as before).
-                code: d.acceptActionToken
-                  ? `a${d.acceptActionToken}`
-                  : `t${d.transactionId}`,
-                // Extra var (not in the template): the webhook needs the
-                // transaction id on an Accept/Decline quick reply.
+                ref: orderRef({
+                  id: d.transactionId,
+                  orderReference: d.orderReference,
+                }),
+                acceptToken: d.acceptActionToken,
                 txId: d.transactionId,
               },
             }
-          : d.acceptActionToken
-            ? {
-                templateKey: 'new_sale_seller_courier',
-                vars: {
-                  ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
-                  acceptToken: d.acceptActionToken,
-                  // Extra var (not in the template body/button): the webhook
-                  // uses it to resolve the transaction on an Accept tap.
-                  txId: d.transactionId,
-                },
-              }
-            : {
-                templateKey: 'new_sale_seller',
-                vars: {
-                  ref: orderRef({ id: d.transactionId, orderReference: d.orderReference }),
-                  code: `t${d.transactionId}`,
-                  txId: d.transactionId,
-                },
+          : {
+              templateKey: 'new_sale_seller',
+              vars: {
+                ref: orderRef({
+                  id: d.transactionId,
+                  orderReference: d.orderReference,
+                }),
+                code: `t${d.transactionId}`,
+                txId: d.transactionId,
               },
-      },
+            };
+
+    const reference = `new-sale-${d.transactionId}`;
+    const sentOnWhatsapp = await this.tryWhatsapp(
+      d.sellerPhone ?? '',
+      whatsapp,
+      reference,
     );
+    if (sentOnWhatsapp) return;
+
+    // WhatsApp was ineligible or failed. Send the record and the one-tap
+    // SMS link together; `sendSms` is called WITHOUT the whatsapp option so
+    // it cannot retry the channel that just failed.
+    await this.send(d.sellerEmail, 'New sale: ' + d.listingTitle, html);
+    await this.sendSms(d.sellerPhone, smsBody, reference);
   }
 
   // ---------------------------------------------------------------

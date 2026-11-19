@@ -1,4 +1,4 @@
-﻿jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { NotificationsService } from './notifications.service';
 
@@ -45,6 +45,78 @@ function makeService(overrides: Partial<Mocks> = {}) {
 
 const REF = 'order-confirmed-tx1';
 const WA_OPT = { templateKey: 'sale_accept_reminder_seller', vars: { ref: 'ABCDEF12', code: 'tcktxid1234567890' } };
+describe('newSaleSeller — WhatsApp first, SMS + email fallback', () => {
+  function sale(overrides: Record<string, unknown> = {}) {
+    return {
+      listingTitle: 'Howa 6.5 Creedmoor',
+      listingId: 'l1',
+      transactionId: 'tx1',
+      orderReference: 'GG-TX1',
+      buyerEmail: 'buyer@example.com',
+      buyerName: 'Buyer',
+      sellerEmail: 'seller@example.com',
+      sellerName: 'Seller',
+      sellerPhone: '0820000000',
+      listingPrice: 100000,
+      commissionZar: 0,
+      processingFee: 0,
+      buyerTotal: 100000,
+      sellerPayout: 100000,
+      passFeeToBuyer: false,
+      feeModel: 'BUYNOW_MARKUP',
+      shippingCost: 0,
+      shippingHandlingCents: 0,
+      shippingMethod: 'DEALER_TRANSFER',
+      acceptActionUrl: 'https://alloutdoor.co.za/a/tok',
+      acceptActionToken: 'tok',
+      ...overrides,
+    };
+  }
+
+  function service(sentOnWhatsApp: boolean) {
+    const svc = makeService();
+    Object.assign(svc, {
+      appUrl: 'https://alloutdoor.co.za',
+      persistByEmail: jest.fn().mockResolvedValue(undefined),
+      email: jest.fn(() => '<html />'),
+      send: jest.fn().mockResolvedValue(undefined),
+      sendSms: jest.fn().mockResolvedValue(undefined),
+      tryWhatsapp: jest.fn().mockResolvedValue(sentOnWhatsApp),
+    });
+    return svc;
+  }
+
+  it('⚠️ DOES NOT SEND EMAIL OR SMS WHEN WHATSAPP WINS', async () => {
+    const svc = service(true);
+    await svc.newSaleSeller(sale());
+
+    expect(svc.tryWhatsapp).toHaveBeenCalledTimes(1);
+    expect(svc.tryWhatsapp.mock.calls[0][1]).toMatchObject({
+      templateKey: 'new_sale_seller',
+      vars: expect.objectContaining({ code: 'atok', txId: 'tx1' }),
+    });
+    expect(svc.send).not.toHaveBeenCalled();
+    expect(svc.sendSms).not.toHaveBeenCalled();
+    expect(svc.persistByEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('⚠️ SENDS BOTH SMS AND EMAIL WHEN WHATSAPP IS INELIGIBLE', async () => {
+    const svc = service(false);
+    await svc.newSaleSeller(sale());
+
+    expect(svc.tryWhatsapp).toHaveBeenCalledTimes(1);
+    expect(svc.send).toHaveBeenCalledWith(
+      'seller@example.com',
+      expect.stringContaining('New sale'),
+      '<html />',
+    );
+    expect(svc.sendSms).toHaveBeenCalledWith(
+      '0820000000',
+      expect.stringContaining('/a/tok'),
+      'new-sale-tx1',
+    );
+  });
+});
 
 describe('sendSms fan-out seam', () => {
   it('behaves byte-identically to today when no `whatsapp:` opt is passed', async () => {
