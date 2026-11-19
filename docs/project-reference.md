@@ -1763,7 +1763,8 @@ Spec: `docs/design/the-bench/SPEC-BUILD.md`.
 (34 keys — booleans, numbers and strings, mixed defaults), edited through the admin
 settings surface. Env-var switches (`PAYMENT_MODE`, `PAYMENTS_LIVE`,
 `ZOHO_BOOKS_ENABLED`, `LLM_PROVIDER`, …) are separate and are **not** in that
-registry. `VAT_REGISTERED` flips at R1,000,000 turnover.
+registry. `VAT_REGISTERED` flips at the **R2.3m** VAT registration threshold
+(the R1m micro-business turnover-tax limit is a separate test).
 
 ---
 

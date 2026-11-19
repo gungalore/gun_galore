@@ -16,6 +16,7 @@ import { AdminDealersService } from './admin-dealers.service';
 import { AdminCategoriesService } from './admin-categories.service';
 import { AdminCategoryAttributesService } from './admin-category-attributes.service';
 import { AdminSettingsService } from './admin-settings.service';
+import { TaxComplianceService } from '../tax/tax-compliance.service';
 import { AdminBroadcastService } from './admin-broadcast.service';
 import { WardenService } from './warden.service';
 import {
@@ -40,6 +41,7 @@ import {
   AdminCategoryAttributesController,
   AdminSettingsController,
   AdminBroadcastController,
+  AdminTaxController,
 } from './admin.controller';
 import { WardenController } from './warden.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
@@ -96,6 +98,7 @@ import { UsersModule } from '../users/users.module';
     AdminCategoriesService,
     AdminCategoryAttributesService,
     AdminSettingsService,
+    TaxComplianceService,
     AdminBroadcastService,
     WardenService,
     AdminJwtGuard,
@@ -123,6 +126,7 @@ import { UsersModule } from '../users/users.module';
     AdminCategoryAttributesController,
     AdminSettingsController,
     AdminBroadcastController,
+    AdminTaxController,
     WardenController,
   ],
   // Export AdminCreditsService so TasksModule's pollCreditBalances

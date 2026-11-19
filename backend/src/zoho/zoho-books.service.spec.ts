@@ -146,19 +146,20 @@ describe('ZohoBooksService buyer paperwork', () => {
     );
     const body = JSON.parse(String(invoicePost?.init?.body));
     expect(body.reference_number).toBeUndefined();
-    expect(body.notes).toContain('Principal Supplies');
-    expect(body.notes).toContain('Agent Supplies - All Outdoor Platform Fee');
+    expect(body.notes).toContain('Agent collections');
+    expect(body.notes).toContain('Agent supply — ALL Outdoor Platform Fee');
+    expect(body.notes).toContain('not ALL Outdoor supplies');
     expect(body.notes).toContain('Ref: GG-BN-1234');
     expect(body.line_items).toHaveLength(3);
     // Item price and the whole delivery figure are third-party money.
     expect(body.line_items[0]).toMatchObject({
-      name: 'Test item *',
+      name: 'Test item — agent collection',
       description: '',
       rate: 1_000,
       account_id: 'acc-trust',
     });
     expect(body.line_items[1]).toMatchObject({
-      name: 'Delivery *',
+      name: 'Delivery — agent collection',
       description: '',
       rate: 159.5,
       account_id: 'acc-trust',

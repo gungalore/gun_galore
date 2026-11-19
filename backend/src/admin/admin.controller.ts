@@ -32,6 +32,7 @@ import { ReadShapedRoute } from './decorators/read-shaped-route.decorator';
 import { OwnAccountRoute } from './decorators/own-account-route.decorator';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
+import { TaxComplianceService } from '../tax/tax-compliance.service';
 import { ListingsService } from '../listings/listings.service';
 import {
   AdminChangePasswordDto,
@@ -1576,6 +1577,21 @@ export class AdminSettingsController {
       body.value ?? '',
       body.reason ?? '',
     );
+  }
+}
+
+// ---------------------------------------------------------------
+// Tax & compliance — read-only profile/threshold report.
+// The report never registers VAT or calculates turnover tax.
+// ---------------------------------------------------------------
+@Controller('admin/tax')
+@UseGuards(AdminJwtGuard)
+export class AdminTaxController {
+  constructor(private readonly tax: TaxComplianceService) {}
+
+  @Get('compliance')
+  compliance() {
+    return this.tax.report();
   }
 }
 

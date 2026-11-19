@@ -1067,7 +1067,8 @@ export class ZohoBooksService {
       }> = [
         {
           name:
-            (title.length > 98 ? title.slice(0, 95) + 'â€¦' : title) + ' *',
+            (title.length > 98 ? title.slice(0, 95) + '…' : title) +
+            ' — agent collection',
           description: '',
           rate: itemRand,
           quantity: 1,
@@ -1076,7 +1077,7 @@ export class ZohoBooksService {
       ];
       if (deliveryCents > 0) {
         lineItems.push({
-          name: 'Delivery *',
+          name: 'Delivery — agent collection',
           description: '',
           rate: deliveryRand,
           quantity: 1,
@@ -1098,9 +1099,9 @@ export class ZohoBooksService {
       // operator does not want on the invoice. The legend below explains the
       // * / ** markers that replace the wordy line descriptions.
       const notes =
-        `* Principal Supplies - Fees collected on behalf of unrelated ` +
-        `third parties (Item Seller and Courier Service)\n` +
-        `** Agent Supplies - All Outdoor Platform Fee\n` +
+        `* Agent collections — item and delivery are collected on behalf of ` +
+        `the seller and courier. They are not ALL Outdoor supplies.\n` +
+        `** Agent supply — ALL Outdoor Platform Fee\n` +
         `Ref: ${orderRef}`;
 
       type CreateInvoiceResp = {

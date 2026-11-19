@@ -441,6 +441,67 @@ export const FLAGS = {
     default: false,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
+
+  // ─── Tax & compliance ────────────────────────────────────────────
+  // ⚠️ Also in admin-settings.service.ts — both registries, or neither.
+  // These are bookkeeping/tax-profile values, not charged to buyers at
+  // checkout. Turnover tax is an annual income-tax regime, never an invoice
+  // line. The VAT threshold is the 2025/26 R2.3m registration threshold.
+  taxRegime: {
+    key: 'tax_regime',
+    default: 'TURNOVER_TAX',
+    parse: (s) => (s ?? '').trim() || 'TURNOVER_TAX',
+  } as FlagDefinition<string>,
+  vatRegistered: {
+    key: 'vat_registered',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  vatNumber: {
+    key: 'vat_number',
+    default: '',
+    parse: (s) => (s ?? '').trim(),
+  } as FlagDefinition<string>,
+  vatRegistrationDate: {
+    key: 'vat_registration_date',
+    default: '',
+    parse: (s) => (s ?? '').trim(),
+  } as FlagDefinition<string>,
+  vatRegistrationThresholdCents: {
+    key: 'vat_registration_threshold_cents',
+    default: 230_000_000,
+    parse: (s) => Number(s) || 230_000_000,
+  } as FlagDefinition<number>,
+  vatRatePercent: {
+    key: 'vat_rate_percent',
+    default: 15,
+    parse: (s) => Number(s) || 15,
+  } as FlagDefinition<number>,
+  vatTurnoverBasis: {
+    key: 'vat_turnover_basis',
+    default: 'AGENT_REVENUE',
+    parse: (s) => (s ?? '').trim() || 'AGENT_REVENUE',
+  } as FlagDefinition<string>,
+  microBusinessTaxEnabled: {
+    key: 'micro_business_tax_enabled',
+    default: true,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  microBusinessTaxYearEnd: {
+    key: 'micro_business_tax_year_end',
+    default: '',
+    parse: (s) => (s ?? '').trim(),
+  } as FlagDefinition<string>,
+  microBusinessTurnoverLimitCents: {
+    key: 'micro_business_turnover_limit_cents',
+    default: 100_000_000,
+    parse: (s) => Number(s) || 100_000_000,
+  } as FlagDefinition<number>,
+  incomeTaxNumber: {
+    key: 'income_tax_number',
+    default: '',
+    parse: (s) => (s ?? '').trim(),
+  } as FlagDefinition<string>,
 } as const;
 
 @Injectable()

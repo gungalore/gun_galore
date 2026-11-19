@@ -31,6 +31,7 @@
     "motivation:plates:preview": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/preview-motivation-plates.ts",
     "ocr:serve": "python ocr/paddleocr_vl_server.py",
     "crime-stats:fixture": "node scripts/crime-stats-make-fixture.cjs",
+    "tax:report": "node scripts/accountant-tax-report.mjs",
     "dealer-form:test": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/send-dealer-form-test.ts",
     "listings:backfill-locality": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/backfill-public-locality.ts",
     "listings:archive-cancelled": "ts-node --transpile-only --project tsconfig.json -r dotenv/config scripts/archive-cancelled-listings.ts",
