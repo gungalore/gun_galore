@@ -7,7 +7,39 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — SELLER-FAILURE CHARGES NOW HAVE A ZOHO INVOICE
+## 2026-11-19 (LATEST) — TAX: R2.3m, AGENT-ONLY MARKETPLACE, ACCOUNTANT PDF
+
+Shipped `6d3e9829` (**full deploy**). Rollback point:
+`alloutdoor-20261119-154336.dump` (34,892,469 bytes).
+
+- **Agent-only marketplace.** Buy Now and Auction buyer invoices now call item
+  and delivery **agent collections**; both stay on Client Funds Payable. The
+  only ALL Outdoor supply on that invoice is the platform fee. No marketplace
+  document calls the item a principal supply. Motivation remains the only
+  principal product and only when its future paygate exists.
+- **Tax profile.** Added `tax_regime`, `vat_registered`, VAT number/date,
+  **R2.3m** threshold, VAT rate, turnover basis, micro-business tax flags and
+  income-tax number to both settings registries. Production is configured as
+  `TURNOVER_TAX`, VAT **off**, threshold **230,000,000c**, basis
+  `AGENT_REVENUE`.
+- **Tax report.** `GET /admin/tax/compliance` returns rolling agent revenue,
+  gross sales, principal revenue, threshold headroom, micro-business
+  eligibility and Zoho state. It never auto-registers VAT.
+- **Accountant PDF.** `docs/tax/accountant-report.md` is the maintained source;
+  `backend/scripts/accountant-tax-report.mjs` (npm `tax:report`) generates
+  `docs/tax/ALL-Outdoor-Tax-and-Accounting-Report.pdf` — agent/principal,
+  accounts, Dr/Cr flow tables, R2.3m VAT, turnover tax, open decisions and a
+  sign-off page. It explicitly marks the **seller-payout/refund cash entries
+  as proposed, not yet posted**.
+- **Known remaining work:** seller payout and buyer refund cash entries,
+  gateway-fee journals, Zoho tax-rate/account apply command. These are listed
+  in the PDF as open implementation gaps for accountant approval.
+
+Verified: full backend **6,277 passed / 8 skipped**; frontend build clean;
+health ×2 and public ×2 200. The accountant PDF is 4 pages and is regenerated
+from source with `cd backend && npm run tax:report`.
+
+## 2026-11-19 (LATEST-1) — SELLER-FAILURE CHARGES NOW HAVE A ZOHO INVOICE
 
 Shipped `41002f81` (**full deploy**). Rollback point:
 `alloutdoor-20261119-150818.dump` (34,892,261 bytes).
