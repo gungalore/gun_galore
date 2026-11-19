@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
+## 2026-11-19 — EXPIRED AUCTIONS: OUT OF SEARCH AND OFF THE PDP
+
+- **Reported:** `cmvo85h9n007i5gvn2yajj01d` (Inca sleeping bag, AU000002) was
+  `EXPIRED` with `endedAt` set, yet its public page and `?q=` search still
+  returned it.
+- **Root cause:** `finalizeAuction` flipped the DB row to
+  `PAYMENT_PENDING`/`EXPIRED` but never touched Meilisearch, so the document
+  kept `status: "ACTIVE"`. `browseViaSearch` then re-fetched the hit by id
+  without re-checking status, so the stale document rendered as a live card.
+- **Fix** `14b7ff66` (full deploy): finalization and the unpaid-win sweep now
+  delete the listing document from the index; `browseViaSearch` re-asserts
+  `status: ACTIVE`, `isDealListing: false` and `publicVisible` when hydrating
+  hits; `EXPIRED` left `PUBLICLY_VISIBLE_STATUSES`, so a dead auction's PDP
+  404s for everyone except its owner. The auction-state endpoint still serves
+  `EXPIRED` so bidders can see the close and the seller can decide the
+  runner-up.
+- **Backfill:** deleted the one pre-existing stale document. Verified live:
+  Meili hits 0, API search total 0, auction browse total 0, sitemap excludes
+  the id, PDP renders "Listing not found".
+- Rollback point: `alloutdoor-20261119-235835.dump`.
+- Checks: backend **6,279 passed / 8 skipped**; frontend **1,959 passed / 1
+  skipped**; both builds clean; health and public site 200.
+
 ## 2026-11-19 — THEME: OCHRE LIGHT / ELECTRIC BLUE DARK, ARMORY COPY
 
 - **Theme** shipped in `baca6ff1`. Light is veld ochre `#B45309` on warm
