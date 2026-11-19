@@ -4533,9 +4533,24 @@ export class TransactionsService {
         refundedTotalCents: refundableCents,
         shipmentCommitted: isShipmentCommitted(tx),
         shippingCost: tx.shippingCost,
-      }).catch((err) =>
-        this.logger.warn(`seller charge failed: ${(err as Error).message}`),
-      );
+      })
+        .then((charge) => {
+          // The ledger is the system of record; Books gets the seller-facing
+          // document as soon as the charge exists. Both are no-throw/fail-soft:
+          // the buyer's refund has already committed.
+          if (charge) {
+            void this.zohoBooks
+              .createSellerChargeInvoice(charge.id)
+              .catch((err: Error) =>
+                this.logger.warn(
+                  `seller charge invoice failed: ${err.message}`,
+                ),
+              );
+          }
+        })
+        .catch((err) =>
+          this.logger.warn(`seller charge failed: ${(err as Error).message}`),
+        );
     }
 
     // Timeline + buyer notification + clear seller's accept-pending

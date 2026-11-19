@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import type { SellerChargeKind } from '@prisma/client';
 
 // Chart-of-accounts names. The first match wins; the fallbacks keep the
 // integration working in a Books org whose account was renamed.
@@ -33,6 +34,32 @@ const HANDLING_ACCOUNT_NAMES = [
   'Shipping Charge',
   'Delivery Revenue',
 ];
+/**
+ * Where a seller-failure recovery is recognised.
+ *
+ * A cancellation charge is not delivery income and not the platform fee, so
+ * the preferred account is a named recovery/penalty income account. The
+ * fallbacks keep the document creatable on an org whose chart does not yet
+ * have one — the seller still sees the bill, and the operator can reclassify
+ * it in Books.
+ */
+const SELLER_CHARGE_ACCOUNT_NAMES = [
+  'Seller Recovery Revenue',
+  'Seller Failure Recovery',
+  'Seller Penalty Revenue',
+  'Recovery Revenue',
+  'Other Income',
+  ...BUYER_FEE_ACCOUNT_NAMES,
+];
+
+/** What the seller-side invoice line is called, by ledger kind. */
+const SELLER_CHARGE_LABELS: Record<SellerChargeKind, string> = {
+  SHIPPING_VARIANCE: 'Courier re-weigh charge',
+  SELLER_CANCELLED: 'Seller cancellation recovery',
+  NO_DISPATCH: 'Seller non-dispatch recovery',
+  NOT_DELIVERED: 'Seller non-delivery recovery',
+  DEALER_TRANSFER_FAILED: 'Dealer transfer failure recovery',
+};
 // Where buyer cash actually lands. ABSA (account ending 5183) handles every
 // transaction; the last four digits are the reliable identifier if the org
 // renames it. The FNB account is the retired rail and only remains as a
@@ -794,7 +821,7 @@ export class ZohoBooksService {
    *
    * Never throws â€” the debt exists in the ledger whether or not Books answers.
    */
-  async createShippingVarianceInvoice(
+  async createSellerChargeInvoice(
     sellerChargeId: string,
     opts: { force?: boolean } = {},
   ): Promise<void> {
@@ -805,6 +832,7 @@ export class ZohoBooksService {
         id: true,
         sellerId: true,
         transactionId: true,
+        kind: true,
         amountCents: true,
         reason: true,
         zohoInvoiceId: true,
@@ -813,13 +841,15 @@ export class ZohoBooksService {
     if (!charge) return;
     if (charge.zohoInvoiceId) return;
     if (charge.amountCents <= 0) return;
+    const doc =
+      charge.kind === 'SHIPPING_VARIANCE' ? 'variance' : 'seller-charge';
     const tx = await this.prisma.transaction.findUnique({
       where: { id: charge.transactionId },
       select: { zohoUncertainDocs: true },
     });
-    if ((tx?.zohoUncertainDocs ?? []).includes('variance') && !opts.force) return;
+    if ((tx?.zohoUncertainDocs ?? []).includes(doc) && !opts.force) return;
     if (opts.force) {
-      await this.clearUncertain(charge.transactionId, 'variance');
+      await this.clearUncertain(charge.transactionId, doc);
     }
 
     const seller = await this.prisma.user.findUnique({
@@ -834,23 +864,29 @@ export class ZohoBooksService {
       if (!contactId) {
         throw new Error('Could not resolve Books contact for seller');
       }
-      // Freight-side income first: a re-weigh is a shipping cost recovery, and
-      // booking it against the delivery accounts keeps it out of the platform
-      // fee revenue line the seller already pays.
+      /**
+       * A courier re-weigh is a carrier cost and posts to the delivery income
+       * account. Every other seller charge is a failure recovery and must not
+       * be presented as delivery income or as the platform fee.
+       */
       const accountId =
-        (await this.resolveAccountId(HANDLING_ACCOUNT_NAMES)) ??
-        (await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES));
+        charge.kind === 'SHIPPING_VARIANCE'
+          ? ((await this.resolveAccountId(HANDLING_ACCOUNT_NAMES)) ??
+            (await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES)))
+          : ((await this.resolveAccountId(SELLER_CHARGE_ACCOUNT_NAMES)) ??
+            (await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES)));
       if (!accountId) {
         throw new Error(
-          'No freight/delivery revenue account found in Books chart-of-accounts',
+          'No seller-recovery or delivery revenue account found in Books chart-of-accounts',
         );
       }
 
       const rand = charge.amountCents / 100;
       const today = new Date().toISOString().slice(0, 10);
       const reason = (
-        charge.reason ?? 'Courier re-weigh charge'
+        charge.reason ?? SELLER_CHARGE_LABELS[charge.kind]
       ).slice(0, 500);
+      const lineName = SELLER_CHARGE_LABELS[charge.kind] ?? 'Seller charge';
 
       type CreateInvoiceResp = {
         invoice?: { invoice_id?: string; invoice_number?: string };
@@ -864,7 +900,7 @@ export class ZohoBooksService {
         due_date: today,
         line_items: [
           {
-            name: 'Courier re-weigh charge',
+            name: lineName,
             description: reason,
             rate: rand,
             quantity: 1,
@@ -875,7 +911,8 @@ export class ZohoBooksService {
           `${reason}\n` +
           `All Outdoor transaction reference: ${charge.transactionId
             .slice(-8)
-            .toUpperCase()}`,
+            .toUpperCase()}\n` +
+          'Recovery of costs caused by the seller failure — not a platform fee.',
       });
 
       const invoiceId = resp.invoice?.invoice_id;
@@ -899,8 +936,8 @@ export class ZohoBooksService {
         data: { zohoInvoiceId: invoiceId },
       });
       this.logger.log(
-        `Raised courier re-weigh invoice ${resp.invoice?.invoice_number ?? invoiceId} ` +
-          `for seller charge ${charge.id} (R${rand.toFixed(2)})`,
+        `Raised seller charge invoice ${resp.invoice?.invoice_number ?? invoiceId} ` +
+          `for ${charge.kind} charge ${charge.id} (R${rand.toFixed(2)})`,
       );
 
       // Best-effort. Zoho refuses to email until the sender address is
@@ -909,17 +946,28 @@ export class ZohoBooksService {
       await this.request('POST', `/invoices/${invoiceId}/email`, {}).catch(
         (err: Error) =>
           this.logger.warn(
-            `Courier re-weigh invoice ${invoiceId} created but not emailed: ${err.message}`,
+            `Seller charge invoice ${invoiceId} created but not emailed: ${err.message}`,
           ),
       );
     } catch (err) {
       // An uncertain create here must not be retried by the hourly sweep
-      // either â€” the invoice may exist.
+      // either — the invoice may exist.
       this.logger.error(
-        `Courier re-weigh invoice failed for seller charge ${sellerChargeId}: ${(err as Error).message}`,
+        `Seller charge invoice failed for ${sellerChargeId}: ${(err as Error).message}`,
       );
-      await this.markFailed(charge.transactionId, err as Error, 'variance');
+      await this.markFailed(charge.transactionId, err as Error, doc);
     }
+  }
+
+  /**
+   * Compatibility wrapper for the courier-re-weigh call site. The generic
+   * method branches the account and line wording by charge kind.
+   */
+  async createShippingVarianceInvoice(
+    sellerChargeId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
+    return this.createSellerChargeInvoice(sellerChargeId, opts);
   }
 
   /**
@@ -1529,24 +1577,24 @@ export class ZohoBooksService {
         await this.createBuyerInvoice(t.id);
       }
 
-      // Courier re-weigh invoices that were never raised. The CHARGE is the
+      // Seller-charge invoices that were never raised. The CHARGE is the
       // record of the debt; if it has no Books document, the seller has a debt
-      // in our ledger that they have never been told about. Nothing else
-      // retries this document, because it is not tied to a transaction id.
-      const missingVarianceInvoices = await this.prisma.sellerCharge
+      // in our ledger that they have never been told about. This covers the
+      // courier re-weigh, seller cancellation and the other failure kinds.
+      const missingSellerChargeInvoices = await this.prisma.sellerCharge
         .findMany({
           where: {
-            kind: 'SHIPPING_VARIANCE',
             zohoInvoiceId: null,
             amountCents: { gt: 0 },
+            waivedAt: null,
             createdAt: { lt: staleFloor },
           },
           select: { id: true },
           take: limit,
         })
         .catch(() => []);
-      for (const c of missingVarianceInvoices) {
-        await this.createShippingVarianceInvoice(c.id);
+      for (const c of missingSellerChargeInvoices) {
+        await this.createSellerChargeInvoice(c.id);
       }
 
       // Refunded sales whose credit notes never landed. Both helpers are
@@ -1768,7 +1816,7 @@ export class ZohoBooksService {
   async settlePayoutDocuments(transactionId: string): Promise<void> {
     if (!this.isEnabled()) return;
     await this.markCommissionInvoicePaid(transactionId);
-    await this.markShippingVarianceInvoicePaid(transactionId);
+    await this.markSellerChargeInvoicesPaid(transactionId);
   }
 
   /**
@@ -1777,7 +1825,7 @@ export class ZohoBooksService {
    * pays the DELTA between what has been recovered and what has already been
    * settled in Books â€” never the whole invoice optimistically.
    */
-  private async markShippingVarianceInvoicePaid(
+  private async markSellerChargeInvoicesPaid(
     transactionId: string,
   ): Promise<void> {
     const recoveries = await this.prisma.sellerChargeRecovery
@@ -1790,7 +1838,7 @@ export class ZohoBooksService {
           // told the invoice was paid. Only a completed payout proves the seller
           // was actually docked.
           status: 'SETTLED',
-          charge: { kind: 'SHIPPING_VARIANCE', zohoInvoiceId: { not: null } },
+          charge: { zohoInvoiceId: { not: null } },
         },
         select: {
           amountCents: true,
@@ -1859,22 +1907,22 @@ export class ZohoBooksService {
         // settle the invoice from there. No bank movement between the two.
         await this.request('POST', '/journals', {
           journal_date: today,
-          reference_number: `Re-weigh recovered â€” ${orderRef}`.slice(0, 100),
+          reference_number: `Seller charge recovered — ${orderRef}`.slice(0, 100),
           notes:
-            'Courier re-weigh charge recovered from the sellerâ€™s payout ' +
+            'Seller charge recovered from the seller’s payout ' +
             '(deducted from Client Funds Payable).',
           line_items: [
             {
               account_id: trustAccountId,
               debit_or_credit: 'debit',
               amount,
-              description: `Re-weigh recovered â€” ${orderRef}`,
+              description: `Seller charge recovered — ${orderRef}`,
             },
             {
               account_id: undepositedId,
               debit_or_credit: 'credit',
               amount,
-              description: `Re-weigh recovered â€” ${orderRef}`,
+              description: `Seller charge recovered — ${orderRef}`,
             },
           ],
         });
@@ -1883,7 +1931,7 @@ export class ZohoBooksService {
           payment_mode: 'others',
           amount,
           date: today,
-          reference_number: `Re-weigh recovered â€” ${orderRef}`.slice(0, 50),
+          reference_number: `Seller charge recovered — ${orderRef}`.slice(0, 50),
           account_id: undepositedId,
           invoices: [
             {
@@ -1891,14 +1939,14 @@ export class ZohoBooksService {
               amount_applied: amount,
             },
           ],
-          description: 'Courier re-weigh charge settled from the seller payout',
+          description: 'Seller charge settled from the seller payout',
         });
         await this.prisma.sellerCharge.update({
           where: { id: charge.id },
           data: { zohoInvoicePaidCents: target },
         });
         this.logger.log(
-          `Settled courier re-weigh invoice ${charge.zohoInvoiceId} for tx ${transactionId} (R${amount.toFixed(2)})`,
+          `Settled seller charge invoice ${charge.zohoInvoiceId} for tx ${transactionId} (R${amount.toFixed(2)})`,
         );
       } catch (err) {
         this.logger.warn(
@@ -2069,6 +2117,29 @@ export class ZohoBooksService {
       .catch(() => null);
     if (!charge) return;
     await this.createShippingVarianceInvoice(charge.id, { force: true });
+  }
+
+  /**
+   * Force whichever seller-charge invoice this transaction owns.
+   *
+   * A seller-cancellation recovery is a separate Books document from the
+   * courier-re-weigh one, and the dossier retry button only knows the
+   * transaction id. This finds the charge with no invoice and forces it —
+   * used for both the seller-cancellation invoice and the variance path.
+   */
+  async retrySellerChargeInvoiceForTransaction(
+    transactionId: string,
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+    const charges = await this.prisma.sellerCharge
+      .findMany({
+        where: { transactionId, zohoInvoiceId: null },
+        select: { id: true },
+      })
+      .catch(() => []);
+    for (const charge of charges) {
+      await this.createSellerChargeInvoice(charge.id, { force: true });
+    }
   }
 
   /**
