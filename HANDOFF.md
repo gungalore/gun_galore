@@ -7,7 +7,40 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — THE OWNED-FIREARMS GATE
+## 2026-11-19 (LATEST) — COMMUNITY MODERATION: NUDITY BLOCKED, BAD LANGUAGE MASKED
+
+Shipped `91d4f2d6` (**full deploy**). Rollback point:
+`alloutdoor-20261119-082338.dump` (34,882,808 bytes).
+
+The JEV battery now has the two missing policies, on the feed and on adverts:
+
+- **Bad language** is asked by JEV but marked `nonBlocking`; it is **masked**,
+  never rejected. `moderation/bad-language.ts` masks the English/Afrikaans
+  word list at the API output for post titles, bodies and comments. The raw
+  text stays for moderation and disputes; the member sees `f******`.
+- **Sexual explicit text** is a new JEV noul and a hard REJECT in the feed
+  and in listing text. The listing text path now rejects a sexual/abuse
+  category before the old contact-detail auto-fix can turn it into an
+  approval.
+- **Full nudity / sexual images** are a new JEV noul on every feed photo and
+  listing photo. It blocks at the same 80% threshold as the other image sins;
+  a listing photo with it is a hard REJECT, not a human-hold.
+- The prompts explicitly allow **bikinis, swimming costumes, sports bras,
+  shirtless men and ordinary underwear/swimwear**; the question is sexual
+  exposure, not visible skin.
+- Video remains Gemini (JEV has no video input); its prompt now states the same
+  nudity/swimwear policy and sets `otherViolation` for full nudity.
+
+Verified live:
+
+- A post containing `fucking` / `shit` published and appeared as
+  **`This f****** rifle is s***.`**
+- A post describing explicit sexual content was rejected with
+  **“That post was blocked by our moderation rules.”**
+- Full backend **6,267 passed / 8 skipped**; targeted moderation and
+  bad-language specs green; frontend build clean; health ×2 and public ×2 200.
+
+## 2026-11-19 (LATEST-1) — THE OWNED-FIREARMS GATE
 
 Shipped `5a6541d5` (**full deploy**; feature `2e8b7d58`, topic fix `5a6541d5`).
 Rollback point: `alloutdoor-20261119-002834.dump` (34,771,365 bytes).
