@@ -2,6 +2,7 @@ import { ZohoBooksService } from './zoho-books.service';
 
 const ACCOUNTS = [
   { account_id: 'acc-fee', account_name: 'Processing Fee Revenue' },
+  { account_id: 'acc-bobgo', account_name: 'Bob Go Prepaid Balance' },
   { account_id: 'acc-handling', account_name: 'Shipping Handling Revenue' },
   { account_id: 'acc-shipping', account_name: 'Shipping Charge' },
   { account_id: 'acc-carrier', account_name: 'Courier and Delivery Costs' },
@@ -280,7 +281,7 @@ describe('ZohoBooksService buyer paperwork', () => {
         amount: 145,
       }),
       expect.objectContaining({
-        account_id: 'acc-bank',
+        account_id: 'acc-bobgo',
         debit_or_credit: 'credit',
         amount: 145,
       }),

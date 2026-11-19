@@ -7,7 +7,33 @@ overwritten.
 
 Last updated: **2026-11-19**.
 
-## 2026-11-19 (LATEST) — TAX: R2.3m, AGENT-ONLY MARKETPLACE, ACCOUNTANT PDF
+## 2026-11-19 (LATEST) — BOB GO PREPAID FLOAT AND MONTHLY BILLS
+
+Bob Go is a prepaid courier wallet, not a direct bank payee. Zoho is now set up
+for that model:
+
+- Created Zoho Books accounts:
+  - **Bob Go Prepaid Balance** (`other_current_asset`,
+    `136287000000455002`);
+  - **Courier Freight Expense** (`expense`, `136287000000456002`).
+- Existing vendor **Bob Go** (`136287000000237001`) is the monthly bill vendor;
+  the linked bank is **ABSA Current Account**.
+- `createShippingCostJournal` now credits **Bob Go Prepaid Balance**, not Bank.
+- `createShippingVarianceJournal` (re-weigh/surcharge) also credits the prepaid
+  asset, not Bank.
+- Bank top-ups are meant to be transferred from ABSA to the prepaid asset;
+  monthly Bob Go invoices are entered as a **Bill** from vendor Bob Go, then
+  applied against the prepaid asset (`Accounts Payable — Bob Go` /
+  `Bob Go Prepaid Balance`).
+- Bob Go's shipping API has **no wallet/statement endpoint**; the monthly
+  statement/invoice is imported manually. The accountant report documents this.
+- The report was regenerated with the Bob Go float section and is 5 pages.
+
+Remaining: historical shipping journals that credited Bank need reclassification
+to the prepaid asset; seller payout/refund cash entries and gateway fee journals
+remain open (documented in the report).
+
+## 2026-11-19 (LATEST-1) — TAX: R2.3m, AGENT-ONLY MARKETPLACE, ACCOUNTANT PDF
 
 Shipped `6d3e9829` (**full deploy**). Rollback point:
 `alloutdoor-20261119-154336.dump` (34,892,469 bytes).

@@ -20,6 +20,21 @@
 - The system only monitors turnover against the configured limit and does not
   decide eligibility or calculate the liability.
 
+## Bob Go prepaid float
+
+Bob Go is a prepaid courier wallet. Fund it from the ABSA business bank account
+with a transfer to **Bob Go Prepaid Balance**. Shipment charges reduce that asset,
+not the bank. The monthly Bob Go invoice is entered as a vendor bill from **Bob Go**
+and applied against the prepaid balance. Bob Go's API has no wallet-statement
+endpoint, so the monthly statement/invoice is imported manually and reconciled.
+
+| Step | Debit | Credit |
+|---|---|---|
+| Top-up from ABSA | Bob Go Prepaid Balance | ABSA Current Account |
+| Shipment freight | Client Funds Payable | Bob Go Prepaid Balance |
+| Monthly Bob Go bill | Courier Freight Expense (+ VAT Input if registered) | Accounts Payable — Bob Go |
+| Apply prepayment | Accounts Payable — Bob Go | Bob Go Prepaid Balance |
+
 ## Source of truth
 
 The accountant-facing PDF is generated from

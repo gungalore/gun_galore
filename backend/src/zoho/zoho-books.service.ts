@@ -83,6 +83,7 @@ const UNDEPOSITED_FUNDS_NAMES = ['Undeposited Funds'];
  * still recovers the money either way.
  */
 const FREIGHT_EXPENSE_ACCOUNT_NAMES = [
+  'Courier Freight Expense',
   'Freight & Courier Expense',
   'Freight and Courier Expense',
   'Courier Expense',
@@ -91,6 +92,18 @@ const FREIGHT_EXPENSE_ACCOUNT_NAMES = [
   'Freight Expense',
   'Freight Out',
   'Cost of Goods Sold',
+];
+
+/**
+ * Bob Go is a PREPAID wallet: the bank pays a top-up, and Bob Go deducts
+ * courier charges from that float. A shipment therefore credits this asset,
+ * never the bank. Reconciled to Bob Go's monthly statement.
+ */
+const BOBGO_PREPAID_ACCOUNT_NAMES = [
+  'Bob Go Prepaid Balance',
+  'Bob Go Prepaid',
+  'Courier Prepaid Balance',
+  'Prepaid Expenses',
 ];
 
 /** Hard ceiling on one Books call. A hung connection must not hold a cron. */
@@ -1441,10 +1454,12 @@ export class ZohoBooksService {
       const trustAccountId = await this.resolveAccountId(
         CLIENT_FUNDS_ACCOUNT_NAMES,
       );
-      const bankAccountId = await this.resolveBankAccountId();
-      if (!trustAccountId || !bankAccountId) {
+      const prepaidAccountId = await this.resolveAccountId(
+        BOBGO_PREPAID_ACCOUNT_NAMES,
+      );
+      if (!trustAccountId || !prepaidAccountId) {
         throw new Error(
-          'Client Funds Payable or bank account missing from Books',
+          'Client Funds Payable or Bob Go Prepaid Balance account missing from Books',
         );
       }
 
@@ -1458,23 +1473,23 @@ export class ZohoBooksService {
       };
       const resp = await this.request<CreateJournalResp>('POST', '/journals', {
         journal_date: today,
-        reference_number: `Carrier freight â€” ${orderRef}`.slice(0, 100),
+        reference_number: `Carrier freight from Bob Go float — ${orderRef}`.slice(0, 100),
         notes:
-          'Bob Go carrier freight paid from the business bank on the ' +
-          "seller's behalf. Clears the freight collected in Client Funds " +
-          'Payable.',
+          'Bob Go carrier freight consumed from the prepaid Bob Go wallet on ' +
+          "the seller's behalf. Clears the freight collected in Client Funds " +
+          'Payable against the Bob Go Prepaid Balance asset.',
         line_items: [
           {
             account_id: trustAccountId,
             debit_or_credit: 'debit',
             amount,
-            description: `Carrier freight â€” ${orderRef}`,
+            description: `Carrier freight — ${orderRef}`,
           },
           {
-            account_id: bankAccountId,
+            account_id: prepaidAccountId,
             debit_or_credit: 'credit',
             amount,
-            description: `Carrier freight â€” ${orderRef}`,
+            description: `Carrier freight consumed from Bob Go float — ${orderRef}`,
           },
         ],
       });
@@ -2203,10 +2218,12 @@ export class ZohoBooksService {
       const expenseId = await this.resolveAccountId(
         FREIGHT_EXPENSE_ACCOUNT_NAMES,
       );
-      const bankId = await this.resolveBankAccountId();
-      if (!expenseId || !bankId) {
+      const prepaidAccountId = await this.resolveAccountId(
+        BOBGO_PREPAID_ACCOUNT_NAMES,
+      );
+      if (!expenseId || !prepaidAccountId) {
         this.logger.warn(
-          `No freight expense / bank account in Books â€” courier surcharge of ` +
+          `No freight expense / Bob Go prepaid account in Books — courier surcharge of ` +
             `R${(surcharge / 100).toFixed(2)} on ${transactionId} not journalled`,
         );
         return;
@@ -2219,26 +2236,26 @@ export class ZohoBooksService {
       };
       const resp = await this.request<CreateJournalResp>('POST', '/journals', {
         journal_date: new Date().toISOString().slice(0, 10),
-        reference_number: `Courier re-weigh surcharge â€” ${orderRef}`.slice(
+        reference_number: `Courier re-weigh surcharge — ${orderRef}`.slice(
           0,
           100,
         ),
         notes:
           'The carrier re-weighed the parcel and billed more than the buyer ' +
-          'paid. Paid from the bank on the sellerâ€™s behalf and recovered from ' +
-          'their payout.',
+          'paid. Consumed from the Bob Go prepaid float and recovered from ' +
+          'the seller payout.',
         line_items: [
           {
             account_id: expenseId,
             debit_or_credit: 'debit',
             amount,
-            description: `Courier re-weigh surcharge â€” ${orderRef}`,
+            description: `Courier re-weigh surcharge — ${orderRef}`,
           },
           {
-            account_id: bankId,
+            account_id: prepaidAccountId,
             debit_or_credit: 'credit',
             amount,
-            description: `Courier re-weigh surcharge â€” ${orderRef}`,
+            description: `Courier re-weigh consumed from Bob Go float — ${orderRef}`,
           },
         ],
       });

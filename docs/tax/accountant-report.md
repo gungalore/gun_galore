@@ -67,6 +67,8 @@ Required accounts:
 | Account | Use |
 |---|---|
 | Client Funds Payable (Trust) | Buyer money held for sellers/couriers |
+| Bob Go Prepaid Balance | Courier float funded from the ABSA business bank |
+| Courier Freight Expense | Bob Go freight consumed from the float |
 | Platform Fee Revenue | ALL Outdoor agent fee |
 | Commission Revenue | Auction seller commission (may be same account) |
 | Shipping Handling Revenue | Delivery handling margin |
@@ -114,7 +116,28 @@ books can be treated as complete.
 | Recovery from payout | Client Funds Payable | Seller / Accounts Receivable | Invoice paid from withheld payout |
 | Provision (if applicable) | Recovery Expense | Recovery Payable | Accountant decision |
 
-## 6. VAT threshold: R2.3m
+## 6. Bob Go prepaid float
+
+Bob Go is a prepaid courier wallet. ALL Outdoor funds the wallet from its ABSA
+business bank account; Bob Go then deducts each shipment. The bank therefore only
+shows the top-ups, not the individual carrier charges.
+
+| Step | Debit | Credit | Notes |
+|---|---|---|---|
+| Fund Bob Go | Bob Go Prepaid Balance | ABSA Current Account | Bank transfer to the Bob Go wallet |
+| Shipment consumes float | Client Funds Payable | Bob Go Prepaid Balance | Buyer-paid freight cleared to the asset |
+| Self-funded shipping | Courier Freight Expense | Bob Go Prepaid Balance | No bank movement at shipment time |
+| Re-weigh/surcharge | Courier Freight Expense | Bob Go Prepaid Balance | Recovered from seller where applicable |
+| Monthly Bob Go invoice | Courier Freight Expense + VAT Input | Accounts Payable — Bob Go | Bill from the Bob Go tax invoice |
+| Apply prepaid to bill | Accounts Payable — Bob Go | Bob Go Prepaid Balance | Clears the bill against the float |
+
+Bob Go's shipping API does not expose a wallet statement endpoint. The monthly
+Bob Go invoice/statement must be imported manually as a vendor bill, and the wallet
+balance reconciled to the Bob Go Prepaid Balance account. A shipment-derived
+reconciliation is a secondary check only; it cannot prove top-ups, fees, VAT or
+adjustments.
+
+## 7. VAT threshold: R2.3m
 
 - The registration threshold is **R2,300,000**, measured over a rolling 12 months.
 - The default measurement basis is **agent revenue** (platform fees, commission and
@@ -126,7 +149,7 @@ books can be treated as complete.
 - If the accountant determines that gross sales are the correct measure, the basis
   is configurable, but that must be an explicit signed decision.
 
-## 7. Micro-business turnover tax
+## 8. Micro-business turnover tax
 
 - The regime is **turnover tax** for a qualifying micro business.
 - It is an **annual income-tax regime**, not a transaction tax.
@@ -140,7 +163,7 @@ books can be treated as complete.
 - The system reports turnover against the configured limit but does not decide
   eligibility and does not calculate the tax.
 
-## 8. Open decisions for the accountant
+## 9. Open decisions for the accountant
 
 Please approve or amend each item:
 
@@ -161,7 +184,7 @@ Please approve or amend each item:
    collection disclosure on the buyer invoice sufficient?
 10. Any additional records required for SARS record-keeping?
 
-## 9. Sign-off
+## 10. Sign-off
 
 | Decision | Accountant initials | Date | Notes |
 |---|---|---|---|
@@ -174,7 +197,7 @@ Please approve or amend each item:
 **Signature:** ______________________________  
 **Date:** ______________________________
 
-## 10. Vendor / system note
+## 11. Vendor / system note
 
 This report is generated from the ALL Outdoor accounting configuration. It does not
 contain bank account numbers, access tokens or buyer/seller personal information.
