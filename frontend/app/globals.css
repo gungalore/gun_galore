@@ -867,6 +867,18 @@ html:not([data-standalone='true']) body:has([data-shell-tabs]) {
   user-select: none;
 }
 
+/* Image deterrent layer (paired with components/image-protection.tsx).
+   Stops the native image drag and the iOS/Android long-press callout; the
+   component stops the context menu and selection on browsers that ignore
+   these. It is friction, not DRM — a screenshot still works. */
+img,
+[data-protect-image] {
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* ─── Next 16 View Transitions ─────────────────────────────────────
    Browser-native slide between routes. Safari < 18.0 and any other
    non-supporting browser silently ignore these rules and the page

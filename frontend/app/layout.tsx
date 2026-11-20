@@ -9,6 +9,7 @@ import { SiteFooter } from '@/components/site-footer';
 import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
 import { InstallPrompt } from '@/components/install-prompt';
 import { AvatarLightbox } from '@/components/avatar-lightbox';
+import { ImageProtection } from '@/components/image-protection';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { AppShell } from '@/components/shell/app-shell';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
@@ -423,6 +424,9 @@ export default function RootLayout({
           <InstallPrompt />
           {/* Site-wide click-to-enlarge for user profile photos. */}
           <AvatarLightbox />
+          {/* Right-click / drag / long-press friction on images. Cosmetic,
+              not security — see the component header. */}
+          <ImageProtection />
           {/* UX-4 â€” added-to-cart confirmation drawer + cross-sell rail.
               Global listener; opens on the AddToCartButton's add event. */}
           <AddedToCartDrawer />
