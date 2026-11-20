@@ -998,7 +998,9 @@ export class FeedService {
       verdict.decision === 'REJECT' &&
       verdict.otherViolation &&
       post.images.length > 0 &&
-      verdict.reasons.some((r) => r.includes('contact details'))
+      verdict.reasons.some((r) =>
+        r.startsWith('a photo shows contact details'),
+      )
     ) {
       const maskedIndexes = await this.autoMaskPostImages(post);
       if (maskedIndexes.length > 0) {
