@@ -4,7 +4,7 @@
 **Prepared by:** ALL Outdoor engineering  
 **Report date:** 19 November 2026  
 **Status:** For review and sign-off — not a tax return and not tax advice  
-**Implementation status:** Agent invoice wording, tax profile and threshold reporting are implemented. Seller-payout and refund cash entries are proposed and still require implementation before the books are complete. VAT is not active.
+**Implementation status:** Agent invoice wording, tax profile, threshold reporting and the principal motivation paygate are implemented. Seller-payout and refund cash entries are proposed and still require implementation before the books are complete. VAT is not active.
 
 ## 1. Purpose
 
@@ -21,8 +21,9 @@ the transaction flow from a buyer payment to a seller payout.
   a liability (Client Funds Payable), not ALL Outdoor revenue or VAT turnover.
 - ALL Outdoor's own marketplace supplies are the **platform fee, commission and
   delivery handling margin**.
-- **Motivation** is the only **PRINCIPAL** product, and only once its future paygate
-  is enabled. It is not paygated today.
+- **Motivation** is the only **PRINCIPAL** product. Its paygate went live on
+  20 November 2026 at **R295 per motivation**: the full price is ALL Outdoor
+  revenue, invoiced to the member and posted to **Motivation Revenue**.
 - The **VAT registration threshold is R2.3m** (R2,300,000 / 230,000,000 cents).
   ALL Outdoor is **not VAT-registered** at the date of this report.
 - The business is configured for **micro-business turnover tax**. This is an annual
@@ -36,7 +37,7 @@ the transaction flow from a buyer payment to a seller payout.
 |---|---|---|
 | Buy Now (marketplace) | Agent | Platform fee, commission, handling margin |
 | Auction | Agent | Buyer fee + seller commission, handling margin |
-| Motivation (future paygate) | Principal | Full motivation sale price |
+| Motivation (paygated, R295) | Principal | Full R295 — ALL Outdoor's own service |
 | Seller/courier item and freight | Principal (seller/courier) | None — collected as agent |
 | Seller failure recovery | Separate recovery document | Cost recovery, not platform fee |
 
@@ -70,6 +71,7 @@ Required accounts:
 | Bob Go Prepaid Balance | Courier float funded from the ABSA business bank |
 | Courier Freight Expense | Bob Go freight consumed from the float |
 | Platform Fee Revenue | ALL Outdoor agent fee |
+| Motivation Revenue | Principal income from paid motivations (R295 each) |
 | Commission Revenue | Auction seller commission (may be same account) |
 | Shipping Handling Revenue | Delivery handling margin |
 | Courier / Delivery Costs | Carrier freight expense |
@@ -115,6 +117,23 @@ books can be treated as complete.
 | Seller charge invoice | Seller / Accounts Receivable | Recovery Revenue | Seller-facing document |
 | Recovery from payout | Client Funds Payable | Seller / Accounts Receivable | Invoice paid from withheld payout |
 | Provision (if applicable) | Recovery Expense | Recovery Payable | Accountant decision |
+
+### 5.4 Member pays for a motivation (principal)
+
+Live since 20 November 2026. The member builds the application free and pays
+**R295** when they press "Write my motivation"; nothing is generated before Ozow
+confirms the capture.
+
+| Step | Debit | Credit | Notes |
+|---|---|---|---|
+| Member pays via Ozow | ABSA Current Account | Member / Accounts Receivable | Cash received — implemented |
+| Motivation invoice | Member / Accounts Receivable | Motivation Revenue | Principal supply, one line `Motivation MO000123` — implemented |
+| Payment recorded against the invoice | Member / Accounts Receivable | — | Settles the invoice from the bank — implemented |
+
+The invoice carries **no VAT line** (not VAT-registered) and its notes state, in
+words, that it is a principal supply and not an agent collection. One payment per
+application; a failed generation is re-run free, so a refund is only ever needed
+if the document cannot be delivered at all.
 
 ## 6. Bob Go prepaid float
 

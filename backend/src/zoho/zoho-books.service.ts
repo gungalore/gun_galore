@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { SellerChargeKind } from '@prisma/client';
+import {
+  MotivationPaymentStatus,
+  type SellerChargeKind,
+} from '@prisma/client';
 
 // Chart-of-accounts names. The first match wins; the fallbacks keep the
 // integration working in a Books org whose account was renamed.
@@ -50,6 +53,28 @@ const SELLER_CHARGE_ACCOUNT_NAMES = [
   'Recovery Revenue',
   'Other Income',
   ...BUYER_FEE_ACCOUNT_NAMES,
+];
+
+/**
+ * Where a paid motivation is recognised.
+ *
+ * ⚠️ PRINCIPAL, NOT AGENT, AND THE DISTINCTION IS THE WHOLE POINT. A
+ * marketplace sale's item and delivery lines are money we never earned — they
+ * sit in Client Funds Payable until the seller is paid out. A motivation has no
+ * seller and no courier in it: the R295 is ALL Outdoor's own supply, so it is
+ * revenue on the day it is collected. Posting it to the liability would
+ * understate turnover and defer tax on money we have already earned.
+ *
+ * "Motivation Revenue" was created in the live org on 2026-11-20. The fallbacks
+ * are generic income accounts so a renamed chart still posts the sale (with a
+ * warning) rather than failing it.
+ */
+const MOTIVATION_INCOME_ACCOUNT_NAMES = [
+  'Motivation Revenue',
+  'Motivation Income',
+  'Motivation Fees',
+  'General Income',
+  'Sales',
 ];
 
 /** What the seller-side invoice line is called, by ledger kind. */
@@ -2919,6 +2944,393 @@ export class ZohoBooksService {
   }
 
   // â”€â”€â”€ Health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // ─── Motivations: principal revenue ───────────────────────────────────
+
+  /**
+   * Raise (and settle) the Books invoice for one paid motivation.
+   *
+   * ⚠️ THIS IS THE PRINCIPAL SALE THE TAX POSITION DEPENDS ON. Since the
+   * paygate (2026-11-20) a motivation is ALL Outdoor's own product at R295; it
+   * is invoiced to the member as revenue and the Ozow capture settles it into
+   * the bank. Nothing here ever touches Client Funds Payable — that account is
+   * for money we hold on somebody else's behalf.
+   *
+   * Idempotent: skips when zohoInvoiceId is already set (it still finalises a
+   * created-but-unsettled invoice). UNCERTAIN is never retried automatically:
+   * Books has no idempotency key, so a blind retry after a timeout can
+   * duplicate the invoice. Never throws — the failure lands on the payment row.
+   */
+  async createMotivationInvoice(
+    paymentId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
+    if (!this.isEnabled()) {
+      await this.prisma.motivationPayment
+        .update({
+          where: { id: paymentId },
+          data: { zohoSyncStatus: 'SKIPPED' },
+        })
+        .catch(() => undefined);
+      return;
+    }
+
+    const payment = await this.prisma.motivationPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        motivation: { select: { referenceNumber: true } },
+        user: { select: { id: true, email: true } },
+      },
+    });
+    if (!payment) return;
+    // Only money we actually hold gets an invoice. A PENDING attempt is not a
+    // sale, and invoicing it would book revenue before the bank confirms.
+    if (payment.status !== MotivationPaymentStatus.PAID) return;
+
+    if (payment.zohoInvoiceId) {
+      await this.finalizeMotivationInvoice(paymentId);
+      return;
+    }
+
+    if (payment.zohoSyncStatus === 'UNCERTAIN' && !opts.force) {
+      this.logger.log(
+        `Motivation invoice for payment ${paymentId} left UNCERTAIN — not retried automatically`,
+      );
+      return;
+    }
+    if (payment.zohoSyncStatus === 'UNCERTAIN' && opts.force) {
+      await this.prisma.motivationPayment
+        .update({
+          where: { id: paymentId },
+          data: { zohoSyncStatus: null, zohoSyncError: null },
+        })
+        .catch(() => undefined);
+    }
+
+    try {
+      const contactId = payment.userId
+        ? await this.ensureContact(
+            payment.userId,
+            payment.user?.email ?? undefined,
+          )
+        : null;
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for the applicant');
+      }
+
+      const revenueAccountId = await this.resolveAccountId(
+        MOTIVATION_INCOME_ACCOUNT_NAMES,
+      );
+      if (!revenueAccountId) {
+        throw new Error(
+          'No Motivation Revenue account found in the Books chart-of-accounts',
+        );
+      }
+      if (!(await this.getAccountIdByName('Motivation Revenue'))) {
+        this.logger.warn(
+          'No "Motivation Revenue" account in Books — the motivation sold was posted to a generic income account',
+        );
+      }
+
+      const ref = payment.motivation?.referenceNumber ?? payment.motivationRef;
+      const total = payment.amountCents / 100;
+      const date = (payment.paidAt ?? payment.createdAt)
+        .toISOString()
+        .slice(0, 10);
+      // ⚠️ THE NOTES ARE THE ACCOUNTANT'S ONLY CONTEXT on a one-line document.
+      // "Principal supply" is repeated deliberately: this is the row that must
+      // never be mistaken for an agent collection.
+      const notes =
+        `Principal supply — ALL Outdoor motivation service. Not an agent ` +
+        `collection: there is no seller and no courier in this amount.\n` +
+        `Ref: ${ref}\n` +
+        `No VAT charged — ALL Outdoor is not VAT registered.`;
+
+      await this.prisma.motivationPayment
+        .update({
+          where: { id: paymentId },
+          data: {
+            zohoSyncStatus: 'PENDING',
+            zohoSyncLastAttemptAt: new Date(),
+          },
+        })
+        .catch(() => undefined);
+
+      type CreateInvoiceResp = {
+        invoice?: { invoice_id?: string; invoice_number?: string };
+        code?: number;
+        message?: string;
+      };
+      const resp = await this.request<CreateInvoiceResp>('POST', '/invoices', {
+        customer_id: contactId,
+        date,
+        line_items: [
+          {
+            // 100-char cap on a Books line name.
+            name: `Motivation ${ref}`.slice(0, 100),
+            description: '',
+            rate: total,
+            quantity: 1,
+            account_id: revenueAccountId,
+          },
+        ],
+        notes,
+      });
+      const invoiceId = resp.invoice?.invoice_id;
+      if (!invoiceId) {
+        throw new Error(
+          `Books motivation-invoice create returned no invoice_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.motivationPayment.update({
+        where: { id: paymentId },
+        data: {
+          zohoInvoiceId: invoiceId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created principal motivation invoice ${resp.invoice?.invoice_number ?? invoiceId} for ${ref} (R${total.toFixed(2)})`,
+      );
+
+      await this.finalizeMotivationInvoice(paymentId);
+    } catch (err) {
+      await this.markMotivationFailed(paymentId, err as Error);
+    }
+  }
+
+  /**
+   * Mark the invoice sent and settle it from the money Ozow already collected.
+   *
+   * The cash is in the ABSA account, so the customer payment posts there —
+   * never to the liability. Also emails the invoice once, when the member has
+   * an address: a principal sale should produce a document they can keep.
+   */
+  private async finalizeMotivationInvoice(paymentId: string): Promise<void> {
+    const payment = await this.prisma.motivationPayment.findUnique({
+      where: { id: paymentId },
+      include: { user: { select: { email: true } } },
+    });
+    if (!payment?.zohoInvoiceId) return;
+    const invoiceId = payment.zohoInvoiceId;
+
+    type InvoiceResp = {
+      invoice?: {
+        status?: string;
+        balance?: number;
+        total?: number;
+        customer_id?: string;
+      };
+    };
+    const before = await this.request<InvoiceResp>(
+      'GET',
+      `/invoices/${invoiceId}`,
+    );
+    const status = (before.invoice?.status ?? '').toLowerCase();
+    if (status === 'void' || status === 'cancelled') {
+      throw new Error(`Motivation invoice ${invoiceId} is ${status}`);
+    }
+    if (status === 'draft') {
+      // Status-only change: /email is the separate endpoint that sends it.
+      await this.request('POST', `/invoices/${invoiceId}/status/sent`);
+    }
+
+    const after = await this.request<InvoiceResp>(
+      'GET',
+      `/invoices/${invoiceId}`,
+    );
+    const balance = Number(after.invoice?.balance ?? 0);
+    if (balance > 0 && !payment.zohoPaymentId) {
+      const bankAccountId = await this.resolveBankAccountId();
+      if (!bankAccountId) {
+        throw new Error(
+          'No bank account found in Books chart-of-accounts for the motivation payment',
+        );
+      }
+      const customerId =
+        after.invoice?.customer_id ??
+        (payment.userId
+          ? await this.ensureContact(
+              payment.userId,
+              payment.user?.email ?? undefined,
+            )
+          : null);
+      if (!customerId) {
+        throw new Error('Could not resolve the Books customer for the payment');
+      }
+      type CreatePaymentResp = {
+        payment?: { payment_id?: string };
+        code?: number;
+        message?: string;
+      };
+      const created = await this.request<CreatePaymentResp>(
+        'POST',
+        '/customerpayments',
+        {
+          customer_id: customerId,
+          // Books' enum is lowercase 'others'.
+          payment_mode: 'others',
+          amount: balance,
+          date: new Date().toISOString().slice(0, 10),
+          // Books caps the reference at 50 characters.
+          reference_number: `Motivation ${payment.motivationRef}`.slice(0, 50),
+          account_id: bankAccountId,
+          invoices: [{ invoice_id: invoiceId, amount_applied: balance }],
+          description:
+            'Motivation payment received via Ozow into the business bank account',
+        },
+      );
+      if (!created.payment?.payment_id) {
+        throw new Error(
+          `Books motivation payment create returned no payment_id: ${created.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.motivationPayment.update({
+        where: { id: paymentId },
+        data: { zohoPaymentId: created.payment.payment_id },
+      });
+    }
+
+    // The invoice exists and is settled; a failed email must not mark it
+    // FAILED and race a second invoice into existence on the retry.
+    if (!payment.zohoInvoiceEmailedAt && payment.user?.email) {
+      try {
+        await this.emailInvoiceDocument(
+          invoiceId,
+          payment.user.email,
+          'Your ALL Outdoor motivation invoice',
+          `Thank you — your invoice for motivation ${payment.motivationRef} is attached.`,
+        );
+        await this.prisma.motivationPayment.update({
+          where: { id: paymentId },
+          data: { zohoInvoiceEmailedAt: new Date() },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Motivation invoice ${invoiceId} not emailed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    await this.prisma.motivationPayment.update({
+      where: { id: paymentId },
+      data: {
+        zohoSyncStatus: 'OK',
+        zohoSyncError: null,
+        zohoSyncLastAttemptAt: new Date(),
+      },
+    });
+    this.logger.log(
+      `Motivation invoice ${invoiceId} sent and settled into the bank (payment ${paymentId})`,
+    );
+  }
+
+  /**
+   * The hourly sweep. Picks up a capture whose Books write failed, an invoice
+   * created but never settled, and an invoice never emailed.
+   *
+   * UNCERTAIN rows are deliberately excluded — see createMotivationInvoice.
+   * Never throws: the cron that calls it must survive a Books outage.
+   */
+  async retryFailedMotivationInvoices(limit = 25): Promise<void> {
+    if (!this.isEnabled()) return;
+    try {
+      // ⚠️ A ROW STUCK ON 'PENDING' IS AN UNKNOWN, NOT A FAILURE. 'PENDING' is
+      // written immediately before the Books POST; if the process dies between
+      // that write and the invoice id being saved, the invoice may or may not
+      // exist. Retrying it could duplicate the invoice, so a stale PENDING is
+      // promoted to UNCERTAIN for a human — the same rule as a transport error.
+      await this.prisma.motivationPayment
+        .updateMany({
+          where: {
+            status: MotivationPaymentStatus.PAID,
+            zohoInvoiceId: null,
+            zohoSyncStatus: 'PENDING',
+            zohoSyncLastAttemptAt: { lt: new Date(Date.now() - 10 * 60_000) },
+          },
+          data: {
+            zohoSyncStatus: 'UNCERTAIN',
+            zohoSyncError:
+              'Books write interrupted — check the Books UI for an invoice before retrying',
+          },
+        })
+        .catch(() => undefined);
+
+      const rows = await this.prisma.motivationPayment.findMany({
+        where: {
+          status: MotivationPaymentStatus.PAID,
+          OR: [
+            { zohoInvoiceId: null, zohoSyncStatus: null },
+            // SKIPPED means Zoho was off at capture; once it is on, the sale
+            // still needs booking.
+            { zohoInvoiceId: null, zohoSyncStatus: 'SKIPPED' },
+            { zohoInvoiceId: null, zohoSyncStatus: 'FAILED' },
+            { zohoInvoiceId: { not: null }, zohoPaymentId: null },
+            {
+              zohoInvoiceId: { not: null },
+              zohoPaymentId: { not: null },
+              zohoInvoiceEmailedAt: null,
+            },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+        select: { id: true },
+      });
+      for (const row of rows) {
+        await this.createMotivationInvoice(row.id);
+      }
+      if (rows.length > 0) {
+        this.logger.log(
+          `retryFailedMotivationInvoices: re-processed ${rows.length} paid motivation(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `retryFailedMotivationInvoices failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async markMotivationFailed(
+    paymentId: string,
+    err: Error,
+  ): Promise<void> {
+    const message = err.message.slice(0, 1000);
+    if (err instanceof ZohoTransportError && err.uncertain) {
+      // Books may have created the invoice; a human must look before a retry.
+      this.logger.error(
+        `Zoho Books motivation invoice UNCERTAIN for payment ${paymentId}: ${message}`,
+      );
+      await this.prisma.motivationPayment
+        .update({
+          where: { id: paymentId },
+          data: {
+            zohoSyncStatus: 'UNCERTAIN',
+            zohoSyncError: message,
+            zohoSyncLastAttemptAt: new Date(),
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+    this.logger.error(
+      `Zoho Books motivation invoice FAILED for payment ${paymentId}: ${message}`,
+    );
+    await this.prisma.motivationPayment
+      .update({
+        where: { id: paymentId },
+        data: {
+          zohoSyncStatus: 'FAILED',
+          zohoSyncError: message,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      })
+      .catch(() => undefined);
+  }
 
   /**
    * Lightweight probe for /admin/health. Pings the /organizations

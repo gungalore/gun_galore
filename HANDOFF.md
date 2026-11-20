@@ -40,6 +40,18 @@ schema migration `20261120191500_motivation_paygate` included).
   charged" on a paid document — it says the payment stays against the
   application and the retry is free. SMS variants re-cut to stay inside one
   GSM-7 segment.
+- **Books — PRINCIPAL, not agent.** A motivation is ALL Outdoor's own supply,
+  so on capture `ZohoBooksService.createMotivationInvoice` raises a Books
+  invoice to the member: one line `Motivation MO000123` at R295, posted to
+  **Motivation Revenue** (account `136287000000462002`, created 2026-11-20),
+  marked sent and settled by a customer payment into **ABSA Current Account** —
+  never Client Funds Payable. It is emailed to the member once. The invoice
+  notes say "Principal supply … not an agent collection". Migration
+  `20261120203500_motivation_payment_zoho` adds the `zoho*` columns; FAILED is
+  re-fired by the hourly `retryFailedMotivationInvoices` sweep, UNCERTAIN and
+  stale PENDING are never auto-retried (Books has no idempotency key).
+  ⚠️ First live proof comes with the first real capture — no paid motivation
+  exists yet.
 - **Verified live** (`turbosnail`): `/status` → `paidMode true, priceCents
   29500, canStart true`; unpaid generate → 409; a real Ozow checkout was
   created for R295 and its hosted page returned 200; `verify` → `PENDING`;

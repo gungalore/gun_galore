@@ -64,6 +64,7 @@ import { MotivationReasonService } from './motivation-reason.service';
 import { FirearmUsesService } from './firearm-uses.service';
 import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
 import { LegalModule } from '../legal/legal.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 /**
  * Firearm-licence motivation writer (Phase 1 â€” LICENCE-SERVICES-AND-FEED.md).
@@ -89,7 +90,9 @@ import { LegalModule } from '../legal/legal.module';
  */
 @Module({
   // Jev document filing (Gemini reads, Jev files the folder).
-  imports: [DocumentFilingModule, LegalModule],
+  // Zoho Books: the paid motivation is a PRINCIPAL sale and must reach the
+  // ledger as revenue — see MotivationPaymentsService.markPaid.
+  imports: [DocumentFilingModule, LegalModule, ZohoBooksModule],
   controllers: [MotivationsController, MotivationsIntakeController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,

@@ -5319,6 +5319,26 @@ model MotivationPayment {
   paidAt   DateTime?
   failedAt DateTime?
 
+  /// ── Zoho Books: the PRINCIPAL sale ──────────────────────────────
+  ///
+  /// ⚠️ A MOTIVATION IS OUR OWN SUPPLY, SO IT IS INVOICED AS REVENUE — never
+  /// as an agent collection into Client Funds Payable. A marketplace sale's
+  /// item and delivery lines are money we never earned; this R295 is ours.
+  /// The invoice posts to "Motivation Revenue" and is settled against the bank
+  /// by the customer payment ZohoBooksService records when the money clears.
+  ///
+  /// Rail-locked like every other money row: the invoice is raised from this
+  /// payment, and the Ozow capture is the only cash that settles it.
+  zohoInvoiceId String?
+  zohoPaymentId String?
+  zohoInvoiceEmailedAt DateTime?
+  /// OK · FAILED · UNCERTAIN · SKIPPED. UNCERTAIN means a Books write may have
+  /// landed (timeout/5xx) and must never be retried automatically — Books has
+  /// no idempotency key, so a blind retry is a duplicate invoice.
+  zohoSyncStatus String?
+  zohoSyncError String?
+  zohoSyncLastAttemptAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

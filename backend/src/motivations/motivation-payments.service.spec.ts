@@ -95,6 +95,9 @@ function build(
   };
   const quota = { assertEnabled: jest.fn(async () => undefined) };
   const engine = { assertAvailable: jest.fn(async () => undefined) };
+  // The principal sale in Books. Stubbed here: the invoice's own shape is
+  // covered by the Zoho spec; this one asserts we ASK for it, once, on capture.
+  const zoho = { createMotivationInvoice: jest.fn(async () => undefined) };
 
   const prisma: Record<string, any> = {
     motivation: {
@@ -121,9 +124,10 @@ function build(
     settings as never,
     rails as never,
     quota as never,
+    zoho as never,
     engine as never,
   );
-  return { svc, prisma, rails, settings, quota, engine };
+  return { svc, prisma, rails, settings, quota, engine, zoho };
 }
 
 describe('the generation gate', () => {
@@ -275,6 +279,34 @@ describe('confirming a payment', () => {
         data: { status: 'CANCELLED' },
       }),
     );
+  });
+
+  it('books the principal sale in Zoho when the money lands', async () => {
+    // A motivation is our own supply: the invoice must be raised from the
+    // capture, or the R295 never reaches the ledger as revenue.
+    const { svc, zoho } = build({ motivation: UNPAID_ROW, pending: ATTEMPT });
+    await svc.verify('user-1', 'mo-1');
+    expect(zoho.createMotivationInvoice).toHaveBeenCalledTimes(1);
+    expect(zoho.createMotivationInvoice).toHaveBeenCalledWith('pay-1');
+  });
+
+  it('never books an attempt the gateway has not confirmed', async () => {
+    // The member is not invoiced for money they still owe.
+    const { svc, zoho } = build({
+      motivation: UNPAID_ROW,
+      pending: ATTEMPT,
+      status: {
+        provider: 'OZOW',
+        paymentId: 'tx-1',
+        merchantReference: 'AOABC123',
+        resultCode: 'Incomplete',
+        amountCents: 29_500,
+        currency: 'ZAR',
+        isSuccess: false,
+      },
+    });
+    await svc.verify('user-1', 'mo-1');
+    expect(zoho.createMotivationInvoice).not.toHaveBeenCalled();
   });
 
   it('refuses to apply a payment for the wrong amount', async () => {

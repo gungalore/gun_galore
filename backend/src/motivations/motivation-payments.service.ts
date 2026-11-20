@@ -18,6 +18,7 @@ import { PAYMENTS_LIVE } from '../payments/payment-mode';
 import { PaymentRailsService } from '../payments/payment-rails.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { formatPrice } from './motivation-pricing';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { EDITABLE, isPaidFor } from './motivation-shared.service';
@@ -99,6 +100,9 @@ export class MotivationPaymentsService {
     private readonly settings: SettingsService,
     private readonly rails: PaymentRailsService,
     private readonly quota: MotivationQuotaService,
+    // Books. A paid motivation is PRINCIPAL revenue, not an agent collection —
+    // see createMotivationInvoice's own note.
+    private readonly zoho: ZohoBooksService,
     // Jev-backed document engine; absent in old positional specs. The writer
     // treats it the same way.
     @Optional()
@@ -516,6 +520,16 @@ export class MotivationPaymentsService {
     this.logger.log(
       `Motivation payment ${attempt.id} captured for ${attempt.motivationRef} (${formatPrice(attempt.amountCents)})`,
     );
+
+    // ⚠️ BOOKS GETS THE PRINCIPAL SALE, AND IT DOES NOT BLOCK THIS REQUEST.
+    // The money is already ours; the invoice is paperwork that must not make a
+    // member wait on an accountant's API. createMotivationInvoice swallows its
+    // own failures onto the payment row, and the hourly sweep retries them.
+    void this.zoho.createMotivationInvoice(attempt.id).catch((err) => {
+      this.logger.warn(
+        `Zoho motivation invoice failed for ${attempt.id}: ${(err as Error).message}`,
+      );
+    });
 
     if (siblingPaid > 0) {
       await this.alert(

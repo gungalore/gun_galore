@@ -1258,9 +1258,19 @@ motivation**; nothing is generated before Ozow confirms the capture.
 - **Money out** — refunds are manual in phase 1 (Ozow dashboard, then the row).
   `MOTIVATION_PAID_GENERATION_FAILED` tells the desk when a paid document did
   not write; the member's retry is free.
-- **Tax** — not VAT registered (`TURNOVER_TAX`), so R295 carries no VAT line
-  and there is no automated tax invoice. The payment row is the turnover
-  record, and it survives erasure precisely so the year can be filed.
+- **Books** — the R295 is **principal revenue**, not an agent collection.
+  `ZohoBooksService.createMotivationInvoice` raises a Books invoice to the member
+  on capture: one line, `Motivation MO000123`, posted to **Motivation Revenue**
+  (account `136287000000462002`, created 2026-11-20), written to the ABSA
+  current account by a customer payment — never to Client Funds Payable. It is
+  marked sent, settled, and emailed to the member once. The invoice notes say
+  "Principal supply … not an agent collection", because a one-line document is
+  all the accountant has to go on. `MotivationPayment.zoho*` holds the ids and
+  sync state; UNCERTAIN is never auto-retried (Books has no idempotency key) and
+  the hourly `retryFailedMotivationInvoices` sweep re-fires FAILED rows.
+- **Tax** — not VAT registered (`TURNOVER_TAX`), so the invoice carries no tax
+  line and no VAT number. The payment row is the turnover record, and it
+  survives erasure precisely so the year can be filed.
 - **The screen** — `/licence-centre/[id]/pack`. The footer's red button reads
   "Pay R 295 and write my motivation" until the sheet says it is paid, then
   "Write my motivation". The declaration is stored before the redirect, and
