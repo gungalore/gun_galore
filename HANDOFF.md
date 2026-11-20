@@ -7,6 +7,28 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — IMAGE COPY DETERRENT; CLOUDINARY ACL PENDING
+
+- **Shipped** `74b4a044` (frontend-only): a global `ImageProtection` client
+  component blocks `contextmenu`, `dragstart` and `selectstart` when the event
+  target is an `<img>`, `<picture>` or `[data-protect-image]`. `globals.css`
+  adds `-webkit-user-drag: none`, `user-select: none` and
+  `-webkit-touch-callout: none` to the same targets. Normal text selection,
+  links and card clicks are untouched. This is friction, not DRM — a
+  screenshot or a DevTools request still works.
+- **Cloudinary hotlink protection is NOT applied.** Cloudinary's public Admin
+  API does not expose a referrer ACL: `api.config({ settings: true })` returns
+  only `folder_mode`, and referrer allow/block lists are account-level ACLs
+  applied in the Console (Settings → Security) or by Cloudinary support on
+  paid plans. The Next image optimizer also fetches Cloudinary server-side
+  with **no Referer**, so a strict empty-referer block would break
+  `/_next/image`; the ACL must allow the optimizer or the site must move to a
+  browser-direct Cloudinary loader first.
+- To apply: allow `alloutdoor.co.za`, `*.alloutdoor.co.za` and
+  `http://localhost:3000` (dev), then test a foreign `Referer` against a
+  Cloudinary URL. Do not block missing Referer until the optimizer path is
+  changed.
+
 ## 2026-11-20 — MASK PRECISION: URL ONLY, BRAND WORDMARK STAYS
 
 - **Reported:** the first feed auto-mask covered the PRIMER wordmark along with
