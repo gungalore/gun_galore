@@ -27,7 +27,6 @@ import {
   type DetailValue,
   type PostFieldDef,
 } from '../../lib/post-fields';
-import { matchEntries } from '../../lib/post-vocab';
 import { VocabCombobox } from './vocab-combobox';
 import FilePickerButton from '../file-picker-button';
 
@@ -154,8 +153,8 @@ function entryLabel(entry: { value: string; label: string }): string {
   return entry.label === entry.value ? chipLabel(entry.value) : entry.label;
 }
 
-/** Multi-select pills with an always-visible search box. */
-function ChipPicker({
+/** Free-text input for the old chip fields. No pills, no suggestion wall. */
+function ChipTextInput({
   field,
   value,
   disabled,
@@ -167,128 +166,37 @@ function ChipPicker({
   onChange: (key: string, value: DetailValue) => void;
 }) {
   const entries = suggestionsFor(field);
-  const selected = Array.isArray(value) ? value : [];
-  const [q, setQ] = useState('');
-
-  const labelFor = (entry: string) => {
-    const found = entries.find((item) => item.value === entry);
-    return found ? entryLabel(found) : chipLabel(entry);
-  };
-
-  const pool = q.trim() ? matchEntries(q, entries, 60) : entries.slice(0, 60);
-  const matches = pool.filter((entry) => !selected.includes(entry.value));
-  const free = q.trim().replace(/\s+/g, '-').toLowerCase();
-  const canAdd = selected.length < 8;
-
-  const toggle = (entry: string) => {
-    if (disabled) return;
-    if (selected.includes(entry)) {
-      onChange(field.key, selected.filter((x) => x !== entry));
-      return;
-    }
-    if (canAdd) onChange(field.key, [...selected, entry]);
-  };
+  const initial = Array.isArray(value)
+    ? value
+        .map((entry) => {
+          const found = entries.find((item) => item.value === entry);
+          return found ? entryLabel(found) : chipLabel(entry);
+        })
+        .join(', ')
+    : '';
+  const [text, setText] = useState(initial);
 
   return (
-    <div>
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {selected.map((entry) => (
-            <span
-              key={entry}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[12px]"
-              style={{ background: 'var(--red)', color: '#fff' }}
-            >
-              {labelFor(entry)}
-              <button
-                type="button"
-                aria-label={`Remove ${labelFor(entry)}`}
-                disabled={disabled}
-                onClick={() => toggle(entry)}
-                className="leading-none"
-                style={{ color: '#fff' }}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        aria-label={`Search ${field.label}`}
-        placeholder={`Search ${field.label.toLowerCase()} or add your own…`}
-        disabled={disabled}
-        maxLength={40}
-        className="w-full px-2 py-2 rounded-[6px] text-[13px] mb-2"
-        style={fieldInput}
-      />
-
-      <div
-        role="group"
-        aria-label={field.label}
-        className="flex flex-wrap gap-1.5 rounded-[6px] p-2"
-        style={{
-          ...fieldInput,
-          maxHeight: 170,
-          overflowY: 'auto',
-        }}
-      >
-        {matches.map((entry) => {
-          const off = !canAdd;
-          return (
-            <button
-              key={entry.value}
-              type="button"
-              aria-disabled={off || undefined}
-              disabled={disabled}
-              onClick={() => toggle(entry.value)}
-              className="gg-press px-2.5 py-1 rounded-full text-[12px]"
-              style={{
-                background: 'var(--bg-card)',
-                color: 'var(--text-secondary)',
-                border: '0.5px solid var(--border)',
-                opacity: off ? 0.45 : 1,
-              }}
-            >
-              {entryLabel(entry)}
-            </button>
-          );
-        })}
-
-        {q.trim() && free && !entries.some((entry) => entry.value === free) && canAdd && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              onChange(field.key, [...selected, free]);
-              setQ('');
-            }}
-            className="gg-press px-2.5 py-1 rounded-full text-[12px]"
-            style={{
-              background: 'var(--bg-inset)',
-              color: 'var(--text-secondary)',
-              border: '1px dashed var(--border-hover)',
-            }}
-          >
-            + Add “{q.trim()}”
-          </button>
-        )}
-
-        {matches.length === 0 && !q.trim() && entries.length > 0 && (
-          <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-            All suggestions chosen. Search or add your own above.
-          </span>
-        )}
-        {matches.length === 0 && q.trim() && (
-          <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-            No match — add it with the button above.
-          </span>
-        )}
-      </div>
-    </div>
+    <input
+      value={text}
+      disabled={disabled}
+      aria-label={field.label}
+      placeholder={`Type ${field.label.toLowerCase()}…`}
+      maxLength={120}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        // The API stores these as arrays; commas separate multiple values.
+        const items = next
+          .split(',')
+          .map((part) => part.trim().toLowerCase().replace(/\s+/g, '-'))
+          .filter(Boolean)
+          .slice(0, 8);
+        onChange(field.key, items);
+      }}
+      className="w-full px-2 py-2 rounded-[6px] text-[13px]"
+      style={fieldInput}
+    />
   );
 }
 
@@ -377,7 +285,7 @@ function DetailField({
   let control: ReactNode = null;
   if (field.kind === 'chips') {
     control = (
-      <ChipPicker
+      <ChipTextInput
         field={field}
         value={value}
         disabled={disabled}
@@ -487,7 +395,7 @@ function DetailField({
   const helper =
     field.hint ??
     (field.kind === 'chips'
-      ? 'Tap every option that fits, or search for another.'
+      ? 'Type one or more, separated by commas.'
       : field.kind === 'single'
         ? 'Choose one.'
         : field.kind === 'date'
@@ -864,8 +772,8 @@ export function PostComposer({
         {detailsOpen && (
           <div className="mt-2 flex flex-col gap-3">
             <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-              Optional. Tap what fits — these show on your post and help people
-              find it. Your choices are remembered for next time.
+              Optional. Add what you like — these show on your post and help
+              people find it. Your choices are remembered for next time.
             </p>
             {detailFields.map((field) => (
               <DetailField

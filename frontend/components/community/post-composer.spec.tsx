@@ -185,9 +185,11 @@ describe('PostComposer', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
 
-    // The chips are visible immediately — no "start typing" dead end.
-    await userEvent.click(screen.getByRole('button', { name: 'Greater kudu' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Warthog' }));
+    // Plain text input — no pills, no suggestion wall.
+    await userEvent.type(
+      screen.getByLabelText('Species'),
+      'Greater kudu, warthog',
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Post' }));
 
@@ -204,9 +206,10 @@ describe('PostComposer', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Post category' }), {
       target: { value: 'HUNTING' },
     });
-    expect(screen.queryByRole('group', { name: 'Species' })).toBeNull();
+    expect(screen.queryByLabelText('Species')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
-    expect(screen.getByRole('group', { name: 'Species' })).toBeTruthy();
+    expect(screen.getByLabelText('Species')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Species' })).toBeNull();
   });
 
   it('renders single-select details as a real select, not a type-ahead', async () => {
