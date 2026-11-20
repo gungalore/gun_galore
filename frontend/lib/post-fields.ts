@@ -65,7 +65,7 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       label: 'Calibre',
       kind: 'text',
       vocab: 'cartridge',
-      placeholder: 'Start typing… e.g. .308 Win',
+      placeholder: 'e.g. .308 Win',
       max: 40,
     },
     { key: 'shotDistanceM', label: 'Shot distance', kind: 'number', min: 1, max: 5000, suffix: 'm' },
@@ -77,7 +77,7 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       label: 'Calibre',
       kind: 'text',
       vocab: 'cartridge',
-      placeholder: 'Start typing… e.g. 6.5 Creedmoor',
+      placeholder: 'e.g. 6.5 Creedmoor',
       max: 40,
     },
     {
@@ -96,7 +96,7 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       label: 'Cartridge',
       kind: 'text',
       vocab: 'cartridge',
-      placeholder: 'Start typing… e.g. .30-06',
+      placeholder: 'e.g. .30-06',
       max: 40,
     },
     {
@@ -120,7 +120,7 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
       label: 'Test result',
       kind: 'text',
       vocab: 'test-result',
-      placeholder: 'Start typing… e.g. 1.5 MOA',
+      placeholder: 'e.g. 1.5 MOA',
       max: 120,
     },
   ],
@@ -152,7 +152,12 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
 
 /** Shared fields appended to every category. */
 const COMMON_FIELDS: PostFieldDef[] = [
-  { key: 'occurredAt', label: 'Date (when it happened)', kind: 'date' },
+  {
+    key: 'occurredAt',
+    label: 'Date (when it happened)',
+    kind: 'date',
+    hint: 'Tap the calendar, or type yyyy-mm-dd.',
+  },
 ];
 
 export function detailFieldsFor(type: PostTypeKey): PostFieldDef[] {

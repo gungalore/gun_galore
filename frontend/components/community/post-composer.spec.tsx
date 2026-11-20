@@ -185,18 +185,16 @@ describe('PostComposer', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
 
-    const species = screen.getByRole('combobox', { name: 'Species' });
-    await userEvent.type(species, 'kudu');
-    await userEvent.keyboard('{Enter}');
-    await userEvent.type(species, 'warthog');
-    await userEvent.keyboard('{Enter}');
+    // The chips are visible immediately — no "start typing" dead end.
+    await userEvent.click(screen.getByRole('button', { name: 'Greater kudu' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Warthog' }));
 
     await userEvent.click(screen.getByRole('button', { name: 'Post' }));
 
     await waitFor(() =>
       expect(mocks.createPost).toHaveBeenCalledWith(
         't',
-        expect.objectContaining({ type: 'HUNTING', species: ['kudu', 'warthog'] }),
+        expect.objectContaining({ type: 'HUNTING', species: ['greater-kudu', 'warthog'] }),
       ),
     );
   });
@@ -206,9 +204,40 @@ describe('PostComposer', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Post category' }), {
       target: { value: 'HUNTING' },
     });
-    expect(screen.queryByRole('combobox', { name: 'Species' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Species' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
-    expect(screen.getByRole('combobox', { name: 'Species' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Species' })).toBeTruthy();
+  });
+
+  it('renders single-select details as a real select, not a type-ahead', async () => {
+    openComposer();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Post category' }), {
+      target: { value: 'FIREARMS_SHOOTING' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
+
+    const type = screen.getByLabelText('Type') as HTMLSelectElement;
+    expect(type.tagName).toBe('SELECT');
+    expect(type.value).toBe('');
+    expect(
+      Array.from(type.options).some((o) => o.value === 'rifle' && o.text === 'Rifle'),
+    ).toBe(true);
+
+    fireEvent.change(type, { target: { value: 'rifle' } });
+    expect(type.value).toBe('rifle');
+  });
+
+  it('opens the date sheet from the composer’s date detail', async () => {
+    openComposer();
+    await userEvent.click(screen.getByRole('button', { name: /Add details/i }));
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'Date (when it happened). Open the calendar.',
+      }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'Date (when it happened)' }),
+    ).toBeTruthy();
   });
 
   it('enables Post when ANY one of text, photo or video is present', async () => {

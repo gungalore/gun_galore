@@ -5,10 +5,13 @@ import { matchEntries, type VocabEntry } from '../../lib/post-vocab';
 import { chipLabel } from '../../lib/post-fields';
 
 /**
- * A type-to-search picker for a local vocabulary. Nothing is shown until the
- * member types — the list is a suggestion, never a wall of pills. Free text is
- * always accepted: `storeMode` decides whether the value is stored as a
- * normalised slug (species/flair/single-select) or verbatim (calibre/testResult).
+ * A type-to-search picker for a local vocabulary. By default nothing is shown
+ * until the member types — the list is a suggestion, never a wall of pills —
+ * but `showOnFocus` opens the first few suggestions as soon as the field is
+ * focused, so a control with a long vocabulary (cartridges) still tells the
+ * member what it wants. Free text is always accepted: `storeMode` decides
+ * whether the value is stored as a normalised slug (species/flair/single-
+ * select) or verbatim (calibre/testResult).
  *
  * `multiple` renders chosen values as removable tokens (they must stay visible
  * so they can be undone); otherwise it is a single-value field.
@@ -20,10 +23,11 @@ export function VocabCombobox({
   onChange,
   multiple = false,
   storeMode = 'slug',
-  placeholder = 'Start typing…',
+  placeholder = 'Pick one or type your own…',
   disabled = false,
   maxLength = 32,
   maxSelections = 8,
+  showOnFocus = false,
 }: {
   ariaLabel: string;
   entries: readonly VocabEntry[];
@@ -35,6 +39,8 @@ export function VocabCombobox({
   disabled?: boolean;
   maxLength?: number;
   maxSelections?: number;
+  /** Show the first few suggestions as soon as the box is focused. */
+  showOnFocus?: boolean;
 }) {
   const inputId = useId();
   const listId = useId();
@@ -59,10 +65,14 @@ export function VocabCombobox({
   const pretty = (v: string) => byValue.get(v)?.label ?? (storeMode === 'slug' ? chipLabel(v) : v);
 
   const matches = useMemo(() => {
-    const found = matchEntries(q, entries);
+    const found = q.trim()
+      ? matchEntries(q, entries)
+      : showOnFocus
+        ? entries.slice(0, 8)
+        : [];
     // Don't offer something already selected (multi).
     return multiple ? found.filter((x) => !selected.includes(x.value)) : found;
-  }, [q, entries, multiple, selected]);
+  }, [q, entries, multiple, selected, showOnFocus]);
 
   const normalise = (text: string) => {
     const t = text.trim();
@@ -151,7 +161,7 @@ export function VocabCombobox({
     }
   }
 
-  const showList = open && q.trim().length > 0;
+  const showList = open && (q.trim().length > 0 || showOnFocus);
   const freeText = normalise(q);
   const showFreeRow = !!freeText && !matches.some((m) => m.value === freeText);
 
@@ -211,7 +221,7 @@ export function VocabCombobox({
           onFocus={() => {
             focused.current = true;
             inputRef.current?.select();
-            if (q.trim()) setOpen(true);
+            setOpen(true);
           }}
           onBlur={() => {
             focused.current = false;

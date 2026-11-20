@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -43,12 +43,14 @@ import { useScrollLock } from '@/lib/use-scroll-lock';
 // whatever the field's position on the page. Desktop gets the same panel,
 // centred.
 //
-// ⚠️ Z-INDEX 121, NOT 60. The house rule is "anything floating is >= 60",
+// ⚠️ Z-INDEX 1101, NOT 121. The house rule is "anything floating is >= 60",
 // which clears the bottom tab bar at 55. It does NOT clear every surface that
-// can CONTAIN a date field: the admin modal shell is z-100 and holds one. The
-// rule for this component is therefore "above everything that can contain a
-// date field", which today means 100. If anybody builds a higher overlay with
-// a date in it, this number has to move with it — the failure is silent.
+// can CONTAIN a date field: the admin modal shell is z-100, and the community
+// "Create post" dialog is z-1000. A sheet at 121 opened BEHIND that dialog and
+// looked like a dead calendar button. The rule for this component is therefore
+// "above everything that can contain a date field", which today means 1000. If
+// anybody builds a higher overlay with a date in it, this number has to move
+// with it — the failure is silent.
 //
 // ⚠️ NO ring-* FOR FOCUS. Tailwind compiles ring utilities to box-shadow and
 // globals.css has `* { box-shadow: none !important }`, so the app's own
@@ -62,8 +64,8 @@ import { useScrollLock } from '@/lib/use-scroll-lock';
 // so the handler is where the refusal has to live.
 // ────────────────────────────────────────────────────────────────────
 
-const Z_SCRIM = 120;
-const Z_PANEL = 121;
+const Z_SCRIM = 1100;
+const Z_PANEL = 1101;
 
 /** Every cell clears the 44px touch floor the rest of the app sets itself. */
 const CELL_MIN = 44;
