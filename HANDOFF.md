@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — MASK PRECISION: URL ONLY, BRAND WORDMARK STAYS
+
+- **Reported:** the first feed auto-mask covered the PRIMER wordmark along with
+  `www.ppprsa.shop`. The detector had returned a loose box and the 1% pad
+  reached up into the wordmark.
+- **Fix** `8dc759db` (backend-only): the contact box instructions now demand a
+  tight one-line box — top edge at the first character, bottom at the
+  baseline, no brand wordmark/logo/artwork, and "start below" a brand name
+  printed directly above a URL. `photo-mask`'s pad dropped from 1% to 0.3%,
+  and the mosaic block changed from an eighth of the short side to a third of
+  the region height (three rows), because a tight one-line box was otherwise
+  readable as letter shapes.
+- The prompt and block change apply to every mask on the site (listing photos,
+  feed photos, QR/address/advertising boxes), not just this post.
+- **Existing post reprocessed from the original:** PRIMER remains fully
+  readable, the URL line is an unreadable mosaic, and the post is `PUBLISHED`.
+  The temporary original upload was deleted by the auto-mask step; the older
+  imprecise masked asset is orphaned but no longer referenced.
+- Checks: backend **6,283 passed / 8 skipped**; frontend unchanged
+  (**1,959 passed / 1 skipped**); backend build clean; health and public site
+  200.
+- Rollback point: `alloutdoor-20261120-081640.dump`.
+
 ## 2026-11-20 — FEED PHOTOS: CONTACT DETAILS ARE AUTO-MASKED
 
 - **Reported:** a community post by `turbosnail` (Bullseye Turret Tags product
