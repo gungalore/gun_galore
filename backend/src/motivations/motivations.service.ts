@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
 import {
@@ -30,6 +31,7 @@ import {
   stamp,
 } from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationPaymentsService } from './motivation-payments.service';
 import { asLayout } from './motivation-pdf-layouts';
 import {
   applicationBlockers,
@@ -125,6 +127,16 @@ export class MotivationsService {
     // hand-built specs keep compiling.
     private readonly readCache?: DocumentReadCacheService,
     private readonly pageRaster?: DocumentPageRasterService,
+    /**
+     * The paygate, for the list's "Payment due" chip.
+     *
+     * ⚠️ OPTIONAL, UNLIKE THE GENERATION SERVICE'S DEPENDENCY. This is a
+     * read-shape nicety, not the money gate: hand-built specs omit it and get
+     * `paymentDue: false`, while the gate that actually refuses an unpaid
+     * document lives in MotivationGenerationService and is required there.
+     */
+    @Optional()
+    private readonly payments?: MotivationPaymentsService,
   ) {}
 
   /** Remove vault-sourced material from drafts without rewriting completed packs. */
@@ -159,8 +171,13 @@ export class MotivationsService {
         answersEncrypted: true,
         intakeMode: true,
         intakeCompletedAt: true,
+        // The paygate's state, for the "Payment due" chip.
+        billedCents: true,
+        betaSeatNo: true,
       },
     });
+    // One settings read for the whole list, not one per row.
+    const paidMode = this.payments ? await this.payments.isPaidMode() : false;
     return rows.map((r) => ({
       id: r.id,
       referenceNumber: r.referenceNumber,
@@ -172,6 +189,21 @@ export class MotivationsService {
       label: r.label,
       intakeMode: r.intakeMode,
       intakeCompletedAt: r.intakeCompletedAt,
+      paid: r.billedCents > 0,
+      // Only where the member can act on it: a COMPLETED unpaid row is not
+      // something to chase, and a GENERATING one is already being written.
+      paymentDue:
+        paidMode &&
+        r.billedCents === 0 &&
+        r.betaSeatNo === null &&
+        (
+          [
+            MotivationStatus.DRAFT,
+            MotivationStatus.INTERVIEW,
+            MotivationStatus.NEEDS_MORE_INFO,
+            MotivationStatus.FAILED,
+          ] as MotivationStatus[]
+        ).includes(r.status),
       licenceTypeLabel: LICENCE_TYPE_LABELS[r.licenceType],
       title: motivationTitle(
         r.licenceType,
@@ -218,10 +250,17 @@ export class MotivationsService {
     const status = await this.quota.status();
     if (!status.canStart) {
       throw new ConflictException({
-        message: status.enabled
-          ? 'The free beta is full for now. We will open paid motivations shortly.'
-          : 'Not available yet.',
-        code: 'motivation-beta-cap-reached',
+        // Paid mode only refuses here when the rail itself is off (a deploy
+        // into an environment without PAYMENTS_LIVE), so the two sentences
+        // are genuinely different situations and must not share copy.
+        message: status.paidMode
+          ? 'Payments for motivations are not open yet. Please try again shortly.'
+          : status.enabled
+            ? 'The free beta is full for now. We will open paid motivations shortly.'
+            : 'Not available yet.',
+        code: status.paidMode
+          ? 'motivation-payments-not-live'
+          : 'motivation-beta-cap-reached',
         cap: status.cap,
         used: status.used,
       });

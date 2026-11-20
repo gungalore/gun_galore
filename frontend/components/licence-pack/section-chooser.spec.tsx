@@ -77,7 +77,7 @@ describe('what it offers', () => {
   });
 });
 
-describe('⚠️ when the beta is full', () => {
+describe('⚠️ when new applications are closed', () => {
   it('says so ABOVE the cards, not below them', () => {
     const { container } = render(<SectionChooser {...base} canStart={false} />);
     const notice = screen.getByRole('status');

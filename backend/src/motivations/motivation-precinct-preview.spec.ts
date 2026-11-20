@@ -50,6 +50,11 @@ function build(motivation: unknown, precinct: jest.Mock) {
     {} as never, // purposePlates — unused by precinctFor()
     {} as never, // prefill — unused by precinctFor()
     {} as never, // reason — unused by precinctFor()
+    {
+      // The paygate, off; nothing here generates anything.
+      isPaidMode: async () => false,
+      assertPaidForGeneration: async () => undefined,
+    } as never,
   );
   return { svc, prisma };
 }

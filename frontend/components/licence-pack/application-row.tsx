@@ -79,8 +79,25 @@ export default function ApplicationRow({
               {row.outputMode === 'PRINT_READY' ? ' · Print-ready' : ''}
             </span>
           </span>
-          <span className="flex-shrink-0 text-[12px] text-[var(--text-tertiary)]">
-            {STATUS_WORDS[row.status] ?? row.status}
+          <span className="flex flex-shrink-0 flex-col items-end gap-1 text-[12px] text-[var(--text-tertiary)]">
+            {/*
+              ⚠️ "PAYMENT DUE" IS A CHIP, NOT A STATUS WORD. The application is
+              still "In progress" while it is unpaid — replacing the status
+              would tell the member their work is in a different state than it
+              is. The chip answers the other question: what is the next action.
+            */}
+            {row.paymentDue ? (
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  background: 'var(--gold-wash)',
+                  color: 'var(--gold-strong)',
+                }}
+              >
+                Payment due
+              </span>
+            ) : null}
+            <span>{STATUS_WORDS[row.status] ?? row.status}</span>
           </span>
         </Link>
         <DeleteApplication

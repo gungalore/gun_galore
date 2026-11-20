@@ -71,8 +71,8 @@ describe('settings flag registries', () => {
     expect(mine(runtime)).toEqual(mine(admin));
     expect(mine(runtime)).toEqual([
       'motivation_beta_free_cap',
-      'motivation_buyer_price_cents',
       'motivation_max_gate_cycles',
+      'motivation_paid_enabled',
       'motivation_price_cents',
       'motivation_retention_days',
       'motivation_writer_enabled',

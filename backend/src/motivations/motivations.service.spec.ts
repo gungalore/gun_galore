@@ -367,6 +367,10 @@ function build(
     opts.capture as never,
     opts.projection as never,
   );
+  const payments = {
+    isPaidMode: jest.fn(async () => false),
+    assertPaidForGeneration: jest.fn(async () => undefined),
+  };
   const generation = new MotivationGenerationService(
     prisma as never,
     quota as never,
@@ -406,6 +410,10 @@ function build(
     // pack is built when `firearm_fit_reason` is empty; a stub returning
     // not-written keeps these tests on the writer path they were written for.
     { writeFor: async () => ({ written: false }) } as never,
+    // âš ï¸ THE PAYGATE, OFF BY DEFAULT. These tests were written against the
+    // free writer; the paid path has its own spec, and the two tests at the
+    // bottom of the generation block flip this double on.
+    payments as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -477,6 +485,8 @@ function build(
     extract,
     crimeStats,
     news,
+    // The paygate double, so generation tests can flip paid mode on.
+    payments,
   };
 }
 
@@ -1014,6 +1024,31 @@ describe('MotivationsService.generate', () => {
     await svc.generate('c1', 'mo-1');
     expect(order[0]).toBe('seat');
     expect(order).toContain('claude');
+  });
+
+  it('refuses to write an unpaid document, and calls no model', async () => {
+    const { svc, payments, claude } = buildReady();
+    payments.assertPaidForGeneration.mockRejectedValueOnce(
+      new ConflictException({
+        statusCode: 409,
+        code: 'motivation-payment-required',
+        message: 'Pay R295 to write this motivation.',
+      }),
+    );
+    await expect(svc.generate('c1', 'mo-1')).rejects.toMatchObject({
+      response: { code: 'motivation-payment-required' },
+    });
+    expect(claude.generate).not.toHaveBeenCalled();
+  });
+
+  it('claims no free seat while the paygate is on', async () => {
+    // A paid document must not also burn a beta seat: the member would pay and
+    // the beta would quietly shrink at the same time.
+    const { svc, prisma, quota, payments } = buildReady();
+    payments.isPaidMode.mockResolvedValue(true);
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    await svc.generate('c1', 'mo-1');
+    expect(quota.claimBetaSeat).not.toHaveBeenCalled();
   });
 
   it('stores the document encrypted and completes when the gate passes', async () => {

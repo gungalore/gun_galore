@@ -197,9 +197,19 @@ const FLAGS: SettingFlag[] = [
     default: 'true',
   },
   {
+    key: 'motivation_paid_enabled',
+    label: 'Charge for motivations',
+    hint: 'The paygate. ON = a motivation is written only after an Ozow payment of motivation_price_cents has been confirmed, and the free beta stops taking seats. OFF = the free beta runs exactly as before. Turning it off is the emergency brake for new applications; documents already paid for keep their record.',
+    group: 'Motivations',
+    type: 'boolean',
+    default: 'false',
+    // Starts charging the public and moves real money. Typed-key gate.
+    danger: true,
+  },
+  {
     key: 'motivation_beta_free_cap',
     label: 'Free beta motivations',
-    hint: 'How many motivations are generated free before the beta closes and the price applies. Seats are allocated atomically, so a seat taken above the cap is burned rather than reissued. Capped at 5000 in code — this number is the main guard against runaway AI spend.',
+    hint: 'How many motivations are generated free before the beta closes and the price applies. Only read while "Charge for motivations" is OFF. Seats are allocated atomically, so a seat taken above the cap is burned rather than reissued. Capped at 5000 in code — this number is the main guard against runaway AI spend.',
     group: 'Motivations',
     type: 'number',
     default: '100',
@@ -207,18 +217,10 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'motivation_price_cents',
     label: 'Motivation price (cents)',
-    hint: 'What one motivation costs once the free beta is exhausted. 19900 = R199. Inert until card payments are live — until then everything past the cap is simply refused rather than charged.',
+    hint: 'What one motivation costs, in cents. 29500 = R295, charged at "Write my motivation". One payment per application; re-runs after a failed generation are free. Applies to the next checkout only — an attempt already started keeps the amount it was created for.',
     group: 'Motivations',
     type: 'number',
-    default: '19900',
-  },
-  {
-    key: 'motivation_buyer_price_cents',
-    label: 'Motivation price for firearm buyers (cents)',
-    hint: 'Discounted price for someone who bought the firearm on ALL Outdoor. 9900 = R99. NOT YET WIRED — there is no voucher or store-credit system in the platform, so nothing reads this. It is here so the price lives in one place when that is built.',
-    group: 'Motivations',
-    type: 'number',
-    default: '9900',
+    default: '29500',
   },
   {
     key: 'motivation_max_gate_cycles',

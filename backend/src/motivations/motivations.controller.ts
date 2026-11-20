@@ -13,6 +13,7 @@ import {
   ParseFilePipe,
   Patch,
   Post,
+  Req,
   Res,
   StreamableFile,
   UploadedFiles,
@@ -26,6 +27,7 @@ import { MAX_IDENTIFY_FILES } from '../common/document-identify.service';
 import { memoryStorage } from 'multer';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -35,6 +37,7 @@ import { MotivationReasonService } from './motivation-reason.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
+import { MotivationPaymentsService } from './motivation-payments.service';
 import { REASON_MAX, areaKey } from './motivation-danger-areas';
 import { RETIRED } from './motivation-documents';
 import {
@@ -106,6 +109,9 @@ export class MotivationsController {
      */
     private readonly reasonService: MotivationReasonService,
     private readonly engine: DocumentEngineService,
+    // The paygate, direct for the same reason as `generation` above: two routes
+    // and no facade behaviour to add.
+    private readonly payments: MotivationPaymentsService,
   ) {}
 
   /**
@@ -402,6 +408,44 @@ export class MotivationsController {
     // returns — so a 202 means "running", never "we will find out later
     // whether this was even valid".
     return this.motivations.startGeneration(userId, id);
+  }
+
+  /**
+   * Pay for one application. Creates the Ozow checkout — or hands back the one
+   * already open — and returns the URL to send the browser to.
+   *
+   * Throttled hard: every call is a gateway request, and a double-tap is
+   * answered with the same checkout inside start(), so the limit is only there
+   * to stop a loop.
+   */
+  @Post(':id/payment')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  payment(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    // Same derivation as the checkout controller: an explicit FRONTEND_URL
+    // wins, otherwise the request's own origin. The gateway needs an absolute
+    // https return URL and Ozow 403-rejects a localhost one.
+    const frontendUrl =
+      process.env.FRONTEND_URL ??
+      `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
+    return this.payments.start(userId, id, frontendUrl);
+  }
+
+  /**
+   * "I am back from the bank." Asks the gateway for the authoritative status.
+   *
+   * Never reports failure from one negative answer — a capture can land a few
+   * seconds after the browser returns, so the page polls this.
+   */
+  @Post(':id/payment/verify')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  verifyPayment(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.payments.verify(userId, id);
   }
 
   /**

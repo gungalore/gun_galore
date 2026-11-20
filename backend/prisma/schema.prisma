@@ -666,6 +666,9 @@ model User {
 
   // Firearm-licence motivations (Phase 1 — see LICENCE-SERVICES-AND-FEED.md).
   motivations Motivation[] @relation("UserMotivations")
+  // What this member paid for motivations. Optional on the payment row so the
+  // sale survives a POPIA erasure — see MotivationPayment.
+  motivationPayments MotivationPayment[] @relation("UserMotivationPayments")
   credentials Credential[] @relation("UserCredentials")
 
   // SAPS Application Tracker — the applications this member is watching.
@@ -5178,7 +5181,18 @@ model Motivation {
   // NULL means this was not a free-beta motivation. A seat above the cap is
   // burned rather than reissued — that is what makes the cap race-proof.
   betaSeatNo       Int?      @unique
+  /// What was actually collected for this document, in cents. 0 means unpaid.
+  ///
+  /// ⚠️ THIS IS THE ONLY COLUMN THAT RECORDS MONEY, and the paygate's
+  /// `isPaidFor()` gates generation on it. MotivationPaymentsService writes it
+  /// when Ozow confirms the capture, never before; a free-beta seat
+  /// deliberately does not touch it. Written once — a regeneration must never
+  /// overwrite the amount that was charged.
   billedCents      Int       @default(0)
+  /// When that capture was confirmed. Null on every unpaid row, including a
+  /// free-beta one. Kept beside billedCents so support can answer "when did
+  /// they pay" without joining the payment attempts.
+  paidAt           DateTime?
   /// When the applicant allowed us to fill the SAPS form from their All Outdoor
   /// profile. Null means they were never asked, or said no — either way we do
   /// not touch their profile data. Per motivation, not per account: agreeing
@@ -5236,12 +5250,91 @@ model Motivation {
   witnesses     MotivationWitness[]
   /// At most one — see the model. A private transfer has one current owner.
   sellerConsent MotivationSellerConsent?
+  /// Every checkout attempt for this document. Usually one; see the model.
+  payments      MotivationPayment[]
 
   // The throttle. See applicationRef for why it is NOT NULL.
   @@unique([userId, licenceType, applicationRef])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([retentionPurgeAt])
+}
+
+/// One attempt to pay for one motivation.
+///
+/// ⚠️ A SEPARATE TABLE, NOT COLUMNS ON Motivation, AND THE REASON IS ERASURE.
+/// The nightly retention purge and a POPIA erasure both DELETE the Motivation
+/// row — the document is the applicant's ID number, address and security
+/// circumstances, so it must go. The money record must not: turnover tax is
+/// filed from the year's income, and a sale that vanished with the document is
+/// a tax return we cannot support. Both relations are therefore optional with
+/// SetNull, and `motivationRef` snapshots the MO number so the surviving row
+/// still says what was sold.
+///
+/// A motivation usually has ONE row. More than one means the member abandoned
+/// a checkout and started again; abandoned attempts are CANCELLED when a
+/// sibling is PAID, and two PAID rows on one motivation raise an urgent alert
+/// (that is a double charge to refund by hand, not something to swallow).
+///
+/// Payments are confirmed by asking Ozow for the authoritative status — on the
+/// return-to-site call and again from the reconcile cron. There is deliberately
+/// no second webhook subscription: the money mover for the marketplace already
+/// owns `/payments/webhook/ozow`, and a motivation payment must not depend on
+/// that handler knowing about it.
+model MotivationPayment {
+  id String @id @default(cuid())
+
+  /// Null once the application is erased. See the note above.
+  motivationId String?
+  motivation   Motivation? @relation(fields: [motivationId], references: [id], onDelete: SetNull)
+  /// Null once the account is erased.
+  userId String?
+  user   User?   @relation("UserMotivationPayments", fields: [userId], references: [id], onDelete: SetNull)
+
+  /// The MO number as it stood at capture. Survives the row above.
+  motivationRef String
+
+  /// Snapshot of the price at checkout. A later price change cannot rewrite
+  /// what this attempt was for, and the verify path binds the gateway's amount
+  /// to it.
+  amountCents Int
+
+  /// Locked at create. Refunds go back through the same rail — see the
+  /// payments lock in AGENTS.md.
+  provider PaymentProvider @default(OZOW)
+  status   MotivationPaymentStatus @default(PENDING)
+
+  /// Ozow payment id from create (`gatewayCheckoutId` on a Transaction).
+  gatewayCheckoutId String?
+  /// The hosted page Ozow handed back. Stored so a second click in the same
+  /// sitting is answered with the SAME checkout rather than minting a second
+  /// payment — Ozow's idempotency is keyed on the merchant reference, and a
+  /// fresh reference is a fresh payment.
+  redirectUrl String?
+  /// Our minted merchant reference — the webhook/verify matching key.
+  gatewayMerchantRef String? @unique
+  /// Ozow's transaction id, the refundable one. Set on capture.
+  gatewayPaymentId String?
+
+  paidAt   DateTime?
+  failedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([motivationId, status])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+enum MotivationPaymentStatus {
+  /// Checkout created, money not seen yet.
+  PENDING
+  PAID
+  /// Checkout expired or the provider reported a terminal failure.
+  FAILED
+  /// Superseded by another attempt that was paid.
+  CANCELLED
 }
 
 // Camera-scanned / uploaded source documents.

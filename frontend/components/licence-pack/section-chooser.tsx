@@ -63,8 +63,11 @@ export default function SectionChooser({
             background: 'var(--gold-wash)',
           }}
         >
-          The free beta is full, and paid applications are not open yet. You can
-          still finish any application you have already started.
+          {/* Since the paygate, a closed door is far more likely to be the
+              payment rail being unavailable than the free beta being full, so
+              the notice says neither and simply tells them what still works. */}
+          New applications are not open right now. You can still finish one you
+          have already started.
         </p>
       )}
 

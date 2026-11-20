@@ -1225,6 +1225,48 @@ the motivation, in two shapes:
 maps it so old rows keep their annexures. A new application defaults to
 motivation-only and is offered print-ready as an upgrade.
 
+### The paygate — R295, paid before the document is written
+
+Operator, 2026-11-20: "On the motivations. I want to paygate it." The member
+builds the application for free and pays when they press **Write my
+motivation**; nothing is generated before Ozow confirms the capture.
+
+- **Price** — `motivation_price_cents`, default `29500` (R295), flat for every
+  member and both output modes. The August R199/R99/AO-Pro table was never
+  wired, had no voucher system behind it, and is deleted —
+  `motivation-pricing.ts` now holds one number.
+- **The switch** — `motivation_paid_enabled`, OFF by default. OFF runs the free
+  beta exactly as before; ON requires a payment and stops a beta seat being
+  claimed for a paid document. Turning it off is the emergency brake for new
+  applications; documents already paid for keep their record.
+- **The gate** — `MotivationPaymentsService.assertPaidForGeneration`, called by
+  `startGeneration` **before** `prepareGeneration` (which tops up answers from
+  the vault and claims the row `GENERATING`). An unpaid attempt answers
+  `409 { code: 'motivation-payment-required' }` and costs no model call.
+- **The money record** — `MotivationPayment`, one row per checkout attempt,
+  plus `Motivation.billedCents` / `paidAt` as the gate's fast answer. Both
+  foreign keys are nullable with `ON DELETE SET NULL`: the nightly retention
+  purge and a POPIA erasure delete the motivation, and the sale has to outlive
+  it. One payment per application — `billedCents` is only ever written from 0,
+  so a regeneration can neither re-price nor re-charge.
+- **Confirmation** — deliberately no second webhook subscription. The
+  return-to-site `POST /motivations/:id/payment/verify` asks Ozow for the
+  authoritative status, and `reconcilePendingPayments` (every 10 minutes)
+  settles the member who closed the tab. The amount and the merchant reference
+  are both bound; a mismatch applies nothing and raises an urgent `AdminAlert`.
+  A second capture on one application raises `MOTIVATION_DOUBLE_PAYMENT`.
+- **Money out** — refunds are manual in phase 1 (Ozow dashboard, then the row).
+  `MOTIVATION_PAID_GENERATION_FAILED` tells the desk when a paid document did
+  not write; the member's retry is free.
+- **Tax** — not VAT registered (`TURNOVER_TAX`), so R295 carries no VAT line
+  and there is no automated tax invoice. The payment row is the turnover
+  record, and it survives erasure precisely so the year can be filed.
+- **The screen** — `/licence-centre/[id]/pack`. The footer's red button reads
+  "Pay R 295 and write my motivation" until the sheet says it is paid, then
+  "Write my motivation". The declaration is stored before the redirect, and
+  `?payment=return` verifies (three checks, five seconds apart) before
+  auto-writing the document once.
+
 ⚠️ **Nothing asks the form-only questions any more.** The thirty-eight
 `formOnly` registry fields and the six `history_*` declarations are never put to
 the applicant — declarations surface only when an uploaded document raises one,

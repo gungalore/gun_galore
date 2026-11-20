@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatPrice } from '@/lib/utils';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE RED BUTTON ON THE SHEET, AND THE DECLARATION IN FRONT OF IT.
@@ -50,6 +51,17 @@ export interface SheetFooterProps {
   maintenance?: boolean;
   maintenanceMessage?: string;
   onNotify?: () => void;
+  /**
+   * What the paygate will charge, in cents, and whether it still has to.
+   *
+   * ⚠️ BOTH COME FROM THE SERVER'S SHEET. The number on the button and the
+   * amount the checkout is created for must be the same number — a client-side
+   * constant is how a member gets quoted one price and charged another.
+   */
+  priceCents?: number;
+  paid?: boolean;
+  /** True while we are sending them to the bank. */
+  paying?: boolean;
 }
 
 export default function SheetFooter({
@@ -60,6 +72,9 @@ export default function SheetFooter({
   maintenance = false,
   maintenanceMessage,
   onNotify,
+  priceCents,
+  paid = false,
+  paying = false,
 }: SheetFooterProps) {
   const [agreed, setAgreed] = useState(declared);
   const [testimonial, setTestimonial] = useState(false);
@@ -119,18 +134,33 @@ export default function SheetFooter({
 
       <button
         type="button"
-        disabled={blocked || busy}
+        disabled={blocked || busy || paying}
         onClick={() => onWrite({ testimonialConsent: testimonial })}
         className={`flex min-h-[44px] w-full items-center justify-center rounded-[var(--r-sm)] bg-[var(--red)] px-4 text-[15px] font-medium text-white ${
-          blocked || busy ? 'opacity-50' : 'hover:bg-[#C7050F]'
+          blocked || busy || paying ? 'opacity-50' : 'hover:bg-[#C7050F]'
         }`}
       >
         {maintenance
           ? 'Preparation paused'
-          : busy
-            ? 'Writing your motivation…'
-            : 'Write my motivation'}
+          : paying
+            ? 'Taking you to your bank…'
+            : busy
+              ? 'Writing your motivation…'
+              : paid || priceCents === undefined
+                ? 'Write my motivation'
+                : `Pay ${formatPrice(priceCents)} and write my motivation`}
       </button>
+      {/*
+        ⚠️ SAID ONCE, WHERE THE MONEY IS. "One payment" is the promise that
+        stops a member wondering whether a failed run costs them again — and
+        the retry genuinely is free: billedCents is written once.
+      */}
+      {!paid && priceCents !== undefined && !maintenance ? (
+        <div className="mt-2 text-center text-[12px] leading-5 text-[var(--text-tertiary)]">
+          One payment for this application — if writing fails, trying again is
+          free.
+        </div>
+      ) : null}
       {maintenance ? (
         <div className="mt-2 text-center text-[12px] leading-5 text-[var(--text-secondary)]">
           <p className="m-0">

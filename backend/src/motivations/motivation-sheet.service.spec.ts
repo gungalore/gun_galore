@@ -112,6 +112,16 @@ function build(
       prisma as never,
       shared,
       new MemberProfileAnswersService(prisma as never),
+      // The paygate is off in these tests: nothing is due, so the sheet renders
+      // exactly the rows it was written against.
+      {
+        state: async () => ({
+          required: false,
+          paid: false,
+          amountCents: 29_500,
+          paidAt: null,
+        }),
+      } as never,
     ),
     prisma,
   };

@@ -407,7 +407,7 @@ function ArmoryTile({
 const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
   {
     href: '/licence-centre/applications',
-    blurb: 'R300 per Motivation',
+    blurb: 'R295 per Motivation',
   },
   {
     href: '/documents',

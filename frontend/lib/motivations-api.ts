@@ -221,6 +221,10 @@ export interface MotivationQuotaStatus {
   cap: number;
   used: number;
   priceCents: number;
+  /** True when a motivation must be paid for before it is written. */
+  paidMode: boolean;
+  /** True when the payment rail can take money in this environment. */
+  paymentsLive: boolean;
   /** False while payments are off AND the free cap is exhausted. */
   canStart: boolean;
 }
@@ -256,6 +260,10 @@ export interface MotivationSummary {
   intakeMode?: 'DOCUMENTS' | 'INTERVIEW' | null;
   outputMode?: MotivationOutputMode;
   intakeCompletedAt?: string | null;
+  /** True once the paygate has recorded money against this application. */
+  paid?: boolean;
+  /** True when the member still has to pay before it can be written. */
+  paymentDue?: boolean;
 }
 
 export interface MotivationDetail extends MotivationSummary {
@@ -1243,6 +1251,10 @@ export const motivationsApi = {
       cap: 0,
       used: 0,
       priceCents: 0,
+      // A failed read cannot claim to know the paygate state; both false keeps
+      // every "pay" affordance off rather than inventing one.
+      paidMode: false,
+      paymentsLive: false,
       // ?? FALSE ON A FAILED READ. If we cannot tell whether a motivation
       // may be started, offering the buttons is the wrong guess: the click
       // 409s and the member is back where they started.
@@ -2134,6 +2146,32 @@ export const motivationsApi = {
       `/${id}/declaration`,
       { method: 'POST', body: JSON.stringify({ testimonialConsent }) },
       { accepted: true },
+    ),
+
+  /**
+   * START the checkout for this application. Returns the Ozow page to send the
+   * browser to, or `alreadyPaid` when there is nothing to pay.
+   */
+  startPayment: (t: TokenGetter, id: string) =>
+    request<{
+      redirectUrl: string | null;
+      amountCents: number;
+      alreadyPaid: boolean;
+    }>(t, `/${id}/payment`, { method: 'POST' }),
+
+  /**
+   * "I am back from the bank." Asks the gateway for the authoritative status.
+   *
+   * ?? `paid: false` IS NOT A FAILURE, and the caller must not treat it as one.
+   * A capture can land a few seconds after the browser returns; the pack page
+   * polls this and says "still confirming" rather than accusing the member's
+   * payment of having failed.
+   */
+  verifyPayment: (t: TokenGetter, id: string) =>
+    request<{ paid: boolean; amountCents: number; status: string }>(
+      t,
+      `/${id}/payment/verify`,
+      { method: 'POST' },
     ),
 
   /**

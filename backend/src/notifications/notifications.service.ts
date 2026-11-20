@@ -5166,6 +5166,17 @@ export class NotificationsService {
      * nobody was told about. A detached run has no other way to reach them.
      */
     outcome: 'ready' | 'held' | 'failed';
+    /**
+     * True when this document was paid for.
+     *
+     * ⚠️ IT CHANGES WHAT "FAILED" IS ALLOWED TO PROMISE. The old copy said
+     * "nothing has been charged", which was true while the free beta was the
+     * only way in. With the paygate on, a paid document that fails HAS been
+     * charged — the entitlement is kept against the application and the retry
+     * is free, but telling them otherwise is a support call and a trust
+     * problem.
+     */
+    paid?: boolean;
   }) {
     // ⚠️ THE REBUILT WIZARD, NOT THE OLD PAGE — AND IT IS SAFE IN BOTH STATES.
     //
@@ -5206,10 +5217,13 @@ export class NotificationsService {
       body: failed
         ? // âš–️ OURS, NOT THEIRS. A failure here is our machinery, and telling
           // somebody their own answers were at fault would be both untrue and
-          // the thing that stops them trying again. Nothing was charged and
-          // nothing was lost — say so, because that is the first thing anyone
-          // wonders.
-          `Something went wrong on our side while writing ${d.referenceNumber}. Nothing you entered is lost and nothing has been charged. Open it and prepare it again.`
+          // the thing that stops them trying again. Nothing is lost either way —
+          // say so, because that is the first thing anyone wonders — and be
+          // truthful about the money: a paid document keeps its payment and the
+          // retry costs nothing, an unpaid one was never charged.
+          d.paid
+          ? `Something went wrong on our side while writing ${d.referenceNumber}. Nothing you entered is lost, and your payment stays against this application — open it and prepare it again at no extra cost.`
+          : `Something went wrong on our side while writing ${d.referenceNumber}. Nothing you entered is lost and nothing has been charged. Open it and prepare it again.`
         : ready
           ? `${d.referenceNumber} is written. Open it to read it through and download the pack.`
           : `${d.referenceNumber} is written, but we held it back — it needs more detail before it is ready to file. Open it to add what is missing.`,
@@ -5236,7 +5250,11 @@ export class NotificationsService {
     await this.sendSms(
       d.phone,
       failed
-        ? `ALL Outdoor: we could not finish document ${d.referenceNumber}. Nothing is lost and nothing was charged. Open it and try again: ${url}`
+        ? d.paid
+          ? // Short on purpose: the URL is 66 characters once the cuid is in
+            // it, so the prose has ~90 to work with before the segment doubles.
+            `ALL Outdoor: ${d.referenceNumber} did not finish. Paid once, retry is free: ${url}`
+          : `ALL Outdoor: ${d.referenceNumber} did not finish. Nothing was charged: ${url}`
         : ready
           ? `ALL Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
           : `ALL Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
@@ -5267,7 +5285,9 @@ export class NotificationsService {
           : { tone: 'pending', label: 'More detail needed' },
       headline,
       body: failed
-        ? `Hi ${b(d.name)}, we could not finish writing ${b(d.referenceNumber)}. This is a fault on our side, not anything you did, and it is being looked at. Everything you entered is saved exactly as you left it and nothing has been charged for this attempt — open the document and press prepare again. If it happens twice, write to ${SUPPORT_EMAIL} with the reference number and a person will pick it up.`
+        ? d.paid
+          ? `Hi ${b(d.name)}, we could not finish writing ${b(d.referenceNumber)}. This is a fault on our side, not anything you did, and it is being looked at. Everything you entered is saved exactly as you left it, and your payment stays against this application — open the document and press prepare again at no extra cost. If it happens twice, write to ${SUPPORT_EMAIL} with the reference number and a person will pick it up.`
+          : `Hi ${b(d.name)}, we could not finish writing ${b(d.referenceNumber)}. This is a fault on our side, not anything you did, and it is being looked at. Everything you entered is saved exactly as you left it and nothing has been charged for this attempt — open the document and press prepare again. If it happens twice, write to ${SUPPORT_EMAIL} with the reference number and a person will pick it up.`
         : ready
         ? `Hi ${b(d.name)}, ${b(d.referenceNumber)} is written and waiting for you. Read it through against your own papers before you sign it — you submit it as your own, so every fact in it has to be one you can stand behind. The pack is rebuilt each time you download it, so come back for another copy whenever you need one.`
         : // ⚠️ IT DOES NOT PROMISE QUESTIONS. A held-back document only queues a
@@ -5286,7 +5306,9 @@ export class NotificationsService {
         url,
       },
       preheader: failed
-        ? `${d.referenceNumber} did not finish — nothing lost, nothing charged`
+        ? d.paid
+          ? `${d.referenceNumber} did not finish — nothing lost, payment kept`
+          : `${d.referenceNumber} did not finish — nothing lost, nothing charged`
         : ready
           ? `${d.referenceNumber} is ready to read and download`
           : `${d.referenceNumber} needs a bit more detail`,

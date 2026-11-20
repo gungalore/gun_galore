@@ -35,6 +35,10 @@ import { motivationTitle } from './motivation-title';
 import { previewFor, type PreviewSection } from './motivation-preview';
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
+import {
+  MotivationPaymentsService,
+  type MotivationPaymentState,
+} from './motivation-payments.service';
 
 // ────────────────────────────────────────────────────────────────────
 // EVERYTHING THE REVIEW SHEET NEEDS, IN ONE CALL.
@@ -181,6 +185,15 @@ export interface SheetResponse {
      * again.
      */
     declarationAcceptedAt: string | null;
+    /**
+     * Whether this document still has to be paid for, and what it costs.
+     *
+     * ⚠️ SERVED BY THE SERVER, NOT COMPUTED FROM A FLAG THE CLIENT HOLDS. The
+     * price on the button and the amount the checkout is created for must be
+     * the same number; a client that multiplied or cached would drift the
+     * moment an operator changed the setting.
+     */
+    payment: MotivationPaymentState;
     /**
      * How the document is set, if they have chosen.
      *
@@ -412,6 +425,8 @@ export class MotivationSheetService {
     private readonly prisma: PrismaService,
     private readonly shared: MotivationSharedService,
     private readonly profileAnswers: MemberProfileAnswersService,
+    // The paygate's state for the application (paid / price / required).
+    private readonly payments: MotivationPaymentsService,
   ) {}
 
   /**
@@ -535,6 +550,12 @@ export class MotivationSheetService {
         declarationAcceptedAt: true,
         templateLayout: true,
         templateColourway: true,
+        // The paygate's own state, served so the footer can say "Pay R295"
+        // without a second round trip, and so a reload after the bank knows
+        // whether the document is already paid for.
+        billedCents: true,
+        paidAt: true,
+        betaSeatNo: true,
         answersEncrypted: true,
         answerProvenance: true,
         uploads: {
@@ -714,6 +735,11 @@ export class MotivationSheetService {
       letterFor: (kind: string) => byKind.get(kind as never) ?? null,
     });
 
+    // What the pack screen needs to decide between "Pay R295 and write" and
+    // "Write". Computed here rather than on the client so the price shown is
+    // the price the checkout will be created for.
+    const payment = await this.payments.state(row);
+
     return {
       application: {
         id: row.id,
@@ -730,6 +756,7 @@ export class MotivationSheetService {
           : null,
         templateLayout: row.templateLayout,
         templateColourway: row.templateColourway,
+        payment,
       },
       sections,
       items,

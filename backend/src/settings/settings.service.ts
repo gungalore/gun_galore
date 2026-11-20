@@ -196,9 +196,33 @@ export const FLAGS = {
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
 
+  /**
+   * Charge for a motivation instead of giving it away.
+   *
+   * ⚠️ THE KILL SWITCH FOR THE PAYGATE, AND IT IS SEPARATE FROM THE PRICE ON
+   * PURPOSE. OFF (the default) runs the free beta exactly as it always has —
+   * a seat off the cap, no money. ON requires a captured Ozow payment before
+   * `generate` will run, priced from motivationPriceCents.
+   *
+   * Flipping it back OFF is the emergency brake: rows already paid keep their
+   * `billedCents`, and new applications go back to taking a beta seat. It is
+   * deliberately not derived from the price, because "R295" is a commercial
+   * fact while "charge" is a commercial decision, and an operator changing one
+   * must not silently change the other.
+   */
+  motivationPaidEnabled: {
+    key: 'motivation_paid_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
   // How many motivations are generated free before the beta closes. Clamped
   // hard: this number is the FIRST thing standing between a fat-fingered
   // entry and uncapped AI spend.
+  //
+  // ⚠️ ONLY READ WHILE THE PAYGATE IS OFF. With motivationPaidEnabled the cap
+  // is irrelevant: every generation pays, so no seat is claimed at all. The
+  // counter is left alone so flipping the gate back off resumes where it was.
   //
   // ⚠️ It used to be the ONLY thing: org-level spend alerting was dead on
   // prod because ANTHROPIC_ADMIN_API_KEY was a regular key there, so nothing
@@ -231,26 +255,22 @@ export const FLAGS = {
     },
   } as FlagDefinition<number>,
 
-  // R199. Inert until the paygate is live — subscriptions/checkout still 503.
+  /**
+   * What one motivation costs, in cents. R295.
+   *
+   * ⚠️ THE ONE PRICE, AND IT IS FLAT. R199 with an R99 door (AO Pro, or a
+   * firearm bought here) was designed in August and never wired; the operator
+   * priced the product at a flat R295 on 2026-11-20, so the discount table is
+   * gone rather than scaled. Changing this number changes what the next
+   * checkout is created for — attempts already started keep their own
+   * `amountCents` snapshot, and a paid application is never re-priced.
+   */
   motivationPriceCents: {
     key: 'motivation_price_cents',
-    default: 19900,
+    default: 29500,
     parse: (s) => {
       const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 19900;
-    },
-  } as FlagDefinition<number>,
-
-  // R99 for buyers who bought the firearm here. PARKED: there is no voucher or
-  // store-credit system anywhere in this codebase (the schema says so
-  // explicitly), so nothing reads this yet. It lives here so the price is
-  // recorded in one place when that scope is built.
-  motivationBuyerPriceCents: {
-    key: 'motivation_buyer_price_cents',
-    default: 9900,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 9900;
+      return Number.isFinite(n) && n > 0 ? n : 29500;
     },
   } as FlagDefinition<number>,
 

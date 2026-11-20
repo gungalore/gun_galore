@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PAYMENTS_LIVE } from '../payments/payment-mode';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -19,6 +20,10 @@ export interface MotivationQuotaStatus {
   cap: number;
   used: number;
   priceCents: number;
+  /** True when the paygate is on: a new motivation must be paid for. */
+  paidMode: boolean;
+  /** True when the money rail can actually take a payment in this environment. */
+  paymentsLive: boolean;
   /** False while payments are off AND the free cap is exhausted. */
   canStart: boolean;
 }
@@ -54,10 +59,11 @@ export class MotivationQuotaService {
   async status(): Promise<MotivationQuotaStatus> {
     // One round trip per flag — SettingsService.get() has no cache, so these
     // are batched rather than awaited in sequence.
-    const [enabled, cap, priceCents] = await Promise.all([
+    const [enabled, cap, priceCents, paidMode] = await Promise.all([
       this.settings.get(FLAGS.motivationWriterEnabled),
       this.settings.get(FLAGS.motivationBetaFreeCap),
       this.settings.get(FLAGS.motivationPriceCents),
+      this.settings.get(FLAGS.motivationPaidEnabled),
     ]);
 
     const used = await this.seatsTaken();
@@ -69,10 +75,12 @@ export class MotivationQuotaService {
       used,
       freeRemaining,
       priceCents,
-      // Payments are not live, so once the free seats are gone nobody can
-      // start one. When the paygate lands this becomes `enabled` and the
-      // charge happens instead.
-      canStart: enabled && freeRemaining > 0,
+      paidMode,
+      paymentsLive: PAYMENTS_LIVE,
+      // ⚠️ PAID MODE IS NOT A CAP. Once the paygate is on, every application
+      // pays, so the free-seat counter cannot refuse one. The counter is left
+      // untouched — flipping the gate back off resumes the beta where it was.
+      canStart: enabled && (paidMode ? PAYMENTS_LIVE : freeRemaining > 0),
     };
   }
 

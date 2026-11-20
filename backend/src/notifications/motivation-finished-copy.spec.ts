@@ -135,6 +135,30 @@ describe('motivationFinished copy', () => {
     });
   });
 
+  describe('when writing failed', () => {
+    it('tells an unpaid applicant nothing was charged', async () => {
+      const { svc, sent } = makeService();
+      await svc.motivationFinished({ ...BASE, outcome: 'failed' });
+      const all = [sent.sms[0], JSON.stringify(sent.inbox[0]), sent.emails[0]].join(
+        ' ',
+      );
+      expect(all).toMatch(/nothing (has been|was) charged/i);
+    });
+
+    it('never claims a paid document was not charged', async () => {
+      // The old copy said "nothing has been charged" unconditionally, which
+      // became a lie the day the paygate landed. The payment is kept and the
+      // retry is free — say that instead.
+      const { svc, sent } = makeService();
+      await svc.motivationFinished({ ...BASE, outcome: 'failed', paid: true });
+      const all = [sent.sms[0], JSON.stringify(sent.inbox[0]), sent.emails[0]].join(
+        ' ',
+      );
+      expect(all).not.toMatch(/nothing (has been|was) charged/i);
+      expect(all).toMatch(/retry is free|at no extra cost|payment stays/i);
+    });
+  });
+
   describe('the lock screen', () => {
     it.each(['ready', 'held'] as const)(
       'names no firearm, calibre or licence section anywhere (%s)',
@@ -158,13 +182,23 @@ describe('motivationFinished copy', () => {
       },
     );
 
-    it.each(['ready', 'held'] as const)(
+    it.each(['ready', 'held', 'failed'] as const)(
       'keeps the SMS inside one GSM-7 segment (%s)',
       async (outcome) => {
         const { svc, sent } = makeService();
         await svc.motivationFinished({ ...BASE, outcome });
         // An em dash, an ellipsis or a curly apostrophe drops the whole
         // message into UCS-2 and halves the segment to 70 characters.
+        expect(sent.sms[0]).toMatch(/^[\x20-\x7e]+$/);
+        expect(sent.sms[0].length).toBeLessThanOrEqual(160);
+      },
+    );
+
+    it.each(['ready', 'held', 'failed'] as const)(
+      'keeps the PAID failure SMS inside one segment too (%s)',
+      async (outcome) => {
+        const { svc, sent } = makeService();
+        await svc.motivationFinished({ ...BASE, outcome, paid: true });
         expect(sent.sms[0]).toMatch(/^[\x20-\x7e]+$/);
         expect(sent.sms[0].length).toBeLessThanOrEqual(160);
       },

@@ -2,6 +2,16 @@ import { NotFoundException } from '@nestjs/common';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { FLAGS } from '../settings/settings.service';
 
+// The rail is live in this file so the paid-mode branch can be asserted; the
+// beta branches below are unaffected by it.
+jest.mock('../payments/payment-mode', () => ({
+  PAYMENT_MODE: 'paygate',
+  PAYMENTS_LIVE: true,
+  assertPaymentsLive: () => undefined,
+  CART_CHECKOUT_LIVE: false,
+  assertCartCheckoutLive: () => undefined,
+}));
+
 // The interesting property here is the one a count-then-insert implementation
 // gets wrong: with a cap of N and any amount of concurrency, EXACTLY N seats
 // are handed out. The fake counter below models the one thing that makes that
@@ -146,9 +156,25 @@ describe('MotivationQuotaService', () => {
         cap: 100,
         used: 2,
         freeRemaining: 98,
-        priceCents: 19900,
+        priceCents: 29500,
+        paidMode: false,
         canStart: true,
       });
+    });
+
+    it('ignores the free cap once the paygate is on', async () => {
+      // A full beta must not block a paid application: the cap is a spend
+      // guard for the free era, not a queue.
+      const { svc } = build({
+        motivation_writer_enabled: true,
+        motivation_beta_free_cap: 1,
+        motivation_paid_enabled: true,
+      });
+      await svc.claimBetaSeat(1);
+      const s = await svc.status();
+      expect(s.paidMode).toBe(true);
+      expect(s.canStart).toBe(true);
+      expect(s.freeRemaining).toBe(0);
     });
 
     it('cannot start when the free seats are gone (payments are not live)', async () => {
@@ -203,10 +229,19 @@ describe('MotivationQuotaService', () => {
       expect(FLAGS.motivationRetentionDays.parse('365')).toBe(365);
     });
 
-    it('refuses a zero or negative price', () => {
-      expect(FLAGS.motivationPriceCents.parse('0')).toBe(19900);
-      expect(FLAGS.motivationPriceCents.parse('-1')).toBe(19900);
+    it('refuses a zero or negative price, and defaults to R295', () => {
+      expect(FLAGS.motivationPriceCents.parse('0')).toBe(29500);
+      expect(FLAGS.motivationPriceCents.parse('-1')).toBe(29500);
       expect(FLAGS.motivationPriceCents.parse('24900')).toBe(24900);
+      expect(FLAGS.motivationPriceCents.default).toBe(29500);
+    });
+
+    it('keeps the paygate off unless an operator turns it on', () => {
+      expect(FLAGS.motivationPaidEnabled.default).toBe(false);
+      expect(FLAGS.motivationPaidEnabled.parse('true')).toBe(true);
+      expect(FLAGS.motivationPaidEnabled.parse('1')).toBe(true);
+      expect(FLAGS.motivationPaidEnabled.parse('false')).toBe(false);
+      expect(FLAGS.motivationPaidEnabled.parse('')).toBe(false);
     });
   });
 });

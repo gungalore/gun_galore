@@ -82,21 +82,16 @@ export function estimateCostUsd(
 }
 
 /**
- * Has this pack been paid for? Nothing else clears the watermark.
+ * Has this pack been paid for? The paygate's one money predicate.
  *
- * ⚠️ THIS USED TO BE isSettled(), AND IT ALSO PASSED A FREE-BETA SEAT. The
- * reasoning was that a seat is "how the operator chose to give the first
- * members the product for nothing", so both meant entitled-to-a-clean-copy.
- * Operator, 2026-08-22: "remember to add a watermark as this is not been paid
- * for yet." A seat is a free seat, not a payment — `billedCents` is the only
- * column that records money — so a beta pack is watermarked like any other
- * unpaid one. `betaSeatNo` still governs the beta CAP; it never governs the
- * mark, which is why it is not read here at all.
+ * ⚠️ `billedCents` IS THE ONLY COLUMN THAT RECORDS MONEY. Since the paygate
+ * (2026-11-20) MotivationPaymentsService writes it when Ozow confirms the
+ * capture, and `assertPaidForGeneration` refuses to write a document where it
+ * is still 0. A free-beta seat is not a payment and never sets it.
  *
- * Payments are not live yet, so today this is almost always false and almost
- * every pack carries the mark. That is the correct default: the failure mode
- * of getting it wrong the other way is handing out the finished product for
- * nothing.
+ * ⚠️ THE WATERMARK THIS USED TO DECIDE IS GONE — operator, 2026-10-15:
+ * "remove the watermark." The predicate was kept because the second half of a
+ * paygate (may this document be produced at all) needs exactly the same fact.
  */
 export function isPaidFor(row: { billedCents: number }): boolean {
   return row.billedCents > 0;

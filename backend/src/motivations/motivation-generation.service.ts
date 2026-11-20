@@ -19,6 +19,7 @@ import {
   tryDecryptText,
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationPaymentsService } from './motivation-payments.service';
 import {
   applicationBlockers,
   requiredEndorsement,
@@ -447,6 +448,10 @@ export class MotivationGenerationService {
     // to write themselves. Generated automatically when absent; see the call in
     // runGeneration.
     private readonly reason: MotivationReasonService,
+    // The paygate. Required, not optional: a generation that skips the payment
+    // check because a provider was forgotten is a free document, and that is
+    // the one failure this feature exists to prevent.
+    private readonly payments: MotivationPaymentsService,
     // The 5.2 suitability argument. Optional so existing positional specs keep
     // compiling; production provides it.
     @Optional()
@@ -546,6 +551,10 @@ export class MotivationGenerationService {
         variantSeed: true,
         gateCycles: true,
         betaSeatNo: true,
+        // The paygate's record of money collected. Read for the failure
+        // notification, which must not promise "nothing was charged" on a paid
+        // document.
+        billedCents: true,
         // The gate's findings from the previous run, so a member who fixes the
         // fields it named is regenerated with those findings in front of the
         // writer rather than blind â€” see gateFeedbackIssues.
@@ -945,8 +954,15 @@ export class MotivationGenerationService {
     try {
       // A seat is claimed once per motivation, not once per attempt: a gate
       // retry is our cost to carry, not another seat off the applicant.
+      //
+      // ⚠️ NO SEAT AT ALL WHILE THE PAYGATE IS ON. A paid document must not
+      // also burn a free-beta seat — that would charge the member and quietly
+      // shrink the beta at the same time. `assertPaidForGeneration` in
+      // startGeneration has already refused the unpaid case, so reaching here
+      // paid means there is nothing to claim.
+      const paidMode = await this.payments.isPaidMode();
       let seat = row.betaSeatNo;
-      if (seat === null) {
+      if (!paidMode && seat === null) {
         const cap = await this.settings.get(FLAGS.motivationBetaFreeCap);
         seat = await this.quota.claimBetaSeat(cap);
         claimedSeatHere = seat !== null;
@@ -2354,6 +2370,26 @@ export class MotivationGenerationService {
       // page they can actually press Prepare on, and awaited so a process that
       // dies immediately after has still sent it.
       await this.notifyOutcome(row, 'failed');
+
+      // A PAID document that failed is a support case, not only a retry: the
+      // applicant has money on the table and the retry is on us. The outcome
+      // message above tells them it stays against the application; this tells
+      // the desk, because nobody goes looking for a payment that failed
+      // quietly.
+      if (row.billedCents > 0) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'MOTIVATION_PAID_GENERATION_FAILED',
+              referenceId: row.id,
+              urgent: false,
+              context: `Paid motivation ${row.referenceNumber} (${row.billedCents}c) failed during generation: ${
+                err instanceof Error ? err.message : String(err)
+              }. The applicant can retry at no cost; refund only if we cannot deliver.`,
+            },
+          })
+          .catch(() => undefined);
+      }
       throw err;
     }
   }
@@ -2387,7 +2423,12 @@ export class MotivationGenerationService {
    * â€” but nothing here hands it a firearm, a calibre or a section to leak.
    */
   private async notifyOutcome(
-    row: { id: string; userId: string; referenceNumber: string },
+    row: {
+      id: string;
+      userId: string;
+      referenceNumber: string;
+      billedCents?: number;
+    },
     outcome: 'ready' | 'held' | 'failed',
   ): Promise<void> {
     try {
@@ -2412,6 +2453,7 @@ export class MotivationGenerationService {
         motivationId: row.id,
         referenceNumber: row.referenceNumber,
         outcome,
+        paid: (row.billedCents ?? 0) > 0,
       });
     } catch (err) {
       this.logger.warn(
@@ -2435,6 +2477,9 @@ export class MotivationGenerationService {
       motivationId: id,
       action: 'GENERATE',
     });
+    // Same gate as the route: the awaited variant is used by tests and by
+    // server-side callers, and neither may write an unpaid document.
+    await this.payments.assertPaidForGeneration(userId, id);
     const prepared = await this.prepareGeneration(userId, id);
     return this.runGeneration(prepared);
   }
@@ -3204,6 +3249,12 @@ export class MotivationGenerationService {
       motivationId: id,
       action: 'GENERATE',
     });
+    // ⚠️ THE PAYGATE, AND IT SITS BEFORE prepareGeneration ON PURPOSE. That
+    // method tops up answers from the vault and claims the row GENERATING —
+    // side effects an unpaid attempt must not cause. The check throws 409 with
+    // `motivation-payment-required`, which the pack page turns back into the
+    // Pay button. It is a no-op while the paygate setting is off.
+    await this.payments.assertPaidForGeneration(userId, id);
     const prepared = await this.prepareGeneration(userId, id);
     void this.runGeneration(prepared).catch((err) => {
       this.logger.error(

@@ -292,6 +292,20 @@ export interface SheetResponse {
      */
     templateLayout: string | null;
     templateColourway: string | null;
+    /**
+     * The paygate, as the server sees it.
+     *
+     * ⚠️ THE PRICE COMES FROM HERE, NEVER FROM A CONSTANT IN THE CLIENT. The
+     * number on the button and the amount the checkout is created for have to
+     * be the same number; an operator changing the setting must not leave a
+     * cached screen quoting yesterday's price.
+     */
+    payment?: {
+      required: boolean;
+      paid: boolean;
+      amountCents: number;
+      paidAt: string | null;
+    };
   };
   sections: SheetSection[];
   items: SheetItem[];

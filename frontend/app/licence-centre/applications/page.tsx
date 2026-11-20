@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   motivationsApi,
+  type MotivationQuotaStatus,
   type MotivationSummary,
 } from '@/lib/motivations-api';
 import { LICENCE_TYPES } from '@/lib/licence-labels';
 import ApplicationRow from '@/components/licence-pack/application-row';
+import { formatPrice } from '@/lib/utils';
 
 // ────────────────────────────────────────────────────────────────────
 // YOUR APPLICATIONS, AND THE FIVE THINGS YOU CAN APPLY FOR.
@@ -49,6 +51,7 @@ export default function ApplicationsPage() {
   const { getToken } = useAuth();
   const router = useRouter();
   const [rows, setRows] = useState<MotivationSummary[] | null>(null);
+  const [quota, setQuota] = useState<MotivationQuotaStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
 
@@ -59,8 +62,14 @@ export default function ApplicationsPage() {
    */
   const load = useCallback(async () => {
     try {
-      const list = await motivationsApi.list(getToken);
+      const [list, status] = await Promise.all([
+        motivationsApi.list(getToken),
+        // The price line is a nice-to-have: a quota read that fails must not
+        // take the applications list down with it.
+        motivationsApi.status(getToken).catch(() => null),
+      ]);
       setRows(list);
+      setQuota(status);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -96,6 +105,27 @@ export default function ApplicationsPage() {
       >
         Review your remembered licence profile →
       </a>
+
+      {/*
+        ⚠️ THE PRICE IS STATED BEFORE ANY WORK, NOT AT THE PAY BUTTON. The
+        member is about to spend an evening on an application; finding out it
+        costs R295 only when they press Write is the worst possible moment.
+      */}
+      {quota?.paidMode && quota.priceCents ? (
+        <p
+          className="mt-2 text-[12.5px] leading-5"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          {formatPrice(quota.priceCents)} per motivation — you pay when you are
+          ready to write it. Building the application is free.
+        </p>
+      ) : null}
+      {quota?.paidMode && !quota.paymentsLive ? (
+        <p role="status" className="mt-2 text-[12.5px] text-[var(--gold-strong)]">
+          Payments are not open yet. You can still start an application, and the
+          price will not change.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="mt-3 text-[13.5px] text-[var(--red)]">{error}</p>

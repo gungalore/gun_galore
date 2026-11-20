@@ -8,6 +8,7 @@ import { MotivationWriterAgentService } from './motivation-writer-agent.service'
 import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationPaymentsService } from './motivation-payments.service';
 import { MotivationsService } from './motivations.service';
 // âš ï¸ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
 // they all share. They are providers and NOT exports on purpose: every caller
@@ -121,6 +122,9 @@ import { LegalModule } from '../legal/legal.module';
     MotivationRenderService,
     MotivationWitnessesService,
     MotivationQuotaService,
+    // The paygate. Not exported: the controller, the quota status and the
+    // generation gate all reach it through this module.
+    MotivationPaymentsService,
     MotivationPdfService,
     MotivationModelService,
     MotivationResearchService,
