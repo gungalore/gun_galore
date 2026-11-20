@@ -7,6 +7,52 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — THE MOTIVATION WRITER IS PAYGATED AT R295
+
+Operator: "On the motivations. I want to paygate it." → R295, charged at
+**Write my motivation**, before generation. Shipped `f3f46ff9` (full deploy,
+schema migration `20261120191500_motivation_paygate` included).
+
+- **Live and ON**: `motivation_paid_enabled=true`, `motivation_price_cents=29500`
+  (R295), `motivation_writer_enabled=true`. The paygate flag is the kill
+  switch — setting it false restores the free beta immediately.
+- **The gate**: `MotivationPaymentsService.assertPaidForGeneration`, called by
+  `startGeneration`/`generate` before `prepareGeneration`. Unpaid answers
+  `409 { code: 'motivation-payment-required', priceCents }` and spends nothing.
+  Paid mode claims **no** free-beta seat.
+- **Money record**: new `MotivationPayment` (one row per checkout attempt) plus
+  `Motivation.billedCents`/`paidAt`. Both payment FKs are `ON DELETE SET NULL`
+  so the sale survives the retention purge and a POPIA erasure; the MO number
+  is snapshotted on the row. Verified live: deleting the test application left
+  its payment row behind with the reference.
+- **Confirmation**: no new webhook. `POST /motivations/:id/payment/verify` asks
+  Ozow for the authoritative status (amount + merchant reference both bound)
+  and `reconcilePendingPayments` sweeps abandoned tabs every 10 minutes.
+  Mismatches and double captures raise urgent AdminAlerts and apply nothing.
+- **Prices**: flat R295 everywhere. The old R199/R99/AO-Pro table (never wired)
+  and its `motivation_buyer_price_cents` flag are gone; the Armory tile now
+  reads `R295 per Motivation`.
+- **UI**: pack footer says "Pay R 295 and write my motivation", stores the
+  declaration, sends the member to Ozow, and on `?payment=return` verifies
+  three times (5 s apart) then auto-writes once. Applications list shows the
+  price and a "Payment due" chip.
+- **Copy**: the failure notification no longer claims "nothing has been
+  charged" on a paid document — it says the payment stays against the
+  application and the retry is free. SMS variants re-cut to stay inside one
+  GSM-7 segment.
+- **Verified live** (`turbosnail`): `/status` → `paidMode true, priceCents
+  29500, canStart true`; unpaid generate → 409; a real Ozow checkout was
+  created for R295 and its hosted page returned 200; `verify` → `PENDING`;
+  the test application was deleted and the attempt closed as FAILED.
+- ⚠️ **NOT verified: a real capture.** No money was moved — that needs the
+  operator to pay the R295 (or a temporary R1 price) and confirm the document
+  writes and `billedCents` lands. Everything up to the bank page is proven.
+- Tests: backend **6,313 passed / 8 skipped** (new
+  `motivation-payments.service.spec.ts`, 22 cases); frontend **1,972 passed /
+  1 skipped** (new `sheet-payment.spec.tsx`); both typechecks and the frontend
+  production build clean. Rollback `alloutdoor-20261120-195236.dump`
+  (34,953,327 bytes).
+
 ## 2026-11-20 — POST COUNT WAS COUNTING DELETED POSTS
 
 - **Shipped** `9cd178c6` (backend-only). `/community/me` showed **7 posts** while
