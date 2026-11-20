@@ -7,6 +7,26 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — COMMUNITY DETAILS: VISIBLE CHOICES, WORKING DATES
+
+- **Shipped** `933b6b58` (frontend-only).
+- **Date pickers in the composer were behind the modal.** The "Create post"
+  dialog is `z-[1000]`; the date sheet was `z-121`, so tapping the calendar
+  opened it underneath the composer and looked dead. The sheet is now
+  `z-1101` (scrim `z-1100`), above every surface that can contain a date field.
+- **Optional details no longer start with an empty "Start typing…" box.**
+  - Multi-select chips (species, flair) render a searchable pill cloud
+    immediately, with selected pills above it and a free-text "Add …" row.
+  - Single-selects (firearm type, water type, site type, gear category,
+    condition, context) are real `<select>` controls with a "Choose …" prompt.
+  - Calibre/cartridge/test-result fields show the first suggestions on focus,
+    then filter as the member types; free text is still accepted.
+  - Every control has a one-line instruction ("Tap every option that fits",
+    "Choose one", "Tap the calendar, or type yyyy-mm-dd").
+  - The collapsed button shows the number of chosen details (`+ Details (2)`).
+- Checks: frontend **1,966 passed / 1 skipped**; production build clean;
+  health and public site 200.
+
 ## 2026-11-20 — LISTING HERO VIDEO AUTOPLAYS
 
 - **Shipped** `89c5b1d7` (frontend-only): the listing gallery's video is now
