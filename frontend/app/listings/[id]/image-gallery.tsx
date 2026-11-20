@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImageLightbox } from '@/components/image-lightbox';
 
 // Subset of Prisma's ListingImage that the gallery actually reads.
@@ -111,23 +111,7 @@ export function ImageGallery({
           className="relative rounded-[6px] overflow-hidden"
           style={{ aspectRatio: '4 / 3', background: '#000' }}
         >
-          <video
-            src={video.playbackUrl || video.url}
-            poster={video.thumbnailUrl ?? undefined}
-            controls
-            muted={video.audioEnabled === false}
-            playsInline
-            preload="metadata"
-            aria-label={`${title} video`}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              background: '#000',
-            }}
-          />
+          <HeroVideo video={video} title={title} />
         </div>
       ) : (
         <button
@@ -228,6 +212,96 @@ export function ImageGallery({
   );
 }
 
+function HeroVideo({
+  video,
+  title,
+}: {
+  video: GalleryVideo;
+  title: string;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  // Browsers refuse unmuted autoplay until the user has interacted with the
+  // site. Start with the seller's audio setting; if play() is rejected, mute
+  // and retry — the clip still auto-starts, and the viewer can unmute with the
+  // native controls. A silent clip is muted from the start.
+  const [muted, setMuted] = useState(video.audioEnabled === false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let cancelled = false;
+
+    const play = () => {
+      if (cancelled) return;
+      void el.play().catch(() => {
+        if (cancelled) return;
+        el.muted = true;
+        setMuted(true);
+        void el.play().catch(() => undefined);
+      });
+    };
+    const pause = () => el.pause();
+
+    // No IntersectionObserver (older browser / test): play immediately, as the
+    // hero is the first thing on the page.
+    if (typeof IntersectionObserver === 'undefined') {
+      el.preload = 'auto';
+      play();
+      return () => {
+        cancelled = true;
+        pause();
+      };
+    }
+
+    // Play when the hero is meaningfully on screen; pause when it is scrolled
+    // away. This covers both cases: a hero starts as soon as the page opens,
+    // and a non-hero video starts when the viewer selects it and it scrolls
+    // into view.
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.35) play();
+        else pause();
+      },
+      { threshold: [0, 0.35, 1] },
+    );
+    observer.observe(el);
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      pause();
+    };
+  }, []);
+
+  return (
+    <video
+      ref={ref}
+      src={video.playbackUrl || video.url}
+      poster={video.thumbnailUrl ?? undefined}
+      controls
+      muted={video.audioEnabled === false ? true : muted}
+      onVolumeChange={(event) => {
+        if (video.audioEnabled === false) {
+          event.currentTarget.muted = true;
+          return;
+        }
+        setMuted(event.currentTarget.muted);
+      }}
+      playsInline
+      preload="metadata"
+      aria-label={`${title} video`}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        background: '#000',
+      }}
+    />
+  );
+}
+
 function VideoThumb({
   video,
   active,
@@ -257,7 +331,7 @@ function VideoThumb({
         transition: 'opacity 0.15s, border-color 0.15s',
       }}
     >
-      {live ? (
+      {live && !active ? (
         <video
           src={video.playbackUrl || video.url}
           poster={video.thumbnailUrl ?? undefined}
@@ -275,6 +349,10 @@ function VideoThumb({
           }}
         />
       ) : video.thumbnailUrl ? (
+        // ⚠️ NOT A SECOND LIVE PLAYER WHILE THE HERO IS ACTIVE. The thumbnail
+        // used to autoplay even when it was the active slide, so the main hero
+        // and its own thumbnail played the same clip simultaneously. A static
+        // poster is enough while the hero owns playback.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={video.thumbnailUrl}
