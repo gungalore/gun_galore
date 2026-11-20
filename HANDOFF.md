@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — BROWSER-TAB MOJIBAKE REPAIRED
+
+- The tab read **“Community â€” ALL Outdoor”** because `app/layout.tsx`'s title
+  template held UTF-8 em-dash bytes that had been decoded as Windows-1252
+  (`â€”`). The same corruption ran through that file's comments and five other
+  frontend files (`Workingâ€¦`, `Loadingâ€¦`, `Optional â€”`).
+- Repaired all 180 occurrences across:
+  `app/layout.tsx`, `app/licence-centre/[id]/start/page.tsx`,
+  `components/admin/admin-confirm.tsx`, `lib/asset-version.ts`,
+  `lib/motivations-api.ts`, `scripts/generate-pwa-icons.ts`.
+  Em/en dashes, ellipses, arrows, the warning glyph and § now render correctly.
+- Live title verified: `<title>Community — ALL Outdoor</title>` (U+2014).
+- Checks: frontend **1,966 passed / 1 skipped**; production build clean; health
+  and public site 200.
+- Rollback point: `alloutdoor-20261120-094631.dump`.
+
 ## 2026-11-20 — COMMUNITY DETAILS: VISIBLE CHOICES, WORKING DATES
 
 - **Shipped** `933b6b58` and `b24d9e4f` (frontend-only).
