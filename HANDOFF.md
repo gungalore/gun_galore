@@ -7,6 +7,26 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — LISTING HERO VIDEO AUTOPLAYS
+
+- **Shipped** `89c5b1d7` (frontend-only): the listing gallery's video is now
+  its own client component with an `IntersectionObserver`. A hero clip starts
+  as soon as the page opens and the hero is at least 35% visible; scrolling it
+  away pauses it and scrolling back resumes it. A non-hero clip starts when the
+  viewer selects it and it comes into view.
+- **Autoplay policy:** an audio-enabled clip first tries to play with sound;
+  if the browser rejects that (no user gesture yet), the component mutes it,
+  retries, and leaves the native controls available to unmute. A silent clip
+  is muted from the start.
+- **No double playback:** the active hero thumbnail used to autoplay the same
+  clip as the hero. It now shows the poster while active; the live preview
+  only plays when a photo owns the hero.
+- The listing cards' `CardVideo` already played at 35% visibility; that path is
+  unchanged.
+- Checks: frontend **1,964 passed / 1 skipped**; production build clean;
+  health and public site 200.
+- Rollback point: `alloutdoor-20261120-084617.dump`.
+
 ## 2026-11-20 — IMAGE COPY DETERRENT; CLOUDINARY ACL PENDING
 
 - **Shipped** `74b4a044` (frontend-only): a global `ImageProtection` client
