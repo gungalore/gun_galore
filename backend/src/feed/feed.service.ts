@@ -359,27 +359,50 @@ export class FeedService {
   async mySummary(userId: string) {
     await this.assertEnabled();
     const v = await this.viewer(userId);
-    const [social, followerCount, followingCount, pendingCount] =
-      await Promise.all([
-        this.prisma.userSocialStats.findUnique({
-          where: { userId },
-          select: { points: true, postCount: true, commentCount: true },
-        }),
-        this.prisma.follow.count({ where: { followingId: userId } }),
-        this.prisma.follow.count({ where: { followerId: userId } }),
-        // Anything not live yet (processing / in review / blocked) — the panel
-        // nudges the author to look when this is non-zero.
-        this.prisma.post.count({
-          where: { authorId: userId, status: { not: PostStatus.PUBLISHED } },
-        }),
-      ]);
+    // Count the rows themselves, never the denormalised UserSocialStats
+    // counters. Those are incremented on publish and never decremented, so a
+    // deleted (or since-hidden) post keeps inflating the number and the stat
+    // row disagrees with the list underneath it. Live counts cannot drift.
+    const [
+      social,
+      followerCount,
+      followingCount,
+      pendingCount,
+      postCount,
+      commentCount,
+    ] = await Promise.all([
+      this.prisma.userSocialStats.findUnique({
+        where: { userId },
+        select: { points: true },
+      }),
+      this.prisma.follow.count({ where: { followingId: userId } }),
+      this.prisma.follow.count({ where: { followerId: userId } }),
+      // Anything not live yet (processing / in review / blocked) — the panel
+      // nudges the author to look when this is non-zero.
+      this.prisma.post.count({
+        where: { authorId: userId, status: { not: PostStatus.PUBLISHED } },
+      }),
+      // Live posts only — the same set the member (and visitors) can see.
+      this.prisma.post.count({
+        where: { authorId: userId, status: PostStatus.PUBLISHED },
+      }),
+      // Comments only exist while their post is live, so a comment left on a
+      // since-deleted post must not be counted either.
+      this.prisma.comment.count({
+        where: {
+          authorId: userId,
+          status: PostStatus.PUBLISHED,
+          post: { status: PostStatus.PUBLISHED },
+        },
+      }),
+    ]);
     const points = social?.points ?? 0;
     return {
       username: v.username,
       // Own picture, withheld only if the member turned it off themselves.
       avatarUrl: v.feedShowAvatar ? v.avatarUrl : null,
-      postCount: social?.postCount ?? 0,
-      commentCount: social?.commentCount ?? 0,
+      postCount,
+      commentCount,
       followerCount,
       followingCount,
       points,
@@ -743,20 +766,38 @@ export class FeedService {
     });
     if (!profile) throw new NotFoundException();
 
-    const [following, followerCount, followingCount, social] = await Promise.all([
-      this.prisma.follow.findUnique({
-        where: {
-          followerId_followingId: { followerId: userId, followingId: profile.id },
-        },
-        select: { id: true },
-      }),
-      this.prisma.follow.count({ where: { followingId: profile.id } }),
-      this.prisma.follow.count({ where: { followerId: profile.id } }),
-      this.prisma.userSocialStats.findUnique({
-        where: { userId: profile.id },
-        select: { points: true, postCount: true, commentCount: true },
-      }),
-    ]);
+    const [following, followerCount, followingCount, social, postCount, commentCount] =
+      await Promise.all([
+        this.prisma.follow.findUnique({
+          where: {
+            followerId_followingId: { followerId: userId, followingId: profile.id },
+          },
+          select: { id: true },
+        }),
+        this.prisma.follow.count({ where: { followingId: profile.id } }),
+        this.prisma.follow.count({ where: { followerId: profile.id } }),
+        this.prisma.userSocialStats.findUnique({
+          where: { userId: profile.id },
+          select: { points: true },
+        }),
+        // Live, visible posts only. The stored counter also counted deleted
+        // posts, so the header did not match the list underneath it.
+        this.prisma.post.count({
+          where: {
+            authorId: profile.id,
+            status: PostStatus.PUBLISHED,
+            ...this.filterWhere(v, false),
+          },
+        }),
+        // A comment is only visible while its post is.
+        this.prisma.comment.count({
+          where: {
+            authorId: profile.id,
+            status: PostStatus.PUBLISHED,
+            post: { status: PostStatus.PUBLISHED, ...this.filterWhere(v, false) },
+          },
+        }),
+      ]);
 
     const posts = (await this.prisma.post.findMany({
       where: {
@@ -786,8 +827,8 @@ export class FeedService {
       followingCount,
       points: socialPoints,
       level: levelFor(socialPoints).name,
-      postCount: social?.postCount ?? 0,
-      commentCount: social?.commentCount ?? 0,
+      postCount,
+      commentCount,
       posts: posts.map((p) => this.shapePost(p, v, false)),
     };
   }
