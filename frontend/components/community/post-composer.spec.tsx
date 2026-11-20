@@ -225,6 +225,12 @@ describe('PostComposer', () => {
 
     fireEvent.change(type, { target: { value: 'rifle' } });
     expect(type.value).toBe('rifle');
+
+    // Free text is still allowed: Other reveals the type-your-own box.
+    fireEvent.change(type, { target: { value: '__other__' } });
+    const custom = screen.getByLabelText('Type — type your own');
+    await userEvent.type(custom, 'DMR');
+    expect((custom as HTMLInputElement).value).toBe('dmr');
   });
 
   it('opens the date sheet from the composer’s date detail', async () => {

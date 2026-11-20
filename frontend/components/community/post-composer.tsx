@@ -293,6 +293,72 @@ function ChipPicker({
 }
 
 /** One optional detail control, rendered by `kind`. */
+function SingleSelect({
+  field,
+  value,
+  disabled,
+  onChange,
+}: {
+  field: PostFieldDef;
+  value: DetailValue | undefined;
+  disabled: boolean;
+  onChange: (key: string, value: DetailValue) => void;
+}) {
+  const options = suggestionsFor(field);
+  const current = typeof value === 'string' ? value : '';
+  const currentMissing =
+    current !== '' && !options.some((entry) => entry.value === current);
+  // Free text is still allowed (operator policy 2026-10-09). The select is the
+  // discoverable path; "Other" reveals the type-your-own box.
+  const [other, setOther] = useState(currentMissing);
+
+  return (
+    <>
+      <select
+        value={other ? '__other__' : current}
+        disabled={disabled}
+        aria-label={field.label}
+        onChange={(e) => {
+          if (e.target.value === '__other__') {
+            setOther(true);
+            onChange(field.key, '');
+            return;
+          }
+          setOther(false);
+          onChange(field.key, e.target.value);
+        }}
+        className="w-full px-2 py-2 rounded-[6px] text-[13px]"
+        style={fieldInput}
+      >
+        <option value="">Choose {field.label.toLowerCase()}…</option>
+        {options.map((entry) => (
+          <option key={entry.value} value={entry.value}>
+            {entryLabel(entry)}
+          </option>
+        ))}
+        <option value="__other__">Other (type your own)…</option>
+      </select>
+      {(other || currentMissing) && (
+        <input
+          value={current}
+          disabled={disabled}
+          aria-label={`${field.label} — type your own`}
+          placeholder="Type your own…"
+          maxLength={32}
+          onChange={(e) =>
+            onChange(
+              field.key,
+              e.target.value.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 32),
+            )
+          }
+          className="w-full px-2 py-2 rounded-[6px] text-[13px] mt-2"
+          style={fieldInput}
+        />
+      )}
+    </>
+  );
+}
+
 function DetailField({
   field,
   value,
@@ -319,29 +385,13 @@ function DetailField({
       />
     );
   } else if (field.kind === 'single') {
-    const options = suggestionsFor(field);
-    const current = asString;
-    const currentMissing =
-      current !== '' && !options.some((entry) => entry.value === current);
     control = (
-      <select
-        value={current}
+      <SingleSelect
+        field={field}
+        value={value}
         disabled={disabled}
-        aria-label={field.label}
-        onChange={(e) => onChange(field.key, e.target.value)}
-        className="w-full px-2 py-2 rounded-[6px] text-[13px]"
-        style={fieldInput}
-      >
-        <option value="">Choose {field.label.toLowerCase()}…</option>
-        {currentMissing && (
-          <option value={current}>{chipLabel(current)}</option>
-        )}
-        {options.map((entry) => (
-          <option key={entry.value} value={entry.value}>
-            {entryLabel(entry)}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+      />
     );
   } else if (field.vocab) {
     // Calibre / cartridge / test result: a short suggestion list on focus,
