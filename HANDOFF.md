@@ -26,6 +26,7 @@ Last updated: **2026-11-20**.
   - The collapsed button shows the number of chosen details (`+ Details (2)`).
 - Checks: frontend **1,966 passed / 1 skipped**; production build clean;
   health and public site 200.
+- Rollback point: `alloutdoor-20261120-091250.dump`.
 
 ## 2026-11-20 — LISTING HERO VIDEO AUTOPLAYS
 
