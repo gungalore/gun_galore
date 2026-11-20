@@ -25,25 +25,25 @@ Last updated: **2026-11-20**.
 
 ## 2026-11-20 — COMMUNITY DETAILS: VISIBLE CHOICES, WORKING DATES
 
-- **Shipped** `933b6b58` and `b24d9e4f` (frontend-only).
+- **Shipped** `933b6b58`, `b24d9e4f` and `8d5a9a51` (frontend-only).
 - **Date pickers in the composer were behind the modal.** The "Create post"
   dialog is `z-[1000]`; the date sheet was `z-121`, so tapping the calendar
   opened it underneath the composer and looked dead. The sheet is now
   `z-1101` (scrim `z-1100`), above every surface that can contain a date field.
 - **Optional details no longer start with an empty "Start typing…" box.**
-  - Multi-select chips (species, flair) render a searchable pill cloud
-    immediately, with selected pills above it and a free-text "Add …" row.
+  - Species/flair are **plain text inputs** now — type one or more values,
+    separated by commas. The pill cloud was removed at the operator's request.
   - Single-selects (firearm type, water type, site type, gear category,
     condition, context) are real `<select>` controls with a "Choose …" prompt
     and an **Other (type your own)…** fallback, so free text is still allowed.
   - Calibre/cartridge/test-result fields show the first suggestions on focus,
     then filter as the member types; free text is still accepted.
-  - Every control has a one-line instruction ("Tap every option that fits",
-    "Choose one", "Tap the calendar, or type yyyy-mm-dd").
+  - Every control has a one-line instruction ("Type one or more, separated by
+    commas", "Choose one", "Tap the calendar, or type yyyy-mm-dd").
   - The collapsed button shows the number of chosen details (`+ Details (2)`).
 - Checks: frontend **1,966 passed / 1 skipped**; production build clean;
   health and public site 200.
-- Rollback point: `alloutdoor-20261120-091827.dump`.
+- Rollback point: `alloutdoor-20261120-120018.dump`.
 
 ## 2026-11-20 — LISTING HERO VIDEO AUTOPLAYS
 
