@@ -27,8 +27,12 @@ function response(body: unknown, status = 200) {
   };
 }
 
-function build(overrides: Record<string, unknown> = {}) {
+function build(
+  overrides: Record<string, unknown> = {},
+  opts: { invoiceFailure?: number } = {},
+) {
   const calls: FetchCall[] = [];
+  const alerts: Array<Record<string, unknown>> = [];
   // A mutable row so finalize() sees the invoice id create() just wrote.
   const row: Record<string, unknown> = {
     id: 'pay1',
@@ -63,6 +67,12 @@ function build(overrides: Record<string, unknown> = {}) {
       findUnique: jest.fn(async () => ({ id: 'u1', zohoContactId: 'c1' })),
       update: jest.fn(),
     },
+    adminAlert: {
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        alerts.push(data);
+        return data;
+      }),
+    },
   };
 
   let invoiceReads = 0;
@@ -76,6 +86,12 @@ function build(overrides: Record<string, unknown> = {}) {
       return response({ chartofaccounts: ACCOUNTS });
     }
     if (/\/invoices(\?|$)/.test(u) && init?.method === 'POST') {
+      if (opts.invoiceFailure) {
+        return response(
+          { code: 1000, message: 'Involved account types are not applicable' },
+          opts.invoiceFailure,
+        );
+      }
       return response({
         invoice: { invoice_id: 'inv9', invoice_number: 'INV-9' },
       });
@@ -99,7 +115,7 @@ function build(overrides: Record<string, unknown> = {}) {
   }) as unknown as typeof fetch;
 
   const svc = new ZohoBooksService(db as never);
-  return { svc, calls, row };
+  return { svc, calls, row, alerts };
 }
 
 describe('ZohoBooksService — the motivation principal sale', () => {
@@ -194,5 +210,27 @@ describe('ZohoBooksService — the motivation principal sale', () => {
         (c) => /\/invoices(\?|$)/.test(c.url) && c.init?.method === 'POST',
       ),
     ).toHaveLength(0);
+  });
+
+  it('calls a 5xx UNCERTAIN and alerts, because the invoice may exist', async () => {
+    const { svc, row, alerts } = build({}, { invoiceFailure: 500 });
+    await svc.createMotivationInvoice('pay1');
+    expect(row.zohoSyncStatus).toBe('UNCERTAIN');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].type).toBe('ZOHO_MOTIVATION_INVOICE_UNCERTAIN');
+    // Still no invoice id: a retry must NOT create one until a human looks.
+    expect(row.zohoInvoiceId).toBeNull();
+  });
+
+  it('records a clean refusal as FAILED and alerts only on the first failure', async () => {
+    const { svc, row, alerts } = build({}, { invoiceFailure: 400 });
+    await svc.createMotivationInvoice('pay1');
+    expect(row.zohoSyncStatus).toBe('FAILED');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].type).toBe('ZOHO_MOTIVATION_INVOICE_FAILED');
+
+    // The hourly sweep retries; one alert per hour would be noise.
+    await svc.createMotivationInvoice('pay1');
+    expect(alerts).toHaveLength(1);
   });
 });

@@ -3098,7 +3098,11 @@ export class ZohoBooksService {
 
       await this.finalizeMotivationInvoice(paymentId);
     } catch (err) {
-      await this.markMotivationFailed(paymentId, err as Error);
+      await this.markMotivationFailed(
+        paymentId,
+        err as Error,
+        payment.zohoSyncStatus === 'FAILED',
+      );
     }
   }
 
@@ -3298,6 +3302,7 @@ export class ZohoBooksService {
   private async markMotivationFailed(
     paymentId: string,
     err: Error,
+    wasAlreadyFailed = false,
   ): Promise<void> {
     const message = err.message.slice(0, 1000);
     if (err instanceof ZohoTransportError && err.uncertain) {
@@ -3312,6 +3317,18 @@ export class ZohoBooksService {
             zohoSyncStatus: 'UNCERTAIN',
             zohoSyncError: message,
             zohoSyncLastAttemptAt: new Date(),
+          },
+        })
+        .catch(() => undefined);
+      // ⚠️ UNCERTAIN IS THE ONE STATE THE SWEEP DELIBERATELY NEVER TOUCHES, so
+      // a log line is not enough — a paid sale could sit unbooked forever.
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ZOHO_MOTIVATION_INVOICE_UNCERTAIN',
+            referenceId: paymentId,
+            urgent: false,
+            context: `A Books write for motivation payment ${paymentId} may have landed: ${message}. Check the Books UI for a duplicate invoice before retrying.`,
           },
         })
         .catch(() => undefined);
@@ -3330,6 +3347,20 @@ export class ZohoBooksService {
         },
       })
       .catch(() => undefined);
+    // Alert on the FIRST failure only: the hourly sweep retries, and an alert
+    // per attempt would be one per hour for as long as Books is down.
+    if (!wasAlreadyFailed) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ZOHO_MOTIVATION_INVOICE_FAILED',
+            referenceId: paymentId,
+            urgent: false,
+            context: `Paid motivation ${paymentId} could not be invoiced in Books: ${message}. It will be retried hourly; check the chart of accounts if it keeps failing.`,
+          },
+        })
+        .catch(() => undefined);
+    }
   }
 
   /**

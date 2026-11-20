@@ -49,7 +49,9 @@ schema migration `20261120191500_motivation_paygate` included).
   notes say "Principal supply … not an agent collection". Migration
   `20261120203500_motivation_payment_zoho` adds the `zoho*` columns; FAILED is
   re-fired by the hourly `retryFailedMotivationInvoices` sweep, UNCERTAIN and
-  stale PENDING are never auto-retried (Books has no idempotency key).
+  stale PENDING are never auto-retried (Books has no idempotency key) and both
+  raise an `AdminAlert` (`ZOHO_MOTIVATION_INVOICE_UNCERTAIN`); a first clean
+  failure raises `ZOHO_MOTIVATION_INVOICE_FAILED` once, not hourly.
   ⚠️ First live proof comes with the first real capture — no paid motivation
   exists yet.
 - **Verified live** (`turbosnail`): `/status` → `paidMode true, priceCents
