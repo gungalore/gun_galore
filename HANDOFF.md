@@ -5,7 +5,32 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-19**.
+Last updated: **2026-11-20**.
+
+## 2026-11-20 — FEED PHOTOS: CONTACT DETAILS ARE AUTO-MASKED
+
+- **Reported:** a community post by `turbosnail` (Bullseye Turret Tags product
+  image, `cmwojwxhb00jhzlvni84bxbt8`) was blocked with "a photo shows contact
+  details or another rule breach". The only extra content was the
+  manufacturer's printed `www.ppprsa.shop` URL.
+- **Why it blocked:** the feed photo judge returns one `other_violation`
+  boolean and rejects the whole post. The listing pipeline already had a
+  locate-and-pixelate pass (`maskPhotoRegions`), but feed moderation never
+  called it.
+- **Fix** `412eebc0` (full deploy): when the only blocking reason is the
+  photo-contact catch-all, feed moderation now asks Jev for the contact
+  rectangles, pixelates them, re-uploads the masked image to Cloudinary,
+  deletes the original, and re-runs the FULL moderation with a redaction note.
+  Any surviving violation still rejects; a missing box, mask error or a
+  re-check that still reads contact details leaves the original verdict. A
+  later copy tightening restricts the trigger to the exact photo-contact
+  reason.
+- **Existing post reprocessed:** reset to `PENDING_MODERATION` with
+  `moderatedAt = null`; the five-minute sweep ran the new path and the post is
+  now `PUBLISHED` with a masked image (original deleted).
+- Checks: backend **6,282 passed / 8 skipped**; frontend **1,959 passed / 1
+  skipped**; both builds clean; health and public site 200.
+- Rollback point: `alloutdoor-20261120-075442.dump`.
 
 ## 2026-11-19 — EXPIRED AUCTIONS: OUT OF SEARCH AND OFF THE PDP
 
