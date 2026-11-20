@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 — POST COUNT WAS COUNTING DELETED POSTS
+
+- **Shipped** `9cd178c6` (backend-only). `/community/me` showed **7 posts** while
+  the list underneath held 2.
+- Cause: the stat row read `UserSocialStats.postCount` / `commentCount` — the
+  denormalised counters that are bumped on publish and never decremented. Every
+  deleted (or since-hidden) post left the number inflated for good, and a
+  comment whose post had been deleted counted too.
+- `mySummary` and the public profile now count the rows themselves: posts with
+  `status = PUBLISHED`, comments with `status = PUBLISHED` **and** a published
+  parent post. The profile count also applies the viewer's mute filter, so the
+  header always matches the list below it.
+- `UserSocialStats` remains the home of `points` (levels, leaderboard); only its
+  post/comment counters are no longer read. The stale values were left alone —
+  nothing consults them now.
+- Verified live as `turbosnail`: `/community/me/summary` → `postCount: 2`,
+  `/community/users/turbosnail` → 2 posts in the payload; both matched the 2
+  rendered rows.
+- Tests: backend **6,285 passed / 8 skipped** (new `feed-summary.spec.ts`), feed
+  folder 86 passed, `tsc --noEmit` clean. Rollback
+  `alloutdoor-20261120-125654.dump` (35 MB). Live HEAD also carries `3c0e7a0f`
+  (Peach payout status fix).
+
 ## 2026-11-20 (PEACH) — DOCS AUDIT, ONE REAL BUG FOUND AND FIXED
 
 Audited the adapter against Peach's published docs. Correct as written: OAuth
