@@ -171,3 +171,73 @@ describe('PeachService.verifyWebhookSignature (dev passthrough)', () => {
     expect(svc.verifyWebhookSignature('raw', {}, {}, 'https://x/y')).toBe(true);
   });
 });
+
+describe('PeachService.getPayoutStatus — the endpoint Peach actually documents', () => {
+  // 🚨 THIS USED TO CALL /payouts/{payoutId}. Peach has TWO lookups:
+  //   GET /payouts/{payoutRequestId}      — the BATCH id Peach returns on create
+  //   GET /payouts/status?payoutId=…      — the merchant-supplied id we mint
+  // We only ever hold the merchant-supplied one, so the old call 404'd, the
+  // cron read that as "Peach has no record", and after 15 minutes HELD the
+  // payout and released its seller-charge reservation. Pinned here against the
+  // reference (querypayoutrequestbypayoutid), 2026-11-20.
+  function makeLiveService() {
+    const svc = Object.create(PeachService.prototype) as Record<string, any>;
+    Object.assign(svc, {
+      payoutsConfigured: true,
+      payoutMerchantId: 'a'.repeat(32),
+      payoutsHost: 'https://payouts.example',
+      getPayoutToken: async () => 'tok',
+    });
+    return svc as PeachService;
+  }
+
+  const OLD_FETCH = global.fetch;
+  afterEach(() => {
+    global.fetch = OLD_FETCH;
+  });
+
+  it('queries /payouts/status?payoutId= and reads the matching entry from payouts[]', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        payoutRequestId: 'batch-1',
+        payouts: [
+          { payoutId: 'other', status: 'processing', resultCode: '2900.000.003' },
+          { payoutId: 'p-1', status: 'successful', resultCode: '2000.000.000' },
+        ],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const r = await makeLiveService().getPayoutStatus('p-1');
+
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('/payouts/status?payoutId=p-1');
+    expect(url).not.toMatch(/\/payouts\/p-1$/);
+    expect(r).toEqual(
+      expect.objectContaining({ payoutId: 'p-1', status: 'successful' }),
+    );
+  });
+
+  it('returns null on 404 (unknown payout, not an error)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => '',
+    }) as unknown as typeof fetch;
+
+    await expect(makeLiveService().getPayoutStatus('p-2')).resolves.toBeNull();
+  });
+
+  it('derives a status from resultCode when the payload omits one', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ payouts: [{ payoutId: 'p-3', resultCode: '2900.000.003' }] }),
+    }) as unknown as typeof fetch;
+
+    const r = await makeLiveService().getPayoutStatus('p-3');
+    expect(r?.status).toBe('processing');
+  });
+});

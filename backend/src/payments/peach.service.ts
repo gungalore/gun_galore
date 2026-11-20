@@ -545,8 +545,24 @@ export class PeachService {
     return { success: true, requestId: json.payoutRequestId, results };
   }
 
-  /** Query one payout's current state. Used by the reconciliation cron when
-   *  a status webhook is missed. */
+  /**
+   * Query one payout's current state by OUR payout id. Used by the status
+   * webhook handler and the reconciliation cron when a webhook is missed.
+   *
+   * ⚠️ THE PATH IS `/payouts/status?payoutId=…`, NOT `/payouts/{payoutId}`.
+   * Peach has two lookups: `GET /payouts/{payoutRequestId}` (the BATCH request
+   * id Peach returns from create) and `GET /payouts/status?payoutId=` (the
+   * merchant-supplied id we mint with randomUUID and store on the attempt).
+   * We only ever hold the latter. Calling the former with it 404s, which the
+   * caller reads as "Peach has no record" — after 15 minutes that HOLDS the
+   * payout and releases its seller-charge reservation. Verified against
+   * developer.peachpayments.com/reference/querypayoutrequestbypayoutid,
+   * 2026-11-20.
+   *
+   * The response is a payout REQUEST containing `payouts[]`; the entry we want
+   * is the one whose payoutId matches. Be tolerant of a bare object too, so a
+   * future shape change cannot silently turn into a 404-shaped null.
+   */
   async getPayoutStatus(payoutId: string): Promise<{
     payoutId: string;
     status: string;
@@ -555,25 +571,33 @@ export class PeachService {
   } | null> {
     if (!this.payoutsConfigured) return null;
     const res = await fetch(
-      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.payoutMerchantId)}/payouts/${encodeURIComponent(payoutId)}`,
+      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.payoutMerchantId)}/payouts/status?payoutId=${encodeURIComponent(payoutId)}`,
       { headers: { Authorization: `Bearer ${await this.getPayoutToken()}` } },
     );
     if (res.status === 404) return null;
     if (!res.ok) {
       throw new Error(`Peach payout status ${res.status}: ${await res.text()}`);
     }
-    const json = (await res.json().catch(() => ({}))) as {
-      payoutId?: string;
-      status?: string;
-      resultCode?: string;
-      error?: { code?: string; message?: string };
-    };
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const list = Array.isArray(json.payouts)
+      ? (json.payouts as Record<string, unknown>[])
+      : Array.isArray(json)
+        ? (json as Record<string, unknown>[])
+        : [json];
+    const match =
+      list.find((p) => p?.payoutId === payoutId) ?? list[0] ?? {};
+    const resultCode =
+      typeof match.resultCode === 'string' ? match.resultCode : undefined;
+    const errObj = match.error as
+      | { code?: string; message?: string }
+      | undefined;
     return {
-      payoutId: json.payoutId ?? payoutId,
-      status: String(json.status ?? classifyPayoutCode(json.resultCode)),
-      resultCode: json.resultCode,
-      error: json.error
-        ? `${json.error.code ?? ''} ${json.error.message ?? ''}`.trim()
+      payoutId:
+        typeof match.payoutId === 'string' ? match.payoutId : payoutId,
+      status: String(match.status ?? classifyPayoutCode(resultCode)),
+      resultCode,
+      error: errObj
+        ? `${errObj.code ?? ''} ${errObj.message ?? ''}`.trim()
         : undefined,
     };
   }
