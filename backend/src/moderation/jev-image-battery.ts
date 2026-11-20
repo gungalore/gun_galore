@@ -65,8 +65,8 @@ export async function toJevPhotoAsset(part: PhotoPart) {
 }
 
 const REDACTION_NOTE =
-  'This photo has an intentionally blurred or pixelated area. The seller ' +
-  'redacted it, so treat that area as removed: do not flag it merely because ' +
+  'This photo has an intentionally blurred or pixelated area. It was ' +
+  'redacted, so treat that area as removed: do not flag it merely because ' +
   'it is blurred, and do not guess what was underneath. Readable text ' +
   'elsewhere in the photo still counts.';
 
@@ -202,8 +202,15 @@ export interface FeedPhotoVerdict {
 /**
  * Three nouls and one choice about ONE community photo. The choice is the
  * graphic tier; the caller takes the maximum across the post's photos.
+ *
+ * `redacted` marks a photo this service has already pixelated. The note tells
+ * the judge not to re-flag the blurred region, while readable text elsewhere
+ * still counts.
  */
-export function feedPhotoQuestions(): Record<string, JevQuestion> {
+export function feedPhotoQuestions(
+  redacted = false,
+): Record<string, JevQuestion> {
+  const note = redacted ? ` ${REDACTION_NOTE}` : '';
   return {
     promotional: {
       type: 'noul',
@@ -211,7 +218,8 @@ export function feedPhotoQuestions(): Record<string, JevQuestion> {
         'Is this photo itself advertising, selling or self-promoting a shop, ' +
         'channel or service — a price offered, a sale pitch, "DM me", a shop ' +
         "logo presented as the author's own, or a pitch for the author's own " +
-        'ALL Outdoor listing? Incidental branding on equipment is NOT this.',
+        'ALL Outdoor listing? Incidental branding on equipment is NOT this.' +
+        note,
       criteria: {
         true: 'The photo is itself a promotion or solicitation',
         false: 'Ordinary community photo or a product mention',
@@ -235,7 +243,8 @@ export function feedPhotoQuestions(): Record<string, JevQuestion> {
         'details burned into the image (phone, email, handle, URL, QR code), a ' +
         'street address or storefront that identifies a person, or hate speech? ' +
         'Normal hunting/fishing field content is NOT this. Nudity and sexual ' +
-        'content are asked separately.',
+        'content are asked separately.' +
+        note,
       criteria: {
         true: 'A clear additional community-rules violation',
         false: 'No other violation',

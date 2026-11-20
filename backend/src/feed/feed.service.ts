@@ -16,7 +16,7 @@ import {
   ReactionKind,
 } from '@prisma/client';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { optimizedVideoUrl } from '../common/image-url';
+import { boundedImageUrl, IMAGE_EDGE, optimizedVideoUrl } from '../common/image-url';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { maskBadLanguage } from '../moderation/bad-language';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -971,13 +971,15 @@ export class FeedService {
   async runModeration(postId: string): Promise<void> {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      include: { images: true, video: true },
+      // Order matters: redactedImageIndexes is positional, and the fresh read
+      // after masking must line up with what was sent to the judge.
+      include: { images: { orderBy: { order: 'asc' } }, video: true },
     });
     if (!post) return;
     if (post.moderatedAt) return;
 
     const text = [post.title, post.body].filter(Boolean).join('\n');
-    const verdict = await this.moderation.moderate({
+    let verdict = await this.moderation.moderate({
       text,
       imageUrls: post.images.map((i) => i.url),
       video: post.video
@@ -986,6 +988,38 @@ export class FeedService {
       authorIsOfficial: post.isOfficial,
       postType: post.type,
     });
+
+    // AUTO-MASK, THEN REJUDGE. A readable phone number or URL burned into a
+    // photo is a redactable problem, not necessarily a reason to bin the whole
+    // post. When the only blocking reason is the photo-contact catch-all, try
+    // to pixelate the detail and re-run the FULL moderation against the masked
+    // images. If any other violation survives, the second verdict rejects.
+    if (
+      verdict.decision === 'REJECT' &&
+      verdict.otherViolation &&
+      post.images.length > 0 &&
+      verdict.reasons.some((r) => r.includes('contact details'))
+    ) {
+      const maskedIndexes = await this.autoMaskPostImages(post);
+      if (maskedIndexes.length > 0) {
+        const fresh = await this.prisma.post.findUnique({
+          where: { id: postId },
+          include: { images: { orderBy: { order: 'asc' } } },
+        });
+        if (fresh) {
+          verdict = await this.moderation.moderate({
+            text,
+            imageUrls: fresh.images.map((i) => i.url),
+            video: post.video
+              ? { url: post.video.url, thumbnailUrl: post.video.thumbnailUrl }
+              : null,
+            authorIsOfficial: post.isOfficial,
+            postType: post.type,
+            redactedImageIndexes: maskedIndexes,
+          });
+        }
+      }
+    }
 
     const status =
       verdict.decision === 'PUBLISH'
@@ -1021,6 +1055,69 @@ export class FeedService {
         reason: verdict.reasons.join('; ') || undefined,
       });
     }
+  }
+
+  /**
+   * Replace every photo in a rejected post whose contact details can be
+   * located and masked. Returns the 0-based indexes that were replaced.
+   *
+   * Each image is bounded to 1600px before masking: the small print has to
+   * survive the model read, but the original 12MP upload does not need to be
+   * pulled into memory. A failed image is skipped, not fatal — the original
+   * verdict then stands.
+   */
+  private async autoMaskPostImages(post: {
+    images: PostImage[];
+  }): Promise<number[]> {
+    const maskedIndexes: number[] = [];
+    for (let index = 0; index < post.images.length; index += 1) {
+      const image = post.images[index];
+      try {
+        const res = await fetch(
+          boundedImageUrl(image.url, IMAGE_EDGE.document),
+        );
+        if (!res.ok) {
+          this.logger.warn(
+            `feed auto-mask: image ${image.id} fetch returned ${res.status}`,
+          );
+          continue;
+        }
+        const contentType = (
+          res.headers.get('content-type') ?? 'image/jpeg'
+        )
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        if (!contentType.startsWith('image/')) continue;
+
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const masked = await this.moderation.maskContactDetails({
+          type: 'image',
+          mimeType: contentType as 'image/jpeg' | 'image/png' | 'image/webp',
+          data: bytes.toString('base64'),
+        });
+        if (!masked) continue;
+
+        const uploaded = await this.cloudinary.uploadImage(masked, 'feed');
+        await this.prisma.postImage.update({
+          where: { id: image.id },
+          data: { url: uploaded.url, publicId: uploaded.publicId },
+        });
+        maskedIndexes.push(index);
+        // The unmasked original must not remain publicly readable. Best-effort:
+        // a failed delete leaves an orphan, never an unmasked public post.
+        await this.cloudinary.deleteImage(image.publicId).catch((err: Error) =>
+          this.logger.warn(
+            `feed auto-mask: could not delete original ${image.publicId}: ${err.message}`,
+          ),
+        );
+      } catch (err) {
+        this.logger.warn(
+          `feed auto-mask: image ${image.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    return maskedIndexes;
   }
 
   async updatePost(userId: string, postId: string, dto: UpdatePostDto) {

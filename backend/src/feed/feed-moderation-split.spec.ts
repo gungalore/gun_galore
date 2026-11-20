@@ -13,6 +13,10 @@ jest.mock('../common/llm/jev-image', () => ({
   })),
 }));
 
+jest.mock('../moderation/photo-mask', () => ({
+  maskPhotoRegions: jest.fn(async () => Buffer.from('masked-image')),
+}));
+
 const okJson =
   '{"promoDetected":false,"illegalDetected":false,"otherViolation":false,"graphicTier":"NONE","reasons":[]}';
 
@@ -396,6 +400,63 @@ describe('feed split — video posts', () => {
     expect(complete.mock.calls[0][0]).toMatchObject({
       purpose: 'feed.moderation.video',
     });
+  });
+});
+
+describe('feed photo auto-mask', () => {
+  function buildMask(opts: { contact: number; recheck: number }) {
+    const decide = jest.fn((req: { purpose: string }) => {
+      if (req.purpose === 'moderation.feed.contact') {
+        return { answers: { contact: noul(opts.contact) } };
+      }
+      if (req.purpose === 'moderation.feed.contact.boxes') {
+        return {
+          answers: {
+            mask_contact_1: {
+              type: 'box',
+              box: { top: 0.1, bottom: 0.2, left: 0.1, right: 0.3 },
+              confidence: 0.9,
+            },
+          },
+        };
+      }
+      if (req.purpose === 'moderation.feed.contact.recheck') {
+        return { answers: { contact: noul(opts.recheck) } };
+      }
+      throw new Error(`unexpected purpose ${req.purpose}`);
+    });
+    const svc = new FeedModerationService({
+      isConfiguredFor: () => true,
+      decide,
+      complete: jest.fn(),
+    } as never);
+    return { svc, decide };
+  }
+
+  const part = {
+    type: 'image' as const,
+    mimeType: 'image/jpeg' as const,
+    data: Buffer.from('original').toString('base64'),
+  };
+
+  it('returns masked bytes when contact is readable and the recheck clears', async () => {
+    const { svc, decide } = buildMask({ contact: 0.95, recheck: 0.05 });
+    const out = await svc.maskContactDetails(part);
+    expect(out?.toString()).toBe('masked-image');
+    expect(decide).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: 'moderation.feed.contact.boxes' }),
+    );
+  });
+
+  it('leaves a clean photo untouched without paying for box detection', async () => {
+    const { svc, decide } = buildMask({ contact: 0.1, recheck: 0.1 });
+    await expect(svc.maskContactDetails(part)).resolves.toBeNull();
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the mask when the recheck can still read contact details', async () => {
+    const { svc } = buildMask({ contact: 0.95, recheck: 0.9 });
+    await expect(svc.maskContactDetails(part)).resolves.toBeNull();
   });
 });
 

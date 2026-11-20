@@ -25,8 +25,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GraphicTier, PostType } from '@prisma/client';
 import { boundedImageUrl, boundedVideoUrl, IMAGE_EDGE, VIDEO_MODEL_EDGE } from '../common/image-url';
 import { LlmService } from '../common/llm/llm.service';
-import { LlmError, type JevQuestion, type LlmPart } from '../common/llm/llm.types';
 import {
+  LlmError,
+  type JevAnswer,
+  type JevQuestion,
+  type LlmPart,
+} from '../common/llm/llm.types';
+import {
+  blockThreshold,
   conductQuestions,
   contactQuestions,
   JEV_CATEGORY_REASONS,
@@ -34,9 +40,13 @@ import {
 } from '../moderation/jev-battery';
 import {
   evaluateFeedPhoto,
+  evaluateListingPhotoBoxes,
   feedPhotoQuestions,
+  listingPhotoBoxQuestions,
+  listingPhotoQuestions,
   toJevPhotoAsset,
 } from '../moderation/jev-image-battery';
+import { maskPhotoRegions } from '../moderation/photo-mask';
 import { FEED_MAX_IMAGES, POST_TYPE_LABELS } from './feed.types';
 
 export const FEED_MODERATION_PURPOSE = 'feed.moderation';
@@ -65,6 +75,12 @@ export interface FeedModerationInput {
   video?: { url: string; thumbnailUrl: string | null } | null;
   authorIsOfficial: boolean;
   postType?: PostType;
+  /**
+   * 0-based indexes of photos this service has already pixelated. Their judge
+   * prompt gets the redaction note so the blurred region is not re-flagged;
+   * every other photo is judged exactly as before.
+   */
+  redactedImageIndexes?: number[];
 }
 
 export type FeedModerationDecision = 'PUBLISH' | 'PENDING_MODERATION' | 'REJECT';
@@ -455,7 +471,9 @@ export class FeedModerationService {
                 ? 'Official staff account'
                 : 'Member',
             },
-            questions: feedPhotoQuestions(),
+            questions: feedPhotoQuestions(
+              input.redactedImageIndexes?.includes(index) ?? false,
+            ),
             assets: { photo: asset },
             purpose: 'moderation.feed.images',
             timeoutMs: 30_000,
@@ -523,6 +541,81 @@ export class FeedModerationService {
       reasons: Array.from(new Set(reasons)).slice(0, 8),
       uncertain,
     };
+  }
+
+  /**
+   * Locate and irreversibly pixelate readable contact details in ONE feed
+   * photo. Returns the masked JPEG bytes, or null when there is nothing
+   * maskable (or the re-check still finds readable contact details).
+   *
+   * ⚠️ FAIL CLOSED. Every failure — no boxes, a mask error, a re-check that
+   * still reads a contact detail — returns null and leaves the original
+   * verdict in place. A mask that only covers part of a phone number must
+   * never turn a REJECT into a publish.
+   */
+  async maskContactDetails(
+    part: Extract<LlmPart, { type: 'image' }>,
+  ): Promise<Buffer | null> {
+    try {
+      const asset = await toJevPhotoAsset(part);
+      const screen = await this.llm.decide({
+        state: { photo: 'photo' },
+        questions: { contact: listingPhotoQuestions(false).contact },
+        assets: { photo: asset },
+        purpose: 'moderation.feed.contact',
+        timeoutMs: 30_000,
+      });
+      if (!this.contactStillReadable(screen.answers)) return null;
+
+      const boxRes = await this.llm.decide({
+        state: { photo: 'photo' },
+        // Reuses the listing box battery: three ordinals per category, filtered
+        // and deduped by evaluateListingPhotoBoxes.
+        questions: listingPhotoBoxQuestions(['contact']),
+        assets: { photo: asset },
+        purpose: 'moderation.feed.contact.boxes',
+        timeoutMs: 30_000,
+      });
+      const boxes = evaluateListingPhotoBoxes(boxRes.answers);
+      if (boxes.length === 0) return null;
+
+      const masked = await maskPhotoRegions(
+        Buffer.from(part.data, 'base64'),
+        boxes,
+      );
+      if (!masked) return null;
+
+      const recheck = await this.llm.decide({
+        state: { photo: 'photo' },
+        questions: { contact: listingPhotoQuestions(true).contact },
+        assets: {
+          photo: await toJevPhotoAsset({
+            type: 'image',
+            mimeType: 'image/jpeg',
+            data: masked.toString('base64'),
+          }),
+        },
+        purpose: 'moderation.feed.contact.recheck',
+        timeoutMs: 30_000,
+      });
+      return this.contactStillReadable(recheck.answers) ? null : masked;
+    } catch (err) {
+      const code = err instanceof LlmError ? err.code : 'unknown';
+      this.logger.warn(
+        `feed photo auto-mask failed (${code}) — original verdict stands`,
+      );
+      return null;
+    }
+  }
+
+  private contactStillReadable(answers: Record<string, JevAnswer>): boolean {
+    const answer = answers.contact;
+    return (
+      !!answer &&
+      answer.type === 'noul' &&
+      typeof answer.noul === 'number' &&
+      answer.noul >= blockThreshold()
+    );
   }
 
   // ─── Video axis — Gemini ───────────────────────────────────────────
