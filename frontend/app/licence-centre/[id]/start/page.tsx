@@ -94,7 +94,7 @@ function DocumentRow({
           {item.tickReason ??
             (item.alreadyHere
               ? 'Already on this application.'
-              : 'Optional â€” add it if it belongs in your pack.')}
+              : 'Optional — add it if it belongs in your pack.')}
         </span>
       </span>
     </button>
@@ -367,7 +367,7 @@ export default function IntakeStartPage() {
   if (!data) {
     return (
       <main className="mx-auto w-full max-w-[720px] px-4 py-8">
-        <p className="text-[13.5px] text-[var(--text-tertiary)]">Loadingâ€¦</p>
+        <p className="text-[13.5px] text-[var(--text-tertiary)]">Loading…</p>
       </main>
     );
   }

@@ -1,13 +1,13 @@
-﻿// Cache-busting for long-lived static assets in /public.
+// Cache-busting for long-lived static assets in /public.
 //
 // WHY THIS EXISTS
 //
 // Cloudflare sits in front of the origin and caches /public with
-// `Cache-Control: public, max-age=2592000` â€” THIRTY DAYS. When the brand
+// `Cache-Control: public, max-age=2592000` — THIRTY DAYS. When the brand
 // assets were replaced on 2026-08-12 the origin served the new files
 // immediately, but the edge kept serving the old ones: `cf-cache-status: HIT`,
 // `Age: 45392`. Ten assets were affected, and they were the worst ten to have
-// wrong â€” og-default.jpg (the image Meta fetches for every WhatsApp share, and
+// wrong — og-default.jpg (the image Meta fetches for every WhatsApp share, and
 // it was still the rifle photograph), logo.svg on every page, favicon.ico in
 // every browser tab and in the Google SERP, and all six PWA icons.
 //

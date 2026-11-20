@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react';
 
 /**
- * THE REASON DIALOG â€” every write in this panel goes through it.
+ * THE REASON DIALOG — every write in this panel goes through it.
  *
- * âš ï¸ THE BACKEND REFUSES A WRITE WITHOUT A REASON, and danger flags demand a
+ * ⚠️ THE BACKEND REFUSES A WRITE WITHOUT A REASON, and danger flags demand a
  * real sentence (15+ characters). A UI that let the operator tap through
  * without one would surface a 400 they cannot act on, so the minimum is
- * enforced here as well â€” visibly, with a counter, rather than as a surprise.
+ * enforced here as well — visibly, with a counter, rather than as a surprise.
  */
 export function ReasonDialog({
   open,
@@ -116,7 +116,7 @@ export function ReasonDialog({
             disabled={short || busy}
             onClick={() => void submit()}
           >
-            {busy ? 'Workingâ€¦' : confirmLabel}
+            {busy ? 'Working…' : confirmLabel}
           </button>
         </div>
       </div>
@@ -127,8 +127,8 @@ export function ReasonDialog({
 /**
  * A yes/no confirm for actions the backend does NOT want a reason for.
  *
- * âš ï¸ MONEY ACTIONS GET THE SAME LOOK. Even where the API records no reason,
- * the operator should still read what is about to move before it moves â€” the
+ * ⚠️ MONEY ACTIONS GET THE SAME LOOK. Even where the API records no reason,
+ * the operator should still read what is about to move before it moves — the
  * amount is rendered in the body, not left to memory.
  */
 export function ConfirmDialog({
@@ -213,7 +213,7 @@ export function ConfirmDialog({
                 });
             }}
           >
-            {busy ? 'Workingâ€¦' : confirmLabel}
+            {busy ? 'Working…' : confirmLabel}
           </button>
         </div>
       </div>
