@@ -409,10 +409,17 @@ const BOX_LABELS: Record<ListingPhotoCategory, string> = {
 
 const BOX_POLICIES: Record<ListingPhotoCategory, string> = {
   contact:
-    'Product markings such as a brand, model, calibre, serial number or proof mark are not contact details.',
-  qr: 'A QR code counts even if its destination cannot be read.',
-  address: 'Ordinary scenery and vehicle number plates are not this.',
-  advertising: 'Incidental manufacturer branding on the product is not this.',
+    'Box ONLY the contact text: the top edge at the top of its first character, ' +
+    'the bottom edge at the baseline, with no padding. Exclude any brand ' +
+    'wordmark, logo, product name, price, or artwork above, below or beside it. ' +
+    'If a brand name sits directly above the URL, the box must start below it. ' +
+    'Product markings such as a brand, model, calibre, serial number or proof ' +
+    'mark are not contact details.',
+  qr: 'Box ONLY the QR code itself, with no surrounding artwork or caption.',
+  address:
+    'Box ONLY the address text or sign, not the building or scenery around it.',
+  advertising:
+    'Box ONLY the advertising text, not the product, logo or packaging it sits on.',
   live_ammo: '',
   sexual: '',
 };

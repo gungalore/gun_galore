@@ -7,8 +7,17 @@
 import sharp from 'sharp';
 import type { PhotoBox } from './jev-image-battery';
 
-/** Grow each box slightly so anti-aliased edges are covered too. */
-const PAD = 0.01;
+/**
+ * Grow each box slightly so anti-aliased edges are covered too.
+ *
+ * ⚠️ SMALL ON PURPOSE. At 1% a box that ended at a URL's baseline reached up
+ * into the brand wordmark printed directly above it, so the mask swallowed
+ * "PRIMER" along with the URL. At 0.3% the pad still covers the ascenders the
+ * detector's box can clip, without reaching the wordmark's baseline. The
+ * detector is asked for a tight box; this pad covers anti-aliasing, not model
+ * slop.
+ */
+const PAD = 0.003;
 
 export async function maskPhotoRegions(
   bytes: Buffer,
@@ -47,9 +56,13 @@ export async function maskPhotoRegions(
       })
       .toBuffer();
 
-    // A 6px minimum block keeps a small phone number from surviving as a
-    // legible smudge; an eighth-of-the-short-side block destroys a QR.
-    const block = Math.max(6, Math.round(Math.min(regionWidth, regionHeight) / 8));
+    // ⚠️ THE BLOCK MUST BE TALL ENOUGH TO DESTROY A LINE OF TEXT. An
+    // eighth-of-the-short-side block left a short URL readable as a row of
+    // letter shapes once the detector returned a tight, one-line box (the
+    // earlier loose box was tall enough to survive). A third of the region's
+    // height gives a three-row mosaic: the glyphs are gone, but it still looks
+    // like redaction rather than a painted bar. It also destroys a QR.
+    const block = Math.max(6, Math.round(regionHeight / 3));
     const smallWidth = Math.max(1, Math.round(regionWidth / block));
     const smallHeight = Math.max(1, Math.round(regionHeight / block));
 

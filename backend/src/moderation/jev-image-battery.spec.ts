@@ -182,6 +182,14 @@ describe('listing photo boxes', () => {
     }
   });
 
+  it('asks for a tight contact box that excludes a brand wordmark above it', () => {
+    const question = listingPhotoBoxQuestions(['contact'])
+      .mask_contact_1 as { instructions: string };
+    expect(question.instructions).toMatch(/top edge at the top/i);
+    expect(question.instructions).toMatch(/brand wordmark/i);
+    expect(question.instructions).toMatch(/start below it/i);
+  });
+
   it('only asks about the categories that tripped', () => {
     const questions = listingPhotoBoxQuestions(['qr']);
     expect(Object.keys(questions)).toHaveLength(3);
