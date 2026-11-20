@@ -7,6 +7,38 @@ overwritten.
 
 Last updated: **2026-11-20**.
 
+## 2026-11-20 (PEACH) — DOCS AUDIT, ONE REAL BUG FOUND AND FIXED
+
+Audited the adapter against Peach's published docs. Correct as written: OAuth
+(`POST {dashboard}/api/oauth/token` with clientId/clientSecret/merchantId), Checkout
+create (entityId ≤32, merchantTransactionId 8–16 — ours is 14 — amount, currency,
+nonce, shopperResultUrl, notificationUrl, plus the `Origin`/`Referer` header from the
+shopper-result URL), status (`GET /v2/checkout/{id}/status`, `result.code`), refund
+(`POST /v1/checkout/refund` signed with the Hosted **secret token**), checkout webhook
+signing (`${timestamp}.${webhookId}.${url}.${payload}`, HMAC-SHA256 hex — our verifier
+already tries exactly that, and nginx forwards Host + X-Forwarded-Proto so the URL
+matches), payout auth/create (same OAuth, `payouts[]` with cents + `realtime-eft`),
+and the payout webhook payload (`status`/`payoutId`/`resultCode`).
+
+**Bug fixed (deployed `3c0e7a0f`, backend-only).** `getPayoutStatus` called
+`GET /api/merchants/{id}/payouts/{payoutId}`. Peach has two lookups —
+`/payouts/{payoutRequestId}` (the BATCH id from create) and
+`/payouts/status?payoutId=` (the merchant-supplied id we mint). We only hold the
+latter, so every call 404'd, the reconciliation cron read it as "Peach has no
+record", and after 15 minutes **held the payout and released its seller-charge
+reservation**. Now uses the documented path, tolerates `payouts[]` or a bare
+object, and derives status from `resultCode` when absent. 425 suites / 6,288 tests.
+Rollback `alloutdoor-20261120-125809.dump` (35 MB).
+
+⚠️ **Unverified:** the BANV webhook payload has no `status` field (only match flags
+and timestamps). The handler now re-queries `GET …/banv/{id}/status`, but Peach does
+not publish that response shape — if it also omits `status`, BANV would stay
+`pending`. Check on the first real verification before enabling payouts.
+
+**Still blocked:** live Checkout has NO payment methods enabled — create returns
+`400 No valid payment methods available for this request` (tested at R1 and R10).
+Awaiting Peach to enable Card on the live profile. Flags remain OFF.
+
 ## 2026-11-20 — BROWSER-TAB MOJIBAKE REPAIRED
 
 - The tab read **“Community â€” ALL Outdoor”** because `app/layout.tsx`'s title
