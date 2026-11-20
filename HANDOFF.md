@@ -9,7 +9,7 @@ Last updated: **2026-11-20**.
 
 ## 2026-11-20 — COMMUNITY DETAILS: VISIBLE CHOICES, WORKING DATES
 
-- **Shipped** `933b6b58` (frontend-only).
+- **Shipped** `933b6b58` and `b24d9e4f` (frontend-only).
 - **Date pickers in the composer were behind the modal.** The "Create post"
   dialog is `z-[1000]`; the date sheet was `z-121`, so tapping the calendar
   opened it underneath the composer and looked dead. The sheet is now
@@ -18,7 +18,8 @@ Last updated: **2026-11-20**.
   - Multi-select chips (species, flair) render a searchable pill cloud
     immediately, with selected pills above it and a free-text "Add …" row.
   - Single-selects (firearm type, water type, site type, gear category,
-    condition, context) are real `<select>` controls with a "Choose …" prompt.
+    condition, context) are real `<select>` controls with a "Choose …" prompt
+    and an **Other (type your own)…** fallback, so free text is still allowed.
   - Calibre/cartridge/test-result fields show the first suggestions on focus,
     then filter as the member types; free text is still accepted.
   - Every control has a one-line instruction ("Tap every option that fits",
@@ -26,7 +27,7 @@ Last updated: **2026-11-20**.
   - The collapsed button shows the number of chosen details (`+ Details (2)`).
 - Checks: frontend **1,966 passed / 1 skipped**; production build clean;
   health and public site 200.
-- Rollback point: `alloutdoor-20261120-091250.dump`.
+- Rollback point: `alloutdoor-20261120-091827.dump`.
 
 ## 2026-11-20 — LISTING HERO VIDEO AUTOPLAYS
 
