@@ -28,6 +28,8 @@ view which open the pdf in a new tab."
   skipped**; both typechecks and the production build clean.
 - Deployed `2dbb4d07` (full); the live pack chunk contains no `iframe` and no
   `Print`. Rollback `alloutdoor-20261121-112222.dump`.
+- Re-deployed the branch head `f0509e09` (full, 12:30) so the live box matches
+  origin exactly. Rollback `alloutdoor-20261121-123025.dump`.
 
 ## 2026-11-21 — BETA NOTICE, SUPPORT TIMELINE, AUTOMATIC FAILURE TICKETS
 
