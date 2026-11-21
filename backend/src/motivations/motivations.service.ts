@@ -1335,10 +1335,10 @@ export class MotivationsService {
     }
 
     // Cascades take messages, uploads, witnesses and the consent with it.
-    // The support trail is recorded BEFORE the delete: activity rows survive
-    // with their reference (the FK is SetNull), so an erasure that fails
-    // halfway still shows what was attempted.
-    void this.activity.record({
+    // ⚠️ AWAITED, unlike every other activity write. The FK here is real: a
+    // fire-and-forget insert races the DELETE and loses, so the last line of
+    // the trail — the erasure itself — was the one line that never landed.
+    await this.activity.record({
       motivationId: row.id,
       motivationRef: row.referenceNumber,
       userId: user.id,

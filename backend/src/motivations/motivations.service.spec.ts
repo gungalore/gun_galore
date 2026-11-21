@@ -454,6 +454,13 @@ function build(
   // than a mock agreeing with itself.
   const profileAnswers = new MemberProfileAnswersService(prisma as never);
 
+  // The support timeline. Exposed so the erasure test can hold its promise and
+  // prove the delete waits for it.
+  const activity = {
+    record: jest.fn(async () => undefined),
+    forMotivation: jest.fn(async () => []),
+  };
+
   const svc = new MotivationsService(
     prisma as never,
     quota as never,
@@ -469,7 +476,7 @@ function build(
     profileAnswers,
     { keepChosen: jest.fn(async () => ({ kept: 0, needsConsent: false })) } as never,
     // The support timeline; these tests assert on behaviour, not on the trail.
-    { record: jest.fn(async () => undefined), forMotivation: jest.fn(async () => []) } as never,
+    activity as never,
   );
   return {
     svc,
@@ -495,6 +502,8 @@ function build(
     payments,
     // The generation service itself, for the rebuild cron's own tests.
     generation,
+    // The activity double, so the erasure ordering can be asserted.
+    activity,
   };
 }
 
@@ -781,6 +790,35 @@ describe('MotivationsService', () => {
       const res = await svc.erase('c1', 'mo-1');
       expect(res.filesRemoved).toBe(0);
       expect(prisma.motivation.delete).toHaveBeenCalled();
+    });
+
+    it('⚠️ WAITS for the erasure log before deleting the row', async () => {
+      // The FK is real: a fire-and-forget insert raced the DELETE and lost, so
+      // the last line of the trail — the erasure itself — never landed.
+      const { svc, prisma, activity } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce({
+        id: 'mo-1',
+        referenceNumber: 'MO000146',
+        uploads: [],
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      activity.record.mockImplementationOnce(async () => {
+        await gate;
+      });
+
+      const erase = svc.erase('c1', 'mo-1');
+      await Promise.resolve();
+      // Still holding the log: the row must not be gone yet.
+      expect(prisma.motivation.delete).not.toHaveBeenCalled();
+      release();
+      await erase;
+      expect(prisma.motivation.delete).toHaveBeenCalled();
+      expect(activity.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'erased', motivationRef: 'MO000146' }),
+      );
     });
   });
 });
