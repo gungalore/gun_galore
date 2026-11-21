@@ -48,6 +48,37 @@ export function PostModal({
   const ZOOM_SCALE = 2;
   const [zoomed, setZoomed] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  /**
+   * ⚠️ THE OVERLAY OWNS A HISTORY ENTRY, SO THE SYSTEM BACK GESTURE CLOSES IT.
+   * Operator, 2026-11-21: "When opening a picture in the community, there is no
+   * way to go back that I can see on the pwa." In an installed PWA there is no
+   * browser chrome and no visible back arrow; the hardware/edge-swipe back is
+   * the natural escape, and without this it navigated the PAGE away instead of
+   * closing the photo. Closing by any other route pops the entry again, and the
+   * marker check keeps that from going back twice.
+   */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const marker = '__ggPostModal';
+    let pushed = false;
+    try {
+      window.history.pushState({ [marker]: Date.now() }, '');
+      pushed = true;
+    } catch {
+      /* history unavailable; the buttons below still work */
+    }
+    const onPop = () => onCloseRef.current();
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      const state = window.history.state as Record<string, unknown> | null;
+      if (pushed && state?.[marker]) window.history.back();
+    };
+  }, []);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const dragRef = useRef({
@@ -230,19 +261,22 @@ export function PostModal({
       type="button"
       onClick={onClose}
       aria-label="Close post"
-      className="absolute z-20 flex items-center justify-center rounded-full"
+      className="absolute z-30 flex items-center gap-1.5 rounded-full px-3 text-[13px] font-medium"
       style={{
-        top: 16,
-        right: 16,
-        width: 36,
-        height: 36,
-        background: 'rgba(255,255,255,0.12)',
-        border: '0.5px solid rgba(255,255,255,0.2)',
+        // ⚠️ SAFE AREA, NOT A FIXED 16px. In an installed PWA the viewport
+        // starts under the iOS status bar, so `top: 16` put the ✕ exactly
+        // behind the clock and battery — the button was there, invisible, and
+        // the only way out was a system gesture. See the photo-mode note below.
+        top: 'max(12px, env(safe-area-inset-top))',
+        left: 'max(12px, env(safe-area-inset-left))',
+        minHeight: 40,
+        background: 'rgba(0,0,0,0.6)',
+        border: '0.5px solid rgba(255,255,255,0.45)',
         color: '#fff',
-        fontSize: 16,
       }}
     >
-      ✕
+      <span aria-hidden="true">←</span>
+      Back
     </button>
   );
 
@@ -284,14 +318,26 @@ export function PostModal({
         aria-label={`${post.title ?? 'Post'} — photo viewer`}
       >
         {closeButton}
-        <div className="relative flex-1 min-h-0 flex items-center justify-center">
+        {/*
+          ⚠️ TAPPING THE DARK AREA CLOSES. The image itself stops propagation to
+          toggle zoom, so this only fires on the black stage around a photo that
+          is not 100% of the width — one more way out that does not depend on
+          spotting a button.
+        */}
+        <div
+          className="relative flex-1 min-h-0 flex items-center justify-center"
+          onClick={onClose}
+        >
           {post.images.length > 1 && (
             <>
               <button
                 type="button"
-                onClick={() =>
-                  setIdx((i) => (i - 1 + post.images.length) % post.images.length)
-                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIdx(
+                    (i) => (i - 1 + post.images.length) % post.images.length,
+                  );
+                }}
                 aria-label="Previous photo"
                 className="absolute left-3 z-10 flex items-center justify-center rounded-full"
                 style={{
@@ -307,7 +353,10 @@ export function PostModal({
               </button>
               <button
                 type="button"
-                onClick={() => setIdx((i) => (i + 1) % post.images.length)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIdx((i) => (i + 1) % post.images.length);
+                }}
                 aria-label="Next photo"
                 className="absolute right-3 z-10 flex items-center justify-center rounded-full"
                 style={{

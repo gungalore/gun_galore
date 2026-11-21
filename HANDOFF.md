@@ -7,6 +7,30 @@ overwritten.
 
 Last updated: **2026-11-21**.
 
+## 2026-11-21 — A WAY OUT OF THE COMMUNITY PHOTO VIEWER
+
+Operator, on the installed PWA: "When opening a picture in the community, there
+is no way to go back that I can see."
+
+- **The cause was the status bar, not a missing button.** `PostModal`'s photo
+  mode put its icon-only ✕ at a fixed `top: 16px; right: 16px`. In standalone
+  mode the viewport starts under the iOS status bar, so the control sat behind
+  the clock and battery — present, invisible. The lightbox had a safe-area inset
+  already but was still an unlabelled ✕.
+- **Three ways out now**, all pinned by `post-modal.spec.tsx`:
+  1. a labelled **← Back** pill, top-left, with `max(12px,
+     env(safe-area-inset-top/left))`. Same on `ImageLightbox`.
+  2. **tapping the dark stage** closes it (the photo itself still stops
+     propagation to toggle zoom; the prev/next arrows stop it too).
+  3. **the system back gesture** now closes the overlay instead of navigating
+     the page away: both components push a history entry on mount, close on
+     `popstate`, and pop their own entry when closed by a button.
+- ⚠️ The "TAP TO CLOSE" text in the operator's screenshot is not in this
+  codebase, the live bundles, or the git history — it is the browser/OS, not
+  us. The affordances above are ours and cannot be hidden by the status bar.
+- Checks: frontend **1,980 passed / 1 skipped**; typecheck and production build
+  clean. Backend untouched.
+
 ## 2026-11-21 — PACK PREVIEW REMOVED: DOWNLOAD + VIEW
 
 Operator: "remove the preview when done generating. Just have a download and

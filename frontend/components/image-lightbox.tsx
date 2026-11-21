@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -64,6 +64,35 @@ export function ImageLightbox({
   useScrollLock(true);
 
   const close = useCallback(() => onClose(idx), [onClose, idx]);
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  }, [close]);
+
+  /**
+   * ⚠️ THE SYSTEM BACK GESTURE CLOSES THE VIEWER. In an installed PWA there is
+   * no visible browser back control, and without a history entry the gesture
+   * navigated the page away from under the overlay. Same rule as the community
+   * post modal.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const marker = '__ggLightbox';
+    let pushed = false;
+    try {
+      window.history.pushState({ [marker]: Date.now() }, '');
+      pushed = true;
+    } catch {
+      /* history unavailable; the button and Esc still work */
+    }
+    const onPop = () => closeRef.current();
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      const state = window.history.state as Record<string, unknown> | null;
+      if (pushed && state?.[marker]) window.history.back();
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,16 +149,22 @@ export function ImageLightbox({
         style={{
           ...squareButton,
           position: 'absolute',
-          top: 'max(16px, env(safe-area-inset-top))',
-          right: 'max(16px, env(safe-area-inset-right))',
-          width: 40,
-          height: 40,
+          // ⚠️ SAFE AREA, AND A WORD ON THE BUTTON. An icon alone at a fixed
+          // 16px disappeared under the iOS status bar in the installed PWA.
+          top: 'max(12px, env(safe-area-inset-top))',
+          left: 'max(12px, env(safe-area-inset-left))',
+          minHeight: 40,
+          padding: '0 14px',
           borderRadius: 20,
-          fontSize: 18,
-          lineHeight: '40px',
+          fontSize: 13,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
-        ✕
+        <span aria-hidden="true">←</span>
+        Back
       </button>
 
       {count > 1 && (
