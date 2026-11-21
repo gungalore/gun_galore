@@ -5,7 +5,49 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-20**.
+Last updated: **2026-11-21**.
+
+## 2026-11-21 — BETA NOTICE, SUPPORT TIMELINE, AUTOMATIC FAILURE TICKETS
+
+Operator: a beta popup at the start of the motivation; log every move so a
+reported glitch can be pinned; put the username on every bug report; failed
+motivations must auto-log a ticket and email support, silently.
+
+- **Beta notice** — `components/licence-centre/beta-notice.tsx`, on the intake
+  (`/licence-centre/[id]/start`) and review-sheet pages. Once per application
+  (localStorage keyed by the motivation id), one "Got it" button, and it tells
+  the member to press **Report a bug** in the bottom-right (bottom bar on
+  mobile) immediately, and that the report carries their username and steps.
+- **`MotivationActivity`** — new table (migration
+  `20261121090000_motivation_activity`) with `ON DELETE SET NULL` on both FKs so
+  the trail outlives the application and the account. Records `created`,
+  `answer_saved` (field keys only), `declaration_accepted`, `template_changed`,
+  `renamed`, `payment_required/started/confirmed`, `generation_requested/
+  started/completed/held/failed`, `abandoned`, `erased`, `bug_reported`, plus
+  allowlisted `client_*` events from the browser (page view, pay press, bank
+  return, download, print, beta notice).
+- **Privacy** — `sanitiseActivityDetail` admits only short strings, finite
+  numbers, booleans and string arrays; objects are DROPPED, never stringified.
+  No answer value, ID number, address or serial can reach the table.
+- **Bug reports** — the operator email now carries `@username`, sign-in email,
+  the motivation reference parsed from the reported URL, the last ~60 activity
+  lines and a link to `/admin/operate/motivations?ref=…`. The form shows
+  "Reporting as @name" and defaults the category to Motivations on a
+  licence-centre page. The report itself is logged as `bug_reported`.
+- **Automatic failure ticket** — a generation crash or gate exhaustion writes an
+  `AdminAlert` (`MOTIVATION_GENERATION_FAILED`) and emails SUPPORT with the
+  error, the handle and the timeline
+  (`NotificationsService.motivationFailureTicket`). Nothing is surfaced to the
+  member beyond the existing "we could not finish it" message.
+- **Support lookup** — `GET /admin/motivations/activity?username=|ref=|motivationId=`
+  and the `/admin/operate/motivations` page. A deleted application still answers
+  from its MO reference.
+- ⚠️ `MotivationsModule` no longer provides `MotivationActivityService` directly;
+  it lives in the tiny `MotivationActivityModule` so `BugsModule` and
+  `AdminModule` can read the trail without importing the whole writer (their
+  boot specs depend on that).
+- ⚠️ One flaky test seen once in a full run: `chromium-pdf.service.spec.ts`
+  (real browser launch under load). It passes in isolation and in the re-run.
 
 ## 2026-11-20 — THE MOTIVATION WRITER IS PAYGATED AT R295
 

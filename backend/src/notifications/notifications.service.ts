@@ -432,13 +432,41 @@ export interface BugReportDetails {
   description: string;
   /** User id of the reporter — never a real name. */
   reporterId: string;
+  /**
+   * The member's public handle (@name), so support can find them in the logs
+   * without holding a cuid. Optional so older callers still compile.
+   */
+  reporterUsername?: string | null;
+  /** Their sign-in email, so support can reply. Never shown to other members. */
+  reporterEmail?: string | null;
+  /** The application the report is about, when the page names one. */
+  motivationRef?: string | null;
   /** The page the member reported from, when we have one. */
   url?: string | null;
+  /**
+   * The last few motivation events, pre-formatted by
+   * MotivationActivityService.formatTimeline. Plain text, rendered in a
+   * <pre> block so the operator can read the exact step order.
+   */
+  activity?: string | null;
   /** Optional uploaded screenshot, attached to the operator email. */
   screenshot?: {
     buffer: Buffer;
     filename: string;
   } | null;
+}
+
+export interface MotivationFailureTicketDetails {
+  referenceNumber: string;
+  motivationId: string;
+  /** The applicant's handle and email, for the reply and the log lookup. */
+  username: string | null;
+  email: string | null;
+  /** Internal failure text — never sent to the member. */
+  error: string;
+  /** Already-formatted activity tail. */
+  activity: string;
+  paidCents: number;
 }
 
 @Injectable()
@@ -4962,20 +4990,44 @@ export class NotificationsService {
   // error is logged and swallowed, never thrown back at the member.
   // ---------------------------------------------------------------
   async bugReport(d: BugReportDetails): Promise<void> {
+    const who = d.reporterUsername ? `@${d.reporterUsername}` : d.reporterId;
+    const activity = (d.activity ?? '').trim();
     const html = this.email({
       status: { tone: 'pending', label: 'Bug report' },
       headline: 'New bug report',
-      body: `A member reported a problem under ${b(d.category)}.<br><br><strong>What they said:</strong><br>${escapeHtml(
-        d.description,
-      ).replace(/\n/g, '<br>')}`,
+      body:
+        `A member reported a problem under ${b(d.category)}.<br><br><strong>What they said:</strong><br>${escapeHtml(
+          d.description,
+        ).replace(/\n/g, '<br>')}` +
+        (activity
+          ? `<br><br><strong>Their recent motivation activity</strong> (oldest first)<br><pre style="font-size:12px;line-height:1.5;white-space:pre-wrap;background:#f4f4f5;padding:10px;border-radius:6px;margin:0">${escapeHtml(
+              activity,
+            )}</pre>`
+          : ''),
       rows: [
         { label: 'Category', value: d.category },
+        // ⚠️ THE HANDLE IS THE LOOKUP KEY. Support is given @name, not a cuid:
+        // it is what the member knows, what the admin people search takes, and
+        // what the activity log is indexed by.
+        { label: 'Member', value: who },
+        { label: 'User id', value: d.reporterId },
+        { label: 'Email', value: d.reporterEmail ?? '—' },
+        { label: 'Motivation', value: d.motivationRef ?? '—' },
+        // The operator's own way into the log. Sign-in required; the page takes
+        // the reference straight from the query string.
+        ...(d.motivationRef
+          ? [
+              {
+                label: 'Timeline',
+                value: `${this.appUrl}/admin/operate/motivations?ref=${encodeURIComponent(d.motivationRef)}`,
+              },
+            ]
+          : []),
         { label: 'Page', value: d.url ?? '—' },
-        { label: 'Reporter', value: d.reporterId },
         { label: 'Received', value: new Date().toISOString() },
         { label: 'Screenshot', value: d.screenshot ? 'Attached' : 'None' },
       ],
-      preheader: `Bug report — ${d.category}`,
+      preheader: `Bug report — ${d.category}${d.reporterUsername ? ` from @${d.reporterUsername}` : ''}`,
     });
 
     if (!this.resend) return;
@@ -4983,7 +5035,9 @@ export class NotificationsService {
       await this.resend.emails.send({
         from: FROM,
         to: SUPPORT_EMAIL,
-        subject: `Bug report — ${d.category}`,
+        subject: `Bug report — ${d.category}${
+          d.reporterUsername ? ` (@${d.reporterUsername})` : ''
+        }`,
         html,
         ...(d.screenshot
           ? {
@@ -5002,6 +5056,66 @@ export class NotificationsService {
     } catch (err) {
       this.logger.error(
         `bugReport: Resend send failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * The automatic ticket for a motivation that could not be written.
+   *
+   * ⚠️ INTERNAL ONLY. The member already gets the "something went wrong on our
+   * side" message; this email goes to support with the error and the exact
+   * activity timeline, so the failure can be diagnosed before the member has
+   * to explain it. Nothing here is shown to the applicant.
+   */
+  async motivationFailureTicket(
+    d: MotivationFailureTicketDetails,
+  ): Promise<void> {
+    const html = this.email({
+      status: { tone: 'error', label: 'Motivation failed' },
+      headline: `Motivation ${d.referenceNumber} failed`,
+      body:
+        `A generation run for ${b(d.referenceNumber)} failed. ` +
+        `The applicant was told it is our fault and can retry; nothing further ` +
+        `is needed from them until this is read.` +
+        `<br><br><strong>Error</strong><br><pre style="font-size:12px;line-height:1.5;white-space:pre-wrap;background:#f4f4f5;padding:10px;border-radius:6px;margin:0">${escapeHtml(
+          d.error,
+        )}</pre>` +
+        `<br><br><strong>Activity</strong> (oldest first)<br><pre style="font-size:12px;line-height:1.5;white-space:pre-wrap;background:#f4f4f5;padding:10px;border-radius:6px;margin:0">${escapeHtml(
+          d.activity,
+        )}</pre>`,
+      rows: [
+        { label: 'Reference', value: d.referenceNumber },
+        {
+          label: 'Timeline',
+          value: `${this.appUrl}/admin/operate/motivations?ref=${encodeURIComponent(d.referenceNumber)}`,
+        },
+        { label: 'Member', value: d.username ? `@${d.username}` : 'unknown' },
+        { label: 'Email', value: d.email ?? '—' },
+        {
+          label: 'Paid',
+          value: d.paidCents > 0 ? `Yes (R${d.paidCents / 100})` : 'No',
+        },
+        { label: 'Motivation id', value: d.motivationId },
+        { label: 'When', value: new Date().toISOString() },
+      ],
+      preheader: `Ticket — ${d.referenceNumber} could not be written`,
+    });
+
+    if (!this.resend) return;
+    try {
+      await this.resend.emails.send({
+        from: FROM,
+        to: SUPPORT_EMAIL,
+        subject: `Ticket — motivation ${d.referenceNumber} failed to write`,
+        html,
+      });
+      this.logger.debug(
+        `Motivation failure ticket emailed → ${SUPPORT_EMAIL} (${d.referenceNumber})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `motivationFailureTicket: Resend send failed: ${(err as Error).message}`,
       );
     }
   }

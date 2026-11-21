@@ -20,6 +20,7 @@ import {
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import { MotivationActivityService } from './motivation-activity.service';
 import {
   applicationBlockers,
   requiredEndorsement,
@@ -452,6 +453,9 @@ export class MotivationGenerationService {
     // check because a provider was forgotten is a free document, and that is
     // the one failure this feature exists to prevent.
     private readonly payments: MotivationPaymentsService,
+    // The support timeline. Every run records what it did and how it ended, so
+    // a reported failure arrives with its own evidence.
+    private readonly activity: MotivationActivityService,
     // The 5.2 suitability argument. Optional so existing positional specs keep
     // compiling; production provides it.
     @Optional()
@@ -999,6 +1003,13 @@ export class MotivationGenerationService {
       // both directions: the note tells the writer to meet the objection head
       // on, and needsJustification promotes the "why both" question in the
       // follow-up ranking if the gate sends this back.
+      void this.activity.record({
+        motivationId: row.id,
+        motivationRef: row.referenceNumber,
+        userId: row.userId,
+        action: 'generation_started',
+        detail: { paid: row.billedCents > 0, seat: row.betaSeatNo ?? undefined },
+      });
       const overlap = overlapFromAnswers(row.licenceType, answers);
 
       // â”€â”€ SAPS precinct crime figures, self-defence only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2272,6 +2283,13 @@ export class MotivationGenerationService {
           },
         });
         await this.notifyOutcome(row, 'ready');
+        void this.activity.record({
+          motivationId: row.id,
+          motivationRef: row.referenceNumber,
+          userId: row.userId,
+          action: 'generation_completed',
+          detail: { score: graded.verdict.overall },
+        });
         return {
           status: MotivationStatus.COMPLETED,
           score: graded.verdict.overall,
@@ -2307,7 +2325,27 @@ export class MotivationGenerationService {
             },
           })
           .catch(() => undefined);
+        const exhaustion = new Error(
+          `Quality gate exhausted after ${nextCycles} cycle(s). Last score ${graded.verdict.overall}.`,
+        );
+        // AWAITED, so the ticket below reads a timeline that already ends with
+        // this failure — the one line support needs to see first.
+        await this.activity.record({
+          motivationId: row.id,
+          motivationRef: row.referenceNumber,
+          userId: row.userId,
+          action: 'generation_failed',
+          detail: {
+            reason: 'gate_exhausted',
+            cycles: nextCycles,
+            score: graded.verdict.overall,
+            thinFields: graded.verdict.thinFields ?? [],
+          },
+        });
         await this.notifyOutcome(row, 'failed');
+        // ⚠️ A GATE EXHAUSTION IS A FAILED MOTIVATION, so it gets the same
+        // automatic ticket as a crash — silently, for the desk.
+        await this.logFailureTicket(row, exhaustion);
         return { status: MotivationStatus.FAILED, score: graded.verdict.overall };
       }
 
@@ -2331,6 +2369,16 @@ export class MotivationGenerationService {
       // we need more from you before this can be written â€” it is simply no
       // longer accompanied by an interview.
       await this.notifyOutcome(row, 'held');
+      void this.activity.record({
+        motivationId: row.id,
+        motivationRef: row.referenceNumber,
+        userId: row.userId,
+        action: 'generation_held',
+        detail: {
+          score: graded.verdict.overall,
+          thinFields: graded.verdict.thinFields ?? [],
+        },
+      });
       return {
         status: MotivationStatus.NEEDS_MORE_INFO,
         score: graded.verdict.overall,
@@ -2371,26 +2419,85 @@ export class MotivationGenerationService {
       // dies immediately after has still sent it.
       await this.notifyOutcome(row, 'failed');
 
-      // A PAID document that failed is a support case, not only a retry: the
-      // applicant has money on the table and the retry is on us. The outcome
-      // message above tells them it stays against the application; this tells
-      // the desk, because nobody goes looking for a payment that failed
-      // quietly.
-      if (row.billedCents > 0) {
-        await this.prisma.adminAlert
-          .create({
-            data: {
-              type: 'MOTIVATION_PAID_GENERATION_FAILED',
-              referenceId: row.id,
-              urgent: false,
-              context: `Paid motivation ${row.referenceNumber} (${row.billedCents}c) failed during generation: ${
-                err instanceof Error ? err.message : String(err)
-              }. The applicant can retry at no cost; refund only if we cannot deliver.`,
-            },
-          })
-          .catch(() => undefined);
-      }
+      // ⚠️ THE TICKET IS AUTOMATIC, SILENT AND ALWAYS. Operator, 2026-11-21:
+      // "failed motivations should do so silently and auto log a ticket and
+      // send it to the support email address so I can fix it." The member sees
+      // only the ordinary "we could not finish it" message; the desk gets the
+      // error, the member's handle and the activity tail without anyone having
+      // to report it.
+      //
+      // AWAITED before the ticket is read, so the timeline the desk receives
+      // ends with the failure itself.
+      await this.activity.record({
+        motivationId: row.id,
+        motivationRef: row.referenceNumber,
+        userId: row.userId,
+        action: 'generation_failed',
+        detail: {
+          reason: 'error',
+          error: err instanceof Error ? err.message : String(err),
+          paid: row.billedCents > 0,
+        },
+      });
+      await this.logFailureTicket(row, err);
       throw err;
+    }
+  }
+
+  /**
+   * Log a failed run for the desk: an alert row plus an email with the error
+   * and the activity timeline.
+   *
+   * ⚠️ NEVER THROWS, AND THE MEMBER IS NOT TOLD ABOUT IT. The failure message
+   * they already received says it is our fault; this is the internal ticket
+   * that means nobody has to reproduce it from a bug report. Deliberately not
+   * a member-facing SupportTicket: a support thread appearing on their account
+   * for a failure they did not report is noise, and the desk reads email.
+   */
+  private async logFailureTicket(
+    row: {
+      id: string;
+      userId: string;
+      referenceNumber: string;
+      billedCents?: number;
+    },
+    err: unknown,
+  ): Promise<void> {
+    const message = (err instanceof Error ? err.message : String(err)).slice(
+      0,
+      2000,
+    );
+    try {
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'MOTIVATION_GENERATION_FAILED',
+          referenceId: row.id,
+          urgent: false,
+          context: `${row.referenceNumber}: ${message.slice(0, 300)}`,
+        },
+      });
+    } catch {
+      /* an alert that fails must not hide the email */
+    }
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: row.userId },
+        select: { username: true, email: true },
+      });
+      const timeline = await this.activity.forMotivation(row.id, 80);
+      await this.notifications.motivationFailureTicket({
+        referenceNumber: row.referenceNumber,
+        motivationId: row.id,
+        username: user?.username ?? null,
+        email: user?.email ?? null,
+        error: message,
+        activity: MotivationActivityService.formatTimeline(timeline),
+        paidCents: row.billedCents ?? 0,
+      });
+    } catch (ticketErr) {
+      this.logger.warn(
+        `Motivation ${row.id}: failure ticket not sent — ${(ticketErr as Error).message}`,
+      );
     }
   }
 
@@ -2481,6 +2588,13 @@ export class MotivationGenerationService {
     // server-side callers, and neither may write an unpaid document.
     await this.payments.assertPaidForGeneration(userId, id);
     const prepared = await this.prepareGeneration(userId, id);
+    void this.activity.record({
+      motivationId: prepared.row.id,
+      motivationRef: prepared.row.referenceNumber,
+      userId: prepared.row.userId,
+      action: 'generation_requested',
+      detail: { paid: prepared.row.billedCents > 0, awaited: true },
+    });
     return this.runGeneration(prepared);
   }
 
@@ -3256,6 +3370,16 @@ export class MotivationGenerationService {
     // Pay button. It is a no-op while the paygate setting is off.
     await this.payments.assertPaidForGeneration(userId, id);
     const prepared = await this.prepareGeneration(userId, id);
+    void this.activity.record({
+      motivationId: prepared.row.id,
+      motivationRef: prepared.row.referenceNumber,
+      userId: prepared.row.userId,
+      action: 'generation_requested',
+       detail: {
+        paid: prepared.row.billedCents > 0,
+        seat: prepared.row.betaSeatNo ?? undefined,
+      },
+    });
     void this.runGeneration(prepared).catch((err) => {
       this.logger.error(
         `Motivation ${prepared.row.id}: background generation failed â€” ${

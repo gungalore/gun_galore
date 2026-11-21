@@ -98,6 +98,7 @@ function build(
   // The principal sale in Books. Stubbed here: the invoice's own shape is
   // covered by the Zoho spec; this one asserts we ASK for it, once, on capture.
   const zoho = { createMotivationInvoice: jest.fn(async () => undefined) };
+  const activity = { record: jest.fn(async () => undefined) };
 
   const prisma: Record<string, any> = {
     motivation: {
@@ -125,9 +126,10 @@ function build(
     rails as never,
     quota as never,
     zoho as never,
+    activity as never,
     engine as never,
   );
-  return { svc, prisma, rails, settings, quota, engine, zoho };
+  return { svc, prisma, rails, settings, quota, engine, zoho, activity };
 }
 
 describe('the generation gate', () => {

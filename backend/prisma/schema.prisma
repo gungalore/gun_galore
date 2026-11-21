@@ -669,6 +669,8 @@ model User {
   // What this member paid for motivations. Optional on the payment row so the
   // sale survives a POPIA erasure — see MotivationPayment.
   motivationPayments MotivationPayment[] @relation("UserMotivationPayments")
+  // The support timeline across every application this member opened.
+  motivationActivity MotivationActivity[] @relation("UserMotivationActivity")
   credentials Credential[] @relation("UserCredentials")
 
   // SAPS Application Tracker — the applications this member is watching.
@@ -5252,6 +5254,9 @@ model Motivation {
   sellerConsent MotivationSellerConsent?
   /// Every checkout attempt for this document. Usually one; see the model.
   payments      MotivationPayment[]
+  /// The support timeline. Every meaningful move on this application, so a
+  /// reported glitch can be pinned to the exact step — see MotivationActivity.
+  activity      MotivationActivity[]
 
   // The throttle. See applicationRef for why it is NOT NULL.
   @@unique([userId, licenceType, applicationRef])
@@ -5355,6 +5360,56 @@ enum MotivationPaymentStatus {
   FAILED
   /// Superseded by another attempt that was paid.
   CANCELLED
+}
+
+/// The support timeline for one motivation.
+///
+/// ⚠️ WHY THIS EXISTS. A member reports "it glitched when I pressed write",
+/// and without a timeline the only evidence is a status column. This records
+/// every meaningful move — created, answers saved, document added, declaration
+/// signed, generate requested, generation started/failed/held, payment started,
+/// paid, downloaded — with enough context to reproduce the step.
+///
+/// ⚠️ NO ANSWER VALUES, EVER. `detail` carries KEYS, counts, enum labels and
+/// ids — never a field value, an ID number, an address or a serial. The
+/// activity table has no encrypted columns and is read by admins, so anything
+/// written here is, by construction, not sensitive. See
+/// MotivationActivityService's sanitiser.
+///
+/// ⚠️ IT OUTLIVES THE APPLICATION. Both relations are SetNull, like
+/// MotivationPayment: a POPIA erasure or the retention purge deletes the
+/// document, and the support trail must still answer "what happened" without
+/// carrying the applicant's data with it. `motivationRef` snapshots the MO
+/// number so the rows stay readable.
+model MotivationActivity {
+  id String @id @default(cuid())
+
+  motivationId String?
+  motivation   Motivation? @relation(fields: [motivationId], references: [id], onDelete: SetNull)
+  userId       String?
+  user         User?       @relation("UserMotivationActivity", fields: [userId], references: [id], onDelete: SetNull)
+
+  /// The MO number as it stood when the event happened.
+  motivationRef String
+
+  /// created · opened · answer_saved · declaration_accepted · document_added ·
+  /// generation_requested · generation_started · generation_completed ·
+  /// generation_held · generation_failed · payment_started · payment_confirmed ·
+  /// payment_required · pdf_downloaded · abandoned · erased · client_*.
+  action String
+
+  /// Small, non-sensitive context: field KEYS, counts, section ids, error
+  /// classes. Sanitised before insert — see the service.
+  detail Json?
+  /// The page that produced a client event, when there is one.
+  path   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([motivationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([motivationRef, createdAt])
 }
 
 // Camera-scanned / uploaded source documents.

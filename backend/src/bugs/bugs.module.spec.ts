@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { SessionService } from '../auth/session.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { BugsModule } from './bugs.module';
 import { BugsService } from './bugs.service';
 
@@ -14,8 +15,10 @@ import { BugsService } from './bugs.service';
   providers: [
     { provide: SessionService, useValue: {} },
     { provide: NotificationsService, useValue: {} },
+    // BugsService reads the member's handle and their last activity rows.
+    { provide: PrismaService, useValue: {} },
   ],
-  exports: [SessionService, NotificationsService],
+  exports: [SessionService, NotificationsService, PrismaService],
 })
 class StubGlobalsModule {}
 

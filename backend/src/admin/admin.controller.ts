@@ -49,6 +49,8 @@ import {
   UpdateAdminRoleDto,
 } from './dto/update-admin-role.dto';
 import { AdminAuditService } from './admin-audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { MotivationActivityService } from '../motivations/motivation-activity.service';
 import {
   AdminAnalyticsService,
   AnalyticsPeriod,
@@ -1911,5 +1913,127 @@ export class AdminListingVideosController {
           : 'Rejected after video review'),
     });
     return result;
+  }
+}
+
+/**
+ * The support view of the motivation timeline.
+ *
+ * Operator, 2026-11-21: reports arrive with a username, and the log has to be
+ * findable FROM that username. This is the lookup the bug-report email points
+ * at: a handle, an MO reference, or a motivation id.
+ *
+ * Read-only and admin-guarded. The activity rows are already free of answer
+ * values — see MotivationActivityService's sanitiser — so this route needs no
+ * redaction of its own; it must not join anything sensitive into the reply.
+ */
+@Controller('admin/motivations')
+@UseGuards(AdminJwtGuard)
+export class AdminMotivationsController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: MotivationActivityService,
+  ) {}
+
+  @Get('activity')
+  async timeline(
+    @Query('username') username?: string,
+    @Query('ref') ref?: string,
+    @Query('motivationId') motivationId?: string,
+  ) {
+    const handle = (username ?? '').trim().replace(/^@/, '');
+    const reference = (ref ?? '').trim().toUpperCase();
+    const id = (motivationId ?? '').trim();
+
+    if (id) {
+      const motivation = await this.prisma.motivation.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          referenceNumber: true,
+          status: true,
+          createdAt: true,
+          user: { select: { username: true } },
+        },
+      });
+      return {
+        found: Boolean(motivation),
+        member: motivation?.user?.username ?? null,
+        motivations: motivation
+          ? [
+              {
+                id: motivation.id,
+                referenceNumber: motivation.referenceNumber,
+                status: motivation.status,
+                createdAt: motivation.createdAt,
+              },
+            ]
+          : [],
+        activity: await this.activity.forMotivation(id, 300),
+      };
+    }
+
+    if (reference) {
+      const motivation = await this.prisma.motivation.findUnique({
+        where: { referenceNumber: reference },
+        select: {
+          id: true,
+          referenceNumber: true,
+          status: true,
+          createdAt: true,
+          user: { select: { username: true } },
+        },
+      });
+      return {
+        found: Boolean(motivation),
+        member: motivation?.user?.username ?? null,
+        motivations: motivation
+          ? [
+              {
+                id: motivation.id,
+                referenceNumber: motivation.referenceNumber,
+                status: motivation.status,
+                createdAt: motivation.createdAt,
+              },
+            ]
+          : [],
+        // Even with the row gone (erasure, retention) the trail survives by
+        // reference — which is exactly when support needs it most.
+        activity: motivation
+          ? await this.activity.forMotivation(motivation.id, 300)
+          : await this.activity.forReference(reference, 300),
+      };
+    }
+
+    if (handle) {
+      const user = await this.prisma.user.findUnique({
+        where: { usernameLower: handle.toLowerCase() },
+        select: { id: true, username: true },
+      });
+      if (!user) {
+        return { found: false, member: null, motivations: [], activity: [] };
+      }
+      const motivations = await this.prisma.motivation.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          referenceNumber: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+      return {
+        found: true,
+        member: user.username,
+        motivations,
+        activity: await this.activity.forUser(user.id, 300),
+      };
+    }
+
+    throw new BadRequestException(
+      'Give a username, a motivation reference or a motivation id.',
+    );
   }
 }

@@ -32,6 +32,7 @@ import {
 } from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import { MotivationActivityService } from './motivation-activity.service';
 import { asLayout } from './motivation-pdf-layouts';
 import {
   applicationBlockers,
@@ -123,6 +124,8 @@ export class MotivationsService {
     private readonly witnesses: MotivationWitnessesService,
     private readonly profileAnswers: MemberProfileAnswersService,
     private readonly vaultAdoption: VaultAdoptionService,
+    // The support timeline. Awaited writes, never throws — see the service.
+    private readonly activity: MotivationActivityService,
     // âš ï¸ DERIVED ARTEFACTS ARE KEYED BY sha256 AND DO NOT CASCADE. Optional so
     // hand-built specs keep compiling.
     private readonly readCache?: DocumentReadCacheService,
@@ -562,7 +565,7 @@ export class MotivationsService {
     }
 
     try {
-      return await this.prisma.motivation.create({
+      const created = await this.prisma.motivation.create({
         data: {
           referenceNumber,
           ...(Object.keys(seeded).length
@@ -589,6 +592,18 @@ export class MotivationsService {
           licenceType: true,
         },
       });
+      void this.activity.record({
+        motivationId: created.id,
+        motivationRef: created.referenceNumber,
+        userId: user.id,
+        action: 'created',
+        detail: {
+          licenceType,
+          prefilled: Object.keys(seeded).length,
+          seeded: Object.keys(seed).length,
+        },
+      });
+      return created;
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException(
@@ -862,6 +877,7 @@ export class MotivationsService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        referenceNumber: true,
         licenceType: true,
         status: true,
         answersEncrypted: true,
@@ -1161,6 +1177,22 @@ export class MotivationsService {
       );
     }
 
+    // The support trail: WHICH fields moved, never what they now say. `changed`
+    // is the member's own edits; `derived` is what we wrote for them, which is
+    // exactly what support needs when a value "changed by itself".
+    void this.activity.record({
+      motivationId: row.id,
+      motivationRef: row.referenceNumber,
+      userId: user.id,
+      action: 'answer_saved',
+      detail: {
+        changed,
+        derived: Object.keys(derivedValues),
+        saved: Object.keys(clean).length,
+        refused,
+      },
+    });
+
     return {
       saved: Object.keys(clean).length,
       ignored: rejected,
@@ -1211,6 +1243,15 @@ export class MotivationsService {
     if (res.count === 0) {
       throw new NotFoundException('Motivation not found');
     }
+    const ref = await this.prisma.motivation
+      .findUnique({ where: { id }, select: { referenceNumber: true } })
+      .catch(() => null);
+    void this.activity.record({
+      motivationId: id,
+      motivationRef: ref?.referenceNumber ?? id,
+      userId: user.id,
+      action: 'abandoned',
+    });
     return { abandoned: true };
   }
 
@@ -1235,6 +1276,7 @@ export class MotivationsService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        referenceNumber: true,
         coverPhotoKey: true,
         uploads: { select: { storageKey: true, sha256: true } },
         // âš ï¸ SIGNATURES AND SELLER PAPERWORK HANG OFF THE SAME APPLICATION.
@@ -1288,6 +1330,16 @@ export class MotivationsService {
     }
 
     // Cascades take messages, uploads, witnesses and the consent with it.
+    // The support trail is recorded BEFORE the delete: activity rows survive
+    // with their reference (the FK is SetNull), so an erasure that fails
+    // halfway still shows what was attempted.
+    void this.activity.record({
+      motivationId: row.id,
+      motivationRef: row.referenceNumber,
+      userId: user.id,
+      action: 'erased',
+      detail: { files: filesRemoved },
+    });
     await this.prisma.motivation.delete({ where: { id: row.id } });
 
     // âš ï¸ AFTER THE ROWS, BECAUSE THE HASH LIVES ON THE UPLOAD. Cached OCR text
@@ -1459,6 +1511,10 @@ export class MotivationsService {
   ) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(userId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { referenceNumber: true },
+    });
     const res = await this.prisma.motivation.updateMany({
       where: { id, userId: user.id },
       data: {
@@ -1467,6 +1523,13 @@ export class MotivationsService {
       },
     });
     if (res.count === 0) throw new NotFoundException('Motivation not found');
+    void this.activity.record({
+      motivationId: id,
+      motivationRef: row?.referenceNumber ?? id,
+      userId: user.id,
+      action: 'declaration_accepted',
+      detail: { testimonialConsent },
+    });
     return { accepted: true };
   }
 
@@ -1549,7 +1612,7 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true },
+      select: { id: true, referenceNumber: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
@@ -1573,6 +1636,14 @@ export class MotivationsService {
         templateColourway: true,
         templateLayout: true,
       },
+    });
+
+    void this.activity.record({
+      motivationId: row.id,
+      motivationRef: row.referenceNumber,
+      userId: user.id,
+      action: 'template_changed',
+      detail: { ...choice },
     });
 
     return {
@@ -1604,7 +1675,7 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true },
+      select: { id: true, referenceNumber: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
@@ -1614,6 +1685,16 @@ export class MotivationsService {
       where: { id: row.id },
       data: { label: trimmed || null },
       select: { label: true },
+    });
+
+    // The label is the member's own words about their application, not
+    // case content — safe to log, and useful when they report the wrong one.
+    void this.activity.record({
+      motivationId: row.id,
+      motivationRef: row.referenceNumber,
+      userId: user.id,
+      action: 'renamed',
+      detail: { label: updated.label ?? '(cleared)' },
     });
 
     return { label: updated.label };

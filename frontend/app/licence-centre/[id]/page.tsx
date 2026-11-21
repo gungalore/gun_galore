@@ -10,6 +10,7 @@ import type {
   SheetItem,
   SheetResponse,
 } from '@/components/licence-centre/contract';
+import BetaNotice from '@/components/licence-centre/beta-notice';
 
 const CONTROL =
   'mt-1 block w-full rounded-lg border bg-transparent px-2.5 py-2 text-[13.5px]';
@@ -69,6 +70,17 @@ export default function EditMissingSheet() {
   useEffect(() => {
     if (id) void load();
   }, [id, load]);
+
+  // The support timeline: this page was opened. Fire and forget — a failed
+  // beacon must never surface as an error on a form the member is filling in.
+  useEffect(() => {
+    if (!id) return;
+    void motivationsApi
+      .activity(getToken, id, 'client_page_view', {
+        path: '/licence-centre/[id]',
+      })
+      .catch(() => undefined);
+  }, [getToken, id]);
 
   const missingKeys = useMemo(() => {
     const keys = new Set<string>(sheet?.missing ?? []);
@@ -136,6 +148,8 @@ export default function EditMissingSheet() {
 
   return (
     <main className="mx-auto w-full max-w-[720px] px-4 pb-12 pt-5">
+      {/* One popup, at the start, per application. See the component. */}
+      <BetaNotice motivationId={id} />
       <Link
         href="/licence-centre/applications"
         className="mb-3 inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] no-underline"

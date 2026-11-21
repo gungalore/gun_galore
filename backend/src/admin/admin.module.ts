@@ -42,6 +42,7 @@ import {
   AdminSettingsController,
   AdminBroadcastController,
   AdminTaxController,
+  AdminMotivationsController,
 } from './admin.controller';
 import { WardenController } from './warden.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
@@ -51,6 +52,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { UsersModule } from '../users/users.module';
+import { MotivationActivityModule } from '../motivations/motivation-activity.module';
 
 @Module({
   // ListingsModule so reviewListing can re-index the listing in
@@ -68,6 +70,9 @@ import { UsersModule } from '../users/users.module';
     // POPIA erasure lives in UsersService — it reaches the encrypted files a
     // Prisma cascade cannot. UsersModule does not import this one, so no cycle.
     UsersModule,
+    // The support timeline lookup (/admin/motivations/activity). Tiny module,
+    // no dependency on the motivation writer itself.
+    MotivationActivityModule,
   ],
   providers: [
     AdminAuthService,
@@ -127,6 +132,7 @@ import { UsersModule } from '../users/users.module';
     AdminSettingsController,
     AdminBroadcastController,
     AdminTaxController,
+    AdminMotivationsController,
     WardenController,
   ],
   // Export AdminCreditsService so TasksModule's pollCreditBalances

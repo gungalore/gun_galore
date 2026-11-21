@@ -175,6 +175,9 @@ function build(
   };
   const notifications = {
     motivationFinished: jest.fn(async (_a?: any): Promise<any> => undefined),
+    // The automatic failure ticket. Stubbed so a failing generation can be
+    // asserted to raise one without reaching the Resend API.
+    motivationFailureTicket: jest.fn(async (_a?: any): Promise<any> => undefined),
   };
 
   const claude = {
@@ -414,6 +417,7 @@ function build(
     // free writer; the paid path has its own spec, and the two tests at the
     // bottom of the generation block flip this double on.
     payments as never,
+    { record: jest.fn(async () => undefined), forMotivation: jest.fn(async () => []) } as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -464,6 +468,8 @@ function build(
     witnessFlow,
     profileAnswers,
     { keepChosen: jest.fn(async () => ({ kept: 0, needsConsent: false })) } as never,
+    // The support timeline; these tests assert on behaviour, not on the trail.
+    { record: jest.fn(async () => undefined), forMotivation: jest.fn(async () => []) } as never,
   );
   return {
     svc,
@@ -1816,6 +1822,24 @@ describe('MotivationsService â€” beta seat accounting and cost', () => {
     claude.generate.mockRejectedValueOnce(new Error('overloaded'));
     await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
     expect(quota.releaseBetaSeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a support ticket when generation fails, with the member attached', async () => {
+    // Operator, 2026-11-21: failed motivations "auto log a ticket and send it
+    // to the support email address". The member sees only the ordinary
+    // "we could not finish it" message; the desk gets the handle and the trail.
+    const { svc, prisma, claude, notifications } = buildReady();
+    prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
+    claude.generate.mockRejectedValueOnce(new Error('overloaded'));
+    await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
+    expect(notifications.motivationFailureTicket).toHaveBeenCalledTimes(1);
+    expect(notifications.motivationFailureTicket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        motivationId: 'mo-1',
+        referenceNumber: expect.any(String),
+        error: expect.stringContaining('overloaded'),
+      }),
+    );
   });
 
   it('does NOT give back a seat it did not claim', async () => {

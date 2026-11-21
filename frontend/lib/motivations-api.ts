@@ -2149,6 +2149,30 @@ export const motivationsApi = {
     ),
 
   /**
+   * Report one of the browser's own moves to the support timeline.
+   *
+   * ⚠️ FIRE AND FORGET, AND NEVER WORKS AGAINST THE MEMBER. This is telemetry
+   * for the operator, not a save: a failed beacon must not produce an error on
+   * the page, so the caller ignores the promise and the API answers 204.
+   *
+   * The action is an ALLOWLISTED server constant (`client_*`) — the endpoint
+   * refuses anything else, because it is the one place a member can write into
+   * a table support reads.
+   */
+  activity: (
+    t: TokenGetter,
+    id: string,
+    action: string,
+    opts: { path?: string; detail?: Record<string, unknown> } = {},
+  ) =>
+    request<{ recorded: true }>(
+      t,
+      `/${id}/activity`,
+      { method: 'POST', body: JSON.stringify({ action, ...opts }) },
+      { recorded: true },
+    ),
+
+  /**
    * START the checkout for this application. Returns the Ozow page to send the
    * browser to, or `alreadyPaid` when there is nothing to pay.
    */

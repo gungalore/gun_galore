@@ -9,7 +9,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useUser } from '@/lib/auth';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { submitBugReport } from '@/lib/bug-reports-api';
 
@@ -45,8 +45,19 @@ export function BugReportForm({
   onClose?: () => void;
 }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  // The handle is what support searches the activity log by, and the member
+  // should see who the report is being sent as.
+  const { user } = useUser();
 
-  const [category, setCategory] = useState('BUY_NOW');
+  /**
+   * ⚠️ THE DEFAULT CATEGORY FOLLOWS THE PAGE. A report filed from the
+   * licence-centre is almost always about the motivation writer, and making
+   * the member pick it from ten options is friction at the exact moment they
+   * are annoyed. They can still change it.
+   */
+  const [category, setCategory] = useState(() =>
+    /\/licence-centre\//.test(url) ? 'MOTIVATIONS' : 'BUY_NOW',
+  );
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +233,18 @@ export function BugReportForm({
       {url && (
         <p className="text-[11px] text-[var(--text-tertiary)] m-0 break-all">
           Reported from: {url}
+        </p>
+      )}
+
+      {/*
+        ⚠️ SAY WHO IS REPORTING. Support finds the activity log by handle, and
+        the member should know that is what they are sending — a line here
+        saves "which account was this?" in the reply.
+      */}
+      {user?.username && (
+        <p className="text-[11px] text-[var(--text-tertiary)] m-0">
+          Reporting as <strong>@{user.username}</strong> — we will attach your
+          recent steps on this page so support can see exactly what happened.
         </p>
       )}
 

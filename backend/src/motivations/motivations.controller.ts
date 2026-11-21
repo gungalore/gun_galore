@@ -31,6 +31,7 @@ import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { MotivationReasonService } from './motivation-reason.service';
@@ -38,6 +39,11 @@ import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import {
+  CLIENT_ACTIVITY_ACTIONS,
+  MotivationActivityService,
+  type ClientActivityAction,
+} from './motivation-activity.service';
 import { REASON_MAX, areaKey } from './motivation-danger-areas';
 import { RETIRED } from './motivation-documents';
 import {
@@ -112,6 +118,10 @@ export class MotivationsController {
     // The paygate, direct for the same reason as `generation` above: two routes
     // and no facade behaviour to add.
     private readonly payments: MotivationPaymentsService,
+    // The support timeline, for the browser's own events.
+    private readonly activity: MotivationActivityService,
+    // Ownership check for the client beacon. PrismaService is @Global.
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -408,6 +418,54 @@ export class MotivationsController {
     // returns — so a 202 means "running", never "we will find out later
     // whether this was even valid".
     return this.motivations.startGeneration(userId, id);
+  }
+
+  /**
+   * The browser's own events: which page it was on, which step, when the Pay
+   * button was pressed, when it came back from the bank.
+   *
+   * ⚠️ AN ALLOWLIST, NOT FREE TEXT. This endpoint is the one place a member can
+   * write into the support timeline, so the action must come from a closed set
+   * and the path must look like a licence-centre page — otherwise the table
+   * becomes somewhere to paste an ID number.
+   *
+   * Ownership is checked before anything is written, and a foreign id is a 404
+   * like every other route here.
+   */
+  @Post(':id/activity')
+  @HttpCode(204)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async clientActivity(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      action?: string;
+      path?: string;
+      detail?: Record<string, unknown>;
+    },
+  ) {
+    const action = (body?.action ?? '').trim() as ClientActivityAction;
+    if (!(CLIENT_ACTIVITY_ACTIONS as readonly string[]).includes(action)) {
+      throw new BadRequestException('Unknown activity.');
+    }
+    const path = (body?.path ?? '').trim();
+    if (path && !path.startsWith('/licence-centre')) {
+      throw new BadRequestException('Unknown page.');
+    }
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId },
+      select: { referenceNumber: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    await this.activity.record({
+      motivationId: id,
+      motivationRef: row.referenceNumber,
+      userId,
+      action,
+      detail: body?.detail ?? null,
+      path: path || null,
+    });
   }
 
   /**

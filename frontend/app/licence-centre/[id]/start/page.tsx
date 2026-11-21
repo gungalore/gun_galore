@@ -12,6 +12,7 @@ import {
   type MotivationOutputMode,
 } from '@/lib/motivations-api';
 import IntakeBlocked from '@/components/licence-centre/intake-blocked';
+import BetaNotice from '@/components/licence-centre/beta-notice';
 import DocumentAddButtons, {
   type DocumentAddOutcome,
 } from '@/components/motivation/document-add-buttons';
@@ -388,6 +389,10 @@ export default function IntakeStartPage() {
     const motivationOnly = data.outputMode === 'MOTIVATION_ONLY';
     return (
       <main className="mx-auto w-full max-w-[760px] px-4 pb-12 pt-5">
+        {/* The beta popup, once per application. This is the first screen a
+            new motivation opens on; the sheet shows it too if they arrive
+            there first, and the per-id key stops it appearing twice. */}
+        <BetaNotice motivationId={id} />
         <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
           {data.licenceTypeLabel} · {data.referenceNumber}
         </p>
@@ -480,6 +485,7 @@ export default function IntakeStartPage() {
    */
   return (
     <main className="mx-auto w-full max-w-[720px] px-4 py-10">
+      <BetaNotice motivationId={id} />
       <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
         {data.licenceTypeLabel} — {data.referenceNumber}
       </p>

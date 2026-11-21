@@ -9,6 +9,7 @@ import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import { MotivationActivityModule } from './motivation-activity.module';
 import { MotivationsService } from './motivations.service';
 // âš ï¸ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
 // they all share. They are providers and NOT exports on purpose: every caller
@@ -92,7 +93,12 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
   // Jev document filing (Gemini reads, Jev files the folder).
   // Zoho Books: the paid motivation is a PRINCIPAL sale and must reach the
   // ledger as revenue — see MotivationPaymentsService.markPaid.
-  imports: [DocumentFilingModule, LegalModule, ZohoBooksModule],
+  imports: [
+    DocumentFilingModule,
+    LegalModule,
+    ZohoBooksModule,
+    MotivationActivityModule,
+  ],
   controllers: [MotivationsController, MotivationsIntakeController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,
@@ -178,6 +184,9 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     MotivationReasonService,
     MotivationQuotaService,
     MotivationRetentionService,
+    // Re-exported so the bug-report path can attach a member's last steps to
+    // the operator email. See MotivationActivityModule's own note.
+    MotivationActivityModule,
     /**
      * âš ï¸ THE ONE SUB-SERVICE THAT LEAVES THE MODULE, AND IT IS THE ONLY WAY
      * THE CENTRE CAN CLASSIFY EVIDENCE. The evidence upload lives in

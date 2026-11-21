@@ -165,6 +165,8 @@ function build(
     // exercised only as the empty read that saveAnswers now always does.
     new MemberProfileAnswersService(prisma as never),
     { keepChosen: jest.fn(async () => ({ kept: 0, needsConsent: false })) } as never,
+    // The support timeline; these tests assert on what was written, not on it.
+    { record: jest.fn(async () => undefined), forMotivation: jest.fn(async () => []) } as never,
   );
 
   /** The answers as they were actually written, decrypted. */

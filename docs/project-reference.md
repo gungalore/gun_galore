@@ -1277,6 +1277,45 @@ motivation**; nothing is generated before Ozow confirms the capture.
   `?payment=return` verifies (three checks, five seconds apart) before
   auto-writing the document once.
 
+### The beta notice and the support timeline
+
+Operator, 2026-11-21: a beta popup at the start, a log of every move, the
+member's handle on every bug report, and an automatic ticket when a document
+fails.
+
+- **Beta notice** — `components/licence-centre/beta-notice.tsx`, rendered on the
+  intake and review-sheet pages. Once per application (localStorage keyed by the
+  motivation id), one "Got it" button, and it points at the Report a bug button
+  in the bottom-right (bottom bar on mobile) and says the report carries their
+  username and steps.
+- **`MotivationActivity`** — one row per meaningful move: `created`,
+  `answer_saved` (field KEYS only), `declaration_accepted`, `document_added`,
+  `generation_requested/started/completed/held/failed`, `payment_started/
+  required/confirmed`, `pdf_downloaded`-class client events, `bug_reported`,
+  `abandoned`, `erased`. Both foreign keys are `SetNull`, so the trail outlives
+  the application and the account (the MO reference is snapshotted).
+- **No answer values, ever.** `MotivationActivityService.sanitiseActivityDetail`
+  accepts only short strings, finite numbers, booleans and arrays of strings,
+  caps keys/strings/arrays, and DROPS objects — the table is read by admins and
+  has no encryption.
+- **Client events** — `POST /motivations/:id/activity`, ownership-checked and
+  allowlisted (`CLIENT_ACTIVITY_ACTIONS`), path must start `/licence-centre`.
+  The browser reports page views, the Pay press, the bank return, download and
+  print. Fire-and-forget: a failed beacon is never an error on the page.
+- **Bug reports carry the handle** — `BugsService` adds `@username`, sign-in
+  email, the motivation reference (parsed from the reported URL), and the last
+  ~60 activity lines to the operator email, plus a link to
+  `/admin/operate/motivations?ref=…`. The form shows "Reporting as @name" and
+  defaults the category to Motivations on a licence-centre page.
+- **Automatic failure ticket** — a generation crash or gate exhaustion writes an
+  `AdminAlert` and emails SUPPORT with the error, the handle and the activity
+  tail (`NotificationsService.motivationFailureTicket`). The member sees only
+  the ordinary "we could not finish it" message; nothing about the ticket is
+  surfaced to them.
+- **Support lookup** — `GET /admin/motivations/activity?username=|ref=|motivationId=`
+  and `/admin/operate/motivations`, which takes an `@handle`, an MO reference or
+  an id. A deleted application still answers from `forReference`.
+
 ⚠️ **Nothing asks the form-only questions any more.** The thirty-eight
 `formOnly` registry fields and the six `history_*` declarations are never put to
 the applicant — declarations surface only when an uploaded document raises one,

@@ -154,6 +154,10 @@ export default function PackPage() {
         if (live) setError((err as Error).message);
       }
     })();
+    // The support timeline: the pack page was opened.
+    void motivationsApi
+      .activity(getToken, id, 'client_page_view', { path: '/licence-centre/[id]/pack' })
+      .catch(() => undefined);
     return () => {
       live = false;
     };
@@ -203,6 +207,13 @@ export default function PackPage() {
       if (!res.redirectUrl) {
         throw new Error('The payment page did not load. Nothing has been charged.');
       }
+      // The last thing recorded before the browser leaves for the bank.
+      void motivationsApi
+        .activity(getToken, id, 'client_pay_clicked', {
+          path: '/licence-centre/[id]/pack',
+          detail: { amountCents: res.amountCents },
+        })
+        .catch(() => undefined);
       // Full navigation, not a new tab: the bank returns to THIS page with
       // ?payment=return, which is what runs the verify below.
       window.location.assign(res.redirectUrl);
@@ -234,6 +245,11 @@ export default function PackPage() {
 
     let live = true;
     setConfirming(true);
+    void motivationsApi
+      .activity(getToken, id, 'client_bank_returned', {
+        path: '/licence-centre/[id]/pack?payment=return',
+      })
+      .catch(() => undefined);
     void (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -391,6 +407,11 @@ export default function PackPage() {
   const download = useCallback(async () => {
     setDownloading(true);
     setError(null);
+    void motivationsApi
+      .activity(getToken, id, 'client_download_clicked', {
+        path: '/licence-centre/[id]/pack',
+      })
+      .catch(() => undefined);
     try {
       const reference = sheet?.application.referenceNumber ?? 'motivation';
       const reusableMotivation = pdfUrl;
@@ -419,9 +440,14 @@ export default function PackPage() {
    */
   const print = useCallback(() => {
     if (!pdfUrl) return;
+    void motivationsApi
+      .activity(getToken, id, 'client_print_clicked', {
+        path: '/licence-centre/[id]/pack',
+      })
+      .catch(() => undefined);
     const tab = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
     if (tab) tab.opener = null;
-  }, [pdfUrl]);
+  }, [getToken, id, pdfUrl]);
 
   const write = useCallback(
     async ({ testimonialConsent }: { testimonialConsent: boolean }) => {

@@ -19,6 +19,7 @@ import { PaymentRailsService } from '../payments/payment-rails.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { MotivationActivityService } from './motivation-activity.service';
 import { formatPrice } from './motivation-pricing';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { EDITABLE, isPaidFor } from './motivation-shared.service';
@@ -103,6 +104,9 @@ export class MotivationPaymentsService {
     // Books. A paid motivation is PRINCIPAL revenue, not an agent collection —
     // see createMotivationInvoice's own note.
     private readonly zoho: ZohoBooksService,
+    // The support timeline: a payment that "went wrong" is the most expensive
+    // report we get, so every step is recorded.
+    private readonly activity: MotivationActivityService,
     // Jev-backed document engine; absent in old positional specs. The writer
     // treats it the same way.
     @Optional()
@@ -149,15 +153,23 @@ export class MotivationPaymentsService {
     if (!(await this.isPaidMode())) return;
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId },
-      select: { billedCents: true, betaSeatNo: true },
+      select: { referenceNumber: true, billedCents: true, betaSeatNo: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (isPaidFor(row) || row.betaSeatNo !== null) return;
+    const price = await this.priceCents();
+    void this.activity.record({
+      motivationId: id,
+      motivationRef: row.referenceNumber,
+      userId,
+      action: 'payment_required',
+      detail: { priceCents: price },
+    });
     throw new ConflictException({
       statusCode: 409,
       code: 'motivation-payment-required',
-      message: `Pay ${formatPrice(await this.priceCents())} to write this motivation.`,
-      priceCents: await this.priceCents(),
+      message: `Pay ${formatPrice(price)} to write this motivation.`,
+      priceCents: price,
     });
   }
 
@@ -246,6 +258,13 @@ export class MotivationPaymentsService {
       orderBy: { createdAt: 'desc' },
     });
     if (reusable?.redirectUrl) {
+      void this.activity.record({
+        motivationId: id,
+        motivationRef: row.referenceNumber,
+        userId,
+        action: 'payment_started',
+        detail: { amountCents, reused: true },
+      });
       return {
         redirectUrl: reusable.redirectUrl,
         amountCents: reusable.amountCents,
@@ -281,6 +300,14 @@ export class MotivationPaymentsService {
         gatewayMerchantRef: checkout.merchantReference,
         redirectUrl: checkout.redirectUrl,
       },
+    });
+
+    void this.activity.record({
+      motivationId: id,
+      motivationRef: row.referenceNumber,
+      userId,
+      action: 'payment_started',
+      detail: { amountCents, reused: false },
     });
 
     return {
@@ -520,6 +547,14 @@ export class MotivationPaymentsService {
     this.logger.log(
       `Motivation payment ${attempt.id} captured for ${attempt.motivationRef} (${formatPrice(attempt.amountCents)})`,
     );
+
+    void this.activity.record({
+      motivationId: attempt.motivationId,
+      motivationRef: attempt.motivationRef,
+      userId: attempt.userId,
+      action: 'payment_confirmed',
+      detail: { amountCents: attempt.amountCents, provider: attempt.provider },
+    });
 
     // ⚠️ BOOKS GETS THE PRINCIPAL SALE, AND IT DOES NOT BLOCK THIS REQUEST.
     // The money is already ours; the invoice is paperwork that must not make a

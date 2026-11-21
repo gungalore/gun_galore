@@ -57,6 +57,7 @@ function build(motivation: unknown, incidentsNear: jest.Mock) {
       isPaidMode: async () => false,
       assertPaidForGeneration: async () => undefined,
     } as never,
+    { record: jest.fn(async () => undefined), forMotivation: jest.fn(async () => []) } as never,
   );
   return { svc, prisma };
 }
