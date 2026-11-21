@@ -52,6 +52,20 @@ motivations must auto-log a ticket and email support, silently.
   shows "Being written", never a failure.
 - **Migration** for the above: `20261121103000_motivation_silent_retry`
   (`generationFailures`, `generationRetryAt`, index).
+- **Verified live**: `/status` and the sheet still work; a fresh draft returns
+  `retrying: false`; the migration applied; an armed `generationRetryAt` on an
+  unpaid test row was claimed by `retryDueGenerations` and refused at the
+  paygate exactly as designed (the row then needs a manual re-queue after
+  payment). Test rows removed.
+- Tests: backend **6,341 passed / 8 skipped**; frontend **1,977 passed / 1
+  skipped**; both typechecks and the production build clean.
+- Deployed `29bdc652` (full). Rollback `alloutdoor-20261121-104005.dump`.
+- **Follow-up `782e7789`** (backend-only): the `erased` activity was
+  fire-and-forget and raced the DELETE, losing the FK — the last line of the
+  trail never landed. Now awaited, with a test that holds the promise and proves
+  the row is still present. Live sweep verified: an armed retry on an unpaid row
+  was claimed by `retryDueGenerations` and refused at the paygate exactly as
+  designed.
 - **Support lookup** — `GET /admin/motivations/activity?username=|ref=|motivationId=`
   and the `/admin/operate/motivations` page. A deleted application still answers
   from its MO reference.
