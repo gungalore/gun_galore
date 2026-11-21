@@ -7,6 +7,26 @@ overwritten.
 
 Last updated: **2026-11-21**.
 
+## 2026-11-21 — PACK PREVIEW REMOVED: DOWNLOAD + VIEW
+
+Operator: "remove the preview when done generating. Just have a download and
+view which open the pdf in a new tab."
+
+- The embedded PDF `<iframe>` and its "Not showing?" note are gone from
+  `/licence-centre/[id]/pack`. The ready state is two outlined buttons:
+  **Download** (saves the file) and **View** (opens the same blob in a new tab,
+  where the browser's viewer brings its own print control). The Print button
+  went with the preview.
+- The view event is `client_view_clicked`; `client_print_clicked` stays in the
+  allowlist so a tab open from the previous build cannot 400.
+- The two admin guard specs now stub the ESM-only `meilisearch` build that the
+  admin controller graph reaches through `ListingsService`. Those two suites
+  started failing on an unrelated environment change (a reinstall pulling
+  0.58.0's ESM dist); every other spec that crosses that graph already mocks
+  it.
+- Checks: backend **6,342 passed / 8 skipped**; frontend **1,977 passed / 1
+  skipped**; both typechecks and the production build clean.
+
 ## 2026-11-21 — BETA NOTICE, SUPPORT TIMELINE, AUTOMATIC FAILURE TICKETS
 
 Operator: a beta popup at the start of the motivation; log every move so a
