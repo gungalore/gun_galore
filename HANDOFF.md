@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-11-21**.
 
+## 2026-11-21 (MOTIVATIONS) — A CANCELLED PAYMENT NO LONGER SAYS "CONFIRMING"
+
+The pack page showed **"Confirming your payment with the bank…"** to a member who
+had just **cancelled** at the gateway. Cause: the gateway returns a cancelled
+checkout to the SAME `…/pack?payment=return` URL, so the page cannot tell cancel
+from success and ran its 3 × 5s verify loop while claiming a payment was being
+confirmed.
+
+Now: "Checking with your bank…" (a claim we can actually make), after 10s
+*"If you cancelled, nothing has been charged"*, and the final message names
+cancelling as a normal outcome and says paying again is safe — without asserting
+that no payment exists when the bank has not answered.
+
+⚠️ **Also a stuck state, now impossible.** `verifyPayment` had no timeout, so a
+hung gateway left the banner up for ever. Each call is capped at 8s and the loop
+always finishes; the manual "Check again" is capped too.
+
+Deployed `b180b230` + `655939c4` (**frontend-only**). Rollback
+`alloutdoor-20261121-212135.dump` (35 MB). Frontend 1,980 tests, build clean,
+health ×2, public 200.
+
 ## 2026-11-21 — A WAY OUT OF THE COMMUNITY PHOTO VIEWER
 
 Operator, on the installed PWA: "When opening a picture in the community, there
