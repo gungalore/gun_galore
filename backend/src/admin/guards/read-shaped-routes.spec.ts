@@ -1,3 +1,7 @@
+// meilisearch ships an ESM-only build; the admin controller graph reaches it
+// through ListingsService. Stub it before anything is imported.
+jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+
 import 'reflect-metadata';
 import * as adminControllers from '../admin.controller';
 import { READ_SHAPED_ROUTE } from '../decorators/read-shaped-route.decorator';

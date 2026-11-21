@@ -28,7 +28,13 @@ import { formatPrice } from '@/lib/utils';
 // The PDF IS the deliverable — masthead, addressed to the Registrar through
 // the DFO, contents, the request for prior notice, the press cuttings, the
 // seller's consent, the annexure index with its certification levels, the
-// take-to-the-station checklist. It is embedded here and read in place.
+// take-to-the-station checklist.
+//
+// ⚠️ NO IN-PAGE PREVIEW. Operator, 2026-11-21: "remove the preview when done
+// generating. Just have a download and view which open the pdf in a new tab."
+// The document is a 20-odd page A4 pack; an inline frame shrank it into a
+// scroll box and the browser's own viewer was better at it anyway. Two buttons
+// remain: Download saves the file, View opens the same blob in a new tab.
 //
 // ⚠️ NOTHING TO DOWNLOAD UNTIL THERE IS SOMETHING TO DOWNLOAD.
 //
@@ -40,8 +46,7 @@ import { formatPrice } from '@/lib/utils';
 // motivation-generation.service.ts), and the PDF endpoint REFUSES with a 409
 // until the gate passes. So while it runs this page polls the status and shows
 // one thing: the preparing panel, with our logo on it. The controls appear
-// only at COMPLETED, and a failure says so and offers the way back to the
-// answers rather than a button that cannot work.
+// only at COMPLETED.
 //
 // ⚠️ ONE DOWNLOAD, TWO DOCUMENTS. Operator, 2026-09-20: "Remove the download
 // and print 271... When clicking download, we download the motivation and the
@@ -50,7 +55,7 @@ import { formatPrice } from '@/lib/utils';
 // A section 24 renewal has no 271 — it is lodged on the SAPS 518(a) — so only
 // the motivation comes down.
 //
-// ⚠️ NO RED BUTTON ON THIS SCREEN, DELIBERATELY. Print and Download are
+// ⚠️ NO RED BUTTON ON THIS SCREEN, DELIBERATELY. Download and View are
 // outlined. The one red button in this surface is "Write my motivation" on the
 // sheet, and by the time somebody is here the decision has been made — a red
 // Download would be the page shouting at somebody who has already arrived.
@@ -449,17 +454,17 @@ export default function PackPage() {
   }, [getToken, id, pdfUrl, sheet]);
 
   /**
-   * Print, by opening the document itself.
+   * View, by opening the document itself in a new tab.
    *
-   * ⚠️ `window.print()` ON THIS PAGE PRINTS THE PAGE, NOT THE PACK. The PDF is
-   * embedded behind `print:hidden` precisely because an embedded viewer prints
-   * its own chrome, not the document. Opening the blob in a tab hands the
-   * member the browser's PDF viewer, which is where its print button lives.
+   * ⚠️ THE BROWSER'S VIEWER, NOT AN EMBED. The PDF is a 20-odd page A4 pack; an
+   * inline frame shrank it into a scroll box, and `window.print()` on THIS page
+   * would print the page rather than the pack. A tab hands the member the
+   * viewer they already know, complete with its own print button.
    */
-  const print = useCallback(() => {
+  const view = useCallback(() => {
     if (!pdfUrl) return;
     void motivationsApi
-      .activity(getToken, id, 'client_print_clicked', {
+      .activity(getToken, id, 'client_view_clicked', {
         path: '/licence-centre/[id]/pack',
       })
       .catch(() => undefined);
@@ -523,8 +528,6 @@ export default function PackPage() {
     );
   }
 
-  // A renewal is lodged on the SAPS 518(a), which we do not fill.
-  const isRenewal = sheet.application.licenceType === 'S24_RENEWAL';
   const missingDocuments = sheet.needs.needs.filter(
     (need) => need.tier === 'required' && !need.have,
   ).length;
@@ -566,65 +569,39 @@ export default function PackPage() {
         </section>
       ) : ready ? (
         <>
-          <div className="mt-4 flex gap-2 print:hidden">
-            <button
-              type="button"
-              onClick={() => print()}
-              disabled={!pdfUrl}
-              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
-            >
-              Print
-            </button>
+          <div className="mt-4 flex gap-2">
             <button
               type="button"
               onClick={() => void download()}
               disabled={downloading}
               className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
             >
-              {downloading
-                ? 'Preparing…'
-                : isRenewal
-                  ? 'Download PDF'
-                  : 'Download the pack'}
+              {downloading ? 'Preparing…' : 'Download'}
+            </button>
+            <button
+              type="button"
+              onClick={() => view()}
+              disabled={!pdfUrl}
+              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+            >
+              View
             </button>
           </div>
+          {/*
+            ⚠️ NO IN-PAGE PREVIEW. Operator, 2026-11-21: "remove the preview when
+            done generating. Just have a download and view which open the pdf in
+            a new tab." The document is a 20-odd page A4 pack; an embedded frame
+            shrank it into a scroll box and its own PDF chrome competed with the
+            page. The browser's viewer is better at it, and the print control
+            comes with that viewer.
+          */}
+          <p className="m-0 mt-2 text-[12.5px] leading-[1.5] text-[var(--text-tertiary)]">
+            View opens the PDF in a new tab. Download saves the same file — the
+            one you take to the station.
+          </p>
           {error ? (
-            <p className="mt-2 text-[12.5px] text-[var(--red)] print:hidden">
-              {error}
-            </p>
+            <p className="mt-2 text-[12.5px] text-[var(--red)]">{error}</p>
           ) : null}
-
-          <section className="mt-6">
-            {pdfUrl ? (
-              /*
-                ⚠️ THE DOCUMENT ITSELF, AT THE PAPER'S OWN PROPORTIONS. A4 is
-                1:1.414, so the frame is tall rather than square — a viewer
-                letter-boxed into a 16:9 box shows a third of a page and makes
-                a 27-page pack look like a fragment.
-              */
-              <div className="print:hidden">
-                <iframe
-                  src={pdfUrl}
-                  title="Your motivation"
-                  className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
-                />
-                {/*
-                  ⚠️ SAID OUT LOUD, BECAUSE AN EMBED CAN FAIL SILENTLY. A
-                  browser with its PDF viewer disabled renders an empty box and
-                  nothing explains it — and the member is one tap from the file
-                  itself.
-                */}
-                <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--text-tertiary)]">
-                  Not showing? Use Download above — the file is the same one
-                  you take to the station.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
-                Preparing your document…
-              </p>
-            )}
-          </section>
         </>
       ) : (
         <section className="mt-5">

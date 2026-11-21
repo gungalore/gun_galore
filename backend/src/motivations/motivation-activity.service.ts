@@ -40,7 +40,10 @@ export const CLIENT_ACTIVITY_ACTIONS = [
   'client_pay_clicked',
   'client_bank_returned',
   'client_download_clicked',
+  // Kept after the in-page preview was removed: the browser's viewer owns
+  // printing now, but an old client tab can still report the old action.
   'client_print_clicked',
+  'client_view_clicked',
   'client_bug_report_opened',
   'client_beta_notice_seen',
 ] as const;

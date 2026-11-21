@@ -1301,7 +1301,7 @@ fails.
 - **Client events** — `POST /motivations/:id/activity`, ownership-checked and
   allowlisted (`CLIENT_ACTIVITY_ACTIONS`), path must start `/licence-centre`.
   The browser reports page views, the Pay press, the bank return, download and
-  print. Fire-and-forget: a failed beacon is never an error on the page.
+  view. Fire-and-forget: a failed beacon is never an error on the page.
 - **Bug reports carry the handle** — `BugsService` adds `@username`, sign-in
   email, the motivation reference (parsed from the reported URL), and the last
   ~60 activity lines to the operator email, plus a link to
