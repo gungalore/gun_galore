@@ -30,6 +30,9 @@ is no way to go back that I can see."
   us. The affordances above are ours and cannot be hidden by the status bar.
 - Checks: frontend **1,980 passed / 1 skipped**; typecheck and production build
   clean. Backend untouched.
+- Deployed `b50ab3b9` (frontend-only); the live chunk carries the safe-area
+  insets and the `__ggPostModal` history marker. Rollback
+  `alloutdoor-20261121-135507.dump`.
 
 ## 2026-11-21 — PACK PREVIEW REMOVED: DOWNLOAD + VIEW
 
