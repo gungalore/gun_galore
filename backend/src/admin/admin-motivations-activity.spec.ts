@@ -1,6 +1,6 @@
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AdminMotivationsController } from './admin.controller';
 
 // The support lookup the bug-report email points at. Three shapes — @handle,
@@ -20,6 +20,7 @@ function build(
     motivation: {
       findUnique: jest.fn(async () => opts.motivation ?? null),
       findMany: jest.fn(async () => opts.motivations ?? []),
+      update: jest.fn(async () => ({})),
     },
   };
   const activity = {
@@ -88,6 +89,32 @@ describe('AdminMotivationsController', () => {
     const { controller } = build();
     await expect(controller.timeline()).rejects.toBeInstanceOf(
       BadRequestException,
+    );
+  });
+
+  it('re-queues a rebuild by setting the retry date to now', async () => {
+    const { controller, prisma } = build({
+      motivation: { id: 'mo1', referenceNumber: 'MO000146' },
+    });
+    await expect(controller.requeue('mo1')).resolves.toEqual({
+      queued: true,
+      referenceNumber: 'MO000146',
+    });
+    expect(prisma.motivation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'mo1' },
+        data: expect.objectContaining({
+          generationRetryAt: expect.any(Date),
+          generationFailures: 0,
+        }),
+      }),
+    );
+  });
+
+  it('404s a requeue for an unknown application', async () => {
+    const { controller } = build({ motivation: null });
+    await expect(controller.requeue('nope')).rejects.toBeInstanceOf(
+      NotFoundException,
     );
   });
 });

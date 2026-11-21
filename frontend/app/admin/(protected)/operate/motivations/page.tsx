@@ -91,6 +91,28 @@ export default function MotivationSupportPage() {
     void lookup(seed);
   }, [lookup]);
 
+  /**
+   * Put a failed application back in the rebuild queue after fixing the cause.
+   *
+   * The automatic attempts run out after a few hours of backoff; this is the
+   * operator's "go again" — the retry cron picks it up within five minutes, so
+   * the button does not hold the request open on a model run.
+   */
+  const requeue = useCallback(
+    async (motivationId: string) => {
+      try {
+        await adminFetch(`/admin/motivations/${motivationId}/retry`, {
+          method: 'POST',
+        });
+        setError(null);
+        await lookup(query);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [lookup, query],
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <NeonCard title="Motivation support">
@@ -161,6 +183,14 @@ export default function MotivationSupportPage() {
                       }}
                     >
                       Only this one
+                    </button>
+                    <button
+                      type="button"
+                      className="underline text-[var(--red)]"
+                      title="Queue an automatic rebuild now. The retry cron picks it up within five minutes."
+                      onClick={() => void requeue(motivation.id)}
+                    >
+                      Re-queue
                     </button>
                   </span>
                 </li>

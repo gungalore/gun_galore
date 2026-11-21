@@ -15,6 +15,7 @@ import {
   Req,
   Res,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { toCsv } from '../common/csv.util';
@@ -2035,5 +2036,29 @@ export class AdminMotivationsController {
     throw new BadRequestException(
       'Give a username, a motivation reference or a motivation id.',
     );
+  }
+
+  /**
+   * Re-arm the silent rebuild for one application.
+   *
+   * The automatic retries run out after ~10 hours of backoff; this is what the
+   * operator presses after fixing the cause. It only sets `generationRetryAt`
+   * to now — the retry cron does the actual run within five minutes, so this
+   * route needs no dependency on the generation service and cannot start a
+   * second run itself.
+   */
+  @Post(':id/retry')
+  @HttpCode(200)
+  async requeue(@Param('id') id: string) {
+    const motivation = await this.prisma.motivation.findUnique({
+      where: { id },
+      select: { referenceNumber: true },
+    });
+    if (!motivation) throw new NotFoundException('Motivation not found');
+    await this.prisma.motivation.update({
+      where: { id },
+      data: { generationRetryAt: new Date(), generationFailures: 0 },
+    });
+    return { queued: true, referenceNumber: motivation.referenceNumber };
   }
 }

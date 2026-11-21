@@ -1307,11 +1307,22 @@ fails.
   ~60 activity lines to the operator email, plus a link to
   `/admin/operate/motivations?ref=…`. The form shows "Reporting as @name" and
   defaults the category to Motivations on a licence-centre page.
-- **Automatic failure ticket** — a generation crash or gate exhaustion writes an
-  `AdminAlert` and emails SUPPORT with the error, the handle and the activity
-  tail (`NotificationsService.motivationFailureTicket`). The member sees only
-  the ordinary "we could not finish it" message; nothing about the ticket is
-  surfaced to them.
+- **Automatic failure ticket** — a generation crash, a mechanical rejection or
+  gate exhaustion writes an `AdminAlert` and emails SUPPORT with the error, the
+  handle and the activity tail
+  (`NotificationsService.motivationFailureTicket`). ⚠️ **THE MEMBER IS TOLD
+  NOTHING** — see "Silent rebuild" below. `motivationFinished` has no `failed`
+  outcome at all, so no caller can send failure wording.
+- **Silent rebuild** — a failed run is requeued, not reported:
+  `Motivation.generationFailures` counts the attempts and
+  `generationRetryAt` schedules the next one at +5, +15, +45, +120 and +360
+  minutes. `retryDueGenerations` (every 5 minutes) claims by clearing the date
+  and runs at most five detached rebuilds per tick. When the delays are spent
+  the field is null and the open ticket is the queue;
+  `POST /admin/motivations/:id/retry` (the "Re-queue" button on the timeline
+  page) sets it back to now, and the cron picks it up within five minutes. The
+  row stays in `NEEDS_MORE_INFO` throughout, the pack screen renders it as
+  "being written", and only a passing rebuild sends the ready notification.
 - **Support lookup** — `GET /admin/motivations/activity?username=|ref=|motivationId=`
   and `/admin/operate/motivations`, which takes an `@handle`, an MO reference or
   an id. A deleted application still answers from `forReference`.

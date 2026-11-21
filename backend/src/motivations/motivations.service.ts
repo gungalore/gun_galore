@@ -177,6 +177,9 @@ export class MotivationsService {
         // The paygate's state, for the "Payment due" chip.
         billedCents: true,
         betaSeatNo: true,
+        // A silent rebuild is queued; the list must show "being written", not
+        // "needs more from you" or any failure wording.
+        generationRetryAt: true,
       },
     });
     // One settings read for the whole list, not one per row.
@@ -193,6 +196,8 @@ export class MotivationsService {
       intakeMode: r.intakeMode,
       intakeCompletedAt: r.intakeCompletedAt,
       paid: r.billedCents > 0,
+      // Set while a silent rebuild is scheduled — see markFailedForRebuild.
+      retrying: r.generationRetryAt !== null,
       // Only where the member can act on it: a COMPLETED unpaid row is not
       // something to chase, and a GENERATING one is already being written.
       paymentDue:

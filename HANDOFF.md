@@ -34,11 +34,24 @@ motivations must auto-log a ticket and email support, silently.
   lines and a link to `/admin/operate/motivations?ref=…`. The form shows
   "Reporting as @name" and defaults the category to Motivations on a
   licence-centre page. The report itself is logged as `bug_reported`.
-- **Automatic failure ticket** — a generation crash or gate exhaustion writes an
-  `AdminAlert` (`MOTIVATION_GENERATION_FAILED`) and emails SUPPORT with the
-  error, the handle and the timeline
-  (`NotificationsService.motivationFailureTicket`). Nothing is surfaced to the
-  member beyond the existing "we could not finish it" message.
+- **Automatic failure ticket** — a generation crash, mechanical rejection or
+  gate exhaustion writes an `AdminAlert` (`MOTIVATION_GENERATION_FAILED`) and
+  emails SUPPORT with the error, the handle and the timeline
+  (`NotificationsService.motivationFailureTicket`).
+- ⚠️ **THE SAME DAY, CHANGED: THE MEMBER IS NEVER TOLD.** Operator: "We never let
+  the user know it failed. We fix it and let the system regenerate the
+  motivation and then we notify them it has been processed and ready to
+  download." `motivationFinished` no longer has a `failed` outcome at all. A
+  failed run sets `generationFailures++` and schedules `generationRetryAt`
+  (+5, +15, +45, +120, +360 min); the row stays `NEEDS_MORE_INFO`;
+  `retryDueGenerations` (every 5 min) claims by clearing the date and runs up
+  to five detached rebuilds. Only a passing rebuild notifies. When the delays
+  are spent the ticket is the queue and `POST /admin/motivations/:id/retry`
+  ("Re-queue" on the timeline page) re-arms it. The pack screen renders a
+  scheduled rebuild as "being written" and keeps polling; the applications list
+  shows "Being written", never a failure.
+- **Migration** for the above: `20261121103000_motivation_silent_retry`
+  (`generationFailures`, `generationRetryAt`, index).
 - **Support lookup** — `GET /admin/motivations/activity?username=|ref=|motivationId=`
   and the `/admin/operate/motivations` page. A deleted application still answers
   from its MO reference.

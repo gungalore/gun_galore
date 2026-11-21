@@ -7,7 +7,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -333,6 +333,18 @@ export const REGENERABLE: MotivationStatus[] = [
 ];
 
 /**
+ * How far apart the automatic rebuilds are, in minutes.
+ *
+ * ⚠️ THE FIRST IS SHORT AND THE LAST IS LONG, DELIBERATELY. Most failures are a
+ * provider blip and heal on the next pass; a failure that survives five of
+ * these is a defect that needs a deploy, and the hourly-ish cadence gives the
+ * operator that window without hammering the model. After the last delay there
+ * is no automatic attempt left — the support ticket is the queue then, and the
+ * "Re-queue" action in the admin timeline re-arms it.
+ */
+const RETRY_DELAY_MINUTES = [5, 15, 45, 120, 360];
+
+/**
  * Is an automatic reason needed? True when the applicant has not written one.
  *
  * âš ï¸ THE GUARD THAT DECIDES WHETHER TO SPEND A MODEL CALL. Operator,
@@ -559,6 +571,9 @@ export class MotivationGenerationService {
         // notification, which must not promise "nothing was charged" on a paid
         // document.
         billedCents: true,
+        // How many runs have failed. Drives the automatic retry backoff and
+        // tells the desk whether this is the first attempt or the fifth.
+        generationFailures: true,
         // The gate's findings from the previous run, so a member who fixes the
         // fields it named is regenerated with those findings in front of the
         // writer rather than blind â€” see gateFeedbackIssues.
@@ -2114,12 +2129,11 @@ export class MotivationGenerationService {
       // quality problem the applicant can fix with a better answer â€” it is
       // the writer corrupting identity data, our defect, an admin's problem.
       if (mechanics.length) {
+        const reason = mechanics.slice(0, 3).join('; ').slice(0, 500);
         await this.prisma.motivation.update({
           where: { id: row.id },
           data: {
-            status: MotivationStatus.FAILED,
-            failedAt: new Date(),
-            failureReason: mechanics.slice(0, 3).join('; ').slice(0, 500),
+            failureReason: reason,
             /**
              * âš ï¸ KEEP THE REJECTED DRAFT. A mechanical failure discarded the
              * text, so the one artefact that could explain the refusal was
@@ -2129,8 +2143,8 @@ export class MotivationGenerationService {
              * a document that no longer existed anywhere.
              *
              * It is stored exactly as every other draft is, encrypted at rest
-             * in the same column, and it is not shown to the member: the status
-             * is FAILED, so no download path will render it.
+             * in the same column, and it is not shown to the member: the row is
+             * never COMPLETED, so no download path will render it.
              */
             documentTextEncrypted: encryptText(attempt.text),
           },
@@ -2144,8 +2158,15 @@ export class MotivationGenerationService {
             },
           })
           .catch(() => undefined);
-        await this.notifyOutcome(row, 'failed');
-        return { status: MotivationStatus.FAILED, score: 0 };
+        // ⚠️ SILENT FOR THE APPLICANT, AND REBUILT AUTOMATICALLY. No failure
+        // notification goes out; the row is requeued and only a successful
+        // rebuild tells them anything.
+        await this.markFailedForRebuild(row, reason);
+        await this.logFailureTicket(
+          row,
+          new Error(`Mechanical verification failed: ${reason}`),
+        );
+        return { status: MotivationStatus.NEEDS_MORE_INFO, score: 0 };
       }
 
       const graded = await this.model.grade(pack, attempt.text);
@@ -2296,21 +2317,14 @@ export class MotivationGenerationService {
         };
       }
 
-      // Out of retries â€” an admin owns it from here, rather than sending the
-      // applicant round the loop forever.
+      // Out of gate cycles. NOT a terminal failure any more: the desk is told,
+      // and the row is rebuilt automatically — the applicant is never informed.
       if (nextCycles > maxCycles) {
         await this.prisma.motivation.update({
           where: { id: row.id },
           data: {
             ...common,
-            status: MotivationStatus.FAILED,
             gateCycles: nextCycles,
-            failedAt: new Date(),
-            // Same reason as abandon(): a terminal state with no retention date
-            // is a document nothing ever comes back for.
-            retentionPurgeAt: new Date(
-              Date.now() + retentionDays * 24 * 60 * 60 * 1000,
-            ),
             failureReason:
               graded.verdict.issues.slice(0, 3).join('; ') ||
               'Quality gate not met',
@@ -2342,11 +2356,11 @@ export class MotivationGenerationService {
             thinFields: graded.verdict.thinFields ?? [],
           },
         });
-        await this.notifyOutcome(row, 'failed');
-        // ⚠️ A GATE EXHAUSTION IS A FAILED MOTIVATION, so it gets the same
-        // automatic ticket as a crash — silently, for the desk.
+        // ⚠️ NO NOTIFICATION. The row goes back to the rebuild queue; only a
+        // successful run tells the member anything.
+        await this.markFailedForRebuild(row, exhaustion.message);
         await this.logFailureTicket(row, exhaustion);
-        return { status: MotivationStatus.FAILED, score: graded.verdict.overall };
+        return { status: MotivationStatus.NEEDS_MORE_INFO, score: graded.verdict.overall };
       }
 
       // Back to the applicant, for the specific fields the gate found thin.
@@ -2407,24 +2421,12 @@ export class MotivationGenerationService {
         await this.quota.releaseBetaSeat().catch(() => undefined);
       }
 
-      // âš ï¸ AND TELL THEM. THIS is the branch that fired on 2026-08-22 and said
-      // nothing: a model timeout, or a document that came back unusable,
-      // put the row back to NEEDS_MORE_INFO and returned the seat â€” correctly
-      // â€” and then simply rethrew into startGeneration's catch, which logs.
-      // The applicant, who is holding a phone waiting for the message we
-      // promised them, got a button that went grey and came back.
-      //
-      // Ordered AFTER the row is restored so the link in the message opens a
-      // page they can actually press Prepare on, and awaited so a process that
-      // dies immediately after has still sent it.
-      await this.notifyOutcome(row, 'failed');
-
       // ⚠️ THE TICKET IS AUTOMATIC, SILENT AND ALWAYS. Operator, 2026-11-21:
       // "failed motivations should do so silently and auto log a ticket and
-      // send it to the support email address so I can fix it." The member sees
-      // only the ordinary "we could not finish it" message; the desk gets the
-      // error, the member's handle and the activity tail without anyone having
-      // to report it.
+      // send it to the support email address so I can fix it." The member is
+      // TOLD NOTHING — the row is requeued and only a successful rebuild
+      // notifies them. The desk gets the error, the handle and the activity
+      // tail without anyone having to report it.
       //
       // AWAITED before the ticket is read, so the timeline the desk receives
       // ends with the failure itself.
@@ -2439,8 +2441,117 @@ export class MotivationGenerationService {
           paid: row.billedCents > 0,
         },
       });
+      // Requeue first: the row must not sit in NEEDS_MORE_INFO with nothing
+      // scheduled, and the retry backoff is the operator's window to fix it.
+      await this.markFailedForRebuild(
+        row,
+        err instanceof Error ? err.message : String(err),
+      );
       await this.logFailureTicket(row, err);
       throw err;
+    }
+  }
+
+  /**
+   * Record a failed run and put it back in the rebuild queue — silently.
+   *
+   * ⚠️ THE MEMBER IS NEVER TOLD. Operator, 2026-11-21: "We never let the user
+   * know it failed. We fix it and let the system regenerate the motivation and
+   * then we notify them it has been processed and ready to download."
+   *
+   * So a failure leaves the row in NEEDS_MORE_INFO (regenerable, and rendered
+   * without failure wording), bumps `generationFailures`, and schedules
+   * `generationRetryAt` from RETRY_DELAY_MINUTES. `retryDueGenerations` picks
+   * it up. When the delays are exhausted the field is null and the open support
+   * ticket is the queue; an admin "Re-queue" sets the date again.
+   */
+  private async markFailedForRebuild(
+    row: { id: string; generationFailures?: number | null },
+    failureReason?: string,
+  ): Promise<void> {
+    const failures = (row.generationFailures ?? 0) + 1;
+    const minutes = RETRY_DELAY_MINUTES[failures - 1];
+    const retryAt =
+      minutes === undefined ? null : new Date(Date.now() + minutes * 60_000);
+    await this.prisma.motivation
+      .updateMany({
+        where: {
+          id: row.id,
+          status: {
+            in: [
+              MotivationStatus.GENERATING,
+              MotivationStatus.QUALITY_REVIEW,
+              MotivationStatus.NEEDS_MORE_INFO,
+              MotivationStatus.FAILED,
+            ],
+          },
+        },
+        data: {
+          status: MotivationStatus.NEEDS_MORE_INFO,
+          generationFailures: failures,
+          generationRetryAt: retryAt,
+          ...(failureReason
+            ? { failureReason: failureReason.slice(0, 500) }
+            : {}),
+        },
+      })
+      .catch(() => undefined);
+    this.logger.warn(
+      `Motivation ${row.id}: run ${failures} failed; ` +
+        (retryAt
+          ? `automatic rebuild scheduled for ${retryAt.toISOString()}`
+          : 'no automatic attempt left — the support ticket is the queue'),
+    );
+  }
+
+  /**
+   * The automatic rebuild cron.
+   *
+   * ⚠️ IT CLAIMS BY CLEARING `generationRetryAt` FIRST. Two ticks, or a tick and
+   * an operator re-queue, must not start two runs on one row: the update is the
+   * claim, and only its winner calls generate. Runs start detached and at most
+   * five per tick, so a queue of broken documents cannot stampede the model.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async retryDueGenerations(): Promise<void> {
+    try {
+      const now = new Date();
+      const due = await this.prisma.motivation.findMany({
+        where: {
+          generationRetryAt: { lte: now },
+          status: {
+            in: [MotivationStatus.NEEDS_MORE_INFO, MotivationStatus.FAILED],
+          },
+        },
+        orderBy: { generationRetryAt: 'asc' },
+        take: 5,
+        select: { id: true, userId: true, referenceNumber: true },
+      });
+      for (const row of due) {
+        const claimed = await this.prisma.motivation.updateMany({
+          where: { id: row.id, generationRetryAt: { lte: now } },
+          data: { generationRetryAt: null },
+        });
+        if (claimed.count === 0) continue;
+        this.logger.log(
+          `Motivation ${row.referenceNumber}: automatic rebuild starting`,
+        );
+        void this.generate(row.userId, row.id).catch((err) => {
+          // generate() re-schedules on a failure; this catch is only for a
+          // refusal before the run (an unpaid row, a missing engine).
+          this.logger.warn(
+            `Motivation ${row.referenceNumber}: automatic rebuild did not start — ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
+      }
+    } catch (err) {
+      // A cron that throws can stop being scheduled; a failed sweep is retried
+      // in five minutes.
+      this.logger.error(
+        `retryDueGenerations failed: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -2448,11 +2559,12 @@ export class MotivationGenerationService {
    * Log a failed run for the desk: an alert row plus an email with the error
    * and the activity timeline.
    *
-   * ⚠️ NEVER THROWS, AND THE MEMBER IS NOT TOLD ABOUT IT. The failure message
-   * they already received says it is our fault; this is the internal ticket
-   * that means nobody has to reproduce it from a bug report. Deliberately not
-   * a member-facing SupportTicket: a support thread appearing on their account
-   * for a failure they did not report is noise, and the desk reads email.
+   * ⚠️ NEVER THROWS, AND THE MEMBER IS NOT TOLD ABOUT IT. The row goes back to
+   * the rebuild queue; only a successful run notifies the applicant. This is the
+   * internal ticket that means nobody has to reproduce it from a bug report.
+   * Deliberately not a member-facing SupportTicket: a support thread appearing
+   * on their account for a failure they did not report is noise, and the desk
+   * reads email.
    */
   private async logFailureTicket(
     row: {
@@ -2536,7 +2648,7 @@ export class MotivationGenerationService {
       referenceNumber: string;
       billedCents?: number;
     },
-    outcome: 'ready' | 'held' | 'failed',
+    outcome: 'ready' | 'held',
   ): Promise<void> {
     try {
       const user = await this.prisma.user.findUnique({
@@ -2560,7 +2672,6 @@ export class MotivationGenerationService {
         motivationId: row.id,
         referenceNumber: row.referenceNumber,
         outcome,
-        paid: (row.billedCents ?? 0) > 0,
       });
     } catch (err) {
       this.logger.warn(

@@ -306,6 +306,13 @@ export interface SheetResponse {
       amountCents: number;
       paidAt: string | null;
     };
+    /**
+     * A rebuild is scheduled after a failed run.
+     *
+     * ⚠️ THE MEMBER IS NEVER TOLD IT FAILED — the screen shows "being written"
+     * while this is true and keeps polling. Only success produces a message.
+     */
+    retrying?: boolean;
   };
   sections: SheetSection[];
   items: SheetItem[];

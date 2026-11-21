@@ -264,6 +264,13 @@ export interface MotivationSummary {
   paid?: boolean;
   /** True when the member still has to pay before it can be written. */
   paymentDue?: boolean;
+  /**
+   * A silent rebuild is scheduled after a failed run.
+   *
+   * ⚠️ SHOW THIS AS "BEING WRITTEN". The member is never told a run failed;
+   * they see work in progress and then the ready notification.
+   */
+  retrying?: boolean;
 }
 
 export interface MotivationDetail extends MotivationSummary {

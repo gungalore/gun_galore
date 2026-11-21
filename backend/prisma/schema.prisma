@@ -5195,6 +5195,18 @@ model Motivation {
   /// free-beta one. Kept beside billedCents so support can answer "when did
   /// they pay" without joining the payment attempts.
   paidAt           DateTime?
+
+  /// ── Silent failure + automatic rebuild ─────────────────────────
+  ///
+  /// ⚠️ THE MEMBER IS NEVER TOLD A RUN FAILED. Operator, 2026-11-21: "We never
+  /// let the user know it failed. We fix it and let the system regenerate the
+  /// motivation and then we notify them it has been processed and ready to
+  /// download." A failure therefore leaves the row in NEEDS_MORE_INFO, records
+  /// the attempt count here, and schedules `generationRetryAt`; a cron retries
+  /// it with backoff and only a SUCCESS notifies the applicant.
+  generationFailures Int       @default(0)
+  /// When the next automatic rebuild is due. Null means none is scheduled.
+  generationRetryAt  DateTime?
   /// When the applicant allowed us to fill the SAPS form from their All Outdoor
   /// profile. Null means they were never asked, or said no — either way we do
   /// not touch their profile data. Per motivation, not per account: agreeing
@@ -5263,6 +5275,8 @@ model Motivation {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([retentionPurgeAt])
+  // The automatic-rebuild sweep: due rows, oldest first.
+  @@index([generationRetryAt])
 }
 
 /// One attempt to pay for one motivation.

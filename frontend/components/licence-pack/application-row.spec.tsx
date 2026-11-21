@@ -62,4 +62,30 @@ describe('an application row', () => {
     expect(screen.queryByRole('button', { name: /saps 271/i })).toBeNull();
     expect(screen.queryByText(/518\(a\)/)).toBeNull();
   });
+
+  it('⚠️ NEVER SHOWS FAILURE WORDING', () => {
+    // Operator, 2026-11-21: "We never let the user know it failed." A legacy
+    // FAILED row still renders as work in progress, and a queued rebuild reads
+    // "Being written" rather than "Needs more from you".
+    const { unmount } = render(
+      <ApplicationRow
+        row={row({ status: 'FAILED' })}
+        token={token}
+        onChanged={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/could not be written|failed/i)).toBeNull();
+    expect(screen.getByText('Being finished')).toBeTruthy();
+    unmount();
+
+    render(
+      <ApplicationRow
+        row={row({ status: 'NEEDS_MORE_INFO', retrying: true })}
+        token={token}
+        onChanged={() => {}}
+      />,
+    );
+    expect(screen.getByText('Being written')).toBeTruthy();
+    expect(screen.queryByText('Needs more from you')).toBeNull();
+  });
 });

@@ -493,6 +493,8 @@ function build(
     news,
     // The paygate double, so generation tests can flip paid mode on.
     payments,
+    // The generation service itself, for the rebuild cron's own tests.
+    generation,
   };
 }
 
@@ -1410,7 +1412,10 @@ describe('MotivationsService.generate', () => {
     expect(prisma.motivationMessage.create).not.toHaveBeenCalled();
   });
 
-  it('gives up to an admin once the retry ceiling is hit', async () => {
+  it('requeues silently once the gate budget is spent', async () => {
+    // Operator, 2026-11-21: a failed run is rebuilt, not reported. The row
+    // stays in NEEDS_MORE_INFO (never FAILED, which the UI would have to explain
+    // and the member must never be told), and a retry is scheduled.
     const { svc, prisma, claude } = buildReady({ settings: { motivation_max_gate_cycles: 1 } });
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ gateCycles: 1 }));
     claude.grade.mockResolvedValueOnce({
@@ -1422,8 +1427,13 @@ describe('MotivationsService.generate', () => {
       parsed: true,
     });
     const res = await svc.generate('c1', 'mo-1');
-    expect(res.status).toBe(MotivationStatus.FAILED);
+    expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
     expect(prisma.adminAlert.create).toHaveBeenCalled();
+    // The rebuild is scheduled, not announced.
+    const requeue = prisma.motivation.updateMany.mock.calls
+      .map((c: any[]) => c[0])
+      .find((a: any) => a?.data?.generationRetryAt instanceof Date);
+    expect(requeue).toBeTruthy();
   });
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1473,16 +1483,19 @@ describe('MotivationsService.generate', () => {
       parsed: true,
     });
     await svc.generate('c1', 'mo-1');
-    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
-    expect(data.status).toBe(MotivationStatus.FAILED);
-    expect(data.documentTextEncrypted).toBeTruthy();
+    // The draft is written by an ordinary update; the requeue is the
+    // updateMany that follows, so look across every update for the text.
+    const wroteDraft = prisma.motivation.update.mock.calls.some(
+      (c: any[]) => Boolean(c[0]?.data?.documentTextEncrypted),
+    );
+    expect(wroteDraft).toBe(true);
   });
 
   it('âš ï¸ NEVER FILES A DOCUMENT THAT FAILS MECHANICAL VERIFICATION TWICE', async () => {
     // A writer that drops the serial number is corrupting identity data on a
-    // legal submission. That is our defect, not the applicant's â€” so it goes
-    // to FAILED with an urgent admin alert, never to COMPLETED and never
-    // round the ask-the-applicant loop.
+    // legal submission. That is our defect, not the applicant's â€” so it is
+    // requeued with an urgent admin alert, never COMPLETED, never FAILED (the
+    // member is not told), and never round the ask-the-applicant loop.
     const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.generate.mockImplementation(async (_p?: any, plan?: any) => ({
@@ -1495,7 +1508,7 @@ describe('MotivationsService.generate', () => {
       usage: { model: 'm', promptTokens: 10, completionTokens: 10 },
     }));
     const res = await svc.generate('c1', 'mo-1');
-    expect(res.status).toBe(MotivationStatus.FAILED);
+    expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
     expect(prisma.adminAlert.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ type: 'motivation-verify-failed' }),
@@ -1556,9 +1569,16 @@ describe('MotivationsService.generate', () => {
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.generate.mockRejectedValueOnce(new Error('overloaded'));
     await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
-    const release = prisma.motivation.updateMany.mock.calls.at(-1)![0];
-    expect(release.where.status).toBe(MotivationStatus.GENERATING);
-    expect(release.data.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+    // The CAS release (where status = GENERATING) restores the row; the requeue
+    // that schedules the rebuild follows it.
+    const release = prisma.motivation.updateMany.mock.calls
+      .map((c: any[]) => c[0])
+      .find(
+        (a: any) =>
+          a?.where?.status === MotivationStatus.GENERATING &&
+          a?.data?.status === MotivationStatus.NEEDS_MORE_INFO,
+      );
+    expect(release).toBeTruthy();
   });
 
   it('does not claim a second seat on a retry', async () => {
@@ -1567,6 +1587,59 @@ describe('MotivationsService.generate', () => {
     quota.claimBetaSeat = jest.fn();
     await svc.generate('c1', 'mo-1');
     expect(quota.claimBetaSeat).not.toHaveBeenCalled();
+  });
+
+  it('never tells the member a run failed — it requeues instead', async () => {
+    // Operator, 2026-11-21: "We never let the user know it failed ... and then
+    // we notify them it has been processed and ready to download."
+    const { svc, prisma, claude, notifications } = buildReady();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.generate.mockRejectedValueOnce(new Error('overloaded'));
+
+    await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
+
+    expect(notifications.motivationFinished).not.toHaveBeenCalled();
+    const requeue = prisma.motivation.updateMany.mock.calls
+      .map((c: any[]) => c[0])
+      .find((a: any) => a?.data?.generationRetryAt instanceof Date);
+    expect(requeue).toBeTruthy();
+    // First failure: the rebuild is five minutes out, not immediate.
+    const delay =
+      (requeue!.data.generationRetryAt as Date).getTime() - Date.now();
+    expect(delay).toBeGreaterThan(60_000);
+    expect(delay).toBeLessThanOrEqual(5 * 60_000);
+  });
+
+  it('retries a due rebuild without asking the member for anything', async () => {
+    const { generation, prisma } = buildReady();
+    prisma.motivation.findMany.mockResolvedValueOnce([
+      { id: 'mo-1', userId: 'c1', referenceNumber: 'MO000123' },
+    ]);
+    const generate = jest
+      .spyOn(generation, 'generate')
+      .mockResolvedValue({ status: MotivationStatus.COMPLETED, score: 90 });
+
+    await generation.retryDueGenerations();
+
+    // The claim clears the date before the run, so two ticks cannot double-run.
+    expect(prisma.motivation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'mo-1' }),
+        data: { generationRetryAt: null },
+      }),
+    );
+    expect(generate).toHaveBeenCalledWith('c1', 'mo-1');
+  });
+
+  it('a claim that loses the race starts nothing', async () => {
+    const { generation, prisma } = buildReady();
+    prisma.motivation.findMany.mockResolvedValueOnce([
+      { id: 'mo-1', userId: 'c1', referenceNumber: 'MO000123' },
+    ]);
+    prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 });
+    const generate = jest.spyOn(generation, 'generate');
+    await generation.retryDueGenerations();
+    expect(generate).not.toHaveBeenCalled();
   });
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

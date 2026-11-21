@@ -31,7 +31,10 @@ const STATUS_WORDS: Record<string, string> = {
   GENERATING: 'Being written',
   NEEDS_MORE_INFO: 'Needs more from you',
   COMPLETED: 'Ready',
-  FAILED: 'Could not be written',
+  // ⚠️ NO FAILURE WORDING. A run that failed is rebuilt silently; the only row
+  // that could carry this status is a legacy one, and telling the member it
+  // "could not be written" is exactly what the operator ruled out.
+  FAILED: 'Being finished',
   ABANDONED: 'Put aside',
 };
 
@@ -97,7 +100,9 @@ export default function ApplicationRow({
                 Payment due
               </span>
             ) : null}
-            <span>{STATUS_WORDS[row.status] ?? row.status}</span>
+            <span>
+              {row.retrying ? 'Being written' : (STATUS_WORDS[row.status] ?? row.status)}
+            </span>
           </span>
         </Link>
         <DeleteApplication

@@ -194,6 +194,8 @@ export interface SheetResponse {
      * moment an operator changed the setting.
      */
     payment: MotivationPaymentState;
+    /** A silent rebuild is scheduled. Render as "being written", never failed. */
+    retrying: boolean;
     /**
      * How the document is set, if they have chosen.
      *
@@ -556,6 +558,9 @@ export class MotivationSheetService {
         billedCents: true,
         paidAt: true,
         betaSeatNo: true,
+        // A failed run is rebuilt silently; while this is set the pack screen
+        // shows "being written" rather than any failure wording.
+        generationRetryAt: true,
         answersEncrypted: true,
         answerProvenance: true,
         uploads: {
@@ -757,6 +762,15 @@ export class MotivationSheetService {
         templateLayout: row.templateLayout,
         templateColourway: row.templateColourway,
         payment,
+        /**
+         * ⚠️ A REBUILD IS PENDING — AND THE MEMBER MUST NEVER LEARN WHY. A
+         * failed run is requeued automatically; the pack screen treats this as
+         * "being written" and keeps polling, instead of showing an error the
+         * operator has already been told about.
+         */
+        retrying:
+          row.generationRetryAt !== null &&
+          row.status !== MotivationStatus.COMPLETED,
       },
       sections,
       items,
