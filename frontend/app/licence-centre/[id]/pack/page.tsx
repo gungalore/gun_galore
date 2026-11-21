@@ -75,6 +75,39 @@ const POLL_DEADLINE_MS = 6 * 60_000;
 const POLL_INTERVAL_MS = 3_000;
 
 /**
+ * How long one "did the payment land?" call may take.
+ *
+ * ⚠️ WITHOUT THIS THE PAGE CAN WAIT FOR EVER. The verify call asks the gateway
+ * for a status; if that upstream hangs, `fetch` has no timeout of its own and
+ * the "checking" state never clears — which is exactly the stuck
+ * "Confirming your payment…" a member sees after CANCELLING at the bank. A
+ * timeout turns a hang into another negative answer, which the loop already
+ * knows how to handle.
+ */
+const VERIFY_TIMEOUT_MS = 8_000;
+/** After this long, stop sounding like the answer is imminent. */
+const VERIFY_SLOW_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('verify-timeout')),
+      ms,
+    );
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
  * ⚠️ MUST BE ATTACHED TO THE DOM AND REVOKED ASYNCHRONOUSLY. Modern browsers
  * (Chrome 80+, Firefox) ignore programmatic .click() on detached anchors for
  * security reasons, and revoking the object URL synchronously on the next line
@@ -119,6 +152,9 @@ export default function PackPage() {
   // back cannot be refused for a declaration they already ticked.
   const [paying, setPaying] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Set after ~10s of checking, so the page can say "this can take a minute"
+  // instead of repeating one line at a member who is starting to worry.
+  const [paymentSlow, setPaymentSlow] = useState(false);
   /** Verified paid in this session, before the refreshed sheet catches up. */
   const [paidNow, setPaidNow] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -263,6 +299,10 @@ export default function PackPage() {
 
     let live = true;
     setConfirming(true);
+    setPaymentSlow(false);
+    const slowTimer = setTimeout(() => {
+      if (live) setPaymentSlow(true);
+    }, VERIFY_SLOW_MS);
     void motivationsApi
       .activity(getToken, id, 'client_bank_returned', {
         path: '/licence-centre/[id]/pack?payment=return',
@@ -271,11 +311,15 @@ export default function PackPage() {
     void (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const res = await motivationsApi.verifyPayment(getToken, id);
+          const res = await withTimeout(
+            motivationsApi.verifyPayment(getToken, id),
+            VERIFY_TIMEOUT_MS,
+          );
           if (!live) return;
           if (res.paid) {
             setPaidNow(true);
             setConfirming(false);
+            setPaymentSlow(false);
             return;
           }
         } catch {
@@ -285,12 +329,19 @@ export default function PackPage() {
       }
       if (!live) return;
       setConfirming(false);
+      setPaymentSlow(false);
+      // ⚠️ A CANCELLED RETURN LANDS HERE TOO. The gateway sends a cancelled
+      // payment back to the same ?payment=return URL, so "we have not seen the
+      // payment" used to read as though money might be in limbo. Say the true
+      // thing: nothing was taken, cancelling is a normal outcome, and paying
+      // again is safe because a second checkout is a fresh attempt.
       setPaymentError(
-        'We have not seen the payment yet. If your bank has debited you, it can take a minute — check again rather than paying twice.',
+        'No payment has been taken. If you cancelled at the bank, that is fine — you can try again. If you did pay, give it a minute and check again rather than paying twice.',
       );
     })();
     return () => {
       live = false;
+      clearTimeout(slowTimer);
     };
   }, [getToken, id]);
 
@@ -319,18 +370,27 @@ export default function PackPage() {
   /** The manual re-check after an unconfirmed return. */
   const recheckPayment = useCallback(async () => {
     setConfirming(true);
+    setPaymentSlow(false);
     setPaymentError(null);
     try {
-      const res = await motivationsApi.verifyPayment(getToken, id);
+      const res = await withTimeout(
+        motivationsApi.verifyPayment(getToken, id),
+        VERIFY_TIMEOUT_MS,
+      );
       if (res.paid) {
         setPaidNow(true);
       } else {
         setPaymentError(
-          'Still not showing. Give it a minute and check again — nothing is lost.',
+          'Still not showing. If you cancelled, nothing was charged — you can try again. If you did pay, give it a minute and check again.',
         );
       }
     } catch (err) {
-      setPaymentError((err as Error).message);
+      const timedOut = (err as Error).message === 'verify-timeout';
+      setPaymentError(
+        timedOut
+          ? 'The bank is taking too long to answer. Nothing is lost — check again in a minute.'
+          : (err as Error).message,
+      );
     } finally {
       setConfirming(false);
     }
@@ -629,7 +689,7 @@ export default function PackPage() {
           ) : null}
 
           {confirming ? (
-            <p
+            <div
               role="status"
               className="m-0 mt-3 rounded-lg border px-3 py-2 text-[13px] leading-5"
               style={{
@@ -638,8 +698,19 @@ export default function PackPage() {
                 color: 'var(--text-secondary)',
               }}
             >
-              Confirming your payment with the bank…
-            </p>
+              <p className="m-0">Checking with your bank…</p>
+              {/* ⚠️ "CONFIRMING YOUR PAYMENT" WAS A CLAIM WE COULD NOT MAKE.
+                  A CANCELLED checkout returns to this same page, so a member
+                  who had just pressed Cancel was told their payment was being
+                  confirmed. "Checking" is what actually happens, and after ten
+                  seconds the reassurance matters more than the spin. */}
+              {paymentSlow ? (
+                <p className="m-0 mt-1 text-[12.5px] text-[var(--text-tertiary)]">
+                  This can take up to a minute. If you cancelled, nothing has
+                  been charged.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {missingCount > 0 ? (
