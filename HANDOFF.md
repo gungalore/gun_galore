@@ -48,6 +48,15 @@ motivations must auto-log a ticket and email support, silently.
   boot specs depend on that).
 - ⚠️ One flaky test seen once in a full run: `chromium-pdf.service.spec.ts`
   (real browser launch under load). It passes in isolation and in the re-run.
+- **Verified live** (`turbosnail`, MO000149): `created`, `client_page_view` and
+  `payment_required` recorded; the beacon returns 204, a bad action and a
+  non-licence path both 400; a labelled TEST bug report returned 201, emailed
+  support and logged `bug_reported`; deleting the application left all four rows
+  with `motivationId = NULL` and the MO reference intact (then removed as test
+  data). `/admin/operate/motivations` serves 200.
+- Tests: backend **6,341 passed / 8 skipped**; frontend **1,976 passed / 1
+  skipped**; both typechecks and the production build clean.
+- Deployed `eb5951fa` (full). Rollback `alloutdoor-20261121-100644.dump`.
 
 ## 2026-11-20 — THE MOTIVATION WRITER IS PAYGATED AT R295
 
