@@ -26,6 +26,8 @@ view which open the pdf in a new tab."
   it.
 - Checks: backend **6,342 passed / 8 skipped**; frontend **1,977 passed / 1
   skipped**; both typechecks and the production build clean.
+- Deployed `2dbb4d07` (full); the live pack chunk contains no `iframe` and no
+  `Print`. Rollback `alloutdoor-20261121-112222.dump`.
 
 ## 2026-11-21 — BETA NOTICE, SUPPORT TIMELINE, AUTOMATIC FAILURE TICKETS
 
