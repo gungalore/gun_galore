@@ -336,7 +336,7 @@ export default function PackPage() {
       // thing: nothing was taken, cancelling is a normal outcome, and paying
       // again is safe because a second checkout is a fresh attempt.
       setPaymentError(
-        'No payment has been taken. If you cancelled at the bank, that is fine — you can try again. If you did pay, give it a minute and check again rather than paying twice.',
+        'We have not seen a payment for this application. If you cancelled at the bank, nothing was charged and you can try again. If you did pay, give it a minute and check again rather than paying twice.',
       );
     })();
     return () => {
