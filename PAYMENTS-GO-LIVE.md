@@ -5,6 +5,12 @@
 the funds landed.
 **Last updated:** 2026-10-28.
 
+> ⚠️ **This runbook covers the MARKETPLACE rails only (Ozow + Peach).** The
+> R295 motivation paygate moved to **Yoco Checkout** on 2026-11-22 and shares
+> nothing with the marketplace rails — see
+> [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) § "Payments — Yoco (the
+> motivation paygate only)" and `docs/project-reference.md` § "The paygate".
+
 ## Progress log
 
 - **2026-10-28 - first live pay-in settled; two status defects fixed.** A buyer

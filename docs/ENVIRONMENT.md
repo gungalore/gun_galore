@@ -629,6 +629,12 @@ Peach webhook URLs to register:
 /api/payments/webhook/peach-dispute  chargebacks/disputes
 ```
 
+### Yoco (motivation paygate only)
+
+⚠️ Not a marketplace rail. The motivation R295 paygate uses Yoco Checkout; the
+full variable list and webhook contract are in **"Payments — Yoco (the
+motivation paygate only)"** below.
+
 ### `OZOW_WEBHOOK_SECRET`
 The Svix signing secret for One API webhooks. One API signs each delivery with
 HMAC-SHA256 over `${svix-id}.${svix-timestamp}.${rawBody}`, keyed by the Base64
@@ -673,6 +679,55 @@ before turning on `peach_payouts_enabled`.
 
 Keep the frontend's `NEXT_PUBLIC_PAYMENT_MODE` in step — the backend is the
 authority, the frontend flag only decides what the buyer is shown.
+
+## Payments — Yoco (the motivation paygate only)
+
+Yoco takes exactly one thing: the R295 motivation payment. The marketplace's
+pay-in rails are still Ozow and Peach, and no `Transaction` is ever stamped
+`YOCO`. Operator decision, 2026-11-22: "no more peach and ozow, just yoco for
+motivation payments."
+
+The integration is Yoco's **Checkout API** (hosted, redirect): create a checkout
+on the server, send the browser to `redirectUrl`, and confirm from the API, not
+from the browser.
+
+### `YOCO_SECRET_KEY`
+The API key from the Yoco dashboard. `sk_test_…` takes test money and is
+**refused in production on purpose** — a test capture must never mark a
+document paid. `sk_live_…` takes real money. Blank ⇒ the pack screen answers
+"payments for motivations are not open yet" and the free beta is unaffected.
+
+### `YOCO_ALLOW_TEST_IN_PRODUCTION`
+**Temporary test window, default false.** `true` lets a `sk_test_` key create
+and apply test payments in production, for the operator's pre-live walkthrough
+with the documented test card. Every applied test capture is flagged on the row
+(`gatewayMode=test`) and raises `MOTIVATION_PAYMENT_TEST_MODE_APPLIED`. Set it
+back to `false` the moment the live key is installed — this is not a setting to
+leave on.
+
+### `YOCO_WEBHOOK_SECRET`
+The `whsec_…` signing secret. Register this URL in the Yoco dashboard:
+
+```
+/api/payments/webhook/yoco
+```
+
+The signature is HMAC-SHA256 over `${webhook-id}.${webhook-timestamp}.${rawBody}`,
+base64-encoded, with the secret's `whsec_` prefix stripped and the remainder
+base64-decoded. The timestamp must be within three minutes or the delivery is a
+replay.
+
+**This is not a money hole if it is missing.** An unsigned delivery is ignored,
+and `reconcilePendingPayments` (every ten minutes) settles every attempt against
+the API. The secret buys instant confirmation, not correctness.
+
+### `YOCO_API_BASE`
+**Optional**, defaults `https://payments.yoco.com`. There is no separate sandbox
+host — test mode is a property of the key.
+
+Refunds are keyed on the **checkout** id, not the payment id; they are manual in
+the Yoco dashboard today (the service exposes `refundCheckout` for a future
+admin path).
 
 ## Accounting — Zoho Books
 

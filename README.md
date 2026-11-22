@@ -301,7 +301,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `categories/` | The category tree, the public/members-only split, and per-category attribute resolution (a listing inherits its leaf category's attributes plus every ancestor's, nearest wins). |
 | `offers/` | "Take a Shot" — buyer offers, seller accept/reject/counter, auto-accept thresholds, and the reject-reason strike policy. |
 | `auctions/` | Timed bidding, auto-bids, anti-snipe extension (a bid in the last 2 minutes moves the clock), hidden reserves, bind windows, runner-up offers. |
-| `payments/` | The money engine: Ozow adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything. |
+| `payments/` | The money engine: Ozow adapter, transaction state (`HELD` → `RELEASED`), fee maths, refund arms, dispatch SLAs. `payment-mode.ts` is the seam that gates everything; `yoco.service.ts` is the motivation paygate's rail (never a marketplace one). |
 | `orders/` | Multi-item order rollup over individual transactions. |
 | `shipping/` | Courier booking (Bob Go door-to-door, the only courier rail), waybills, tracking, dealer hand-off. |
 | `my-shipments/` | The member-facing view of the above. |
@@ -328,7 +328,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `reloading/` | Reloading reference data — cartridge specs and the manual library — behind the Bench (`/bench`). Domain content, not marketplace mechanics. |
 | `settings/` | Runtime feature flags, read from the DB (`FLAGS` in `settings.service.ts`). Most half-built features ship dark behind one of these. |
 | `activity/` | Buffered analytics event capture feeding the insights dashboard. |
-| `zoho/` | Zoho Books accounting sync. |
+| `zoho/` | Zoho Books marketplace accounting sync (motivation invoices retired 2026-11-22). |
 | `search/` | The Meilisearch client, index bootstrap, and facet configuration. |
 | `common/` | Reference numbers, ID encryption, prompt sanitising, CSV, the seller reject policy. |
 | `prisma/` | `PrismaService` — a `PrismaClient` using the `@prisma/adapter-pg` driver adapter. |

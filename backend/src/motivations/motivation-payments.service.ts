@@ -13,12 +13,13 @@ import {
   MotivationStatus,
   PaymentProvider,
 } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { PAYMENTS_LIVE } from '../payments/payment-mode';
 import { PaymentRailsService } from '../payments/payment-rails.service';
+import { YocoService } from '../payments/yoco.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
-import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { MotivationActivityService } from './motivation-activity.service';
 import { formatPrice } from './motivation-pricing';
 import { MotivationQuotaService } from './motivation-quota.service';
@@ -29,23 +30,24 @@ import { EDITABLE, isPaidFor } from './motivation-shared.service';
 //
 // Operator, 2026-11-20: "On the motivations. I want to paygate it." — and, on
 // the moment: pay at "Write my motivation", so nothing is generated before the
-// money is in. That is the decision this file implements.
+// money is in.
 //
-// WHY THERE IS NO NEW WEBHOOK SUBSCRIPTION. The marketplace already owns
-// `/payments/webhook/ozow` inside the TransactionsService, and that handler
-// matches a `Transaction` by merchant reference — it has no idea what a
-// motivation is. Rather than teach the money-critical sale handler about a
-// second product (and give it a dependency on this module), a motivation
-// payment is confirmed by ASKING OZOW, twice: once when the member comes back
-// from the bank, and again from a reconcile cron for the member who closes the
-// tab. `getPaymentStatus` is the authority either way; the notification is only
-// a shortcut.
+// Operator, 2026-11-22: "We are removing it completely from zoho and moving
+// over to yoco api ... no more peach and ozow, just yoco for motivation
+// payments." New attempts are Yoco Checkout. The Zoho Books invoice is gone
+// with it. Pending attempts created before the switch keep settling through
+// whichever rail is ON THE ROW — a payment row is rail-locked for life.
+//
+// WHY THERE IS STILL A RECONCILE CRON. The member who pays and closes the tab
+// must still end up with a paid document. The Yoco webhook is the fast path;
+// `reconcilePendingPayments` is the one that cannot be missed.
 //
 // ⚠️ EVERY MONEY DECISION HERE IS TAKEN FROM THE GATEWAY'S ANSWER, never from
-// the browser. The amount is compared to the snapshot on the attempt, the
-// merchant reference is compared to ours, and the row is only marked paid if
-// both bind. A mismatch does not fail quietly — it raises an AdminAlert, because
-// money sitting at Ozow that we cannot match is the one state a human must see.
+// the browser and never from a webhook body. The amount is compared to the
+// snapshot on the attempt, the reference is compared to ours, and the row is
+// only marked paid if both bind. A mismatch does not fail quietly — it raises
+// an AdminAlert, because money sitting at the gateway that we cannot match is
+// the one state a human must see.
 // ────────────────────────────────────────────────────────────────────
 
 /** Statuses from which a document may still be prepared (or re-prepared). */
@@ -58,21 +60,20 @@ const PAYABLE_STATUSES: MotivationStatus[] = [
 /**
  * How long a created checkout is reused for a second click.
  *
- * Ozow's idempotency key is the merchant reference, and a fresh reference is a
- * fresh payment, so a double-tap would otherwise leave two live checkouts. Only
- * the one the member actually opens can be paid, but two rows for one intent is
- * noise support then has to read. Twenty minutes covers a real return trip to
- * the bank.
+ * A fresh reference is a fresh payment, so a double-tap would otherwise leave
+ * two live checkouts. Only the one the member actually opens can be paid, but
+ * two rows for one intent is noise support then has to read. Twenty minutes
+ * covers a real return trip to the bank or a card 3-D Secure challenge.
  */
 const REUSE_ATTEMPT_MS = 20 * 60 * 1000;
 
-/** An attempt older than this is dead: Ozow's own checkout expires at 24 h. */
+/** An attempt older than this is dead: the checkout expires with it. */
 const ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** How many pending attempts one reconcile run will query Ozow for. */
+/** How many pending attempts one reconcile run will query the gateway for. */
 const RECONCILE_BATCH = 25;
 
-/** Result codes that mean "this attempt will never succeed". */
+/** Statuses that mean "this attempt will never succeed". */
 const TERMINAL_RESULTS = ['cancel', 'fail', 'error', 'declin', 'expire'];
 
 export interface MotivationPaymentState {
@@ -92,6 +93,17 @@ export interface MotivationCheckout {
   alreadyPaid: boolean;
 }
 
+/** The parts of a Yoco Checkout webhook this service acts on. */
+export interface YocoWebhookEvent {
+  type?: string;
+  payload?: {
+    id?: string;
+    amount?: number;
+    status?: string;
+    metadata?: Record<string, unknown> | null;
+  };
+}
+
 @Injectable()
 export class MotivationPaymentsService {
   private readonly logger = new Logger(MotivationPaymentsService.name);
@@ -101,9 +113,6 @@ export class MotivationPaymentsService {
     private readonly settings: SettingsService,
     private readonly rails: PaymentRailsService,
     private readonly quota: MotivationQuotaService,
-    // Books. A paid motivation is PRINCIPAL revenue, not an agent collection —
-    // see createMotivationInvoice's own note.
-    private readonly zoho: ZohoBooksService,
     // The support timeline: a payment that "went wrong" is the most expensive
     // report we get, so every step is recorded.
     private readonly activity: MotivationActivityService,
@@ -111,6 +120,10 @@ export class MotivationPaymentsService {
     // treats it the same way.
     @Optional()
     private readonly engine?: DocumentEngineService,
+    // Only to log the test-key-in-production refusal with a reason. The rails
+    // seam is what actually creates the checkout.
+    @Optional()
+    private readonly yoco?: YocoService,
   ) {}
 
   /** Is the paygate on? The kill switch, not the price. */
@@ -194,10 +207,20 @@ export class MotivationPaymentsService {
         message: 'Motivations are not being charged for right now.',
       });
     }
-    if (!PAYMENTS_LIVE) {
+    if (!PAYMENTS_LIVE || !(await this.rails.isPayInEnabled(PaymentProvider.YOCO))) {
       // Deliberately NOT the checkout copy ("card payments are launching
       // soon") — the member is nowhere near a shopping cart and the sentence
       // would be baffling.
+      if (
+        PAYMENTS_LIVE &&
+        this.yoco?.isConfigured() &&
+        this.yoco.isTestKey() &&
+        process.env.NODE_ENV === 'production'
+      ) {
+        this.logger.error(
+          'Motivation paygate refused: a Yoco TEST key is configured in production. Nothing can be charged until a live key is installed.',
+        );
+      }
       throw new ServiceUnavailableException({
         code: 'motivation-payments-not-live',
         message:
@@ -251,6 +274,10 @@ export class MotivationPaymentsService {
       where: {
         motivationId: id,
         status: MotivationPaymentStatus.PENDING,
+        // ⚠️ Do not resurrect a pre-switch Ozow checkout: the paygate is Yoco
+        // now, and an old hosted page is exactly what "no more ozow for
+        // motivation payments" rules out.
+        provider: PaymentProvider.YOCO,
         amountCents,
         redirectUrl: { not: null },
         createdAt: { gt: new Date(Date.now() - REUSE_ATTEMPT_MS) },
@@ -272,12 +299,26 @@ export class MotivationPaymentsService {
       };
     }
 
+    // A reference of our own. Yoco echoes it as `clientReferenceId` and in the
+    // metadata, and it is the key every settlement path matches on. It must be
+    // unique per ATTEMPT, not per application: `gatewayMerchantRef` is unique
+    // and a member may legitimately open a second checkout after the first.
+    const reference = `${row.referenceNumber}-${randomBytes(4)
+      .toString('hex')
+      .toUpperCase()}`;
+
     let checkout;
     try {
-      checkout = await this.rails.createCheckout(PaymentProvider.OZOW, {
+      checkout = await this.rails.createCheckout(PaymentProvider.YOCO, {
         amountZarCents: amountCents,
-        merchantTransactionId: row.id,
+        merchantTransactionId: reference,
         returnUrl: `${frontendUrl.replace(/\/$/, '')}/licence-centre/${row.id}/pack?payment=return`,
+        expirySeconds: Math.floor(ATTEMPT_TTL_MS / 1000),
+        metadata: {
+          motivationId: row.id,
+          motivationRef: row.referenceNumber,
+          reference,
+        },
       });
     } catch (err) {
       this.logger.error(
@@ -285,6 +326,15 @@ export class MotivationPaymentsService {
       );
       throw new ServiceUnavailableException(
         'We could not start the payment. Nothing has been charged — please try again.',
+      );
+    }
+
+    if (
+      checkout.mode === 'test' &&
+      process.env.NODE_ENV === 'production'
+    ) {
+      this.logger.warn(
+        `Motivation ${row.id}: TEST-mode checkout created in production (YOCO_ALLOW_TEST_IN_PRODUCTION is on). No real money will be taken.`,
       );
     }
 
@@ -298,6 +348,7 @@ export class MotivationPaymentsService {
         status: MotivationPaymentStatus.PENDING,
         gatewayCheckoutId: checkout.checkoutId,
         gatewayMerchantRef: checkout.merchantReference,
+        gatewayMode: checkout.mode ?? null,
         redirectUrl: checkout.redirectUrl,
       },
     });
@@ -318,7 +369,7 @@ export class MotivationPaymentsService {
   }
 
   /**
-   * The member is back from the bank. Ask Ozow what actually happened.
+   * The member is back from the payment page. Ask the gateway what happened.
    *
    * Never reports failure from a single negative answer: a capture can land a
    * few seconds after the browser returns, so the caller polls and this stays
@@ -359,6 +410,66 @@ export class MotivationPaymentsService {
   }
 
   /**
+   * The Yoco webhook, as a hint.
+   *
+   * The controller has already checked the signature. This finds the attempt
+   * the event points at and then RE-READS the checkout from Yoco — the event
+   * body is never trusted for an amount or a status. Unknown references are
+   * logged and ignored: a webhook for something we cannot find must not 500,
+   * or Yoco will retry it forever.
+   */
+  async handleYocoEvent(event: YocoWebhookEvent): Promise<void> {
+    const metadata = event.payload?.metadata ?? null;
+    const topLevelRef = (
+      event.payload as { clientReferenceId?: unknown } | undefined
+    )?.clientReferenceId;
+    const reference =
+      typeof metadata?.['reference'] === 'string'
+        ? metadata['reference']
+        : typeof metadata?.['clientReferenceId'] === 'string'
+          ? metadata['clientReferenceId']
+          : typeof topLevelRef === 'string'
+            ? topLevelRef
+            : null;
+    // Yoco also injects the checkout id into metadata; it is a second way to
+    // find the attempt if our own key ever goes missing from the echo.
+    const checkoutId =
+      typeof metadata?.['checkoutId'] === 'string'
+        ? metadata['checkoutId']
+        : null;
+    let attempt = reference
+      ? await this.prisma.motivationPayment.findFirst({
+          where: { gatewayMerchantRef: reference },
+        })
+      : null;
+    if (!attempt && checkoutId) {
+      attempt = await this.prisma.motivationPayment.findFirst({
+        where: { gatewayCheckoutId: checkoutId },
+      });
+    }
+    if (!attempt) {
+      this.logger.warn(
+        `Yoco webhook ${event.type ?? 'unknown'}: ${reference ?? checkoutId ?? 'no reference'} matches no motivation payment — ignored`,
+      );
+      return;
+    }
+    if (
+      metadata?.['motivationId'] &&
+      attempt.motivationId &&
+      metadata['motivationId'] !== attempt.motivationId
+    ) {
+      await this.alert(
+        'MOTIVATION_PAYMENT_REFERENCE_MISMATCH',
+        attempt,
+        `Yoco webhook reference ${reference ?? checkoutId} claims motivation ${String(metadata['motivationId'])}, but the payment belongs to ${attempt.motivationId}. Payment NOT applied.`,
+        true,
+      );
+      return;
+    }
+    await this.settle(attempt);
+  }
+
+  /**
    * Sweep attempts nobody came back from.
    *
    * The member who pays and closes the tab must still end up with a paid
@@ -373,7 +484,7 @@ export class MotivationPaymentsService {
         where: {
           status: MotivationPaymentStatus.PENDING,
           // Younger than two minutes is still in the member's hands; older
-          // than a day is past Ozow's own checkout expiry.
+          // than a day is past the checkout expiry we asked the gateway for.
           createdAt: {
             gt: new Date(now - ATTEMPT_TTL_MS),
             lt: new Date(now - 2 * 60 * 1000),
@@ -444,6 +555,29 @@ export class MotivationPaymentsService {
     }
     if (!status) return MotivationPaymentStatus.PENDING;
 
+    // ⚠️ TEST MONEY IS NOT REVENUE. A test-mode capture would otherwise mark a
+    // document paid and write it for money that never arrived. The only
+    // exception is the deliberate production test window the operator opened
+    // with YOCO_ALLOW_TEST_IN_PRODUCTION — and even then the capture is
+    // flagged, so it can never be read as a real sale later.
+    if (status.mode === 'test' && process.env.NODE_ENV === 'production') {
+      if (!this.yoco?.allowsTestInProduction()) {
+        await this.alert(
+          'MOTIVATION_PAYMENT_TEST_MODE',
+          attempt,
+          `The gateway reports a TEST-mode capture for ${attempt.motivationRef}. Payment NOT applied — install a live key.`,
+          true,
+        );
+        return MotivationPaymentStatus.PENDING;
+      }
+      await this.alert(
+        'MOTIVATION_PAYMENT_TEST_MODE_APPLIED',
+        attempt,
+        `TEST-mode capture applied to ${attempt.motivationRef} under YOCO_ALLOW_TEST_IN_PRODUCTION. This document was written for test money; do not treat it as revenue.`,
+        false,
+      );
+    }
+
     if (!status.isSuccess) {
       const code = (status.resultCode ?? '').toLowerCase();
       if (TERMINAL_RESULTS.some((t) => code.includes(t))) {
@@ -466,7 +600,7 @@ export class MotivationPaymentsService {
       await this.alert(
         'MOTIVATION_PAYMENT_AMOUNT_MISMATCH',
         attempt,
-        `Ozow reported ${status.amountCents}c for ${attempt.gatewayMerchantRef ?? attempt.id}, expected ${attempt.amountCents}c. Payment NOT applied.`,
+        `The gateway reported ${status.amountCents}c for ${attempt.gatewayMerchantRef ?? attempt.id}, expected ${attempt.amountCents}c. Payment NOT applied.`,
         true,
       );
       return MotivationPaymentStatus.PENDING;
@@ -480,7 +614,7 @@ export class MotivationPaymentsService {
       await this.alert(
         'MOTIVATION_PAYMENT_REFERENCE_MISMATCH',
         attempt,
-        `Ozow echoed merchant reference ${status.merchantReference}, expected ${attempt.gatewayMerchantRef}. Payment NOT applied.`,
+        `The gateway echoed reference ${status.merchantReference}, expected ${attempt.gatewayMerchantRef}. Payment NOT applied.`,
         true,
       );
       return MotivationPaymentStatus.PENDING;
@@ -494,9 +628,10 @@ export class MotivationPaymentsService {
    * Record the capture.
    *
    * The `$transaction` is what makes two confirmations — the return call and
-   * the cron, or two tabs — collapse into one: only the update from PENDING can
-   * win, and only the winner writes `billedCents` on the motivation. A second
-   * PAID row is money we took twice, and that is alerted rather than hidden.
+   * the cron, or two tabs, or the webhook and the cron — collapse into one:
+   * only the update from PENDING can win, and only the winner writes
+   * `billedCents` on the motivation. A second PAID row is money we took twice,
+   * and that is alerted rather than hidden.
    */
   private async markPaid(
     attempt: MotivationPayment,
@@ -556,21 +691,11 @@ export class MotivationPaymentsService {
       detail: { amountCents: attempt.amountCents, provider: attempt.provider },
     });
 
-    // ⚠️ BOOKS GETS THE PRINCIPAL SALE, AND IT DOES NOT BLOCK THIS REQUEST.
-    // The money is already ours; the invoice is paperwork that must not make a
-    // member wait on an accountant's API. createMotivationInvoice swallows its
-    // own failures onto the payment row, and the hourly sweep retries them.
-    void this.zoho.createMotivationInvoice(attempt.id).catch((err) => {
-      this.logger.warn(
-        `Zoho motivation invoice failed for ${attempt.id}: ${(err as Error).message}`,
-      );
-    });
-
     if (siblingPaid > 0) {
       await this.alert(
         'MOTIVATION_DOUBLE_PAYMENT',
         attempt,
-        `${siblingPaid + 1} captured payments exist for ${attempt.motivationRef}. The member was charged more than once — refund all but one through Ozow.`,
+        `${siblingPaid + 1} captured payments exist for ${attempt.motivationRef}. The member was charged more than once — refund all but one through Yoco.`,
         true,
       );
     }
@@ -589,6 +714,23 @@ export class MotivationPaymentsService {
           referenceId: attempt.motivationId ?? attempt.id,
           urgent,
           context,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * A webhook whose signature did not verify. Called by the controller so a
+   * forged delivery leaves a trace even though it receives a 200.
+   */
+  async reportWebhookRejected(reason: string): Promise<void> {
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'YOCO_WEBHOOK_SIGNATURE_INVALID',
+          referenceId: 'payments/webhook/yoco',
+          urgent: false,
+          context: `A Yoco webhook was rejected: ${reason}. Nothing was applied; the reconcile cron remains the authority.`,
         },
       })
       .catch(() => undefined);

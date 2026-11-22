@@ -336,7 +336,7 @@ export default function PackPage() {
       // thing: nothing was taken, cancelling is a normal outcome, and paying
       // again is safe because a second checkout is a fresh attempt.
       setPaymentError(
-        'We have not seen a payment for this application. If you cancelled at the bank, nothing was charged and you can try again. If you did pay, give it a minute and check again rather than paying twice.',
+        'We have not seen a payment for this application. If you cancelled the payment, nothing was charged and you can try again. If you did pay, give it a minute and check again rather than paying twice.',
       );
     })();
     return () => {
@@ -388,7 +388,7 @@ export default function PackPage() {
       const timedOut = (err as Error).message === 'verify-timeout';
       setPaymentError(
         timedOut
-          ? 'The bank is taking too long to answer. Nothing is lost — check again in a minute.'
+          ? 'The payment service is taking too long to answer. Nothing is lost — check again in a minute.'
           : (err as Error).message,
       );
     } finally {
@@ -698,7 +698,7 @@ export default function PackPage() {
                 color: 'var(--text-secondary)',
               }}
             >
-              <p className="m-0">Checking with your bank…</p>
+              <p className="m-0">Checking your payment…</p>
               {/* ⚠️ "CONFIRMING YOUR PAYMENT" WAS A CLAIM WE COULD NOT MAKE.
                   A CANCELLED checkout returns to this same page, so a member
                   who had just pressed Cancel was told their payment was being

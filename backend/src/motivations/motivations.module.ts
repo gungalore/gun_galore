@@ -9,6 +9,7 @@ import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import { MotivationPaymentsWebhookController } from './motivation-payments.controller';
 import { MotivationActivityModule } from './motivation-activity.module';
 import { MotivationsService } from './motivations.service';
 // âš ï¸ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
@@ -65,7 +66,6 @@ import { MotivationReasonService } from './motivation-reason.service';
 import { FirearmUsesService } from './firearm-uses.service';
 import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
 import { LegalModule } from '../legal/legal.module';
-import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 /**
  * Firearm-licence motivation writer (Phase 1 â€” LICENCE-SERVICES-AND-FEED.md).
@@ -91,18 +91,19 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
  */
 @Module({
   // Jev document filing (Gemini reads, Jev files the folder).
-  // Zoho Books: the paid motivation is a PRINCIPAL sale and must reach the
-  // ledger as revenue — see MotivationPaymentsService.markPaid.
+  // The motivation paygate is Yoco since 2026-11-22 and raises NO Books
+  // document, so this module no longer imports ZohoBooksModule.
   imports: [
     DocumentFilingModule,
     LegalModule,
-    ZohoBooksModule,
     MotivationActivityModule,
   ],
   controllers: [MotivationsController, MotivationsIntakeController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,
     MotivationsConsentController,
+    // ⚠️ UNGUARDED BY DESIGN — Yoco signs the body; see the controller.
+    MotivationPaymentsWebhookController,
     // âš ï¸ UNGUARDED BY DESIGN â€” the seller is a stranger with no account. Every
     // route on it resolves a token to one consent row; see the controller.
     SellerConsentPublicController,

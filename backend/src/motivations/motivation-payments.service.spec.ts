@@ -1,7 +1,7 @@
 // The paygate. What these tests protect, in order of how much money each one
 // saves: no document is written unpaid; the amount is bound to the snapshot the
 // checkout was created for; money taken twice is seen; an abandoned tab still
-// ends up paid.
+// ends up paid; a Yoco webhook cannot book a payment on its own.
 //
 // `start()` refuses when payments are not live, so stub the mode seam exactly
 // as the checkout specs do.
@@ -41,11 +41,12 @@ const ATTEMPT = {
   userId: 'user-1',
   motivationRef: 'MO000123',
   amountCents: 29_500,
-  provider: 'OZOW',
+  provider: 'YOCO',
   status: 'PENDING',
-  gatewayCheckoutId: 'chk-1',
-  gatewayMerchantRef: 'AOABC123',
-  redirectUrl: 'https://one.ozow.com/pay/abc',
+  gatewayCheckoutId: 'ch_1',
+  gatewayMerchantRef: 'MO000123-ABC123',
+  gatewayMode: 'live',
+  redirectUrl: 'https://c.yoco.com/checkout/abc',
   paidAt: null,
   failedAt: null,
   createdAt: new Date(),
@@ -61,6 +62,8 @@ function build(
     pendingList?: Record<string, unknown>[];
     status?: Record<string, unknown> | null;
     statusThrows?: boolean;
+    railEnabled?: boolean;
+    allowTestInProduction?: boolean;
   } = {},
 ) {
   const paidMode = opts.paidMode ?? true;
@@ -72,33 +75,45 @@ function build(
     }),
   };
   const rails = {
-    createCheckout: jest.fn(async () => ({
-      provider: 'OZOW',
-      checkoutId: 'chk-1',
-      redirectUrl: 'https://one.ozow.com/pay/abc',
-      merchantReference: 'AOABC123',
-    })),
+    isPayInEnabled: jest.fn(async () => opts.railEnabled ?? true),
+    createCheckout: jest.fn(
+      async (
+        provider: string,
+        params: { merchantTransactionId: string },
+      ) => ({
+        provider,
+        checkoutId: 'ch_1',
+        redirectUrl: 'https://c.yoco.com/checkout/abc',
+        merchantReference: params.merchantTransactionId,
+        mode: 'live',
+      }),
+    ),
     getPaymentStatus: jest.fn(async () => {
       if (opts.statusThrows) throw new Error('gateway down');
       return (
         opts.status ?? {
-          provider: 'OZOW',
-          paymentId: 'tx-1',
-          merchantReference: 'AOABC123',
-          resultCode: 'Successful',
+          provider: 'YOCO',
+          paymentId: 'pay_1',
+          merchantReference: 'MO000123-ABC123',
+          resultCode: 'completed',
           amountCents: 29_500,
           currency: 'ZAR',
           isSuccess: true,
+          mode: 'live',
         }
       );
     }),
   };
   const quota = { assertEnabled: jest.fn(async () => undefined) };
   const engine = { assertAvailable: jest.fn(async () => undefined) };
-  // The principal sale in Books. Stubbed here: the invoice's own shape is
-  // covered by the Zoho spec; this one asserts we ASK for it, once, on capture.
-  const zoho = { createMotivationInvoice: jest.fn(async () => undefined) };
   const activity = { record: jest.fn(async () => undefined) };
+  const yoco = {
+    isConfigured: jest.fn(() => true),
+    isTestKey: jest.fn(() => false),
+    allowsTestInProduction: jest.fn(
+      () => opts.allowTestInProduction ?? false,
+    ),
+  };
 
   const prisma: Record<string, any> = {
     motivation: {
@@ -125,11 +140,11 @@ function build(
     settings as never,
     rails as never,
     quota as never,
-    zoho as never,
     activity as never,
     engine as never,
+    yoco as never,
   );
-  return { svc, prisma, rails, settings, quota, engine, zoho, activity };
+  return { svc, prisma, rails, settings, quota, engine, yoco, activity };
 }
 
 describe('the generation gate', () => {
@@ -202,31 +217,61 @@ describe('starting a checkout', () => {
     expect(rails.createCheckout).not.toHaveBeenCalled();
   });
 
-  it('creates one checkout at the configured price and remembers it', async () => {
+  it('refuses when the Yoco rail is not usable in this environment', async () => {
+    const { svc, rails } = build({
+      motivation: UNPAID_ROW,
+      railEnabled: false,
+    });
+    await expect(
+      svc.start('user-1', 'mo-1', 'https://alloutdoor.co.za'),
+    ).rejects.toMatchObject({
+      response: { code: 'motivation-payments-not-live' },
+    });
+    expect(rails.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it('creates one Yoco checkout at the configured price and remembers it', async () => {
     const { svc, rails, prisma } = build({ motivation: UNPAID_ROW });
     const res = await svc.start('user-1', 'mo-1', 'https://alloutdoor.co.za/');
 
     expect(res).toEqual({
-      redirectUrl: 'https://one.ozow.com/pay/abc',
+      redirectUrl: 'https://c.yoco.com/checkout/abc',
       amountCents: 29_500,
       alreadyPaid: false,
     });
-    expect(rails.createCheckout).toHaveBeenCalledWith('OZOW', {
+
+    const [provider, params] = rails.createCheckout.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(provider).toBe('YOCO');
+    expect(params).toMatchObject({
       amountZarCents: 29_500,
-      merchantTransactionId: 'mo-1',
       returnUrl:
         'https://alloutdoor.co.za/licence-centre/mo-1/pack?payment=return',
+      expirySeconds: 24 * 60 * 60,
+      metadata: {
+        motivationId: 'mo-1',
+        motivationRef: 'MO000123',
+        reference: expect.stringMatching(/^MO000123-[0-9A-F]{8}$/),
+      },
     });
+    expect(params.merchantTransactionId).toBe(
+      (params.metadata as Record<string, string>).reference,
+    );
+
     expect(prisma.motivationPayment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         motivationId: 'mo-1',
         userId: 'user-1',
         motivationRef: 'MO000123',
         amountCents: 29_500,
+        provider: 'YOCO',
         status: 'PENDING',
-        gatewayCheckoutId: 'chk-1',
-        gatewayMerchantRef: 'AOABC123',
-        redirectUrl: 'https://one.ozow.com/pay/abc',
+        gatewayCheckoutId: 'ch_1',
+        gatewayMerchantRef: params.merchantTransactionId,
+        gatewayMode: 'live',
+        redirectUrl: 'https://c.yoco.com/checkout/abc',
       }),
     });
   });
@@ -237,7 +282,12 @@ describe('starting a checkout', () => {
       pending: { ...ATTEMPT },
     });
     const res = await svc.start('user-1', 'mo-1', 'https://alloutdoor.co.za');
-    expect(res.redirectUrl).toBe('https://one.ozow.com/pay/abc');
+    expect(res.redirectUrl).toBe('https://c.yoco.com/checkout/abc');
+    expect(prisma.motivationPayment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ provider: 'YOCO' }),
+      }),
+    );
     expect(rails.createCheckout).not.toHaveBeenCalled();
     expect(prisma.motivationPayment.create).not.toHaveBeenCalled();
   });
@@ -255,7 +305,7 @@ describe('confirming a payment', () => {
         where: { id: 'pay-1', status: 'PENDING' },
         data: expect.objectContaining({
           status: 'PAID',
-          gatewayPaymentId: 'tx-1',
+          gatewayPaymentId: 'pay_1',
         }),
       }),
     );
@@ -283,32 +333,59 @@ describe('confirming a payment', () => {
     );
   });
 
-  it('books the principal sale in Zoho when the money lands', async () => {
-    // A motivation is our own supply: the invoice must be raised from the
-    // capture, or the R295 never reaches the ledger as revenue.
-    const { svc, zoho } = build({ motivation: UNPAID_ROW, pending: ATTEMPT });
-    await svc.verify('user-1', 'mo-1');
-    expect(zoho.createMotivationInvoice).toHaveBeenCalledTimes(1);
-    expect(zoho.createMotivationInvoice).toHaveBeenCalledWith('pay-1');
-  });
-
-  it('never books an attempt the gateway has not confirmed', async () => {
-    // The member is not invoiced for money they still owe.
-    const { svc, zoho } = build({
+  it('settles a Yoco webhook by the reference it carries', async () => {
+    const { svc, prisma } = build({
       motivation: UNPAID_ROW,
       pending: ATTEMPT,
-      status: {
-        provider: 'OZOW',
-        paymentId: 'tx-1',
-        merchantReference: 'AOABC123',
-        resultCode: 'Incomplete',
-        amountCents: 29_500,
-        currency: 'ZAR',
-        isSuccess: false,
+    });
+    await svc.handleYocoEvent({
+      type: 'payment.succeeded',
+      payload: {
+        id: 'pay_1',
+        amount: 29_500,
+        status: 'succeeded',
+        metadata: { reference: 'MO000123-ABC123', motivationId: 'mo-1' },
       },
     });
-    await svc.verify('user-1', 'mo-1');
-    expect(zoho.createMotivationInvoice).not.toHaveBeenCalled();
+    expect(prisma.motivationPayment.findFirst).toHaveBeenCalledWith({
+      where: { gatewayMerchantRef: 'MO000123-ABC123' },
+    });
+    expect(prisma.motivationPayment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'PAID' }),
+      }),
+    );
+  });
+
+  it('ignores a webhook whose reference matches nothing', async () => {
+    const { svc, prisma } = build({ pending: null });
+    await expect(
+      svc.handleYocoEvent({
+        type: 'payment.succeeded',
+        payload: { metadata: { reference: 'MO-UNKNOWN' } },
+      }),
+    ).resolves.toBeUndefined();
+    expect(prisma.motivationPayment.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the checkout id Yoco puts in metadata', async () => {
+    const { svc, prisma } = build({
+      motivation: UNPAID_ROW,
+      pending: ATTEMPT,
+    });
+    prisma.motivationPayment.findFirst.mockResolvedValueOnce(ATTEMPT);
+    await svc.handleYocoEvent({
+      type: 'payment.succeeded',
+      payload: { metadata: { checkoutId: 'ch_1' } },
+    });
+    expect(prisma.motivationPayment.findFirst).toHaveBeenLastCalledWith({
+      where: { gatewayCheckoutId: 'ch_1' },
+    });
+    expect(prisma.motivationPayment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'PAID' }),
+      }),
+    );
   });
 
   it('refuses to apply a payment for the wrong amount', async () => {
@@ -316,10 +393,10 @@ describe('confirming a payment', () => {
       motivation: UNPAID_ROW,
       pending: ATTEMPT,
       status: {
-        provider: 'OZOW',
-        paymentId: 'tx-1',
-        merchantReference: 'AOABC123',
-        resultCode: 'Successful',
+        provider: 'YOCO',
+        paymentId: 'pay_1',
+        merchantReference: 'MO000123-ABC123',
+        resultCode: 'completed',
         amountCents: 5_000,
         currency: 'ZAR',
         isSuccess: true,
@@ -338,15 +415,15 @@ describe('confirming a payment', () => {
     });
   });
 
-  it('refuses a payment whose merchant reference is not ours', async () => {
+  it('refuses a payment whose reference is not ours', async () => {
     const { svc, prisma } = build({
       motivation: UNPAID_ROW,
       pending: ATTEMPT,
       status: {
-        provider: 'OZOW',
-        paymentId: 'tx-1',
-        merchantReference: 'AOSOMEONEELSE',
-        resultCode: 'Successful',
+        provider: 'YOCO',
+        paymentId: 'pay_1',
+        merchantReference: 'MO-SOMEONE-ELSE',
+        resultCode: 'completed',
         amountCents: 29_500,
         currency: 'ZAR',
         isSuccess: true,
@@ -362,6 +439,67 @@ describe('confirming a payment', () => {
         type: 'MOTIVATION_PAYMENT_REFERENCE_MISMATCH',
       }),
     });
+  });
+
+  it('never books test money as revenue in production', async () => {
+    const { svc, prisma } = build({
+      motivation: UNPAID_ROW,
+      pending: ATTEMPT,
+      status: {
+        provider: 'YOCO',
+        paymentId: 'pay_1',
+        merchantReference: 'MO000123-ABC123',
+        resultCode: 'completed',
+        amountCents: 29_500,
+        currency: 'ZAR',
+        isSuccess: true,
+        mode: 'test',
+      },
+    });
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const res = await svc.verify('user-1', 'mo-1');
+      expect(res).toMatchObject({ paid: false, status: 'PENDING' });
+      expect(prisma.motivation.updateMany).not.toHaveBeenCalled();
+      expect(prisma.adminAlert.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'MOTIVATION_PAYMENT_TEST_MODE' }),
+      });
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+
+  it('applies a test capture only while the production test window is open', async () => {
+    const { svc, prisma } = build({
+      motivation: UNPAID_ROW,
+      pending: ATTEMPT,
+      allowTestInProduction: true,
+      status: {
+        provider: 'YOCO',
+        paymentId: 'pay_1',
+        merchantReference: 'MO000123-ABC123',
+        resultCode: 'completed',
+        amountCents: 29_500,
+        currency: 'ZAR',
+        isSuccess: true,
+        mode: 'test',
+      },
+    });
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const res = await svc.verify('user-1', 'mo-1');
+      expect(res).toMatchObject({ paid: true, status: 'PAID' });
+      // The capture is applied, but flagged so it is never read as revenue.
+      expect(prisma.adminAlert.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: 'MOTIVATION_PAYMENT_TEST_MODE_APPLIED',
+        }),
+      });
+    } finally {
+      process.env.NODE_ENV = original;
+    }
   });
 
   it('stays pending when the gateway cannot be asked', async () => {
@@ -411,7 +549,7 @@ describe('the reconcile sweep', () => {
     );
   });
 
-  it('expires checkouts past Ozow’s own expiry', async () => {
+  it('expires checkouts past the expiry we asked the gateway for', async () => {
     const { svc, prisma } = build({ pendingList: [] });
     await svc.reconcilePendingPayments();
     expect(prisma.motivationPayment.updateMany).toHaveBeenCalledWith({

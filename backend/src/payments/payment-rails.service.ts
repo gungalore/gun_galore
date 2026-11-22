@@ -3,12 +3,15 @@ import { PaymentProvider } from '@prisma/client';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { OzowService } from './ozow.service';
 import { PeachService } from './peach.service';
+import { YocoService } from './yoco.service';
 
 export interface NormalizedCheckout {
   provider: PaymentProvider;
   checkoutId: string;
   redirectUrl: string;
   merchantReference: string;
+  /** `live`/`test` when the gateway reports it. Yoco does; the others do not. */
+  mode?: string | null;
 }
 
 export interface NormalizedPaymentStatus {
@@ -19,6 +22,7 @@ export interface NormalizedPaymentStatus {
   amountCents: number;
   currency: 'ZAR';
   isSuccess: boolean;
+  mode?: string | null;
 }
 
 export interface PaymentMethodOption {
@@ -45,10 +49,13 @@ export class PaymentRailsService {
     private readonly ozow: OzowService,
     private readonly peach: PeachService,
     private readonly settings: SettingsService,
+    // The motivation paygate's rail. Never a marketplace pay-in.
+    private readonly yoco: YocoService,
   ) {}
 
   async isPayInEnabled(provider: PaymentProvider): Promise<boolean> {
     if (provider === PaymentProvider.OZOW) return true;
+    if (provider === PaymentProvider.YOCO) return this.yoco.isUsable();
     return (
       this.peach.isCheckoutConfigured() &&
       (await this.settings.get(FLAGS.peachPayinEnabled))
@@ -57,6 +64,9 @@ export class PaymentRailsService {
 
   async isPayoutEnabled(provider: PaymentProvider): Promise<boolean> {
     if (provider === PaymentProvider.OZOW) return true;
+    // Checkout API payouts are Yoco's own settlement to OUR bank account;
+    // there is no seller-disbursement API here, so YOCO never pays out.
+    if (provider === PaymentProvider.YOCO) return false;
     return (
       this.peach.isPayoutsConfigured() &&
       (await this.settings.get(FLAGS.peachPayoutsEnabled))
@@ -88,12 +98,37 @@ export class PaymentRailsService {
       merchantTransactionId: string;
       returnUrl: string;
       expirySeconds?: number;
+      /** Extra gateway metadata. Only Yoco consumes it today. */
+      metadata?: Record<string, string>;
     },
   ): Promise<NormalizedCheckout> {
     if (!(await this.isPayInEnabled(provider))) {
       throw new ServiceUnavailableException(
         'That payment method is not available right now.',
       );
+    }
+    if (provider === PaymentProvider.YOCO) {
+      // Yoco's own checkout expiry is 30 minutes to 70 days. An expiry under
+      // half an hour would be rejected outright, so it is simply omitted.
+      const expiresAt =
+        params.expirySeconds && params.expirySeconds >= 30 * 60
+          ? new Date(Date.now() + params.expirySeconds * 1000).toISOString()
+          : undefined;
+      const checkout = await this.yoco.createCheckout({
+        amountZarCents: params.amountZarCents,
+        reference: params.merchantTransactionId,
+        returnUrl: params.returnUrl,
+        ...(expiresAt ? { expiresAt } : {}),
+        ...(params.metadata ? { metadata: params.metadata } : {}),
+      });
+      return {
+        provider,
+        checkoutId: checkout.checkoutId,
+        redirectUrl: checkout.redirectUrl,
+        merchantReference:
+          checkout.clientReferenceId ?? params.merchantTransactionId,
+        mode: checkout.mode,
+      };
     }
     if (provider === PaymentProvider.PEACH) {
       const checkout = await this.peach.createCheckout({
@@ -127,6 +162,23 @@ export class PaymentRailsService {
     provider: PaymentProvider,
     checkoutId: string,
   ): Promise<NormalizedPaymentStatus | null> {
+    if (provider === PaymentProvider.YOCO) {
+      const status = await this.yoco.getCheckout(checkoutId);
+      if (!status) return null;
+      return {
+        provider,
+        paymentId: status.paymentId ?? status.checkoutId,
+        merchantReference: status.clientReferenceId ?? '',
+        resultCode: status.status,
+        amountCents: status.amountCents,
+        currency: 'ZAR',
+        mode: status.mode,
+        // `completed` is the only paid state. A completed checkout with no
+        // payment id is not something Yoco documents — treat it as not paid
+        // rather than book money we cannot point at.
+        isSuccess: status.status === 'completed' && status.paymentId !== null,
+      };
+    }
     if (provider === PaymentProvider.PEACH) {
       const status = await this.peach.getPaymentStatus(checkoutId);
       return {
@@ -157,6 +209,11 @@ export class PaymentRailsService {
     paymentId: string,
     amountZarCents: number,
   ): Promise<RefundResult> {
+    if (provider === PaymentProvider.YOCO) {
+      // ⚠️ Yoco refunds are keyed on the CHECKOUT id, so the caller must pass
+      // `gatewayCheckoutId` here, not the payment id.
+      return this.yoco.refundCheckout(paymentId, amountZarCents);
+    }
     if (provider === PaymentProvider.PEACH) {
       return this.peach.refundPayment(paymentId, amountZarCents);
     }

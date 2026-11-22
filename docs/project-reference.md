@@ -344,7 +344,9 @@ state — do not read its absence as the switch being broken).
 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
 `VAPID_SUBJECT`, `WARDEN_TOKEN`, `WARDEN_BASE_URL`,
 `RELOADING_MANUALS_INBOX_DIR`, `RELOADING_MANUALS_STORAGE_DIR`, the
-`ZOHO_BOOKS_*` set, `COMING_SOON_GATE`, `ALLOW_LOCAL_ORIGINS`, and for Ozow:
+`ZOHO_BOOKS_*` set, **`YOCO_SECRET_KEY`, `YOCO_WEBHOOK_SECRET`** (the
+motivation paygate only — `YOCO_API_BASE` optional), `COMING_SOON_GATE`,
+`ALLOW_LOCAL_ORIGINS`, and for Ozow:
 **`OZOW_CLIENT_ID`, `OZOW_CLIENT_SECRET`, `OZOW_SITE_CODE`,
 `OZOW_WEBHOOK_SECRET`, `OZOW_ENV`** (plus the payout set
 `OZOW_PAYOUT_API_KEY` / `OZOW_PAYOUT_SITE_CODE` / `OZOW_PAYOUT_ACCESS_TOKEN` /
@@ -477,6 +479,8 @@ the Licence Centre / Document Centre, the Motivations builder, The Bench, crime
 stats, news clippings, complaints, the reloading corpus, Warden.
 
 **Built but INERT, behind a switch:**
+- **Motivation paygate (Yoco)** — code-complete and inert until the `YOCO_*`
+  keys exist and `motivation_paid_enabled` is ON. Not a marketplace rail.
 - **Peach pay-in** — hidden until `peach_payin_enabled` is ON and the Peach
   checkout credentials are configured. Ozow remains the default rail.
 - **Peach payouts** — hidden until `peach_payouts_enabled` is ON and the Peach
@@ -1229,7 +1233,12 @@ motivation-only and is offered print-ready as an upgrade.
 
 Operator, 2026-11-20: "On the motivations. I want to paygate it." The member
 builds the application for free and pays when they press **Write my
-motivation**; nothing is generated before Ozow confirms the capture.
+motivation**; nothing is generated before Yoco confirms the capture.
+
+Operator, 2026-11-22: "We are removing it completely from zoho and moving over
+to yoco api … no more peach and ozow, just yoco for motivation payments." The
+rail is Yoco Checkout, the Zoho Books invoice is gone, and `PaymentProvider.YOCO`
+exists for this one product only — the shop still runs Ozow + Peach.
 
 - **Price** — `motivation_price_cents`, default `29500` (R295), flat for every
   member and both output modes. The August R199/R99/AO-Pro table was never
@@ -1249,25 +1258,23 @@ motivation**; nothing is generated before Ozow confirms the capture.
   purge and a POPIA erasure delete the motivation, and the sale has to outlive
   it. One payment per application — `billedCents` is only ever written from 0,
   so a regeneration can neither re-price nor re-charge.
-- **Confirmation** — deliberately no second webhook subscription. The
-  return-to-site `POST /motivations/:id/payment/verify` asks Ozow for the
-  authoritative status, and `reconcilePendingPayments` (every 10 minutes)
-  settles the member who closed the tab. The amount and the merchant reference
-  are both bound; a mismatch applies nothing and raises an urgent `AdminAlert`.
-  A second capture on one application raises `MOTIVATION_DOUBLE_PAYMENT`.
-- **Money out** — refunds are manual in phase 1 (Ozow dashboard, then the row).
+- **Confirmation** — two paths, one authority. The signed Yoco webhook
+  (`/api/payments/webhook/yoco`) is the fast path; the return-to-site
+  `POST /motivations/:id/payment/verify` and `reconcilePendingPayments`
+  (every 10 minutes) both ask Yoco for the checkout status. ⚠️ The webhook body
+  is never trusted: it only locates the attempt, and the amount/reference are
+  bound from the API answer. A mismatch applies nothing and raises an urgent
+  `AdminAlert`; a test-mode capture in production is refused with
+  `MOTIVATION_PAYMENT_TEST_MODE`. A second capture raises
+  `MOTIVATION_DOUBLE_PAYMENT`.
+- **Money out** — refunds are manual in the Yoco dashboard (keyed on the
+  checkout id), then the row.
   `MOTIVATION_PAID_GENERATION_FAILED` tells the desk when a paid document did
   not write; the member's retry is free.
-- **Books** — the R295 is **principal revenue**, not an agent collection.
-  `ZohoBooksService.createMotivationInvoice` raises a Books invoice to the member
-  on capture: one line, `Motivation MO000123`, posted to **Motivation Revenue**
-  (account `136287000000462002`, created 2026-11-20), written to the ABSA
-  current account by a customer payment — never to Client Funds Payable. It is
-  marked sent, settled, and emailed to the member once. The invoice notes say
-  "Principal supply … not an agent collection", because a one-line document is
-  all the accountant has to go on. `MotivationPayment.zoho*` holds the ids and
-  sync state; UNCERTAIN is never auto-retried (Books has no idempotency key) and
-  the hourly `retryFailedMotivationInvoices` sweep re-fires FAILED rows.
+- **Books — RETIRED (2026-11-22)** — no motivation invoice is raised. The
+  `MotivationPayment` row is the turnover record, and the `zoho*` columns stay
+  NULL on every new row (kept, not dropped, so historical ids survive). Nothing
+  in the app reads the motivation Zoho fields any more.
 - **Tax** — not VAT registered (`TURNOVER_TAX`), so the invoice carries no tax
   line and no VAT number. The payment row is the turnover record, and it
   survives erasure precisely so the year can be filed.

@@ -2180,7 +2180,7 @@ export const motivationsApi = {
     ),
 
   /**
-   * START the checkout for this application. Returns the Ozow page to send the
+   * START the checkout for this application. Returns the hosted payment page to send the
    * browser to, or `alreadyPaid` when there is nothing to pay.
    */
   startPayment: (t: TokenGetter, id: string) =>

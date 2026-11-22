@@ -984,10 +984,6 @@ export class TasksService {
     this.logger.debug('Running Zoho revenue-doc retry cron');
     try {
       await this.zohoBooks.retryFailedRevenueDocs();
-      // Paid motivations are principal revenue and had no sweep of their own
-      // until the paygate; a Books outage at capture would otherwise leave the
-      // sale out of the ledger until somebody noticed.
-      await this.zohoBooks.retryFailedMotivationInvoices();
     } catch (err) {
       this.logger.error(
         `retryRevenueDocs failed: ${(err as Error).message}`,

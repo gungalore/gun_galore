@@ -6,6 +6,7 @@ function makeService(opts?: {
   peachConfigured?: boolean;
   peachPayin?: boolean;
   peachPayouts?: boolean;
+  yocoUsable?: boolean;
 }) {
   const ozow = {
     createPayment: jest.fn().mockResolvedValue({
@@ -47,6 +48,32 @@ function makeService(opts?: {
       .fn()
       .mockResolvedValue({ success: true, resultCode: 'OK' }),
   };
+  const yoco = {
+    isUsable: jest.fn().mockReturnValue(opts?.yocoUsable ?? false),
+    createCheckout: jest.fn().mockResolvedValue({
+      checkoutId: 'ch_yoco',
+      redirectUrl: 'https://c.yoco.com/checkout/abc',
+      status: 'created',
+      paymentId: null,
+      amountCents: 5000,
+      mode: 'test',
+      clientReferenceId: 'MO000123-ABC123',
+      metadata: null,
+    }),
+    getCheckout: jest.fn().mockResolvedValue({
+      checkoutId: 'ch_yoco',
+      redirectUrl: 'https://c.yoco.com/checkout/abc',
+      status: 'completed',
+      paymentId: 'pay_yoco',
+      amountCents: 5000,
+      mode: 'test',
+      clientReferenceId: 'MO000123-ABC123',
+      metadata: null,
+    }),
+    refundCheckout: jest
+      .fn()
+      .mockResolvedValue({ success: true, status: 'succeeded' }),
+  };
   const settings = {
     get: jest.fn((flag: { key: string }) => {
       if (flag.key === FLAGS.peachPayinEnabled.key) {
@@ -62,8 +89,9 @@ function makeService(opts?: {
     ozow as never,
     peach as never,
     settings as never,
+    yoco as never,
   );
-  return { service, ozow, peach, settings };
+  return { service, ozow, peach, yoco, settings };
 }
 
 describe('PaymentRailsService', () => {
@@ -143,5 +171,53 @@ describe('PaymentRailsService', () => {
     });
     expect(await service.isPayoutEnabled(PaymentProvider.PEACH)).toBe(false);
     expect(await service.isPayInEnabled(PaymentProvider.PEACH)).toBe(true);
+  });
+
+  it('routes the motivation paygate to Yoco, and only when it is usable', async () => {
+    const { service, yoco } = makeService({ yocoUsable: true });
+    const result = await service.createCheckout(PaymentProvider.YOCO, {
+      amountZarCents: 29_500,
+      merchantTransactionId: 'MO000123-ABC123',
+      returnUrl: 'https://alloutdoor.co.za/pack?payment=return',
+      expirySeconds: 24 * 60 * 60,
+      metadata: { motivationId: 'mo-1' },
+    });
+    expect(result.checkoutId).toBe('ch_yoco');
+    expect(result.merchantReference).toBe('MO000123-ABC123');
+    expect(yoco.createCheckout).toHaveBeenCalledWith({
+      amountZarCents: 29_500,
+      reference: 'MO000123-ABC123',
+      returnUrl: 'https://alloutdoor.co.za/pack?payment=return',
+      expiresAt: expect.any(String),
+      metadata: { motivationId: 'mo-1' },
+    });
+
+    const off = makeService({ yocoUsable: false });
+    expect(await off.service.isPayInEnabled(PaymentProvider.YOCO)).toBe(false);
+    await expect(
+      off.service.createCheckout(PaymentProvider.YOCO, {
+        amountZarCents: 100,
+        merchantTransactionId: 'ref',
+        returnUrl: 'https://app/',
+      }),
+    ).rejects.toThrow(/not available/i);
+  });
+
+  it('maps Yoco checkout states onto the normalized status', async () => {
+    const { service } = makeService({ yocoUsable: true });
+    const status = await service.getPaymentStatus(
+      PaymentProvider.YOCO,
+      'ch_yoco',
+    );
+    expect(status).toMatchObject({
+      provider: PaymentProvider.YOCO,
+      paymentId: 'pay_yoco',
+      merchantReference: 'MO000123-ABC123',
+      resultCode: 'completed',
+      amountCents: 5000,
+      isSuccess: true,
+      mode: 'test',
+    });
+    expect(await service.isPayoutEnabled(PaymentProvider.YOCO)).toBe(false);
   });
 });

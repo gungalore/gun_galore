@@ -73,6 +73,11 @@ enum PaymentStatus {
 enum PaymentProvider {
   OZOW
   PEACH
+  /// ⚠️ THE MOTIVATION PAYGATE ONLY (2026-11-22). Yoco is not offered as a
+  /// marketplace pay-in and no Transaction is ever stamped YOCO — the shop
+  /// still runs Ozow + Peach. On a MotivationPayment it is the rail that took
+  /// the R295, and therefore the only rail a refund may go back through.
+  YOCO
 }
 
 // Which direction our fees ran on a sale. See Transaction.feeModel for the
@@ -5320,40 +5325,46 @@ model MotivationPayment {
 
   /// Locked at create. Refunds go back through the same rail — see the
   /// payments lock in AGENTS.md.
+  ///
+  /// New attempts are YOCO since 2026-11-22 (the motivation paygate moved off
+  /// Ozow). The OZOW default remains for historical rows and for a pending
+  /// attempt created before the switch: settle() asks whichever rail is on the
+  /// row, never the current default.
   provider PaymentProvider @default(OZOW)
   status   MotivationPaymentStatus @default(PENDING)
 
-  /// Ozow payment id from create (`gatewayCheckoutId` on a Transaction).
+  /// The gateway's checkout id. Yoco: `ch_...`. Ozow: the pay-in id.
   gatewayCheckoutId String?
-  /// The hosted page Ozow handed back. Stored so a second click in the same
-  /// sitting is answered with the SAME checkout rather than minting a second
-  /// payment — Ozow's idempotency is keyed on the merchant reference, and a
-  /// fresh reference is a fresh payment.
+  /// The hosted page the gateway handed back. Stored so a second click in the
+  /// same sitting is answered with the SAME checkout rather than minting a
+  /// second payment.
   redirectUrl String?
-  /// Our minted merchant reference — the webhook/verify matching key.
+  /// Our minted reference — the settlement matching key. Sent to Yoco as
+  /// `clientReferenceId` and echoed back on the checkout and the webhook.
   gatewayMerchantRef String? @unique
-  /// Ozow's transaction id, the refundable one. Set on capture.
+  /// `live` or `test`, as the gateway reported the checkout. ⚠️ A test-mode
+  /// capture is NOT revenue: settle() refuses to mark one paid in production.
+  gatewayMode String?
+  /// The gateway's payment id, the refundable one. Set on capture.
   gatewayPaymentId String?
 
   paidAt   DateTime?
   failedAt DateTime?
 
-  /// ── Zoho Books: the PRINCIPAL sale ──────────────────────────────
+  /// ── Zoho Books: RETIRED FOR MOTIVATIONS (2026-11-22) ──────────────
   ///
-  /// ⚠️ A MOTIVATION IS OUR OWN SUPPLY, SO IT IS INVOICED AS REVENUE — never
-  /// as an agent collection into Client Funds Payable. A marketplace sale's
-  /// item and delivery lines are money we never earned; this R295 is ours.
-  /// The invoice posts to "Motivation Revenue" and is settled against the bank
-  /// by the customer payment ZohoBooksService records when the money clears.
+  /// Operator: "We are removing it completely from zoho and moving over to
+  /// yoco api." No motivation invoice is raised any more, so every field below
+  /// stays NULL on new rows. The columns are kept (no destructive migration) so
+  /// any historical invoice id survives, and the motivation invoice code is
+  /// deleted — nothing reads or writes these.
   ///
-  /// Rail-locked like every other money row: the invoice is raised from this
-  /// payment, and the Ozow capture is the only cash that settles it.
+  /// The payment row itself remains the turnover record: it is principal
+  /// revenue, not an agent collection, and it outlives erasure by design.
   zohoInvoiceId String?
   zohoPaymentId String?
   zohoInvoiceEmailedAt DateTime?
-  /// OK · FAILED · UNCERTAIN · SKIPPED. UNCERTAIN means a Books write may have
-  /// landed (timeout/5xx) and must never be retried automatically — Books has
-  /// no idempotency key, so a blind retry is a duplicate invoice.
+  /// Retired with the invoice. Only historical rows carry a value.
   zohoSyncStatus String?
   zohoSyncError String?
   zohoSyncLastAttemptAt DateTime?

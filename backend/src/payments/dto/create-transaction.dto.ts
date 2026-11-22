@@ -1,6 +1,7 @@
 import {
   IsString,
   IsEnum,
+  IsIn,
   IsOptional,
   IsNotEmpty,
   IsBoolean,
@@ -70,8 +71,14 @@ export class CreateTransactionDto {
   // Which gateway receives the buyer's money. Optional for backward
   // compatibility (defaults to Ozow); once set on the Transaction it is
   // immutable and every refund/payout follows it.
+  //
+  // ⚠️ NOT YOCO. Yoco is the motivation paygate's rail only; the shop offers
+  // Ozow + Peach. `@IsEnum(PaymentProvider)` would now accept YOCO because the
+  // enum is shared, so the allowed pair is spelled out.
   @IsOptional()
-  @IsEnum(PaymentProvider)
+  @IsIn([PaymentProvider.OZOW, PaymentProvider.PEACH], {
+    message: 'That payment method is not available for marketplace checkout.',
+  })
   paymentProvider?: PaymentProvider;
 
   // When checking out from an accepted offer on a Buy Now or Auction

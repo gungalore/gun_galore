@@ -1515,6 +1515,15 @@ export class TransactionsService {
     // Phase 1 — manual EFT retired; card paygate not live yet. Gate BEFORE any
     // listing reservation so a blocked checkout leaves no orphaned hold.
     assertPaymentsLive();
+    // ⚠️ YOCO BELONGS TO THE MOTIVATION PAYGATE, NOT THE SHOP. The enum is
+    // shared with MotivationPayment, so the DTO would otherwise accept it; a
+    // marketplace checkout stamped YOCO would then be routed to the Ozow
+    // adapter by every non-Peach branch. Refuse it before anything is reserved.
+    if (dto.paymentProvider === PaymentProvider.YOCO) {
+      throw new BadRequestException(
+        'That payment method is not available for marketplace checkout.',
+      );
+    }
     const {
       tx,
       listing,

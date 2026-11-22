@@ -9,6 +9,7 @@ import { CrimeStatsModule } from './crime-stats/crime-stats.module';
 import { NewsModule } from './news/news.module';
 import { OzowModule } from './payments/ozow.module';
 import { PeachModule } from './payments/peach.module';
+import { YocoModule } from './payments/yoco.module';
 import { PaymentRailsModule } from './payments/payment-rails.module';
 import { ScanModule } from './scan/scan.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
@@ -85,6 +86,7 @@ import { LegalModule } from './legal/legal.module';
     NewsModule,
     OzowModule,
     PeachModule,
+    YocoModule,
     PaymentRailsModule,
     ScanModule,
     CloudinaryModule,
