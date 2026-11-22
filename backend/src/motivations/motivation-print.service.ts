@@ -115,6 +115,13 @@ export class MotivationPrintService {
       );
     }
     const next = mode === 'DELIVER' ? 'DELIVER' : 'DIGITAL';
+    if (next === 'DELIVER' && !printPickupContact().mobile) {
+      // Do not let somebody choose (and later pay for) a delivery the desk
+      // cannot hand to a courier. The message names the real reason.
+      throw new ServiceUnavailableException(
+        'Print and Deliver is not open yet. Choose Print / Download, or try again shortly.',
+      );
+    }
     await this.prisma.motivation.update({
       where: { id: motivationId },
       data: { fulfilmentMode: next },
