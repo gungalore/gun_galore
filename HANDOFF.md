@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-11-22**.
 
+## 2026-11-22 (MOTIVATIONS) — TWO STEPS, BUTTONS, AND A WAY BACK
+
+Operator, on the new product/fulfilment screen: *"I don't like this style, I'd
+rather have the Heading with a description below and a Button to select the
+option instead of selecting a Tile. Also make one option follow the other when
+selected and not everything bunched up on one page. Add back buttons so a user
+can go back to their previous choice."*
+
+- **Step 1** shows only the two products. Each is a heading, a description and a
+  **Choose …** button — the card itself is no longer clickable.
+- **Step 2** replaces the page entirely with only Print / Download and Print and
+  Deliver, same heading + description + button treatment. A **← Back** returns to
+  the product choice; step 1 has **← Back to your applications**.
+- A **Step 1 of 2 / Step 2 of 2** label and a "Selected: …" line keep the context.
+- The raw `ThrottlerException: Too Many Requests` is mapped to "Too many attempts
+  in a row — wait a minute, then try again." (60/min global limiter; this was a
+  copy problem, not a new limit).
+
+Deployed `4ddeaffc` (frontend-only): `BUILD_ID=F03zWV5dvhyUtc5BT7Dj0`, reload,
+health ×2. Print and Deliver still waits on `MOTIVATION_PRINT_PHONE`.
+
 ## 2026-11-22 (MOTIVATIONS) — PRINT / DOWNLOAD OR PRINT AND DELIVER, ONE PAYMENT
 
 Operator: *"there should be the current two options Motivation only and the
