@@ -5,7 +5,83 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-21**.
+Last updated: **2026-11-22**.
+
+## 2026-11-22 (MOTIVATIONS) — THE PAYGATE MOVES TO YOCO, AND LEAVES ZOHO
+
+Operator: *"We are removing it completely from zoho and moving over to yoco api …
+no more peach and ozow, just yoco for motivation payments."* On scope: **stop
+invoicing motivations in Zoho**. Then: *"commit and deploy it. I will test it
+with the test card on production before we swop for live keys."*
+
+**What changed**
+
+- **Yoco Checkout is the motivation rail.** New `payments/yoco.service.ts` (create
+  / get / refund, hosted redirect) + `yoco.module.ts` (@Global, like Ozow/Peach)
+  + `yoco-signature.ts` (HMAC-SHA256 over `id.timestamp.rawBody`, `whsec_` decode,
+  three-minute replay window). `PaymentProvider.YOCO` is new and exists for this
+  one product: the DTO and `TransactionsService.create` now REFUSE YOCO for a
+  marketplace checkout, so the shop's Ozow + Peach pair is untouched.
+- **`MotivationPaymentsService` creates YOCO checkouts**, mints a unique
+  `MO……-XXXXXXXX` reference per attempt (also sent as `clientReferenceId` and in
+  metadata), stores `gatewayMode`, and only reuses a YOCO attempt.
+  ⚠️ A pending OZOW attempt from before the switch still settles through Ozow —
+  the rail is locked on the row, as with a Transaction.
+- **Webhook added**: `POST /api/payments/webhook/yoco` (own controller in the
+  motivations module, unguarded by design). The signature is checked first, then
+  the handler re-reads the checkout from Yoco and binds amount + reference; the
+  event body is never trusted. It finds the attempt by our reference, falling
+  back to the checkout id Yoco injects into metadata. Invalid signature → 200 + `YOCO_WEBHOOK_SIGNATURE_INVALID`
+  alert; unsigned (no secret yet) → ignored; handler failure → 500 so Yoco
+  retries. The 10-minute reconcile cron remains the backstop.
+- **Test money cannot become revenue by accident.** A `sk_test_` key in
+  production refuses to create a checkout unless
+  `YOCO_ALLOW_TEST_IN_PRODUCTION=true` — the deliberate pre-live window. Even
+  then the capture is applied but flagged (`gatewayMode=test`, row alert
+  `MOTIVATION_PAYMENT_TEST_MODE_APPLIED`); the refusal path raises
+  `MOTIVATION_PAYMENT_TEST_MODE`. Remove that variable when the live key lands.
+- **Zoho is gone for motivations, completely.** `createMotivationInvoice`,
+  `finalizeMotivationInvoice`, `retryFailedMotivationInvoices`,
+  `markMotivationFailed`, the `MOTIVATION_INCOME_ACCOUNT_NAMES` map, the hourly
+  `retryRevenueDocs` call, the `ZohoBooksModule` import and
+  `motivation-invoice.spec.ts` are deleted (~441 lines). The `zoho*` columns stay
+  (no destructive migration) and are NULL on every new row; the schema comment
+  says so.
+- **Schema**: migration `20261122204500_motivation_payments_yoco` adds the YOCO
+  enum value and `MotivationPayment.gatewayMode`; applied to production.
+- **Copy**: the pack page says "Checking your payment…" and names cancelling,
+  not "the bank", because Yoco's page is card-or-bank.
+
+**Verified before deploy**: backend `tsc` clean, **431 suites / 6,362 tests**
+green (full run); frontend `tsc` clean, **174 files / 1,980 tests** green;
+production build clean; warden typecheck + 394 tests green. A real **test-mode**
+create + status read against `payments.yoco.com` returned `ch_…`, `c.yoco.com`
+and `processingMode: test`; the hosted page renders Apple Pay / Google Pay /
+Card and the documented test card.
+
+**DEPLOYED `2bd2e8e6` (full, not backend-only).** Rollback
+`alloutdoor-20261122-212604.dump` (38.9 MB, `/var/backups/alloutdoor/db`).
+Backend `npm install` → `prisma migrate deploy` (all applied) → `generate` →
+build → `dist/src/main.js` 9,823 bytes → reload → health ×2. Frontend install →
+build → `BUILD_ID` non-empty → reload → health ×2. Warden rebuilt, online.
+Public 200 ×2. Prod checks: HEAD `2bd2e8e6`, enum `{OZOW,PEACH,YOCO}`,
+`gatewayMode` column present, `POST /api/payments/webhook/yoco` answers, Yoco
+host reachable from the box, backend online with no errors.
+
+**Production is in the TEST window until the live key lands.** `backend/.env`
+(backup `.env.bak-yoco-test-20261122212604`, both mode 600) holds the Yoco
+**test** secret key and `YOCO_ALLOW_TEST_IN_PRODUCTION=true`.
+`motivation_paid_enabled` was already **true** on prod (not a new flip), so the
+pack screen's Pay button now creates a Yoco TEST checkout. ⚠️ Until the live key
+replaces it, a test card writes a real document for test money — keep the window
+short.
+
+⚠️ **One manual payment is still owed.** Headless completion is stopped by
+Cloudflare Turnstile on Yoco's hosted page (not a code failure). Open one test
+checkout, pay with `4111 1111 1111 1111` / `11/27` / `123`, and confirm the row
+reaches PAID. Then: install the live key, set `YOCO_ALLOW_TEST_IN_PRODUCTION`
+back to `false` (or delete it), register the webhook + `YOCO_WEBHOOK_SECRET`,
+and run one live R295 + refund.
 
 ## 2026-11-21 (MOTIVATIONS) — A CANCELLED PAYMENT NO LONGER SAYS "CONFIRMING"
 
