@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import {
   motivationsApi,
@@ -19,6 +20,20 @@ import DocumentAddButtons, {
 } from '@/components/motivation/document-add-buttons';
 
 const keyOf = (i: IntakeDocumentItem) => `${i.source}:${i.sourceId}`;
+
+/**
+ * ⚠️ A THROTTLE IS NOT A SERVER ERROR THE MEMBER SHOULD READ RAW.
+ * Reloading this screen a few times can trip the 60/min limiter, and
+ * "ThrottlerException: Too Many Requests" tells somebody nothing they can act
+ * on. Everything else keeps its own message.
+ */
+function readableError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/throttl|too many requests|\b429\b/i.test(message)) {
+    return 'Too many attempts in a row — wait a minute, then try again.';
+  }
+  return message;
+}
 
 function Tick({ on, disabled }: { on: boolean; disabled?: boolean }) {
   return (
@@ -135,7 +150,7 @@ export default function IntakeStartPage() {
       setData(next);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     }
   }, [getToken, id]);
 
@@ -248,7 +263,7 @@ export default function IntakeStartPage() {
         try {
           await motivationsApi.applyExtraction(getToken, id, trusted);
         } catch (err) {
-          setError((err as Error).message);
+          setError(readableError(err));
         }
       }
       const next = await motivationsApi.intake(getToken, id);
@@ -266,7 +281,7 @@ export default function IntakeStartPage() {
       const next = await motivationsApi.startIntake(getToken, id, mode);
       setData(next);
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -310,7 +325,7 @@ export default function IntakeStartPage() {
       setData(next);
       router.push(`/licence-centre/${id}/interview`);
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -338,7 +353,7 @@ export default function IntakeStartPage() {
         router.push(`/licence-centre/${id}/pack`);
       }
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -358,7 +373,7 @@ export default function IntakeStartPage() {
       setData(next);
       router.push(`/licence-centre/${id}/interview`);
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -376,7 +391,7 @@ export default function IntakeStartPage() {
       setData(next);
       setSelected(new Set());
     } catch (err) {
-      setError((err as Error).message);
+      setError(readableError(err));
     } finally {
       setBusy(false);
     }
@@ -411,183 +426,209 @@ export default function IntakeStartPage() {
 
   if (!data.mode) {
     const known = profile ? Object.keys(profile.answers).length : 0;
-    // Highlight what the member is choosing NOW, falling back to what the
-    // application already holds (an existing draft can still change product).
-    const motivationOnly = (pendingOutput ?? data.outputMode) === 'MOTIVATION_ONLY';
+    const step = pendingOutput ? 2 : 1;
+    const primaryButton =
+      'mt-3 inline-flex min-h-[44px] items-center justify-center rounded-lg px-4 text-[13.5px] font-medium text-white disabled:opacity-50';
     return (
-      <main className="mx-auto w-full max-w-[760px] px-4 pb-12 pt-5">
+      <main className="mx-auto w-full max-w-[680px] px-4 pb-12 pt-5">
         {/* The beta popup, once per application. This is the first screen a
             new motivation opens on; the sheet shows it too if they arrive
             there first, and the per-id key stops it appearing twice. */}
         <BetaNotice motivationId={id} />
-        <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
-          {data.licenceTypeLabel} · {data.referenceNumber}
-        </p>
-        <h1 className="mt-1 font-[family-name:var(--font-head)] text-[24px] font-medium tracking-[-0.01em] text-[var(--text-primary)]">
-          What do you need today?
-        </h1>
-        <p className="mt-2 max-w-[58ch] text-[13.5px] leading-6 text-[var(--text-secondary)]">
-          Choose the result. The interview starts straight away and asks only
-          what that result needs.
-        </p>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void chooseOutput('MOTIVATION_ONLY')}
-            aria-busy={busy || undefined}
-            className="rounded-xl border p-4 text-left"
-            style={{
-              borderColor: motivationOnly ? 'var(--red)' : 'var(--border)',
-              background: motivationOnly ? 'var(--red-wash)' : 'var(--bg-card)',
-            }}
-          >
-            <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              Motivation letter only
-            </span>
-            <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              The legal motivation on its own — the document you sign and hand to
-              the DFO. This is where most people start, and it needs no documents.
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void chooseOutput('PRINT_READY')}
-            aria-busy={busy || undefined}
-            className="rounded-xl border p-4 text-left"
-            style={{
-              borderColor: !motivationOnly ? 'var(--red)' : 'var(--border)',
-              background: !motivationOnly ? 'var(--red-wash)' : 'var(--bg-card)',
-            }}
-          >
-            <span className="block text-[15px] font-medium text-[var(--text-primary)]">
-              Print-ready pack
-            </span>
-            <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              The same motivation plus every annexure, lettered in the order the
-              DFO works through, with the document checks done — the pack you walk
-              in with. It needs your documents uploaded.
-            </span>
-          </button>
+        <div className="flex min-h-[36px] items-center justify-between gap-3">
+          {step === 2 ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                setPendingOutput(null);
+              }}
+              className="inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] disabled:opacity-50"
+            >
+              <span aria-hidden="true">&#8592;</span> Back
+            </button>
+          ) : (
+            <Link
+              href="/licence-centre/applications"
+              className="inline-flex min-h-[36px] items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] no-underline"
+            >
+              <span aria-hidden="true">&#8592;</span> Back to your applications
+            </Link>
+          )}
+          <span className="text-[11px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+            Step {step} of 2
+          </span>
         </div>
 
-        {/*
-          ⚠️ STEP 2, AND IT EXISTS BECAUSE THE PRODUCT DOES NOT SAY HOW IT
-          REACHES THEM. Print / Download is the PDF at the base price. Print and
-          Deliver adds R75 for printing and binding plus a live courier quote —
-          all inside the SAME Yoco payment made at the end. Choosing a product
-          above only reveals this; it does not start the interview.
-        */}
-        {pendingOutput ? (
-          <div className="mt-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium text-[var(--text-primary)]">
-                  How would you like it?
-                </h2>
-                <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-                  Both include the PDF in your account. Print and Deliver adds
-                  printing, binding and courier delivery.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setPendingOutput(null)}
-                className="whitespace-nowrap text-[12px] text-[var(--text-tertiary)] underline"
+        <p className="mt-3 text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+          {data.licenceTypeLabel} · {data.referenceNumber}
+        </p>
+
+        {step === 1 ? (
+          <>
+            <h1 className="mt-1 font-[family-name:var(--font-head)] text-[24px] font-medium tracking-[-0.01em] text-[var(--text-primary)]">
+              What do you need today?
+            </h1>
+            <p className="mt-2 max-w-[58ch] text-[13.5px] leading-6 text-[var(--text-secondary)]">
+              Choose the result. The next step is how you want it — the
+              interview starts once both are chosen.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <section
+                className="rounded-xl border p-4"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
               >
-                Back
-              </button>
+                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
+                  Motivation letter only
+                </h2>
+                <p className="m-0 mt-1 text-[13px] leading-6 text-[var(--text-secondary)]">
+                  The legal motivation on its own — the document you sign and
+                  hand to the DFO. This is where most people start, and it needs
+                  no documents.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => chooseOutput('MOTIVATION_ONLY')}
+                  className={primaryButton}
+                  style={{ background: 'var(--red)' }}
+                >
+                  Choose Motivation letter only
+                </button>
+              </section>
+
+              <section
+                className="rounded-xl border p-4"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
+              >
+                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
+                  Print-ready pack
+                </h2>
+                <p className="m-0 mt-1 text-[13px] leading-6 text-[var(--text-secondary)]">
+                  The same motivation plus every annexure, lettered in the order
+                  the DFO works through, with the document checks done — the pack
+                  you walk in with. It needs your documents uploaded.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => chooseOutput('PRINT_READY')}
+                  className={primaryButton}
+                  style={{ background: 'var(--red)' }}
+                >
+                  Choose Print-ready pack
+                </button>
+              </section>
             </div>
 
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void chooseFulfilment('DIGITAL')}
-                className="rounded-xl border p-4 text-left"
-                style={{
-                  borderColor: 'var(--border)',
-                  background: 'var(--bg-card)',
-                }}
+            {profile && known > 0 ? (
+              <div
+                className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
               >
-                <span className="block text-[15px] font-medium text-[var(--text-primary)]">
+                <div>
+                  <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
+                    We remember {known} detail{known === 1 ? '' : 's'} from your
+                    profile.
+                  </p>
+                  <p className="m-0 mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                    Your safe, premises, association and personal details will be
+                    filled in — check them once and continue.
+                  </p>
+                </div>
+                <a
+                  href="/licence-centre/profile"
+                  className="rounded-lg border px-3 py-1.5 text-[12.5px] font-medium"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                >
+                  Review profile
+                </a>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <h1 className="mt-1 font-[family-name:var(--font-head)] text-[24px] font-medium tracking-[-0.01em] text-[var(--text-primary)]">
+              How would you like it?
+            </h1>
+            <p className="mt-2 max-w-[58ch] text-[13.5px] leading-6 text-[var(--text-secondary)]">
+              Both include the PDF in your account. Print and Deliver adds
+              printing, binding and courier delivery to the same payment.
+            </p>
+            <p className="mt-2 text-[12px] text-[var(--text-tertiary)]">
+              Selected: {pendingOutput === 'PRINT_READY' ? 'Print-ready pack' : 'Motivation letter only'}
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <section
+                className="rounded-xl border p-4"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
+              >
+                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
                   Print / Download
-                </span>
-                <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                </h2>
+                <p className="m-0 mt-1 text-[13px] leading-6 text-[var(--text-secondary)]">
                   The PDF is included and stays in your account. Print it
                   yourself, at no extra charge.
-                </span>
-                <span className="mt-2 block text-[12px] font-medium text-[var(--text-tertiary)]">
+                </p>
+                <p className="m-0 mt-2 text-[12px] font-medium text-[var(--text-tertiary)]">
                   Included
-                </span>
-              </button>
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void chooseFulfilment('DIGITAL')}
+                  className={primaryButton}
+                  style={{ background: 'var(--red)' }}
+                >
+                  Choose Print / Download
+                </button>
+              </section>
 
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void chooseFulfilment('DELIVER')}
-                className="rounded-xl border p-4 text-left"
-                style={{
-                  borderColor: 'var(--red)',
-                  background: 'var(--red-wash)',
-                }}
+              <section
+                className="rounded-xl border p-4"
+                style={{ borderColor: 'var(--red)', background: 'var(--bg-card)' }}
               >
-                <span className="block text-[15px] font-medium text-[var(--text-primary)]">
+                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
                   Print and Deliver (R75)
-                </span>
-                <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                </h2>
+                <p className="m-0 mt-1 text-[13px] leading-6 text-[var(--text-secondary)]">
                   We print, bind and courier it to your door. R75 plus the
                   courier rate, added to the same payment. Your address is
                   confirmed before you pay.
-                </span>
-                <span className="mt-2 block text-[12px] font-medium text-[var(--text-tertiary)]">
+                </p>
+                <p className="m-0 mt-2 text-[12px] font-medium text-[var(--text-tertiary)]">
                   +R75 + delivery
-                </span>
-              </button>
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void chooseFulfilment('DELIVER')}
+                  className={primaryButton}
+                  style={{ background: 'var(--red)' }}
+                >
+                  Choose Print and Deliver
+                </button>
+              </section>
             </div>
+
             {busy ? (
-              <p className="mt-2 text-[12.5px] text-[var(--text-tertiary)]">
-                Starting…
+              <p className="mt-3 text-[12.5px] text-[var(--text-tertiary)]">
+                Starting your interview…
               </p>
             ) : null}
-          </div>
-        ) : null}
-
-        {profile && known > 0 ? (
-          <div
-            className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3"
-            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
-          >
-            <div>
-              <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
-                We remember {known} detail{known === 1 ? '' : 's'} from your
-                profile.
-              </p>
-              <p className="m-0 mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
-                Your safe, premises, association and personal details will be
-                filled in — check them once and continue.
-              </p>
-            </div>
-            <a
-              href="/licence-centre/profile"
-              className="rounded-lg border px-3 py-1.5 text-[12.5px] font-medium"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-            >
-              Review profile
-            </a>
-          </div>
-        ) : null}
+          </>
+        )}
 
         {error ? (
-          <p className="mt-3 text-[13px] text-[var(--red)]">{error}</p>
+          <p className="mt-3 text-[13px] leading-5 text-[var(--red)]">{error}</p>
         ) : null}
       </main>
     );
   }
-
   /**
    * ⚠️ NO DOCUMENT PICKER BEFORE THE INTERVIEW. The section is already chosen
    * and the output mode is already chosen. Documents are selected per topic as
