@@ -223,6 +223,14 @@ const FLAGS: SettingFlag[] = [
     default: '29500',
   },
   {
+    key: 'motivation_print_fee_cents',
+    label: 'Print & deliver fee (cents)',
+    hint: 'Printing, binding and the A4 envelope for the "Print and Deliver" option, in cents. 7500 = R75. The digital "Print / Download" option is charged nothing extra; courier delivery is a live Bob Go quote added on top. Applies to the next checkout — an attempt already started keeps its snapshot.',
+    group: 'Motivations',
+    type: 'number',
+    default: '7500',
+  },
+  {
     key: 'motivation_max_gate_cycles',
     label: 'Max quality-gate retries',
     hint: 'How many times a motivation that fails the quality gate may go back to the applicant for more detail before it is marked FAILED for an admin. Each cycle costs a full generation, so this is a spend ceiling as much as a UX one.',

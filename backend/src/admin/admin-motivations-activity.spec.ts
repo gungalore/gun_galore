@@ -28,11 +28,18 @@ function build(
     forMotivation: jest.fn(async () => [{ id: 'a2', action: 'created' }]),
     forReference: jest.fn(async () => [{ id: 'a3', action: 'erased' }]),
   };
+  const print = {
+    listForAdmin: jest.fn(async () => []),
+    book: jest.fn(async () => ({ status: 'BOOKED' })),
+    resendPdf: jest.fn(async () => undefined),
+    recheckBooking: jest.fn(async () => ({ status: 'BOOKING' })),
+  };
   const controller = new AdminMotivationsController(
     prisma as never,
     activity as never,
+    print as never,
   );
-  return { controller, prisma, activity };
+  return { controller, prisma, activity, print };
 }
 
 describe('AdminMotivationsController', () => {

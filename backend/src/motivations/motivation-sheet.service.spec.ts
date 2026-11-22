@@ -130,6 +130,7 @@ function build(
           amountCents: 29_500,
           paidAt: null,
         }),
+        printFeeCents: async () => 7_500,
       } as never,
     ),
     prisma,

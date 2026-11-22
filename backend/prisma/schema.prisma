@@ -674,6 +674,9 @@ model User {
   // What this member paid for motivations. Optional on the payment row so the
   // sale survives a POPIA erasure — see MotivationPayment.
   motivationPayments MotivationPayment[] @relation("UserMotivationPayments")
+  /// Print-and-deliver fulfilments this member ordered. Kept after erasure for
+  /// the revenue record, with the contact/address scrubbed — see the model.
+  motivationPrintOrders MotivationPrintOrder[] @relation("UserMotivationPrintOrders")
   // The support timeline across every application this member opened.
   motivationActivity MotivationActivity[] @relation("UserMotivationActivity")
   credentials Credential[] @relation("UserCredentials")
@@ -5000,6 +5003,18 @@ model Motivation {
   /// before 2026-11-05 hold the retired name FULL_PACK and are normalised to
   /// PRINT_READY on read, never silently demoted to motivation-only.
   outputMode          String    @default("MOTIVATION_ONLY") @db.VarChar(24)
+  /// What the member asked us to DO with the finished document:
+  ///
+  ///   DIGITAL  ("Print / Download") — the PDF, which they print themselves.
+  ///   DELIVER  ("Print and Deliver", +R75 + courier) — we print, bind and
+  ///            courier it from the Sterappel address, and email the PDF to the
+  ///            desk for printing.
+  ///
+  /// ⚠️ CHOSEN BEFORE THE INTERVIEW AND LOCKED ONCE PAID. It is NOT the output
+  /// mode above: MOTIVATION_ONLY and PRINT_READY can each be delivered either
+  /// way. Stored as a plain string so a future fulfilment mode is a deploy, not
+  /// a migration; normalised on read.
+  fulfilmentMode      String    @default("DIGITAL") @db.VarChar(16)
   intakeStartedAt     DateTime?
   /// When the member confirmed the document/evidence selection. The interview
   /// does not begin until this is set.
@@ -5271,6 +5286,10 @@ model Motivation {
   sellerConsent MotivationSellerConsent?
   /// Every checkout attempt for this document. Usually one; see the model.
   payments      MotivationPayment[]
+  /// The print-and-deliver fulfilment row for this document, when the member
+  /// chose DELIVER. One per paid application; created with the single Yoco
+  /// checkout and completed by the desk.
+  printOrders   MotivationPrintOrder[]
   /// The support timeline. Every meaningful move on this application, so a
   /// reported glitch can be pinned to the exact step — see MotivationActivity.
   activity      MotivationActivity[]
@@ -5321,7 +5340,22 @@ model MotivationPayment {
   /// Snapshot of the price at checkout. A later price change cannot rewrite
   /// what this attempt was for, and the verify path binds the gateway's amount
   /// to it.
+  ///
+  /// With Print and Deliver this is the SINGLE Yoco amount: base + print fee +
+  /// courier. The split below is what tells them apart.
   amountCents Int
+
+  /// ── The print-and-deliver add-on, inside the SAME Yoco amount ──────
+  ///
+  /// `amountCents` above is what Yoco charged: the base motivation price PLUS
+  /// these two. They are split out so `Motivation.billedCents` can keep the
+  /// base (what the document itself cost), accounting can tell the R295 from
+  /// the add-on, and a refund can name the part it returns.
+  printFeeCents Int @default(0)
+  shippingCents Int @default(0)
+  /// The print order this attempt pays for. Null on a DIGITAL checkout.
+  printOrderId  String?               @unique
+  printOrder    MotivationPrintOrder?  @relation(fields: [printOrderId], references: [id], onDelete: SetNull)
 
   /// Locked at create. Refunds go back through the same rail — see the
   /// payments lock in AGENTS.md.
@@ -5385,6 +5419,93 @@ enum MotivationPaymentStatus {
   FAILED
   /// Superseded by another attempt that was paid.
   CANCELLED
+}
+
+/// What the desk still has to do for a Print-and-Deliver order.
+///
+/// ⚠️ NO GATEWAY FIELDS HERE. The money is the MotivationPayment row that owns
+/// this order (`MotivationPayment.printOrderId`): one Yoco transaction covers
+/// the motivation, the printing and the courier. This table is the fulfilment
+/// record — address snapshot, courier quote, waybill and the desk's progress.
+enum MotivationPrintStatus {
+  /// Created with the checkout; the member has not paid yet.
+  AWAITING_PAYMENT
+  /// Paid. The PDF is emailed to the desk and the envelope is waiting to be
+  /// printed.
+  PAID
+  /// The desk pressed "Print & book"; the Bob Go call is in flight.
+  BOOKING
+  /// Bob Go accepted the shipment; waybill/tracking issued.
+  BOOKED
+  /// Bob Go reported the parcel delivered.
+  DELIVERED
+  /// Superseded by another attempt, or cancelled by the desk.
+  CANCELLED
+}
+
+/// One print-and-deliver fulfilment for one paid motivation.
+///
+/// ⚠️ THE ADDRESS AND CONTACT ARE SNAPSHOTS, NOT JOINS. A member may edit or
+/// delete a saved address after paying, and the parcel must still go where the
+/// quote was given. Same posture as Transaction.deliveryAddress.
+///
+/// ⚠️ IT SURVIVES ERASURE WITH THE AMOUNTS, WITHOUT THE PERSON. Both relations
+/// are SetNull; the erasure path nulls the contact and address and cancels an
+/// unfulfilled row. The fee is revenue and must stay countable.
+model MotivationPrintOrder {
+  id String @id @default(cuid())
+
+  /// Our print reference (PR…), sent to Yoco as clientReferenceId and printed
+  /// on the envelope. Unique per checkout attempt.
+  reference String @unique
+
+  motivationId String?
+  motivation   Motivation? @relation(fields: [motivationId], references: [id], onDelete: SetNull)
+  userId       String?
+  user         User?       @relation("UserMotivationPrintOrders", fields: [userId], references: [id], onDelete: SetNull)
+
+  status MotivationPrintStatus @default(AWAITING_PAYMENT)
+
+  /// The money snapshot. `totalCents` is the add-on total (print + courier),
+  /// NOT the whole Yoco amount; the base sits on the payment row.
+  motivationCents Int
+  printFeeCents   Int
+  shippingCents   Int
+  totalCents      Int
+
+  /// Immutable delivery + contact snapshot.
+  deliveryAddress Json
+  contactName     String
+  contactPhone    String
+  contactEmail    String
+
+  /// The Bob Go rate that was quoted and paid for.
+  serviceName     String?
+  serviceCode     String?
+  providerSlug    String?
+  serviceLevelCode String?
+  deliveryDaysMin Int?
+  deliveryDaysMax Int?
+
+  /// Fulfilment.
+  pdfEmailedAt          DateTime?
+  bookedAt              DateTime?
+  bobgoShipmentId       String?   @unique
+  bobgoTrackingReference String?
+  waybillPin            String?
+  deliveredAt           DateTime?
+  failureReason         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The single payment attempt that paid for this order.
+  payment MotivationPayment?
+
+  @@index([motivationId, status])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@index([bobgoTrackingReference])
 }
 
 /// The support timeline for one motivation.

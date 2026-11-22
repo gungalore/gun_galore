@@ -33,4 +33,7 @@ export interface ShippingQuote {
   pickupPointLocationId?: number;
   /** Immutable rate/location details for receipts and admin review. */
   pickupPointSnapshot?: Record<string, unknown>;
+  /** Courier's own transit estimate, when the rate carried one. */
+  deliveryDaysMin?: number;
+  deliveryDaysMax?: number;
 }

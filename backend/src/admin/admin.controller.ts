@@ -52,6 +52,8 @@ import {
 import { AdminAuditService } from './admin-audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MotivationActivityService } from '../motivations/motivation-activity.service';
+import { MotivationPrintService } from '../motivations/motivation-print.service';
+import { MotivationPrintStatus } from '@prisma/client';
 import {
   AdminAnalyticsService,
   AnalyticsPeriod,
@@ -1934,7 +1936,55 @@ export class AdminMotivationsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly activity: MotivationActivityService,
+    // Print and Deliver: the Desk queue and the one action that spends the
+    // courier wallet. Both live here so they sit behind AdminJwtGuard.
+    private readonly print: MotivationPrintService,
   ) {}
+
+  /**
+   * Every paid print order, newest first.
+   *
+   * `status` is a comma-separated list of MotivationPrintStatus values; the
+   * page asks for PAID,BOOKING by default. Invalid values are ignored rather
+   * than widening the query.
+   */
+  @Get('print-orders')
+  printOrders(@Query('status') status?: string) {
+    const allowed = new Set(Object.values(MotivationPrintStatus));
+    const statuses = (status ?? '')
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter((s): s is MotivationPrintStatus =>
+        allowed.has(s as MotivationPrintStatus),
+      );
+    return this.print.listForAdmin(statuses);
+  }
+
+  /**
+   * "I have printed it" — book the Bob Go collection and email the buyer the
+   * waybill. Money is already taken; this is the only step that spends the
+   * courier wallet, so a confirmation happens in the UI before it is called.
+   */
+  @Post('print-orders/:id/book')
+  @HttpCode(200)
+  bookPrint(@Param('id') id: string) {
+    return this.print.book(id);
+  }
+
+  /** Re-render and re-email the desk when the PDF never arrived. */
+  @Post('print-orders/:id/resend-pdf')
+  @HttpCode(200)
+  async resendPrintPdf(@Param('id') id: string) {
+    await this.print.resendPdf(id);
+    return { ok: true };
+  }
+
+  /** Resolve a booking Bob Go had not yet accepted. */
+  @Post('print-orders/:id/recheck')
+  @HttpCode(200)
+  recheckPrint(@Param('id') id: string) {
+    return this.print.recheckBooking(id);
+  }
 
   @Get('activity')
   async timeline(

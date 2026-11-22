@@ -274,6 +274,23 @@ export const FLAGS = {
     },
   } as FlagDefinition<number>,
 
+  /**
+   * Printing, binding and the A4 envelope, in cents. R75 by default.
+   *
+   * ⚠️ ONLY CHARGED ON "PRINT AND DELIVER". The digital option ("Print /
+   * Download") includes the PDF at the base price. Delivery is a separate Bob Go
+   * quote, never this number. Changing it changes the next checkout only; an
+   * attempt already created keeps its snapshot.
+   */
+  motivationPrintFeeCents: {
+    key: 'motivation_print_fee_cents',
+    default: 7500,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 7500;
+    },
+  } as FlagDefinition<number>,
+
   // How many times a failed quality gate may send the applicant back for more
   // detail before the motivation is marked FAILED for an admin to look at.
   // Each cycle costs a full generation, so this is a spend ceiling too.

@@ -1271,6 +1271,14 @@ exists for this one product only — the shop still runs Ozow + Peach.
   checkout id), then the row.
   `MOTIVATION_PAID_GENERATION_FAILED` tells the desk when a paid document did
   not write; the member's retry is free.
+- **Print and Deliver** — the member's second choice after the product:
+  Print / Download (PDF, no extra) or Print and Deliver (+R75 + live Bob Go
+  courier). Both are inside the **same Yoco transaction** as the R295; the
+  payment row carries the split, and `billedCents` stays the base price. The PDF
+  is emailed to the print desk when generation completes, and the Desk's
+  "Print & delivery" card books the collection from 36 Sterappel Crescent after
+  a human has printed it. The digital document remains downloadable regardless
+  of print status. `MOTIVATION_PRINT_PHONE` is required for booking.
 - **Books — RETIRED (2026-11-22)** — no motivation invoice is raised. The
   `MotivationPayment` row is the turnover record, and the `zoho*` columns stay
   NULL on every new row (kept, not dropped, so historical ids survive). Nothing

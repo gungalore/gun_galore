@@ -80,6 +80,8 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'YOCO_SECRET_KEY', tier: 'feature', disables: 'the motivation paygate cannot take a payment at all — members see "payments are not open yet". A test key here is refused in production, on purpose' },
   { name: 'YOCO_WEBHOOK_SECRET', tier: 'feature', disables: 'motivation Yoco webhooks are ignored (the 10-minute reconcile cron still settles every attempt, so confirmation is slower, not lost)' },
   { name: 'YOCO_ALLOW_TEST_IN_PRODUCTION', tier: 'optional', disables: 'nothing while it is false — but true in production is itself a fault: it lets a test key write a paid motivation for test money. Only for the pre-live test, then remove it' },
+  { name: 'MOTIVATION_PRINT_PHONE', tier: 'feature', disables: 'Print and Deliver orders can be paid but NOT collected — booking refuses with an actionable error because Bob Go has no collection mobile' },
+  { name: 'MOTIVATION_PRINT_EMAIL', tier: 'optional', disables: 'nothing — the print desk address falls back to gerhard.fourie@alloutdoor.co.za' },
   { name: 'PAYMENT_MODE', tier: 'feature', disables: 'the payment gate has no mode' },
   { name: 'PAYMENTS_LIVE', tier: 'feature', disables: 'payments stay inert' },
   { name: 'WARDEN_BASE_URL', tier: 'feature', disables: 'the Desk’s Warden card renders "not deployed" — the API never calls this daemon' },

@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Province } from '@prisma/client';
 // Shared so the address on a waybill and the location in a dispute record can
@@ -587,6 +588,139 @@ export class ShippingService {
     );
   }
 
+  /**
+   * Quote a route that is not a listing — the print-and-deliver add-on.
+   *
+   * ⚠️ THE CALLER SUPPLIES THE COLLECTION ADDRESS. A printed motivation is
+   * collected from the desk's own address, not a seller's, so this stays a
+   * generic route quote rather than a second `quoteForListing`. The parcel is
+   * an A4 envelope; the caller owns its dimensions.
+   *
+   * Cheapest door only: the platform has one courier shape, and the member is
+   * quoted exactly what Bob Go returned. A courier outage is a 503 (retry),
+   * distinct from "no rate for this route" (400).
+   */
+  async quotePrivateDelivery(input: {
+    collection: CarrierAddress;
+    delivery: {
+      streetAddress: string;
+      suburb: string;
+      city: string;
+      postalCode: string;
+      province: Province;
+    };
+    parcel: ParcelDims;
+    declaredValueCents: number;
+    description?: string;
+  }): Promise<ShippingQuote> {
+    if (!PROVINCE_LONG[input.delivery.province]) {
+      throw new BadRequestException(
+        'Choose the province for your delivery address so we can price the courier.',
+      );
+    }
+    const { quote, outage } = await this.bobgoQuoteForRoute({
+      collection: input.collection,
+      delivery: input.delivery,
+      parcel: input.parcel,
+      declaredValueCents: input.declaredValueCents,
+      ...(input.description ? { description: input.description } : {}),
+    });
+    if (outage) {
+      throw new ServiceUnavailableException(
+        'We could not reach the courier for a price just now. Please try again in a moment.',
+      );
+    }
+    if (!quote) {
+      throw new BadRequestException(
+        'No door-delivery rate available for this route right now.',
+      );
+    }
+    return quote;
+  }
+
+  /**
+   * Book a route that is not a transaction — the print-and-deliver add-on.
+   *
+   * Thin wrapper over `bookWithBobGo`; the caller supplies the stored quote
+   * fields and contacts so the exact rate the member paid for is replayed.
+   */
+  async bookPrivateDelivery(input: {
+    collection: CarrierAddress;
+    delivery: CarrierAddress;
+    collectionContact: CarrierContact;
+    deliveryContact: CarrierContact;
+    parcel: ParcelDims;
+    declaredValueCents: number;
+    serviceCode: string;
+    providerSlug: string;
+    serviceLevelCode: string;
+    customerReference?: string;
+    instructionsCollection?: string;
+    instructionsDelivery?: string;
+  }): Promise<CarrierShipmentResult> {
+    return this.bookWithBobGo({
+      collection: {
+        streetAddress: input.collection.streetAddress,
+        suburb: input.collection.suburb,
+        city: input.collection.city,
+        province: input.collection.province,
+        postalCode: input.collection.postalCode,
+        ...(input.collection.type ? { type: input.collection.type } : {}),
+        ...(input.collection.company ? { company: input.collection.company } : {}),
+      },
+      delivery: {
+        streetAddress: input.delivery.streetAddress,
+        suburb: input.delivery.suburb,
+        city: input.delivery.city,
+        province: input.delivery.province,
+        postalCode: input.delivery.postalCode,
+        ...(input.delivery.type ? { type: input.delivery.type } : {}),
+        ...(input.delivery.company ? { company: input.delivery.company } : {}),
+      },
+      collectionContact: input.collectionContact,
+      deliveryContact: input.deliveryContact,
+      parcel: {
+        lengthCm: input.parcel.lengthCm,
+        widthCm: input.parcel.widthCm,
+        heightCm: input.parcel.heightCm,
+        weightKg: input.parcel.weightGrams / 1000,
+        description: 'Printed motivation — A4 envelope',
+      },
+      declaredValueCents: input.declaredValueCents,
+      serviceCode: input.serviceCode,
+      providerSlug: input.providerSlug,
+      serviceLevelCode: input.serviceLevelCode,
+      ...(input.customerReference
+        ? { customerReference: input.customerReference }
+        : {}),
+      ...(input.instructionsCollection
+        ? { instructions: input.instructionsCollection }
+        : {}),
+      ...(input.instructionsDelivery
+        ? { instructionsDelivery: input.instructionsDelivery }
+        : {}),
+    });
+  }
+
+  /**
+   * Re-read a private-delivery booking (the print add-on) without creating a
+   * second shipment. Used by the booking recheck cron.
+   */
+  async recheckPrivateDelivery(
+    shipmentId: number,
+  ): Promise<CarrierShipmentResult> {
+    const r = await this.bobgo.getShipment(shipmentId);
+    return {
+      provider: 'BOBGO',
+      submission: r.submission,
+      failedReason: r.failedReason,
+      shipmentId: String(r.shipmentId),
+      trackingReference: r.trackingReference,
+      pin: r.pin,
+      status: r.rawSubmissionStatus,
+    };
+  }
+
   private quoteFromMenu(
     menu: DeliveryMenu,
     selection: DeliverySelection = {},
@@ -627,6 +761,12 @@ export class ShippingService {
       providerSlug: door.providerSlug,
       serviceLevelCode: door.serviceLevelCode,
       deliveryOption: kind,
+      ...(door.deliveryDaysMin != null
+        ? { deliveryDaysMin: door.deliveryDaysMin }
+        : {}),
+      ...(door.deliveryDaysMax != null
+        ? { deliveryDaysMax: door.deliveryDaysMax }
+        : {}),
     };
   }
 
@@ -1316,6 +1456,7 @@ export class ShippingService {
     serviceLevelCode: string;
     customerReference?: string;
     instructions?: string;
+    instructionsDelivery?: string;
     /** Earliest collection date (ISO +02:00) from the seller's pickup picker. */
     collectionMinDate?: string;
     /** Preferred window "HH:MM" → collection_after / collection_before. */
@@ -1336,6 +1477,9 @@ export class ShippingService {
       declaredValueCents: input.declaredValueCents,
       customerReference: input.customerReference,
       instructionsCollection: input.instructions,
+      ...(input.instructionsDelivery
+        ? { instructionsDelivery: input.instructionsDelivery }
+        : {}),
       ...(input.collectionMinDate
         ? { collectionMinDate: input.collectionMinDate }
         : {}),

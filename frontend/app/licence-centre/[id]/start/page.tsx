@@ -9,6 +9,7 @@ import {
   type IntakeMode,
   type DocumentEngineStatus,
   type IntakeState,
+  type MotivationFulfilmentMode,
   type MotivationOutputMode,
 } from '@/lib/motivations-api';
 import IntakeBlocked from '@/components/licence-centre/intake-blocked';
@@ -119,6 +120,14 @@ export default function IntakeStartPage() {
   const [engine, setEngine] = useState<DocumentEngineStatus | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [placeConfirmed, setPlaceConfirmed] = useState(false);
+  /**
+   * The product chosen on step 1, waiting for step 2 (Print / Download or
+   * Print and Deliver). The interview does not start until both are answered —
+   * that is the "second option after the user has selected one" the operator
+   * asked for.
+   */
+  const [pendingOutput, setPendingOutput] =
+    useState<MotivationOutputMode | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -273,14 +282,30 @@ export default function IntakeStartPage() {
    * still taken per topic inside the interview, so nothing is skipped by not
    * showing a document picker first.
    */
-  async function chooseOutput(outputMode: MotivationOutputMode) {
+  /**
+   * Step 1: choose the product. Nothing is written and the interview does not
+   * start yet — step 2 is the fulfilment choice below the cards.
+   */
+  function chooseOutput(outputMode: MotivationOutputMode) {
     if (busy || uploading) return;
+    setError(null);
+    setPendingOutput(outputMode);
+  }
+
+  /**
+   * Step 2: choose how the finished document reaches them.
+   *
+   * ⚠️ ONE PAYMENT, NOT TWO. The choice is stored on the application now; the
+   * pack screen adds the R75 + courier quote to the single Yoco amount when the
+   * member pays. DIGITAL is the no-extra-charge PDF.
+   */
+  async function chooseFulfilment(mode: MotivationFulfilmentMode) {
+    if (busy || uploading || !pendingOutput) return;
     setBusy(true);
     setError(null);
     try {
-      // The output is set server-side; the state is not rendered in between —
-      // setting it here would flash the mode-only screen for a frame.
-      await motivationsApi.setIntakeOutput(getToken, id, outputMode);
+      await motivationsApi.setIntakeOutput(getToken, id, pendingOutput);
+      await motivationsApi.setFulfilment(getToken, id, mode);
       const next = await motivationsApi.startIntake(getToken, id, 'INTERVIEW');
       setData(next);
       router.push(`/licence-centre/${id}/interview`);
@@ -386,7 +411,9 @@ export default function IntakeStartPage() {
 
   if (!data.mode) {
     const known = profile ? Object.keys(profile.answers).length : 0;
-    const motivationOnly = data.outputMode === 'MOTIVATION_ONLY';
+    // Highlight what the member is choosing NOW, falling back to what the
+    // application already holds (an existing draft can still change product).
+    const motivationOnly = (pendingOutput ?? data.outputMode) === 'MOTIVATION_ONLY';
     return (
       <main className="mx-auto w-full max-w-[760px] px-4 pb-12 pt-5">
         {/* The beta popup, once per application. This is the first screen a
@@ -445,6 +472,89 @@ export default function IntakeStartPage() {
             </span>
           </button>
         </div>
+
+        {/*
+          ⚠️ STEP 2, AND IT EXISTS BECAUSE THE PRODUCT DOES NOT SAY HOW IT
+          REACHES THEM. Print / Download is the PDF at the base price. Print and
+          Deliver adds R75 for printing and binding plus a live courier quote —
+          all inside the SAME Yoco payment made at the end. Choosing a product
+          above only reveals this; it does not start the interview.
+        */}
+        {pendingOutput ? (
+          <div className="mt-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium text-[var(--text-primary)]">
+                  How would you like it?
+                </h2>
+                <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                  Both include the PDF in your account. Print and Deliver adds
+                  printing, binding and courier delivery.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setPendingOutput(null)}
+                className="whitespace-nowrap text-[12px] text-[var(--text-tertiary)] underline"
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void chooseFulfilment('DIGITAL')}
+                className="rounded-xl border p-4 text-left"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-card)',
+                }}
+              >
+                <span className="block text-[15px] font-medium text-[var(--text-primary)]">
+                  Print / Download
+                </span>
+                <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                  The PDF is included and stays in your account. Print it
+                  yourself, at no extra charge.
+                </span>
+                <span className="mt-2 block text-[12px] font-medium text-[var(--text-tertiary)]">
+                  Included
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void chooseFulfilment('DELIVER')}
+                className="rounded-xl border p-4 text-left"
+                style={{
+                  borderColor: 'var(--red)',
+                  background: 'var(--red-wash)',
+                }}
+              >
+                <span className="block text-[15px] font-medium text-[var(--text-primary)]">
+                  Print and Deliver (R75)
+                </span>
+                <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                  We print, bind and courier it to your door. R75 plus the
+                  courier rate, added to the same payment. Your address is
+                  confirmed before you pay.
+                </span>
+                <span className="mt-2 block text-[12px] font-medium text-[var(--text-tertiary)]">
+                  +R75 + delivery
+                </span>
+              </button>
+            </div>
+            {busy ? (
+              <p className="mt-2 text-[12.5px] text-[var(--text-tertiary)]">
+                Starting…
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {profile && known > 0 ? (
           <div

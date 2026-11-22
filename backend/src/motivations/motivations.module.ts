@@ -66,6 +66,8 @@ import { MotivationReasonService } from './motivation-reason.service';
 import { FirearmUsesService } from './firearm-uses.service';
 import { DocumentFilingModule } from '../common/document-filing/document-filing.module';
 import { LegalModule } from '../legal/legal.module';
+import { ShippingModule } from '../shipping/shipping.module';
+import { MotivationPrintService } from './motivation-print.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 â€” LICENCE-SERVICES-AND-FEED.md).
@@ -97,6 +99,9 @@ import { LegalModule } from '../legal/legal.module';
     DocumentFilingModule,
     LegalModule,
     MotivationActivityModule,
+    // Bob Go quoting/booking for the Print-and-Deliver add-on. Shipping does
+    // not import motivations, so this edge is one-way.
+    ShippingModule,
   ],
   controllers: [MotivationsController, MotivationsIntakeController, MotivationsScanController,
     MotivationsWitnessController,
@@ -135,6 +140,8 @@ import { LegalModule } from '../legal/legal.module';
     // The paygate. Not exported: the controller, the quota status and the
     // generation gate all reach it through this module.
     MotivationPaymentsService,
+    // Print and Deliver: quote, fulfilment row, desk email and Bob Go booking.
+    MotivationPrintService,
     MotivationPdfService,
     MotivationModelService,
     MotivationResearchService,
@@ -185,6 +192,8 @@ import { LegalModule } from '../legal/legal.module';
     MotivationReasonService,
     MotivationQuotaService,
     MotivationRetentionService,
+    // The Desk's print queue and booking action.
+    MotivationPrintService,
     // Re-exported so the bug-report path can attach a member's last steps to
     // the operator email. See MotivationActivityModule's own note.
     MotivationActivityModule,

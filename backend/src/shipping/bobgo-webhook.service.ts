@@ -182,6 +182,30 @@ export class BobGoWebhookService {
       })
       .catch(() => null);
     if (!tx) {
+      /**
+       * ⚠️ PRINT-AND-DELIVER PARCELS HAVE NO TRANSACTION. They are a paid
+       * motivation plus a courier booking, and the buyer's digital document
+       * must never depend on this lookup. Match the print order by waybill,
+       * record delivery, and leave the money alone.
+       */
+      const printOrder = await this.prisma.motivationPrintOrder
+        .findFirst({
+          where: { bobgoTrackingReference: trackingReference },
+          select: { id: true, status: true },
+        })
+        .catch(() => null);
+      if (printOrder) {
+        if (mapped === 'DELIVERED') {
+          await this.prisma.motivationPrintOrder.update({
+            where: { id: printOrder.id },
+            data: {
+              status: 'DELIVERED',
+              deliveredAt: new Date(),
+            },
+          });
+        }
+        return { handled: true };
+      }
       // Not ours, or a shipment booked outside the platform. Recorded, ignored.
       this.logger.warn(
         `Bob Go tracking event for unknown reference ${trackingReference}`,

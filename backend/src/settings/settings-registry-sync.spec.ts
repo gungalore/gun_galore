@@ -74,6 +74,7 @@ describe('settings flag registries', () => {
       'motivation_max_gate_cycles',
       'motivation_paid_enabled',
       'motivation_price_cents',
+      'motivation_print_fee_cents',
       'motivation_retention_days',
       'motivation_writer_enabled',
     ]);

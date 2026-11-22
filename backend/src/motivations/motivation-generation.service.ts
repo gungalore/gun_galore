@@ -19,6 +19,7 @@ import {
   tryDecryptText,
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationPrintService } from './motivation-print.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
 import { MotivationActivityService } from './motivation-activity.service';
 import {
@@ -479,6 +480,13 @@ export class MotivationGenerationService {
     /** Jev-backed document engine; absent in old positional specs. */
     @Optional()
     private readonly engine?: DocumentEngineService,
+    /**
+     * Print and Deliver. Optional so existing positional specs keep compiling;
+     * production provides it. If it is absent the digital document is still
+     * written and downloadable — only the desk email is skipped.
+     */
+    @Optional()
+    private readonly print?: MotivationPrintService,
   ) {}
 
   /**
@@ -2308,6 +2316,13 @@ export class MotivationGenerationService {
           },
         });
         await this.notifyOutcome(row, 'ready');
+        /**
+         * ⚠️ THE DESK GETS THE PRINTED COPY'S PDF AFTER THE DOCUMENT EXISTS.
+         * Fire-and-forget: a mail or render failure must never fail the write,
+         * and the digital document is already complete. The print order stays
+         * PAID and the Desk can resend.
+         */
+        void this.print?.onGenerationComplete(row.id).catch(() => undefined);
         void this.activity.record({
           motivationId: row.id,
           motivationRef: row.referenceNumber,

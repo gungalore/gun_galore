@@ -1239,6 +1239,52 @@ export function CheckoutForm({
           {/* UX-3 — saved-address picker (renders only for 2+ book addresses).
               Picking one drives the same capture state a typed address does. */}
           <SavedAddressPicker onSelect={handlePickSavedAddress} />
+          {/*
+            ⚠️ THE CHOICE IS VISIBLE, NOT HIDDEN BEHIND A LINK. The buyer has
+            always been able to override the saved address, but only by finding
+            a small "Ship to a different address →" under the chip. Operator,
+            2026-11-22: the checkout must offer the address input "along with
+            the current saved address if it's available". Two explicit options,
+            same state and payload as before.
+          */}
+          {meLoaded && hasSavedAddress ? (
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                aria-pressed={!useDifferentAddress}
+                onClick={() => setUseDifferentAddress(false)}
+                className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
+                style={{
+                  borderColor: !useDifferentAddress
+                    ? 'var(--red)'
+                    : 'var(--border)',
+                  background: !useDifferentAddress
+                    ? 'var(--red-wash)'
+                    : 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Use my saved address
+              </button>
+              <button
+                type="button"
+                aria-pressed={useDifferentAddress}
+                onClick={() => setUseDifferentAddress(true)}
+                className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
+                style={{
+                  borderColor: useDifferentAddress
+                    ? 'var(--red)'
+                    : 'var(--border)',
+                  background: useDifferentAddress
+                    ? 'var(--red-wash)'
+                    : 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Deliver to a different address
+              </button>
+            </div>
+          ) : null}
           {!meLoaded ? (
             <p
               className="text-xs"

@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import type { MotivationSummary } from '@/lib/motivations-api';
+import { motivationsApi } from '@/lib/motivations-api';
 import { licenceLabel } from '@/lib/licence-labels';
 import DeleteApplication from '@/components/licence-pack/delete-application';
 
@@ -51,6 +53,32 @@ export default function ApplicationRow({
     row.status === 'DRAFT' &&
     row.intakeMode === 'INTERVIEW' &&
     !row.intakeCompletedAt;
+  /**
+   * ⚠️ A PAID MOTIVATION IS ALWAYS DOWNLOADABLE. The pack link opens the same
+   * document, but a member looking at their list should not have to know that:
+   * once the application is COMPLETED the PDF is one press away, whatever the
+   * print-and-deliver status is.
+   */
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
+  async function download() {
+    setDownloading(true);
+    setDownloadError(false);
+    try {
+      const href = await motivationsApi.pdfBlobUrl(token, row.id);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `${row.referenceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } catch {
+      setDownloadError(true);
+    } finally {
+      setDownloading(false);
+    }
+  }
   return (
     <li className="gg-tile mb-2 overflow-hidden rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)]">
       {/*
@@ -105,6 +133,21 @@ export default function ApplicationRow({
             </span>
           </span>
         </Link>
+        {row.status === 'COMPLETED' ? (
+          <button
+            type="button"
+            onClick={() => void download()}
+            disabled={downloading}
+            className="flex min-h-[44px] flex-shrink-0 items-center gap-1.5 border-l border-[var(--border-divider)] px-3 text-[12.5px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-inset)] disabled:opacity-60"
+            title={
+              downloadError
+                ? 'Could not download — open the pack and try again.'
+                : 'Download the PDF'
+            }
+          >
+            {downloading ? 'Preparing…' : downloadError ? 'Retry' : 'Download'}
+          </button>
+        ) : null}
         <DeleteApplication
           token={token}
           motivationId={row.id}

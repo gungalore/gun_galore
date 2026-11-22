@@ -47,6 +47,9 @@ const ATTEMPT = {
   gatewayMerchantRef: 'MO000123-ABC123',
   gatewayMode: 'live',
   redirectUrl: 'https://c.yoco.com/checkout/abc',
+  printFeeCents: 0,
+  shippingCents: 0,
+  printOrderId: null,
   paidAt: null,
   failedAt: null,
   createdAt: new Date(),
@@ -106,6 +109,16 @@ function build(
   };
   const quota = { assertEnabled: jest.fn(async () => undefined) };
   const engine = { assertAvailable: jest.fn(async () => undefined) };
+  const print = {
+    prepareForPayment: jest.fn(async () => ({
+      orderId: 'print-1',
+      reference: 'PRTEST',
+      printFeeCents: 7_500,
+      shippingCents: 5_000,
+      totalCents: 12_500,
+    })),
+    cancelPending: jest.fn(async () => undefined),
+  };
   const activity = { record: jest.fn(async () => undefined) };
   const yoco = {
     isConfigured: jest.fn(() => true),
@@ -140,11 +153,12 @@ function build(
     settings as never,
     rails as never,
     quota as never,
+    print as never,
     activity as never,
     engine as never,
     yoco as never,
   );
-  return { svc, prisma, rails, settings, quota, engine, yoco, activity };
+  return { svc, prisma, rails, settings, quota, engine, yoco, activity, print };
 }
 
 describe('the generation gate', () => {
@@ -274,6 +288,51 @@ describe('starting a checkout', () => {
         redirectUrl: 'https://c.yoco.com/checkout/abc',
       }),
     });
+  });
+
+  it('folds the print fee and the courier quote into the ONE Yoco amount', async () => {
+    const { svc, rails, print, prisma } = build({
+      motivation: { ...UNPAID_ROW, fulfilmentMode: 'DELIVER' },
+    });
+    const res = await svc.start('user-1', 'mo-1', 'https://alloutdoor.co.za', {
+      address: {
+        streetAddress: '1 Long Street',
+        suburb: 'Gardens',
+        city: 'Cape Town',
+        postalCode: '8001',
+        province: 'WESTERN_CAPE',
+      },
+    });
+    expect(print.prepareForPayment).toHaveBeenCalledWith({
+      userId: 'user-1',
+      motivationId: 'mo-1',
+      address: expect.objectContaining({ city: 'Cape Town' }),
+    });
+    expect(res.amountCents).toBe(42_000);
+    expect(rails.createCheckout).toHaveBeenCalledWith(
+      'YOCO',
+      expect.objectContaining({ amountZarCents: 42_000 }),
+    );
+    expect(prisma.motivationPayment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        amountCents: 42_000,
+        printFeeCents: 7_500,
+        shippingCents: 5_000,
+        printOrderId: 'print-1',
+      }),
+    });
+  });
+
+  it('refuses a delivery checkout with no address', async () => {
+    const { svc, rails } = build({
+      motivation: { ...UNPAID_ROW, fulfilmentMode: 'DELIVER' },
+    });
+    await expect(
+      svc.start('user-1', 'mo-1', 'https://alloutdoor.co.za'),
+    ).rejects.toMatchObject({
+      response: { code: 'motivation-print-address-required' },
+    });
+    expect(rails.createCheckout).not.toHaveBeenCalled();
   });
 
   it('hands back a checkout opened minutes ago instead of minting a second', async () => {

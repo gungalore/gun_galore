@@ -39,6 +39,12 @@ import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
+import { MotivationPrintService } from './motivation-print.service';
+import {
+  MotivationPaymentDto,
+  PrintQuoteDto,
+  SetFulfilmentDto,
+} from './dto/motivation-print.dto';
 import {
   CLIENT_ACTIVITY_ACTIONS,
   MotivationActivityService,
@@ -118,6 +124,8 @@ export class MotivationsController {
     // The paygate, direct for the same reason as `generation` above: two routes
     // and no facade behaviour to add.
     private readonly payments: MotivationPaymentsService,
+    // Print and Deliver: the second choice, its quote and its fulfilment row.
+    private readonly print: MotivationPrintService,
     // The support timeline, for the browser's own events.
     private readonly activity: MotivationActivityService,
     // Ownership check for the client beacon. PrismaService is @Global.
@@ -482,6 +490,7 @@ export class MotivationsController {
   payment(
     @CurrentUser() userId: string,
     @Param('id') id: string,
+    @Body() body: MotivationPaymentDto,
     @Req() req: Request,
   ) {
     // Same derivation as the checkout controller: an explicit FRONTEND_URL
@@ -490,7 +499,51 @@ export class MotivationsController {
     const frontendUrl =
       process.env.FRONTEND_URL ??
       `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
-    return this.payments.start(userId, id, frontendUrl);
+    return this.payments.start(userId, id, frontendUrl, {
+      ...(body?.address ? { address: body.address } : {}),
+    });
+  }
+
+  /**
+   * Print / Download or Print and Deliver.
+   *
+   * The second choice, stored per application until the single payment is made.
+   * It is deliberately separate from the output mode: any product can be
+   * delivered either way.
+   */
+  @Patch(':id/fulfilment')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  setFulfilment(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() body: SetFulfilmentDto,
+  ) {
+    return this.print.setFulfilment(userId, id, body.mode);
+  }
+
+  /**
+   * Price the printed add-on for an address, before any money moves.
+   *
+   * One Bob Go call; the returned total includes the motivation, the R75 print
+   * fee and the courier. `POST :id/payment` re-quotes server-side, so this
+   * number is a preview and can never be replayed as the charge.
+   */
+  @Post(':id/print/quote')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  printQuote(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() body: PrintQuoteDto,
+  ) {
+    return this.print.quote(userId, id, body.address);
+  }
+
+  /** The paid/latest print order for this application, for the pack screen. */
+  @Get(':id/print')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  printState(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.print.state(userId, id);
   }
 
   /**

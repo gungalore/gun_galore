@@ -22,6 +22,15 @@
 /** The default price in cents — R295. Mirrors FLAGS.motivationPriceCents. */
 export const MOTIVATION_PRICE_CENTS = 29_500;
 
+/**
+ * Printing, binding and the A4 envelope — R75.
+ *
+ * Mirrors FLAGS.motivationPrintFeeCents. Charged ONLY when the member picks
+ * "Print and Deliver"; the digital "Print / Download" option costs nothing
+ * extra. Delivery is quoted separately from the pickup address.
+ */
+export const MOTIVATION_PRINT_FEE_CENTS = 7_500;
+
 /** R29500 → "R295". Whole rands, because the price is whole. */
 export function formatPrice(cents: number): string {
   if (cents === 0) return 'Free';

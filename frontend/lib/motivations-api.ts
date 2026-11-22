@@ -531,6 +531,43 @@ export interface LibraryItem {
 
 export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
 export type MotivationOutputMode = 'MOTIVATION_ONLY' | 'PRINT_READY';
+
+/** Print / Download vs Print and Deliver. */
+export type MotivationFulfilmentMode = 'DIGITAL' | 'DELIVER';
+
+/** The address a printed copy is delivered to. */
+export interface MotivationPrintAddress {
+  streetAddress: string;
+  address2?: string;
+  suburb: string;
+  city: string;
+  postalCode: string;
+  province: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface MotivationPrintQuote {
+  motivationCents: number;
+  printFeeCents: number;
+  shippingCents: number;
+  totalCents: number;
+  serviceName: string;
+  deliveryDaysMin?: number;
+  deliveryDaysMax?: number;
+}
+
+export interface MotivationPrintState {
+  feeCents: number;
+  order: {
+    reference: string;
+    status: string;
+    totalCents: number;
+    pdfEmailedAt: string | null;
+    bobgoTrackingReference: string | null;
+    deliveredAt: string | null;
+  } | null;
+}
 export type IntakeStage =
   | 'MODE'
   | 'DOCUMENTS'
@@ -2183,12 +2220,45 @@ export const motivationsApi = {
    * START the checkout for this application. Returns the hosted payment page to send the
    * browser to, or `alreadyPaid` when there is nothing to pay.
    */
-  startPayment: (t: TokenGetter, id: string) =>
+  startPayment: (
+    t: TokenGetter,
+    id: string,
+    address?: MotivationPrintAddress,
+  ) =>
     request<{
       redirectUrl: string | null;
       amountCents: number;
       alreadyPaid: boolean;
-    }>(t, `/${id}/payment`, { method: 'POST' }),
+    }>(t, `/${id}/payment`, {
+      method: 'POST',
+      ...(address ? { body: JSON.stringify({ address }) } : {}),
+    }),
+
+  /** The second choice. Editable until the application is paid. */
+  setFulfilment: (
+    t: TokenGetter,
+    id: string,
+    mode: MotivationFulfilmentMode,
+  ) =>
+    request<{ mode: MotivationFulfilmentMode }>(t, `/${id}/fulfilment`, {
+      method: 'PATCH',
+      body: JSON.stringify({ mode }),
+    }),
+
+  /** Price Print and Deliver for an address. No money moves. */
+  printQuote: (
+    t: TokenGetter,
+    id: string,
+    address: MotivationPrintAddress,
+  ) =>
+    request<MotivationPrintQuote>(t, `/${id}/print/quote`, {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    }),
+
+  /** The paid/latest print order, for the pack screen. */
+  printState: (t: TokenGetter, id: string) =>
+    request<MotivationPrintState>(t, `/${id}/print`, { cache: 'no-store' }),
 
   /**
    * "I am back from the bank." Asks the gateway for the authoritative status.

@@ -22,6 +22,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { MotivationActivityService } from './motivation-activity.service';
 import { formatPrice } from './motivation-pricing';
+import type { PrintDeliveryAddress } from './motivation-print.constants';
+import { MotivationPrintService } from './motivation-print.service';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { EDITABLE, isPaidFor } from './motivation-shared.service';
 
@@ -113,6 +115,8 @@ export class MotivationPaymentsService {
     private readonly settings: SettingsService,
     private readonly rails: PaymentRailsService,
     private readonly quota: MotivationQuotaService,
+    // Print and Deliver: quote + the fulfilment row that rides this payment.
+    private readonly print: MotivationPrintService,
     // The support timeline: a payment that "went wrong" is the most expensive
     // report we get, so every step is recorded.
     private readonly activity: MotivationActivityService,
@@ -134,6 +138,11 @@ export class MotivationPaymentsService {
   /** The authoritative price for the NEXT checkout, in cents. */
   async priceCents(): Promise<number> {
     return this.settings.get(FLAGS.motivationPriceCents);
+  }
+
+  /** What "Print and Deliver" adds for printing and binding, in cents. */
+  async printFeeCents(): Promise<number> {
+    return this.settings.get(FLAGS.motivationPrintFeeCents);
   }
 
   /** What the pack screen and the applications list need to render. */
@@ -199,6 +208,7 @@ export class MotivationPaymentsService {
     userId: string,
     id: string,
     frontendUrl: string,
+    fulfilment?: { address?: PrintDeliveryAddress },
   ): Promise<MotivationCheckout> {
     await this.quota.assertEnabled();
     if (!(await this.isPaidMode())) {
@@ -238,6 +248,7 @@ export class MotivationPaymentsService {
         paidAt: true,
         betaSeatNo: true,
         declarationAcceptedAt: true,
+        fulfilmentMode: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -269,7 +280,35 @@ export class MotivationPaymentsService {
       action: 'GENERATE',
     });
 
-    const amountCents = await this.priceCents();
+    const baseCents = await this.priceCents();
+    /**
+     * ⚠️ ONE YOCO AMOUNT, COMPUTED HERE FROM THE STORED FULFILMENT MODE.
+     * "Print and Deliver" adds the print fee and a live Bob Go quote; the
+     * digital option adds nothing. The client's total is never trusted — the
+     * quote is re-run server-side on every checkout.
+     */
+    let printFeeCents = 0;
+    let shippingCents = 0;
+    let printOrderId: string | null = null;
+    if (row.fulfilmentMode === 'DELIVER') {
+      if (!fulfilment?.address) {
+        throw new ConflictException({
+          code: 'motivation-print-address-required',
+          message:
+            'Add the address the printed copy should be delivered to.',
+        });
+      }
+      const prepared = await this.print.prepareForPayment({
+        userId,
+        motivationId: id,
+        address: fulfilment.address,
+      });
+      printFeeCents = prepared.printFeeCents;
+      shippingCents = prepared.shippingCents;
+      printOrderId = prepared.orderId;
+    }
+    const amountCents = baseCents + printFeeCents + shippingCents;
+
     const reusable = await this.prisma.motivationPayment.findFirst({
       where: {
         motivationId: id,
@@ -279,6 +318,7 @@ export class MotivationPaymentsService {
         // motivation payments" rules out.
         provider: PaymentProvider.YOCO,
         amountCents,
+        printOrderId,
         redirectUrl: { not: null },
         createdAt: { gt: new Date(Date.now() - REUSE_ATTEMPT_MS) },
       },
@@ -318,12 +358,16 @@ export class MotivationPaymentsService {
           motivationId: row.id,
           motivationRef: row.referenceNumber,
           reference,
+          ...(printOrderId ? { printOrderId } : {}),
         },
       });
     } catch (err) {
       this.logger.error(
         `Motivation ${row.id}: checkout create failed — ${(err as Error).message}`,
       );
+      if (printOrderId) {
+        await this.print.cancelPending(row.id).catch(() => undefined);
+      }
       throw new ServiceUnavailableException(
         'We could not start the payment. Nothing has been charged — please try again.',
       );
@@ -344,6 +388,9 @@ export class MotivationPaymentsService {
         userId,
         motivationRef: row.referenceNumber,
         amountCents,
+        printFeeCents,
+        shippingCents,
+        printOrderId,
         provider: checkout.provider,
         status: MotivationPaymentStatus.PENDING,
         gatewayCheckoutId: checkout.checkoutId,
@@ -668,12 +715,40 @@ export class MotivationPaymentsService {
           },
           data: { status: MotivationPaymentStatus.CANCELLED },
         });
+        // ⚠️ THE PRINT ORDER IS PAID IN THE SAME TRANSACTION. A payment row
+        // marked PAID with an order still AWAITING_PAYMENT would leave a paid
+        // member with no envelope in the desk queue.
+        if (attempt.printOrderId) {
+          await tx.motivationPrintOrder.updateMany({
+            where: {
+              id: attempt.printOrderId,
+              status: 'AWAITING_PAYMENT',
+            },
+            data: { status: 'PAID' },
+          });
+          await tx.motivationPrintOrder.updateMany({
+            where: {
+              motivationId: attempt.motivationId,
+              status: 'AWAITING_PAYMENT',
+              id: { not: attempt.printOrderId },
+            },
+            data: { status: 'CANCELLED' },
+          });
+        }
         // ⚠️ `billedCents: 0` IN THE WHERE, NOT A BLIND WRITE. A regeneration
         // must never re-price a document that was already paid for, and a
         // second capture must not overwrite the first amount.
+        //
+        // ⚠️ THE BASE ONLY. `billedCents` is what the DOCUMENT cost; the print
+        // fee and the courier live on the payment row's split. Writing the
+        // total here would tell every later reader that the letter cost R445.
+        const basePaid = Math.max(
+          0,
+          attempt.amountCents - attempt.printFeeCents - attempt.shippingCents,
+        );
         await tx.motivation.updateMany({
           where: { id: attempt.motivationId, billedCents: 0 },
-          data: { billedCents: attempt.amountCents, paidAt: now },
+          data: { billedCents: basePaid, paidAt: now },
         });
       }
       return already;

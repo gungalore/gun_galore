@@ -53,6 +53,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { UsersModule } from '../users/users.module';
 import { MotivationActivityModule } from '../motivations/motivation-activity.module';
+import { MotivationsModule } from '../motivations/motivations.module';
 
 @Module({
   // ListingsModule so reviewListing can re-index the listing in
@@ -73,6 +74,9 @@ import { MotivationActivityModule } from '../motivations/motivation-activity.mod
     // The support timeline lookup (/admin/motivations/activity). Tiny module,
     // no dependency on the motivation writer itself.
     MotivationActivityModule,
+    // Print and Deliver queue/booking. MotivationsModule exports
+    // MotivationPrintService; it does not import AdminModule, so one-way.
+    MotivationsModule,
   ],
   providers: [
     AdminAuthService,

@@ -743,6 +743,29 @@ Refunds are keyed on the **checkout** id, not the payment id; they are manual in
 the Yoco dashboard today (the service exposes `refundCheckout` for a future
 admin path).
 
+## Print and Deliver (motivations only)
+
+The second choice on a motivation: **Print / Download** (the PDF, no extra
+charge) or **Print and Deliver** (we print, bind and courier it). The R75 print
+fee and the live Bob Go quote are added to the **same** Yoco amount as the
+motivation — there is no second transaction.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `MOTIVATION_PRINT_PHONE` | **For booking** | Collection contact mobile. No default: booking refuses until it is set, because Bob Go needs a reachable number at the door. |
+| `MOTIVATION_PRINT_EMAIL` | Optional | Where the PDF and customer details are emailed for printing. Defaults to `gerhard.fourie@alloutdoor.co.za`. |
+| `MOTIVATION_PRINT_PICKUP_*` | Optional | Pickup address, defaulting to 36 Sterappel Crescent, Langeberg Glen, Kraaifontein, 7570, Western Cape. |
+| `MOTIVATION_PRINT_PARCEL_*` | Optional | A4 envelope: 35 × 25 × 3 cm, 500 g. Under 1 kg by design. |
+
+Runtime flag: `motivation_print_fee_cents` (default `7500` = R75; admin
+settings). It is the print/binding fee only; delivery is quoted at the Bob Go
+door rate.
+
+The order is **PAID** with the single payment, the PDF is emailed to the desk
+when generation completes, and the Desk's **Print & delivery** card is the only
+place that books the collection. The buyer's digital document stays downloadable
+before, during and after delivery.
+
 ## Accounting — Zoho Books
 
 ### `ZOHO_BOOKS_ENABLED`

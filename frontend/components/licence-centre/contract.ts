@@ -307,6 +307,17 @@ export interface SheetResponse {
       paidAt: string | null;
     };
     /**
+     * The second choice: Print / Download or Print and Deliver.
+     *
+     * ⚠️ THE FEE IS THE SERVER'S, NOT R75 IN THE CLIENT. The add-on is part of
+     * the ONE Yoco amount, so the number on the button, the quote and the
+     * charge all have to come from the same setting.
+     */
+    fulfilment?: {
+      mode: 'DIGITAL' | 'DELIVER';
+      printFeeCents: number;
+    };
+    /**
      * A rebuild is scheduled after a failed run.
      *
      * ⚠️ THE MEMBER IS NEVER TOLD IT FAILED — the screen shows "being written"

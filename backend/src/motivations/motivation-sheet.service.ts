@@ -199,6 +199,15 @@ export interface SheetResponse {
      * moment an operator changed the setting.
      */
     payment: MotivationPaymentState;
+    /**
+     * Print / Download vs Print and Deliver. The second choice, stored per
+     * application; `printFeeCents` is the R75 the add-on will add to the SINGLE
+     * Yoco amount. Delivery is quoted separately per address.
+     */
+    fulfilment: {
+      mode: 'DIGITAL' | 'DELIVER';
+      printFeeCents: number;
+    };
     /** A silent rebuild is scheduled. Render as "being written", never failed. */
     retrying: boolean;
     /**
@@ -613,6 +622,7 @@ export class MotivationSheetService {
         referenceNumber: true,
         licenceType: true,
         outputMode: true,
+        fulfilmentMode: true,
         label: true,
         status: true,
         declarationAcceptedAt: true,
@@ -826,6 +836,7 @@ export class MotivationSheetService {
     // "Write". Computed here rather than on the client so the price shown is
     // the price the checkout will be created for.
     const payment = await this.payments.state(row);
+    const printFeeCents = await this.payments.printFeeCents();
 
     return {
       application: {
@@ -833,6 +844,15 @@ export class MotivationSheetService {
         referenceNumber: row.referenceNumber,
         licenceType: row.licenceType,
         outputMode: row.outputMode,
+        /**
+         * The second choice: DIGITAL ("Print / Download") or DELIVER ("Print
+         * and Deliver"). It is a separate axis from outputMode — either product
+         * can be delivered either way — and it is locked once paid.
+         */
+        fulfilment: {
+          mode: row.fulfilmentMode === 'DELIVER' ? 'DELIVER' : 'DIGITAL',
+          printFeeCents,
+        },
         licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
         label: row.label,
         // ⚠️ THE NAME THE HEADING AND THE VAULT SHOW. See motivation-title.ts.

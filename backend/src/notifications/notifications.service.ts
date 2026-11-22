@@ -5121,6 +5121,129 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Print and Deliver — the desk's copy.
+   *
+   * ⚠️ THE PDF IS THE ATTACHMENT, THE DETAILS ARE THE BODY. The operator has to
+   * print, bind and hand the parcel to Bob Go, so the address and phone must be
+   * readable without opening the dashboard. The customer's ID number is inside
+   * the PDF and deliberately not repeated here.
+   */
+  async motivationPrintOrderForOperator(
+    d: {
+      email: string;
+      printReference: string;
+      motivationReference: string;
+      outputMode: string;
+      username: string | null;
+      customerName: string;
+      customerEmail: string;
+      customerPhone: string;
+      address: {
+        streetAddress: string;
+        address2?: string;
+        suburb: string;
+        city: string;
+        postalCode: string;
+        province: string;
+      };
+      printFeeCents: number;
+      shippingCents: number;
+      totalCents: number;
+      serviceName: string | null;
+    },
+    pdf: Buffer,
+  ): Promise<void> {
+    const address = [
+      d.address.streetAddress,
+      d.address.address2,
+      d.address.suburb,
+      d.address.city,
+      d.address.postalCode,
+      d.address.province,
+    ]
+      .filter((part) => Boolean(part && String(part).trim()))
+      .join(', ');
+    const html = this.email({
+      status: { tone: 'pending', label: 'Print & deliver' },
+      headline: `Print ${d.motivationReference} and book the collection`,
+      body:
+        `A member paid for a printed copy of ${b(d.motivationReference)}. ` +
+        `The PDF is attached. Print and bind it, put it in an A4 envelope, then ` +
+        `press <strong>Book Bob Go collection</strong> in the Desk.` +
+        `<br><br><strong>Deliver to</strong><br>${b(address)}` +
+        `<br><br>Courier will collect from 36 Sterappel Crescent, Langeberg Glen, Kraaifontein, 7570.`,
+      rows: [
+        { label: 'Print reference', value: d.printReference },
+        { label: 'Motivation', value: d.motivationReference },
+        { label: 'Product', value: d.outputMode === 'PRINT_READY' ? 'Print-ready pack' : 'Motivation only' },
+        { label: 'Member', value: d.username ? `@${d.username}` : '—' },
+        { label: 'Name', value: d.customerName },
+        { label: 'Email', value: d.customerEmail },
+        { label: 'Phone', value: d.customerPhone },
+        { label: 'Address', value: address },
+        { label: 'Print fee', value: formatRand(d.printFeeCents) },
+        { label: 'Delivery', value: `${formatRand(d.shippingCents)}${d.serviceName ? ` · ${d.serviceName}` : ''}` },
+        { label: 'Add-on total', value: formatRand(d.totalCents) },
+      ],
+      preheader: `Print ${d.motivationReference} — ${d.customerName}`,
+    });
+    await this.send(
+      d.email,
+      `Print & deliver: ${d.motivationReference} — ${d.customerName}`,
+      html,
+      [{ filename: `${d.motivationReference}-print.pdf`, content: pdf }],
+    );
+  }
+
+  /** Print and Deliver — the buyer's "it is on its way" notice. */
+  async motivationPrintBookedBuyer(d: {
+    email: string;
+    name: string;
+    phone: string;
+    printReference: string;
+    trackingReference: string;
+    serviceName: string | null;
+    address: {
+      streetAddress: string;
+      address2?: string;
+      suburb: string;
+      city: string;
+      postalCode: string;
+      province: string;
+    };
+  }): Promise<void> {
+    const address = [
+      d.address.streetAddress,
+      d.address.address2,
+      d.address.suburb,
+      d.address.city,
+      d.address.postalCode,
+      d.address.province,
+    ]
+      .filter((part) => Boolean(part && String(part).trim()))
+      .join(', ');
+    const html = this.email({
+      status: { tone: 'success', label: 'On its way' },
+      headline: 'Your printed motivation is on its way',
+      body:
+        `Hi ${b(d.name)}, your printed and bound copy has been collected by the courier. ` +
+        `Your digital copy stays in your account — you can download it at any time.`,
+      rows: [
+        { label: 'Print reference', value: d.printReference },
+        { label: 'Waybill / tracking', value: d.trackingReference },
+        ...(d.serviceName ? [{ label: 'Courier', value: d.serviceName }] : []),
+        { label: 'Delivering to', value: address },
+      ],
+      preheader: `Tracking ${d.trackingReference}`,
+    });
+    await this.send(
+      d.email,
+      `Your printed motivation is on its way — ${d.trackingReference}`,
+      html,
+    );
+  }
+
   // ---------------------------------------------------------------
   // Internal send — always fails open
   // ---------------------------------------------------------------
