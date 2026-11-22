@@ -34,6 +34,11 @@ import { overlapFromAnswers } from './motivation-overlap';
 import { motivationTitle } from './motivation-title';
 import { previewFor, type PreviewSection } from './motivation-preview';
 import { MotivationSharedService } from './motivation-shared.service';
+import {
+  cartridgeOptionsFor,
+  cartridgeSource,
+  findCartridge,
+} from './motivation-cartridge';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 import {
   MotivationPaymentsService,
@@ -440,6 +445,67 @@ export class MotivationSheetService {
    * task. `suggested` is reserved for a value we INFERRED rather than read,
    * which is the one case where a confirm step is not work we invented.
    */
+  /**
+   * The cartridge question, when — and only when — the typed calibre does not
+   * resolve to one round.
+   *
+   * ⚠️ THE CHOICE IS THE WHOLE POINT. `findCartridge` refuses an ambiguous
+   * family name ("9mm", ".38") so the pack can never print one cartridge's
+   * dimensions under another's name. That safety used to cost the applicant
+   * the drawing and the dimension page entirely. Offering the rows the name
+   * actually touches turns the refusal into a question they can answer, and
+   * the text box covers a round the catalogue does not hold.
+   *
+   * A resolved calibre needs no item, even when an old `firearm_cartridge`
+   * answer is still in the blob: the typed calibre is unambiguous, so the
+   * answer cannot change which round is printed.
+   */
+  private async cartridgeChoice(
+    answers: Record<string, string>,
+    provenance: ProvenanceMap,
+  ): Promise<SheetItem | null> {
+    const calibre = (answers.firearm_calibre ?? '').trim();
+    if (!calibre) return null;
+
+    let rows: {
+      name: string;
+      slug: string | null;
+      aliases: { printed: string }[];
+    }[];
+    try {
+      rows = await this.prisma.benchCartridge.findMany({
+        select: {
+          name: true,
+          slug: true,
+          aliases: { select: { printed: true } },
+        },
+      });
+    } catch {
+      // A catalogue read failure must not take the whole review sheet down;
+      // the pack simply arrives without the cartridge panel.
+      return null;
+    }
+
+    if (findCartridge(rows, cartridgeSource(answers))) return null;
+
+    const chosen = (answers.firearm_cartridge ?? '').trim();
+    const choices = cartridgeOptionsFor(rows, calibre).map((r) => r.name);
+    const item: SheetItem = {
+      key: 'firearm_cartridge',
+      label: 'Which cartridge is it?',
+      kind: 'short',
+      state: chosen ? 'filled' : 'needs_you',
+      value: chosen,
+      provenance: provenance['firearm_cartridge'] ?? null,
+      section: SECTION_OF['The firearm'] ?? 'case',
+      scope: 'application',
+      required: false,
+      help: 'Pick the exact cartridge — the stamped name selects the right drawing and dimension page. If it is not listed, type what is on the box or the barrel.',
+    };
+    if (choices.length) item.choices = choices;
+    return item;
+  }
+
   private stateOf(
     field: MotivationField,
     answers: Record<string, string>,
@@ -649,7 +715,12 @@ export class MotivationSheetService {
     );
 
     const served = expandFields(fieldsFor(row.licenceType)).filter(
-      (f) => componentsRead || !COMPONENT_ROWS.includes(f.key),
+      (f) =>
+        (componentsRead || !COMPONENT_ROWS.includes(f.key)) &&
+        // The cartridge field is internal: the conditional item below is the
+        // only way it reaches the sheet, so the registry row must not also
+        // arrive here as an `na` duplicate.
+        f.key !== 'firearm_cartridge',
     );
 
     const items: SheetItem[] = served.map((f) => {
@@ -683,6 +754,17 @@ export class MotivationSheetService {
       }
       return item;
     });
+
+    /**
+     * ⚠️ THE CARTRIDGE, WHEN THE TYPED CALIBRE IS A FAMILY RATHER THAN A ROUND.
+     * A "9mm" licence cannot say whether it is 9 mm Luger, 9 mm Makarov or
+     * 9 mm Browning court/.380 ACP, and the pack must not pick one silently.
+     * The item below is the member's chance to: buttons of the rows the typed
+     * name touches, plus the always-open text box for anything not held. It is
+     * appended rather than registered so it appears ONLY while unresolved.
+     */
+    const cartridgeItem = await this.cartridgeChoice(answers, provenance);
+    if (cartridgeItem) items.push(cartridgeItem);
 
     /**
      * ⚠️ THE SHEET AND THE GENERATION GATE MUST AGREE. `missingRequired` alone

@@ -65,6 +65,47 @@ describe('needs_you — the control is open, always', () => {
   });
 });
 
+describe('a short field with choices — pick a cartridge or type one', () => {
+  const item = needsYou({
+    key: 'firearm_cartridge',
+    label: 'Which cartridge is it?',
+    help: 'Pick the exact cartridge',
+    choices: ['9 mm Luger', '9 mm Makarov'],
+  });
+
+  it('renders every candidate as a button, not a dropdown', () => {
+    render(<SheetRow item={item} onChange={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '9 mm Luger' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '9 mm Makarov' })).toBeDefined();
+    // And the box for a round the catalogue does not hold.
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  it('reports the chosen cartridge', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={item} onChange={onChange} />);
+    await userEvent.click(screen.getByRole('button', { name: '9 mm Makarov' }));
+    expect(onChange).toHaveBeenCalledWith('9 mm Makarov');
+  });
+
+  it('lets the candidate be un-picked by pressing it again', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={{ ...item, value: '9 mm Luger' }} onChange={onChange} />);
+    const button = screen.getByRole('button', { name: '9 mm Luger' });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('still accepts a typed cartridge that is not on the buttons', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={item} onChange={onChange} />);
+    await userEvent.type(screen.getByRole('textbox'), '9mm Wildex');
+    expect(onChange).toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith('9');
+  });
+});
+
 describe('dedicated status — the member-since copy', () => {
   it('⚠️ offers "same as member since" and fills the joining date', async () => {
     // MO000098: "Member of that association since" was filled from the

@@ -71,6 +71,15 @@ function choicesFor(
       ...values.map((v) => ({ value: v, label: v })),
     ];
   }
+  /**
+   * ⚠️ A SHORT FIELD CAN STILL CARRY CHOICES. The cartridge question is the
+   * first one: the sheet serves the candidate rounds as buttons, and the text
+   * box stays open for anything not held. Without this branch the buttons
+   * would arrive as the field's (empty) research suggestions.
+   */
+  if (field.kind === 'short' && item?.choices?.length) {
+    return item.choices.map((v) => ({ value: v, label: v }));
+  }
   return suggestions.map((s) => ({ value: s, label: s }));
 }
 
@@ -461,6 +470,17 @@ function isPending(
   ) {
     return false;
   }
+  /**
+   * ⚠️ THE CARTRIDGE IS ASKED ONLY WHEN THE SHEET SAID IT IS OUTSTANDING.
+   * The sheet builds that item only for an unresolved calibre, and drops it
+   * once the answer resolves — so a resolved "9mm Luger" never sees a second
+   * question, and an ambiguous "9mm" sees exactly one.
+   */
+  if (key === 'firearm_cartridge') {
+    // A deliberate Skip settles it, exactly like every other optional field.
+    if (provenance?.[key]?.source === 'SKIPPED') return false;
+    return items.get(key)?.state === 'needs_you';
+  }
   const existing = valueOf(key, merged, items);
   /**
    * ⚠️ A SKIP IS AN ANSWER TO "DO YOU WANT TO ANSWER THIS".
@@ -504,7 +524,12 @@ function plannerContext(input: PlannerInput) {
   const items = new Map(input.sheet.items.map((i) => [i.key, i]));
   const merged = { ...input.answers };
   for (const item of input.sheet.items) merged[item.key] = item.value;
-  const fields = visibleFields(input.type, strategy, merged, input.brief);
+  const fields = visibleFields(input.type, strategy, merged, input.brief).filter(
+    // ⚠️ THE CARTRIDGE COUNTS ONLY WHEN THE SHEET SAID IT APPLIES. A resolved
+    // calibre has no cartridge item, and leaving the field in the total would
+    // park the progress bar one question short of 100% forever.
+    (f) => f.key !== 'firearm_cartridge' || items.has('firearm_cartridge'),
+  );
   /**
    * ⚠️ A SKIPPED OPTIONAL QUESTION IS SETTLED, NOT OUTSTANDING. Counting only
    * values would leave the progress bar permanently short of 100% on a member

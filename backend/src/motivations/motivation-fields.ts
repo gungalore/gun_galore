@@ -95,7 +95,10 @@ import { answerValue } from '../common/card-placeholder';
 // the whole reason the version is stamped rather than assumed. Every removal
 // above is a RETIREMENT — fieldByKey still finds the key — and not a deletion,
 // so the wizard's whole-blob autosave cannot drop an answer somebody gave.
-export const FIELD_REGISTRY_VERSION = '2026-10-29a';
+// 2026-11-22: `firearm_cartridge` added. A SAPS card that prints only "9mm"
+// cannot name the round, so the review sheet offers the candidate cartridges and
+// a text box; the answer is a key, so the version moves.
+export const FIELD_REGISTRY_VERSION = '2026-11-22a';
 
 // â”€â”€ THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
@@ -1510,6 +1513,33 @@ const COMMON_FIELDS: readonly MotivationField[] = [
      */
     help: 'As it is stamped — 9mm Parabellum / 9×19, 9mm Short / .380 ACP or 9mm Makarov. "9mm" alone cannot be matched to a cartridge sheet.',
     required: true,
+    maxLength: 60,
+  },
+  {
+    /**
+     * ⚠️ THE SECOND HALF OF AN AMBIGUOUS CALIBRE, AND IT IS ASKED ONLY WHEN THE
+     * CALIBRE CANNOT BE RESOLVED. A SAPS card prints "9mm"; the C.I.P. index
+     * holds 9 mm Luger, 9 mm Makarov and 9 mm Browning court/.380 ACP as three
+     * different rounds. `findCartridge` deliberately refuses to guess, so
+     * without this answer the pack printed no cartridge drawing and no
+     * dimension page — the operator's "nothing about the cartridge".
+     *
+     * The review sheet offers the candidates as buttons and keeps the text box
+     * for a round the catalogue does not hold; the interview asks the same
+     * question, with the same choices, when the sheet says it is outstanding.
+     * `cartridgeSource` makes this value beat `firearm_calibre` everywhere the
+     * cartridge is resolved.
+     *
+     * INTERNAL: it must never become a fifth firearm box on a form that already
+     * asks make, model and calibre. It is shown only by the conditional sheet
+     * item and the planner's pending rule — never by `isVisible`.
+     */
+    key: 'firearm_cartridge',
+    internal: true,
+    label: 'Which cartridge is it?',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Pick the exact cartridge — the stamped name is what selects the right drawing and dimension page. If it is not listed, type what is on the box or the barrel.',
     maxLength: 60,
   },
   {

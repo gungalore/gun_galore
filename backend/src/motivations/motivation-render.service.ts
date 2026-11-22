@@ -99,7 +99,7 @@ import * as path from 'node:path';
 import { CIP_INSET_SCALE, rasterisePdfToDir } from './pdf-raster';
 import { DocumentPageRasterService } from './document-page-raster.service';
 import sharp from 'sharp';
-import { findCartridge } from './motivation-cartridge';
+import { cartridgeSource, findCartridge } from './motivation-cartridge';
 import { shotShellFor, shotshellDrawing } from './motivation-shotshell';
 import {
   cartridgeDimRows,
@@ -1255,7 +1255,7 @@ export class MotivationRenderService {
     const answers = this.shared.readAnswers(row.answersEncrypted);
     const at = row.completedAt ?? new Date();
     const cartridge = await this.cartridgeDrawingFor(
-      answers.firearm_calibre,
+      cartridgeSource(answers),
       heroSubtitle(answers),
       { skipCip: true },
     );
@@ -1589,7 +1589,7 @@ export class MotivationRenderService {
      * never fail to match for the other.
      */
     const cartridge = await this.cartridgeDrawingFor(
-      answers.firearm_calibre,
+      cartridgeSource(answers),
       heroSubtitle(answers),
     );
 
@@ -1607,7 +1607,7 @@ export class MotivationRenderService {
     // sheet directly so the dimension page is not lost with the drawing.
     const standaloneCip = cartridge
       ? null
-      : await this.cipInset((answers.firearm_calibre ?? '').trim());
+      : await this.cipInset(cartridgeSource(answers));
     const dimensionImage = cartridge?.dimension ?? standaloneCip;
 
     /**

@@ -2,6 +2,8 @@ import {
   calibreCandidates,
   calibreKey,
   cartridgeFacts,
+  cartridgeOptionsFor,
+  cartridgeSource,
   findCartridge,
   type CartridgeRow,
 } from './motivation-cartridge';
@@ -264,5 +266,58 @@ describe('a calibre written with mm and filed without', () => {
 
   it('leaves an exact name alone — the stripped form is only a fallback', () => {
     expect(findCartridge(rows, '6.5 PRC')?.name).toBe('6.5 PRC');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE CHOICE, WHEN "9MM" IS NOT ONE ROUND.
+//
+// findCartridge refuses a family name on purpose — printing 9 mm Luger's
+// dimensions under a 9 mm Makarov application is worse than printing none.
+// These tests protect the other half: the candidate list the member picks
+// from, so the refusal becomes a question rather than a missing page.
+// ────────────────────────────────────────────────────────────────────
+
+const CATALOGUE = [
+  { name: '9 mm Luger', slug: '9mm-luger', aliases: [{ printed: '9x19' }] },
+  { name: '9 mm Makarov', slug: '9mm-makarov', aliases: [] },
+  { name: '9 mm Browning court', slug: '380', aliases: [{ printed: '.380 ACP' }] },
+  { name: '.308 Winchester', slug: '308', aliases: [] },
+  { name: '.38 Special', slug: '38-special', aliases: [] },
+];
+
+describe('the cartridge shortlist for an ambiguous calibre', () => {
+  it('lists every round a bare 9mm touches, shortest name first', () => {
+    const options = cartridgeOptionsFor(CATALOGUE, '9mm').map((c) => c.name);
+    expect(options).toEqual([
+      '9 mm Luger',
+      '9 mm Makarov',
+      '9 mm Browning court',
+    ]);
+    expect(options).not.toContain('.308 Winchester');
+  });
+
+  it('does not offer the rifle rounds a .38 family is unrelated to', () => {
+    const options = cartridgeOptionsFor(CATALOGUE, '.38').map((c) => c.name);
+    expect(options).toContain('.38 Special');
+    expect(options).not.toContain('.308 Winchester');
+  });
+
+  it('returns nothing for an empty calibre, and never more than the limit', () => {
+    expect(cartridgeOptionsFor(CATALOGUE, '   ')).toEqual([]);
+    expect(cartridgeOptionsFor(CATALOGUE, '9mm', 2)).toHaveLength(2);
+  });
+});
+
+describe('which value resolves the cartridge', () => {
+  it('prefers the member’s explicit choice over the typed calibre', () => {
+    expect(
+      cartridgeSource({ firearm_calibre: '9mm', firearm_cartridge: '9 mm Makarov' }),
+    ).toBe('9 mm Makarov');
+  });
+
+  it('falls back to the calibre when no choice was made', () => {
+    expect(cartridgeSource({ firearm_calibre: '9mm Luger' })).toBe('9mm Luger');
+    expect(cartridgeSource({})).toBe('');
   });
 });

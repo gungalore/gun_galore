@@ -817,3 +817,44 @@ describe('the researcher follow-up slots', () => {
     ).toBe(true);
   });
 });
+
+describe('the cartridge follow-up', () => {
+  const CARTRIDGE_ITEM = {
+    key: 'firearm_cartridge',
+    label: 'Which cartridge is it?',
+    kind: 'short' as const,
+    state: 'needs_you' as const,
+    value: '',
+    provenance: null,
+    section: 'firearm',
+    scope: 'application' as const,
+    required: false,
+    choices: ['9 mm Luger', '9 mm Makarov'],
+  };
+
+  it('offers it as a pending question with the candidate buttons', () => {
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...COMMON, firearm_calibre: '9mm' },
+      sheet: { ...EMPTY_SHEET, items: [CARTRIDGE_ITEM] } as SheetResponse,
+    };
+    const pending = pendingFields(input).map((entry) => entry.key);
+    expect(pending).toContain('firearm_cartridge');
+
+    const q = questionForField(input, 'firearm_cartridge');
+    expect(q?.kind).toBe('short');
+    expect(q?.choices?.map((c) => c.value)).toEqual([
+      '9 mm Luger',
+      '9 mm Makarov',
+    ]);
+  });
+
+  it('never asks it when the sheet has no cartridge item', () => {
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...COMMON, firearm_calibre: '9mm Luger' },
+      sheet: EMPTY_SHEET,
+    }).map((entry) => entry.key);
+    expect(pending).not.toContain('firearm_cartridge');
+  });
+});

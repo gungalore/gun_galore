@@ -43,6 +43,14 @@ const COMMON_FIRST = [
   'firearm_make',
   'firearm_model',
   'firearm_calibre',
+  /**
+   * ⚠️ ONLY WHEN THE CALIBRE IS A FAMILY. The sheet decides: an ambiguous
+   * "9mm" gets a synthetic item with the candidate cartridges, a resolved
+   * "9mm Luger" gets none, and the planner's isPending skips the key entirely
+   * unless that item is outstanding. It sits immediately after the calibre so
+   * the member answers it while the firearm is still in front of them.
+   */
+  'firearm_cartridge',
   'firearm_serial',
   /**
    * ⚠️ "WHY THIS ONE RATHER THAN ANOTHER" IS ASKED WITH THE FIREARM. The

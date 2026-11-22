@@ -329,6 +329,66 @@ export function findCartridge<T extends NameableCartridge>(
   return null;
 }
 
+/**
+ * The cartridges a family name could mean — the buttons the member chooses
+ * between when a bare "9mm" cannot be resolved.
+ *
+ * ⚠️ THIS IS A SHORTLIST, NEVER A GUESS. `findCartridge` refuses an ambiguous
+ * name precisely so the pack never prints one round's dimensions under
+ * another's name. The shortlist is the other half of that decision: instead of
+ * leaving the member with no cartridge page, offer the rows the typed name
+ * actually touches and let them pick (or type something else).
+ *
+ * The match is the same reduction the lookup uses, at the family level: every
+ * stored name/alias that starts with the typed key, plus a boundary-safe
+ * substring. Three characters is the floor here, deliberately lower than the
+ * lookup's four — "9MM" is a family, and the whole point is to enumerate it.
+ */
+export function cartridgeOptionsFor<T extends NameableCartridge>(
+  rows: readonly T[],
+  printed: string,
+  limit = 6,
+): T[] {
+  const wanted = calibreCandidates(printed).filter((w) => w.length >= 2);
+  if (!wanted.length) return [];
+  const seen = new Set<T>();
+  const out: T[] = [];
+  for (const want of wanted) {
+    for (const row of rows) {
+      if (seen.has(row)) continue;
+      const hit = keysOf(row).some((k) => {
+        if (k.startsWith(want)) return true;
+        const at = k.indexOf(want);
+        if (at < 0) return false;
+        return !/[a-z0-9]/i.test(k[at - 1] ?? '');
+      });
+      if (hit) {
+        seen.add(row);
+        out.push(row);
+      }
+    }
+  }
+  // Shortest name first: "9 mm Luger" and "9 mm Makarov" ahead of
+  // "9 mm Browning court", which is the order a member recognises them in.
+  out.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
+  return out.slice(0, limit);
+}
+
+/**
+ * What the pack should resolve the cartridge from.
+ *
+ * ⚠️ THE MEMBER'S EXPLICIT CHOICE BEATS THE TYPED CALIBRE. A licence card that
+ * prints "9mm" cannot tell 9 mm Luger from 9 mm Makarov or .380 ACP; once the
+ * member has picked or typed the exact cartridge, every reader — the drawing,
+ * the fact pack and the C.I.P. page — must use that and not the family name.
+ */
+export function cartridgeSource(answers: Record<string, string | undefined>): string {
+  return (
+    (answers.firearm_cartridge ?? '').trim() ||
+    (answers.firearm_calibre ?? '').trim()
+  );
+}
+
 export function cartridgeFacts(row: CartridgeRow | null): string | null {
   if (!row) return null;
   const d = row.dims ?? {};

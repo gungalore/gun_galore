@@ -55,6 +55,12 @@ function build(
     credentials?: { id: string; kind: string; otherSideId: string | null }[];
     /** Statements of results, for the 117705 read. */
     statements?: { ocrTextEncrypted: string | null }[];
+    /** The cartridge catalogue the paygate's drawing resolves against. */
+    cartridges?: {
+      name: string;
+      slug: string | null;
+      aliases: { printed: string }[];
+    }[];
   } = {},
 ) {
   const prisma = {
@@ -104,6 +110,9 @@ function build(
     // 117705 read. See MotivationSharedService.proficiencyFor.
     motivationUpload: {
       findMany: jest.fn(async (): Promise<any> => opts.statements ?? []),
+    },
+    benchCartridge: {
+      findMany: jest.fn(async (): Promise<any> => opts.cartridges ?? []),
     },
   };
   const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
@@ -612,5 +621,68 @@ describe('a certificate that is also the letter of good standing', () => {
     expect(sheet.needs.missingRequired).toContain('GOOD_STANDING_LETTER');
     // The card itself is attached either way, so only the second role moves.
     expect(sheet.needs.missingRequired).not.toContain('ASSOCIATION_CARD');
+  });
+});
+
+describe('an ambiguous calibre', () => {
+  const CARTRIDGES = [
+    {
+      name: '9 mm Luger',
+      slug: '9mm-luger',
+      aliases: [{ printed: '9mm Parabellum' }, { printed: '9x19' }],
+    },
+    { name: '9 mm Makarov', slug: '9mm-makarov', aliases: [] },
+    {
+      name: '9 mm Browning court',
+      slug: '380-acp',
+      aliases: [{ printed: '.380 ACP' }],
+    },
+    { name: '.308 Winchester', slug: '308-win', aliases: [] },
+  ];
+
+  it('offers the rounds a bare 9mm could mean, with a text box', async () => {
+    const { svc } = build(
+      { firearm_calibre: '9mm' },
+      { cartridges: CARTRIDGES },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const item = itemFor(sheet.items, 'firearm_cartridge');
+    expect(item).toBeDefined();
+    expect(item.state).toBe('needs_you');
+    expect(item.kind).toBe('short');
+    expect(item.choices).toEqual(
+      expect.arrayContaining(['9 mm Luger', '9 mm Makarov', '9 mm Browning court']),
+    );
+    expect(item.choices).not.toContain('.308 Winchester');
+  });
+
+  it('asks nothing when the calibre already names one round', async () => {
+    const { svc } = build(
+      { firearm_calibre: '9mm Luger' },
+      { cartridges: CARTRIDGES },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(itemFor(sheet.items, 'firearm_cartridge')).toBeUndefined();
+  });
+
+  it('asks nothing once the member has chosen a round we hold', async () => {
+    const { svc } = build(
+      { firearm_calibre: '9mm', firearm_cartridge: '9 mm Makarov' },
+      { cartridges: CARTRIDGES },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(itemFor(sheet.items, 'firearm_cartridge')).toBeUndefined();
+  });
+
+  it('keeps a typed cartridge that is not in the catalogue, so it can be corrected', async () => {
+    const { svc } = build(
+      { firearm_calibre: '9mm', firearm_cartridge: '9mm Wildex' },
+      { cartridges: CARTRIDGES },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const item = itemFor(sheet.items, 'firearm_cartridge');
+    expect(item.state).toBe('filled');
+    expect(item.value).toBe('9mm Wildex');
+    expect(item.choices).toContain('9 mm Luger');
   });
 });

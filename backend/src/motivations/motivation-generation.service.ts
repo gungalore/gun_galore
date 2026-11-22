@@ -84,7 +84,11 @@ import {
   parseTravelledAreas,
 } from './motivation-danger-areas';
 import { areasOnRoute, decodePolyline } from './motivation-route';
-import { cartridgeFacts, findCartridge } from './motivation-cartridge';
+import {
+  cartridgeFacts,
+  cartridgeSource,
+  findCartridge,
+} from './motivation-cartridge';
 import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
 import {
   documentScope,
@@ -3225,7 +3229,7 @@ export class MotivationGenerationService {
   private async cartridgeFor(
     answers: Record<string, string>,
   ): Promise<string | undefined> {
-    const printed = (answers.firearm_calibre ?? '').trim();
+    const printed = cartridgeSource(answers);
     if (!printed) return undefined;
     try {
       /**

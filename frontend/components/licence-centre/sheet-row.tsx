@@ -162,6 +162,48 @@ function Control({
     );
   }
 
+  /**
+   * ⚠️ A SHORT FIELD WITH CHOICES IS A PICK-OR-TYPE CONTROL. The cartridge is
+   * the reason it exists: a card that prints "9mm" cannot say whether it is
+   * 9 mm Luger, 9 mm Makarov or .380 ACP, so the candidate rounds are buttons
+   * and the box underneath stays open for a round we do not hold. Falling
+   * through to the plain input (the old behaviour) hid the candidates entirely.
+   */
+  if (item.kind === 'short' && item.choices?.length) {
+    const chosen = value.trim().toLowerCase();
+    return (
+      <div>
+        <div className="flex flex-wrap gap-2">
+          {item.choices.map((c) => {
+            const on = chosen === c.trim().toLowerCase();
+            return (
+              <button
+                key={c}
+                type="button"
+                aria-pressed={on}
+                onClick={() => onChange(on ? '' : c)}
+                className={`min-h-[44px] rounded-[var(--r-sm)] border px-[13px] text-[12.5px] leading-[1.25] ${
+                  on
+                    ? 'border-[var(--red)] bg-[var(--red-wash)] font-medium text-[var(--text-primary)]'
+                    : 'border-[var(--border)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {c}
+              </button>
+            );
+          })}
+        </div>
+        <input
+          type="text"
+          className={`${base} ${keyline} mt-2`}
+          value={value}
+          placeholder={item.help ?? 'Or type the exact cartridge'}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    );
+  }
+
   if (item.kind === 'choice') {
     return (
       <select
