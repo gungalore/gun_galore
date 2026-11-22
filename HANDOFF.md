@@ -68,6 +68,19 @@ Public 200 ×2. Prod checks: HEAD `2bd2e8e6`, enum `{OZOW,PEACH,YOCO}`,
 `gatewayMode` column present, `POST /api/payments/webhook/yoco` answers, Yoco
 host reachable from the box, backend online with no errors.
 
+**Webhook registered and verified (test mode).** `sub_JL2nkNPbvqPcd0wtqPOilA6L`
+→ `https://alloutdoor.co.za/api/payments/webhook/yoco`, events
+`payment.succeeded`, `refund.succeeded`, `refund.failed`, `checkout.expired`,
+created with the test key via `POST https://payments.yoco.com/api/webhooks`.
+That endpoint is the **Checkout API** registration; the Yoco API v1
+`POST /v1/webhooks/subscriptions/` is a different product and does not carry
+`payment.succeeded`. Its `whsec_…` secret is in prod `.env` (third `YOCO_` line)
+and the backend was reloaded. Verification: a synthetic correctly signed
+delivery answered 200, the same body with a bad signature answered 200 but
+raised exactly one `YOCO_WEBHOOK_SIGNATURE_INVALID` alert (and the valid one
+raised none). A test subscription is `mode=test`; the live key needs its own
+subscription + secret.
+
 **Production is in the TEST window until the live key lands.** `backend/.env`
 (backup `.env.bak-yoco-test-20261122212604`, both mode 600) holds the Yoco
 **test** secret key and `YOCO_ALLOW_TEST_IN_PRODUCTION=true`.
@@ -80,8 +93,9 @@ short.
 Cloudflare Turnstile on Yoco's hosted page (not a code failure). Open one test
 checkout, pay with `4111 1111 1111 1111` / `11/27` / `123`, and confirm the row
 reaches PAID. Then: install the live key, set `YOCO_ALLOW_TEST_IN_PRODUCTION`
-back to `false` (or delete it), register the webhook + `YOCO_WEBHOOK_SECRET`,
-and run one live R295 + refund.
+back to `false` (or delete it), register a **live** webhook subscription with the
+live key (its own `whsec_…`; replace `YOCO_WEBHOOK_SECRET`), delete the test
+subscription, and run one live R295 + refund.
 
 ## 2026-11-21 (MOTIVATIONS) — A CANCELLED PAYMENT NO LONGER SAYS "CONFIRMING"
 

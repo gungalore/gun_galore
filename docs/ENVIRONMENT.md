@@ -706,11 +706,25 @@ back to `false` the moment the live key is installed — this is not a setting t
 leave on.
 
 ### `YOCO_WEBHOOK_SECRET`
-The `whsec_…` signing secret. Register this URL in the Yoco dashboard:
+The `whsec_…` signing secret returned when the subscription is created.
+Register the endpoint with the **Checkout API**, not the Yoco API v1
+`/v1/webhooks/subscriptions` endpoint (a different product):
 
 ```
-/api/payments/webhook/yoco
+POST https://payments.yoco.com/api/webhooks
+Authorization: Bearer <secret key>
+
+{
+  "name": "alloutdoor-motivations",
+  "url": "https://alloutdoor.co.za/api/payments/webhook/yoco",
+  "events": ["payment.succeeded", "refund.succeeded", "refund.failed", "checkout.expired"]
+}
 ```
+
+The response's `secret` is shown **once**; store it here. The same URL can be
+registered in the Yoco dashboard (Online payments → Webhooks) instead. A
+subscription is mode-scoped: a `sk_test_` key creates a `test` subscription, so
+the live key needs its own subscription and its own secret.
 
 The signature is HMAC-SHA256 over `${webhook-id}.${webhook-timestamp}.${rawBody}`,
 base64-encoded, with the secret's `whsec_` prefix stripped and the remainder
