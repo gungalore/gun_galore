@@ -7,6 +7,79 @@ overwritten.
 
 Last updated: **2026-11-22**.
 
+## 2026-11-22 (MOTIVATIONS) — PRINT / DOWNLOAD OR PRINT AND DELIVER, ONE PAYMENT
+
+Operator: *"there should be the current two options Motivation only and the
+motivation with documents. When the user has selected one a second option must
+be given, Print/Download and Print and Deliver (R75). There should only be one
+Yoco transaction for the motivation, Printing and shipping. Also paid motivation
+must always be available for the user after they have paid for them."*
+
+**What changed**
+
+- **Step 2 after the product.** `/licence-centre/[id]/start` still asks
+  Motivation only or Print-ready; it now reveals **Print / Download** (PDF, no
+  extra) or **Print and Deliver (R75)** before the interview begins. The choice
+  is stored on `Motivation.fulfilmentMode` (`DIGITAL`/`DELIVER`) and can still be
+  changed on the pack screen until payment.
+- **ONE Yoco transaction.** `POST /motivations/:id/payment` computes
+  `base + R75 + live Bob Go quote` and sends a single checkout. The payment row
+  records `printFeeCents`, `shippingCents` and `printOrderId`;
+  `Motivation.billedCents` stays the BASE price. There is no second gateway or
+  payment. `POST /motivations/:id/print/quote` prices the add-on without taking
+  money; the server re-quotes before creating the checkout.
+- **Fulfilment row** `MotivationPrintOrder`: address/contact snapshot, courier
+  rate fields, status, waybill. It is created `AWAITING_PAYMENT`, flipped to
+  `PAID` in the same transaction as the payment, and cancelled if superseded.
+- **Desk email after generation.** `MotivationGenerationService` calls
+  `MotivationPrintService.onGenerationComplete`; it renders the PDF
+  (`renderPdf`) and emails it with the customer's name, username, email, phone,
+  full address and the fee split to `MOTIVATION_PRINT_EMAIL` (default
+  gerhard.fourie@alloutdoor.co.za). Failure raises
+  `MOTIVATION_PRINT_EMAIL_FAILED`; the order stays PAID for "Resend PDF".
+- **Desk queue + booking.** `/admin/operate/motivations` now has a **Print &
+  delivery** card. "Printed — book Bob Go collection" claims `PAID → BOOKING`
+  and calls Bob Go for an **A4 envelope, 35 × 25 × 3 cm / 500 g**, collected
+  from **36 Sterappel Crescent, Langeberg Glen, Kraaifontein, 7570** and
+  delivered to the buyer's snapshot address. Only `SUBMITTED` becomes `BOOKED`;
+  `PENDING` stays `BOOKING` with a 5-minute recheck, failures revert to `PAID`
+  with an alert. The buyer gets the waybill/tracking email.
+- **Digital always available.** Download/View on the pack is independent of
+  print status, and the applications list gained a direct **Download** action
+  for every COMPLETED row. A BOOKED print order never gates the PDF.
+- **Buy Now / auction address.** The checkout now presents "Use my saved
+  address" and "Deliver to a different address" as two explicit options; the
+  existing fields/payload are unchanged, so auctions inherit it.
+- **Migration** `20261123090000_motivation_print_orders`: defaulted
+  `fulfilmentMode`, two defaulted payment columns + `printOrderId`, and the new
+  table. Applied to production.
+- **Setting** `motivation_print_fee_cents` (default 7500) added to both flag
+  registries.
+
+**Deployed `8f1fc163`** (full): rollback `alloutdoor-20261122-234404.dump`
+(40.8 MB); migration applied; backend build + reload + health ×2; frontend
+`BUILD_ID=1KWxhnHUUWSEBzYgocEYK` + reload + health ×2; public 200 ×2. Schema
+verified (table, `fulfilmentMode`, three payment columns); admin queue answers
+401 unauthenticated. Follow-up `251d452d` (backend-only, health ×2) makes
+`PATCH /fulfilment` refuse DELIVER while the collection number is missing, so
+nobody can choose and pay for a delivery the desk cannot hand over.
+
+**⚠️ Print and Deliver is deliberately CLOSED on production until
+`MOTIVATION_PRINT_PHONE` is set.** Booking needs a reachable collection mobile;
+the code refuses the quote/booking rather than invent one. Digital Print /
+Download works fully. `MOTIVATION_PRINT_EMAIL` is already set to
+gerhard.fourie@alloutdoor.co.za.
+
+**Verified**: backend **432 suites / 6,385 tests**, frontend **175 files /
+1,988 tests**, warden 394, both production builds clean. Local migration applied;
+backend boot checked with the new module graph.
+
+**Next**: set `MOTIVATION_PRINT_PHONE` to the number Bob Go should ring at
+Sterappel, reload backend, then run one **test-mode** motivation checkout with
+Print and Deliver (Yoco test key is still live on prod). Check the operator email
+and the Desk queue. Book a real collection only on a real order — it spends the
+Bob Go wallet.
+
 ## 2026-11-22 (MOTIVATIONS) — "9MM" NOW ASKS WHICH 9MM
 
 Operator: *"When a user has give a calibre and the researcher did not recognize
