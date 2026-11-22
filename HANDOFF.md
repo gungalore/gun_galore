@@ -7,6 +7,45 @@ overwritten.
 
 Last updated: **2026-11-22**.
 
+## 2026-11-22 (MOTIVATIONS) — "9MM" NOW ASKS WHICH 9MM
+
+Operator: *"When a user has give a calibre and the researcher did not recognize
+it, it should give options for that calibre so we can generate the correct CIP
+drawing and the cartridge that should be on the first page … buttons and a type
+box if it is not a option."*
+
+A SAPS card prints "9mm"; the catalogue holds 9 mm Luger, 9 mm Makarov and
+9 mm Browning court/.380 ACP. `findCartridge` refuses to guess (correctly — a
+wrong round's dimensions under the applicant's signature is worse than none),
+so the pack silently lost the cover drawing and the C.I.P. page.
+
+- **The review sheet grows the question only while unresolved.** A synthetic
+  `firearm_cartridge` item is appended to "The firearm": the candidate rounds as
+  buttons, plus an always-open text box for a round we do not hold. It is built
+  by `MotivationSheetService.cartridgeChoice` from
+  `cartridgeOptionsFor(catalogue, calibre)`; the registry field itself is
+  `internal`, so it never becomes a fifth firearm box.
+- **The interview asks the same question**, immediately after the calibre, with
+  the same choices (`intake-strategies` + `intake-planner`). It is asked only
+  when the sheet says it is outstanding, so a resolved "9mm Luger" never sees
+  it, and it is skipped when answered or deliberately skipped.
+- **The answer wins everywhere the cartridge resolves.** `cartridgeSource`
+  prefers `firearm_cartridge` over `firearm_calibre` in the cover drawing, the
+  fact pack and the standalone C.I.P. lookup — one round, one set of figures.
+- **`FIELD_REGISTRY_VERSION` → `2026-11-22a`** (a key was added).
+
+**Verified**: backend **431 suites / 6,373 tests**, frontend **174 files /
+1,984 tests**, both builds clean. Deployed `746bb0b5` (full): rollback
+`alloutdoor-20261122-220834.dump` (40.8 MB); no pending migrations; backend
+build + reload + health ×2; frontend `BUILD_ID=bRDe5EAmTKDQ0s-nbNspD` + reload
++ health ×2; public 200 ×2. Runtime check on the box: version `2026-11-22a`,
+`firearm_cartridge` present and internal, `cartridgeOptionsFor('9mm')` returns
+Luger / Makarov / Browning court.
+
+Existing generated packs keep what they were written with; a draft whose calibre
+is unresolved now shows the buttons on its review sheet, and regeneration uses
+the choice.
+
 ## 2026-11-22 (MOTIVATIONS) — THE PAYGATE MOVES TO YOCO, AND LEAVES ZOHO
 
 Operator: *"We are removing it completely from zoho and moving over to yoco api …
