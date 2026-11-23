@@ -351,3 +351,31 @@ describe('booking the collection', () => {
     expect(shipping.bookPrivateDelivery).not.toHaveBeenCalled();
   });
 });
+
+describe('the one-click email link', () => {
+  it('books a paid order once and returns the waybill', async () => {
+    process.env.MOTIVATION_PRINT_PHONE = '0821234567';
+    const { svc, shipping } = build({ order: PAID_ORDER });
+    await svc.bookByToken('token-1');
+    expect(shipping.bookPrivateDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('never books a second shipment when the order is already booked', async () => {
+    const { svc, shipping } = build({
+      order: {
+        ...PAID_ORDER,
+        status: 'BOOKED',
+        bobgoTrackingReference: 'TRACK-1',
+      },
+    });
+    const res = await svc.bookByToken('token-1');
+    expect(shipping.bookPrivateDelivery).not.toHaveBeenCalled();
+    expect(res.status).toBe('BOOKED');
+    expect(res.trackingReference).toBe('TRACK-1');
+  });
+
+  it('refuses a token that matches no order', async () => {
+    const { svc } = build({ order: null });
+    await expect(svc.bookByToken('nope')).rejects.toThrow(/not valid/i);
+  });
+});

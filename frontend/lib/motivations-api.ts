@@ -568,6 +568,58 @@ export interface MotivationPrintState {
     deliveredAt: string | null;
   } | null;
 }
+
+/** The one-click booking page's snapshot (public; the token is the credential). */
+export interface PrintBookingSummary {
+  orderId: string;
+  reference: string;
+  motivationReference: string | null;
+  customerName: string;
+  address: {
+    streetAddress: string;
+    address2?: string;
+    suburb: string;
+    city: string;
+    postalCode: string;
+    province: string;
+  };
+  totalCents: number;
+  status: string;
+  serviceName: string | null;
+  trackingReference: string | null;
+  deliveredAt: string | null;
+  canBook: boolean;
+}
+
+export async function getPrintBooking(
+  token: string,
+): Promise<PrintBookingSummary> {
+  const res = await fetch(
+    `${API_URL}/motivations/print/book/${encodeURIComponent(token)}`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) throw new Error('This booking link is not valid any more.');
+  return (await res.json()) as PrintBookingSummary;
+}
+
+export async function bookPrintByToken(
+  token: string,
+): Promise<PrintBookingSummary> {
+  const res = await fetch(
+    `${API_URL}/motivations/print/book/${encodeURIComponent(token)}`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as {
+      message?: string | string[];
+    } | null;
+    const message = Array.isArray(body?.message)
+      ? body?.message[0]
+      : body?.message;
+    throw new Error(message ?? 'The booking could not be made. Please try again.');
+  }
+  return (await res.json()) as PrintBookingSummary;
+}
 export type IntakeStage =
   | 'MODE'
   | 'DOCUMENTS'

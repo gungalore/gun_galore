@@ -5151,9 +5151,13 @@ export class NotificationsService {
       shippingCents: number;
       totalCents: number;
       serviceName: string | null;
+      bookingToken: string;
     },
     pdf: Buffer,
   ): Promise<void> {
+    const bookingUrl = `${this.appUrl}/licence-centre/print/book/${encodeURIComponent(
+      d.bookingToken,
+    )}`;
     const address = [
       d.address.streetAddress,
       d.address.address2,
@@ -5170,7 +5174,8 @@ export class NotificationsService {
       body:
         `A member paid for a printed copy of ${b(d.motivationReference)}. ` +
         `The PDF is attached. Print and bind it, put it in an A4 envelope, then ` +
-        `press <strong>Book Bob Go collection</strong> in the Desk.` +
+        `press <strong>Book Bob Go collection</strong> — the booking is made the ` +
+        `moment that page opens, no sign-in needed.` +
         `<br><br><strong>Deliver to</strong><br>${b(address)}` +
         `<br><br>Courier will collect from 36 Sterappel Crescent, Langeberg Glen, Kraaifontein, 7570.`,
       rows: [
@@ -5186,6 +5191,9 @@ export class NotificationsService {
         { label: 'Delivery', value: `${formatRand(d.shippingCents)}${d.serviceName ? ` · ${d.serviceName}` : ''}` },
         { label: 'Add-on total', value: formatRand(d.totalCents) },
       ],
+      cta: { label: 'Book Bob Go collection', url: bookingUrl },
+      footnote:
+        'Opening the link books the collection once. A second open shows the existing waybill and never books a second shipment.',
       preheader: `Print ${d.motivationReference} — ${d.customerName}`,
     });
     await this.send(

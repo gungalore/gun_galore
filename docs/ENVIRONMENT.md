@@ -763,8 +763,11 @@ door rate.
 
 The order is **PAID** with the single payment, the PDF is emailed to the desk
 when generation completes, and the Desk's **Print & delivery** card is the only
-place that books the collection. The buyer's digital document stays downloadable
-before, during and after delivery.
+place that books the collection. The email also carries a **one-click Book Bob Go
+collection** link: it opens a token page that books the collection automatically
+(no sign-in), and a second open shows the existing waybill instead of booking a
+second shipment. The buyer's digital document stays downloadable before, during
+and after delivery.
 
 ## Accounting — Zoho Books
 

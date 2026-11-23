@@ -5496,6 +5496,12 @@ model MotivationPrintOrder {
   deliveredAt           DateTime?
   failureReason         String?
 
+  /// One-click booking credential for the desk email. A random token, stable
+  /// across resends, that the operator's link carries. It books THIS order and
+  /// nothing else; the page behind it makes the booking automatically, and the
+  /// API is idempotent once the order is BOOKED.
+  bookingToken String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

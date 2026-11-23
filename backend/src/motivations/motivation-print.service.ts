@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { randomBytes } from 'node:crypto';
 import {
   MotivationPaymentStatus,
   MotivationPrintStatus,
@@ -381,6 +382,7 @@ export class MotivationPrintService {
       }
 
       const pdf = await this.render.renderPdf(order.userId, motivationId);
+      const bookingToken = await this.ensureBookingToken(order.id);
       await this.notifications.motivationPrintOrderForOperator(
         {
           email: printDeskEmail(),
@@ -396,6 +398,7 @@ export class MotivationPrintService {
           shippingCents: order.shippingCents,
           totalCents: order.totalCents,
           serviceName: order.serviceName,
+          bookingToken,
         },
         pdf.pdf,
       );
@@ -437,6 +440,129 @@ export class MotivationPrintService {
       data: { pdfEmailedAt: null },
     });
     await this.onGenerationComplete(order.motivationId);
+  }
+
+  /**
+   * The one-click link's credential. Minted once, reused on resend.
+   *
+   * 32 random bytes (base64url) — unguessable. It authorises booking for ONE
+   * order; `bookByToken` still refuses unless the order is PAID and the PDF has
+   * reached the desk, and booking itself is idempotent once BOOKED.
+   */
+  private async ensureBookingToken(orderId: string): Promise<string> {
+    const existing = await this.prisma.motivationPrintOrder.findUnique({
+      where: { id: orderId },
+      select: { bookingToken: true },
+    });
+    if (existing?.bookingToken) return existing.bookingToken;
+    const token = randomBytes(32)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    await this.prisma.motivationPrintOrder.update({
+      where: { id: orderId },
+      data: { bookingToken: token },
+    });
+    return token;
+  }
+
+  /**
+   * What the one-click page shows before it books.
+   *
+   * Deliberately public: the token IS the credential, exactly like /a/<token>.
+   * It exposes only the delivery facts the operator already has in the email —
+   * no member email, phone, ID or PDF.
+   */
+  async bookingSummary(token: string) {
+    const order = await this.prisma.motivationPrintOrder.findUnique({
+      where: { bookingToken: token },
+      select: {
+        id: true,
+        reference: true,
+        status: true,
+        totalCents: true,
+        serviceName: true,
+        pdfEmailedAt: true,
+        bobgoTrackingReference: true,
+        deliveredAt: true,
+        contactName: true,
+        deliveryAddress: true,
+        motivation: { select: { referenceNumber: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('This booking link is not valid.');
+    return {
+      orderId: order.id,
+      reference: order.reference,
+      motivationReference: order.motivation?.referenceNumber ?? null,
+      customerName: order.contactName,
+      address: order.deliveryAddress,
+      totalCents: order.totalCents,
+      status: order.status,
+      serviceName: order.serviceName,
+      trackingReference: order.bobgoTrackingReference,
+      deliveredAt: order.deliveredAt,
+      canBook:
+        order.status === MotivationPrintStatus.PAID && !!order.pdfEmailedAt,
+    };
+  }
+
+  /**
+   * The email link's action. Booking is idempotent: a second click (or a
+   * refresh) on a booked order returns the existing waybill instead of
+   * creating a second shipment.
+   */
+  async bookByToken(token: string) {
+    const order = await this.prisma.motivationPrintOrder.findUnique({
+      where: { bookingToken: token },
+      select: {
+        id: true,
+        status: true,
+        pdfEmailedAt: true,
+      },
+    });
+    if (!order) throw new NotFoundException('This booking link is not valid.');
+    if (
+      order.status === MotivationPrintStatus.BOOKED ||
+      order.status === MotivationPrintStatus.DELIVERED
+    ) {
+      return this.bookingSummary(token);
+    }
+    if (order.status === MotivationPrintStatus.BOOKING) {
+      return this.bookingSummary(token);
+    }
+    if (order.status !== MotivationPrintStatus.PAID) {
+      throw new ConflictException(
+        'This order is not ready to book yet. The Desk will see it once the PDF is ready.',
+      );
+    }
+    if (!order.pdfEmailedAt) {
+      throw new ConflictException(
+        'The PDF has not reached the print desk yet. Try again in a moment.',
+      );
+    }
+    try {
+      await this.book(order.id);
+    } catch (err) {
+      // A double-click can race the claim: the first request moves the row to
+      // BOOKING, the second finds it no longer PAID. That is not an error — the
+      // collection IS being booked. Re-read and report the real state.
+      const current = await this.prisma.motivationPrintOrder.findUnique({
+        where: { id: order.id },
+        select: { status: true },
+      });
+      if (
+        current &&
+        (current.status === MotivationPrintStatus.BOOKING ||
+          current.status === MotivationPrintStatus.BOOKED ||
+          current.status === MotivationPrintStatus.DELIVERED)
+      ) {
+        return this.bookingSummary(token);
+      }
+      throw err;
+    }
+    return this.bookingSummary(token);
   }
 
   /**

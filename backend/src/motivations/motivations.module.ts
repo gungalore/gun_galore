@@ -10,6 +10,7 @@ import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationPaymentsService } from './motivation-payments.service';
 import { MotivationPaymentsWebhookController } from './motivation-payments.controller';
+import { MotivationPrintPublicController } from './motivation-print-public.controller';
 import { MotivationActivityModule } from './motivation-activity.module';
 import { MotivationsService } from './motivations.service';
 // âš ï¸ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
@@ -109,6 +110,8 @@ import { MotivationPrintService } from './motivation-print.service';
     MotivationsConsentController,
     // ⚠️ UNGUARDED BY DESIGN — Yoco signs the body; see the controller.
     MotivationPaymentsWebhookController,
+    // ⚠️ UNGUARDED BY DESIGN — the random booking token is the credential.
+    MotivationPrintPublicController,
     // âš ï¸ UNGUARDED BY DESIGN â€” the seller is a stranger with no account. Every
     // route on it resolves a token to one consent row; see the controller.
     SellerConsentPublicController,
