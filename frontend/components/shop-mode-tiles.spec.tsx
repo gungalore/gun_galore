@@ -49,7 +49,7 @@ describe('ShopModeBar — where it hides itself', () => {
       screen.getByRole('heading', { name: 'Licence motivation' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: /Start my application/i }).getAttribute('href'),
+      screen.getByRole('link', { name: /Start application/i }).getAttribute('href'),
     ).toBe('/motivation');
   });
 
@@ -107,7 +107,7 @@ describe('ShopModeBar — static boxes with explicit actions', () => {
     expect(links.map((link) => link.textContent)).toEqual([
       'Shop Buy Now',
       'Browse Auctions',
-      'Start my application',
+      'Start application',
     ]);
     // The box itself is a div; the heading is not inside a link/button.
     const heading = screen.getByRole('heading', { name: 'Buy Now' });
@@ -122,7 +122,7 @@ describe('ShopModeBar — static boxes with explicit actions', () => {
     const { container } = render(<ShopModeBar />);
     expect(screen.getByRole('heading', { name: 'Armory' })).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: /Continue application/i }).getAttribute('href'),
+      screen.getByRole('link', { name: /Continue/i }).getAttribute('href'),
     ).toBe('/licence-centre/applications');
     expect(container.querySelector('nav')?.className).toContain('lg:grid-cols-4');
   });
@@ -134,7 +134,7 @@ describe('ShopModeBar — the Armory disclosure', () => {
     expect(screen.queryByRole('button', { name: /armory/i })).toBeNull();
   });
 
-  it('opens four tool boxes from its own button', () => {
+  it('opens three tool boxes from its own button, without repeating Motivation', () => {
     auth.isSignedIn = true;
     render(<ShopModeBar />);
     const armory = screen.getByRole('button', { name: /Open Armory/i });
@@ -146,8 +146,10 @@ describe('ShopModeBar — the Armory disclosure', () => {
     expect(armory.getAttribute('aria-expanded')).toBe('true');
     const panel = document.querySelector('#armory-panel') as HTMLElement;
     expect(panel).not.toBeNull();
-    expect(within(panel).getAllByRole('link')).toHaveLength(4);
-    expect(within(panel).getByRole('heading', { name: 'Motivation Writer' })).toBeInTheDocument();
+    expect(within(panel).getAllByRole('link')).toHaveLength(3);
+    expect(within(panel).getByRole('heading', { name: 'Paper Work Vault' })).toBeInTheDocument();
+    // The dedicated Licence motivation box is the only motivation entry.
+    expect(within(panel).queryByRole('heading', { name: /Motivation Writer/i })).toBeNull();
   });
 });
 

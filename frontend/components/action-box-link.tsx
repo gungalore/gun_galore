@@ -4,53 +4,34 @@ import type { CSSProperties, ReactNode } from 'react';
 export type ActionBoxTone = 'primary' | 'secondary' | 'accent';
 
 export function actionBoxButtonStyle(tone: ActionBoxTone = 'primary'): CSSProperties {
+  const base: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    padding: '7px 11px',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    textDecoration: 'none',
+    whiteSpace: 'nowrap',
+    border: '1px solid transparent',
+  };
   if (tone === 'primary') {
-    return {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      width: '100%',
-      padding: '8px 12px',
-      borderRadius: 6,
-      background: 'var(--red)',
-      color: '#fff',
-      fontSize: 13,
-      fontWeight: 600,
-      textDecoration: 'none',
-      border: '1px solid transparent',
-    };
+    return { ...base, background: 'var(--red)', color: '#fff' };
   }
   if (tone === 'accent') {
     return {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      width: '100%',
-      padding: '8px 12px',
-      borderRadius: 6,
+      ...base,
       background: 'var(--gold-wash)',
       color: 'var(--text-primary)',
-      fontSize: 13,
-      fontWeight: 600,
-      textDecoration: 'none',
       border: '0.5px solid var(--gold)',
     };
   }
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    width: '100%',
-    padding: '8px 12px',
-    borderRadius: 6,
+    ...base,
     background: 'var(--bg-inset)',
     color: 'var(--text-primary)',
-    fontSize: 13,
-    fontWeight: 600,
-    textDecoration: 'none',
     border: '0.5px solid var(--border)',
   };
 }

@@ -17,6 +17,8 @@ export interface ActionBoxProps {
   meta?: string | null;
   /** A Link, button or other explicit control. Never make the box itself one. */
   action: ReactNode;
+  /** Shop-bar boxes drop the description on phones to stay compact. */
+  mobileDescription?: boolean;
   className?: string;
 }
 
@@ -26,6 +28,7 @@ export function ActionBox({
   icon,
   meta,
   action,
+  mobileDescription = true,
   className,
 }: ActionBoxProps) {
   return (
@@ -33,37 +36,38 @@ export function ActionBox({
       className={className}
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
+        alignItems: 'center',
+        gap: 10,
         minWidth: 0,
+        minHeight: 64,
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
         borderRadius: 8,
-        padding: '14px 15px',
+        padding: '10px 12px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        {icon && (
-          <span
-            aria-hidden="true"
-            style={{
-              width: 34,
-              height: 34,
-              flexShrink: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 7,
-              background: 'var(--bg-inset)',
-            }}
-          >
-            {icon}
-          </span>
-        )}
-        <div style={{ minWidth: 0 }}>
+      {icon && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 30,
+            height: 30,
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 7,
+            background: 'var(--bg-inset)',
+          }}
+        >
+          {icon}
+        </span>
+      )}
+      <div style={{ minWidth: 0, flex: '1 1 140px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
           <h2
             style={{
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: 600,
               lineHeight: 1.2,
               margin: 0,
@@ -75,8 +79,8 @@ export function ActionBox({
           {meta && (
             <p
               style={{
-                fontSize: 11,
-                margin: '3px 0 0',
+                fontSize: 10,
+                margin: 0,
                 color: 'var(--text-tertiary)',
               }}
             >
@@ -84,22 +88,25 @@ export function ActionBox({
             </p>
           )}
         </div>
+        {description && (
+          <p
+            className={mobileDescription ? undefined : 'hidden sm:block'}
+            style={{
+              fontSize: 12,
+              lineHeight: 1.35,
+              margin: '2px 0 0',
+              color: 'var(--text-secondary)',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {description}
+          </p>
+        )}
       </div>
-
-      {description && (
-        <p
-          style={{
-            fontSize: 13,
-            lineHeight: 1.45,
-            margin: '9px 0 0',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {description}
-        </p>
-      )}
-
-      <div style={{ marginTop: 'auto', paddingTop: 12 }}>{action}</div>
+      <div style={{ flexShrink: 0 }}>{action}</div>
     </div>
   );
 }

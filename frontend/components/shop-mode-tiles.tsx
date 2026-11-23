@@ -420,22 +420,12 @@ function ArmoryTile({
   );
 }
 
-// The panel's four sub-tiles read label/Icon/href from ACCOUNT_GROUPS via
-// findAccountItem — the single source of truth also used by the /account
-// hub — so only the blurb (short enough to survive a ~400px column, see the
-// truncate comment on TileBody's blurb span) is local to this file. Built
-// once at module level, not per render, since ACCOUNT_GROUPS is static.
-//
-// ⚠️ THE ORDER HERE IS DELIBERATELY NOT THE ORDER IN ACCOUNT_GROUPS. The
-// account menu runs Vault / Motivation Writer / Reloading / Tracker; this
-// panel runs Motivation Writer first and the Vault second, because the panel
-// is a sales surface — the thing we do for you leads. Adding a fourth was not
-// a reason to reshuffle the three that already convert.
+// The panel's three tools read label/Icon/href from ACCOUNT_GROUPS via
+// findAccountItem — the single source of truth also used by the /account hub.
+// The Motivation Writer is NOT repeated here: the dedicated Licence motivation
+// box above is the public entry, and having both made Armory look like a
+// second copy of the same product.
 const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
-  {
-    href: '/licence-centre/applications',
-    blurb: 'R295 per Motivation',
-  },
   {
     href: '/documents',
     blurb: 'Store all Motivation Documents',
@@ -443,9 +433,6 @@ const ARMORY_PANEL_SOURCE: { href: string; blurb: string }[] = [
   { href: '/bench', blurb: 'Work up a load' },
   {
     href: '/licence-centre/tracking',
-    // Short enough to fit the tile without an ellipsis. It says what the
-    // screen does — follow the enquiry — and nothing about what SAPS will
-    // answer.
     blurb: 'Track your Application',
   },
 ];
@@ -711,7 +698,7 @@ export function ShopModeBar() {
     {
       href: isSignedIn ? '/licence-centre/applications' : '/motivation',
       title: 'Licence motivation',
-      cta: isSignedIn ? 'Continue application' : 'Start my application',
+      cta: isSignedIn ? 'Continue' : 'Start application',
       // Public/Meta-safe: no restricted product vocabulary on this surface.
       blurb: 'Prepare the supporting document for your SAPS licence application.',
       count: null,
@@ -774,6 +761,7 @@ export function ShopModeBar() {
             description={m.blurb}
             meta={modeMeta(m)}
             icon={<m.Icon colour={m.ink} />}
+            mobileDescription={false}
             action={
               <ActionBoxLink href={m.href} tone={m.tone}>
                 {m.cta}
@@ -786,6 +774,7 @@ export function ShopModeBar() {
             title={armoryMode.title}
             description={armoryMode.blurb}
             icon={<ShieldIcon colour={armoryMode.ink} />}
+            mobileDescription={false}
             action={
               <button
                 type="button"
@@ -833,7 +822,7 @@ export function ShopModeBar() {
           </div>
           <div
             id="armory-panel"
-            className="grid grid-cols-1 sm:grid-cols-2 gap-[11px] sm:gap-[14px] pt-[11px] items-stretch"
+            className="grid grid-cols-1 sm:grid-cols-3 gap-[11px] sm:gap-[14px] pt-[11px] items-stretch"
           >
             {ARMORY_SUB_TILES.map((m) => (
               <ActionBox
@@ -841,6 +830,7 @@ export function ShopModeBar() {
                 title={m.title}
                 description={m.blurb}
                 icon={<m.Icon colour={m.ink} />}
+                mobileDescription={false}
                 action={
                   <ActionBoxLink href={m.href} tone="secondary">
                     Open
