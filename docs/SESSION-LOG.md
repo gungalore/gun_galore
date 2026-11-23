@@ -27,7 +27,8 @@ What each session did, found, and changed — so the next one does not re-derive
 - `d9491547` full, dump `alloutdoor-20261123-144236.dump` (39,003,881 bytes). Both migrations applied; backend/frontend builds, PM2 reload, health ×2, public 200 ×2, three services online.
 - Live: `PostRoute` present, `HIKING` enum valid, unauth route API 401, route page 200 gate; MapTiler style + terrain 200 from the box; built chunk present.
 - Production `.env.production` (mode 600) has `NEXT_PUBLIC_MAPTILER_KEY` / `_STYLE=outdoor-v2`; key was pasted into chat, so restrict/rotate it in MapTiler.
-- Checks: backend 437 suites / 6,481 passed (8 skipped); frontend 181 files / 2,061 passed (1 skipped); both `tsc` clean; production build clean. `rte`-only GPX files carry no times through togeojson, so speed is null there; track GPX gets speed.
+- **Fix `4102f9dc` (backend-only):** removed the 20-point floor that rejected the operator's 16-point sample. Production parser accepted the exact file (9 simplified points, 8,065 m, elevation/gradient; no speed because the file has no timestamps). Dump `alloutdoor-20261123-150702.dump`; health ×2, public 200 ×2.
+- Checks: backend 437 suites / 6,481 passed (8 skipped); parser spec 26/26; the known Chromium PDF spec timed out once and passed isolated. Frontend 181 files / 2,061 passed (1 skipped); both `tsc` clean; production build clean. `rte`-only GPX files carry no times through togeojson, so speed is null there; track GPX gets speed.
 
 ---
 
