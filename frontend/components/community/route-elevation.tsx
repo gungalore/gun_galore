@@ -98,8 +98,14 @@ export function RouteElevation({
   // The range input is the accessible way to move along the route and it must
   // survive a GPX with no elevation: speed and gradient can still be inspected
   // there, and the map-fallback view may have no other selection control.
+  //
+  // ⚠️ THE VALUE TEXT IS NOT BESIDE THE INPUT. It used to share a flex row, so
+  // the input was narrower than the chart above it while the chart crosshair
+  // still used the full width — the thumb and dot drifted apart the further
+  // along the route you went. The text now sits on its own row, leaving the
+  // range input exactly as wide as the chart.
   const rangeControl = points.length > 0 && (
-    <div className="mt-2 flex items-center gap-3">
+    <>
       <label htmlFor={rangeId} className="sr-only">
         Route point
       </label>
@@ -113,20 +119,22 @@ export function RouteElevation({
         onChange={(event) => selectNearestDistance(Number(event.target.value))}
         aria-label="Route point"
         aria-valuetext={valueText}
-        className="w-full"
-        style={{ accentColor: 'var(--red)' }}
+        className="mt-2 block w-full"
+        style={{ accentColor: 'var(--red)', margin: 0, padding: 0 }}
       />
-      <p
-        className="num shrink-0 text-[11px]"
-        style={{ color: 'var(--text-tertiary)' }}
-      >
-        {formatDistance(selectedPoint?.distM ?? 0)}
-        {' · '}
-        {selectedPoint && selectedPoint.ele !== null
-          ? formatElevation(selectedPoint.ele)
-          : NOT_IN_GPX}
-      </p>
-    </div>
+      <div className="mt-1 flex justify-end">
+        <p
+          className="num text-[11px]"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          Selected: {formatDistance(selectedPoint?.distM ?? 0)}
+          {' · '}
+          {selectedPoint && selectedPoint.ele !== null
+            ? formatElevation(selectedPoint.ele)
+            : NOT_IN_GPX}
+        </p>
+      </div>
+    </>
   );
 
   if (!hasElevation || !geometry) {
