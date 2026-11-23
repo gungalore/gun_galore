@@ -56,10 +56,16 @@ function relativeTime(iso: string): string {
 /**
  * The private "Contact seller" panel on a listing.
  *
- * Replaced the public Q&A on 2026-10-19 (operator decision): buyers ask the
- * seller directly, the conversation stays on ALL Outdoor, and the SELLER can
- * answer with photos or a video. Text is auto-stripped of contact details;
- * seller media is screened before it is stored.
+ * Sits below the public Q&A (components/listing-faq.tsx), which publishes
+ * cleaned, anonymised answers distilled from these same conversations. Buyers
+ * still ask the seller directly here, the conversation stays on ALL Outdoor,
+ * and the SELLER can answer with photos or a video. Text is auto-stripped of
+ * contact details; seller media is screened before it is stored.
+ *
+ * A question the public Q&A already answers comes back from the send endpoint
+ * as `answeredFromFaq` (no message is created) — the panel then shows that
+ * answer with a "See the full answer" anchor and an "Ask the seller anyway"
+ * override. See sendMessage below.
  *
  * The listing's owner does not chat here -- they reply from Messages, so
  * this panel shows them how many buyers are waiting instead.
@@ -89,6 +95,16 @@ export function QuestionsPanel({
     text: string;
   } | null>(null);
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+
+  // Set when the backend answered a send from the public Q&A instead of
+  // creating a thread/message. `content` is the exact text that was sent, kept
+  // so "Ask the seller anyway" can force it through after the draft is cleared.
+  const [faqMatch, setFaqMatch] = useState<{
+    id: string;
+    question: string;
+    answer: string;
+    content: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!isSignedIn) return;
@@ -127,8 +143,7 @@ export function QuestionsPanel({
     return () => clearInterval(t);
   }, [isSignedIn, isOwner, thread, load]);
 
-  const onSend = async () => {
-    const content = draft.trim();
+  const sendMessage = async (content: string, force: boolean) => {
     if (!content || sending) return;
     setSending(true);
     setToast(null);
@@ -142,11 +157,15 @@ export function QuestionsPanel({
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ content }),
+          // `force` bypasses the public-Q&A matcher on the backend: the buyer
+          // has read the published answer and still wants to ask privately.
+          body: JSON.stringify(force ? { content, force: true } : { content }),
         },
       );
       const data = (await res.json().catch(() => ({}))) as {
         message?: string;
+        answeredFromFaq?: boolean;
+        faq?: { id: string; question: string; answer: string };
       };
       if (!res.ok) {
         setToast({
@@ -156,12 +175,32 @@ export function QuestionsPanel({
         return;
       }
       setDraft('');
+      // Answered from the public Q&A — no thread or message was created. Show
+      // the seller's existing answer rather than a generic success toast.
+      if (data.answeredFromFaq === true && data.faq) {
+        setFaqMatch({ ...data.faq, content });
+        return;
+      }
+      setFaqMatch(null);
       await load();
     } catch {
       setToast({ tone: 'err', text: 'Network error - please retry.' });
     } finally {
       setSending(false);
     }
+  };
+
+  const onSend = async () => {
+    const content = draft.trim();
+    if (!content || sending) return;
+    await sendMessage(content, false);
+  };
+
+  // Same question, forced past the FAQ matcher. Keeps the private channel
+  // available even when the public answer exists.
+  const onAskAnyway = async () => {
+    if (!faqMatch || sending) return;
+    await sendMessage(faqMatch.content, true);
   };
 
   // All photos in the thread, in order, so the shared lightbox can page
@@ -375,6 +414,57 @@ export function QuestionsPanel({
             </p>
           )}
 
+          {/* The backend answered a send from the public Q&A instead of opening
+              a thread. The answer is real and from THIS seller, so show it
+              before the buyer retypes anything; "Ask the seller anyway" then
+              re-sends the same text with force: true. */}
+          {faqMatch && (
+            <div
+              className="rounded-[6px] px-3 py-2 mb-3"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+              >
+                Already answered in the Q&amp;A
+              </p>
+              <p
+                className="text-xs mt-1 whitespace-pre-wrap"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
+              >
+                {faqMatch.answer}
+              </p>
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <a
+                  href={`#faq-${faqMatch.id}`}
+                  className="text-[11px]"
+                  style={{ color: 'var(--red)', textDecoration: 'underline' }}
+                >
+                  See the full answer
+                </a>
+                <button
+                  type="button"
+                  onClick={onAskAnyway}
+                  disabled={sending}
+                  className="text-[11px] px-2 py-1 rounded-[4px]"
+                  style={{
+                    background: 'transparent',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    cursor: sending ? 'not-allowed' : 'pointer',
+                    opacity: sending ? 0.5 : 1,
+                  }}
+                >
+                  Ask the seller anyway
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Composer */}
           <textarea
             rows={2}
@@ -416,6 +506,15 @@ export function QuestionsPanel({
               {sending ? 'Sending...' : 'Send message'}
             </button>
           </div>
+          {/* Public-Q&A disclosure. Anonymised, but a buyer typing a phone
+              number or address into this box should know it can be published. */}
+          <p
+            className="text-[11px] mt-2"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            Questions and the seller&apos;s replies may be published anonymously
+            in this listing&apos;s public Q&amp;A, so keep personal details out.
+          </p>
           {toast && (
             <p
               className="text-xs mt-2"

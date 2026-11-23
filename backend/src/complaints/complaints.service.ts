@@ -12,8 +12,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 // The complaint categories the intake form offers. Kept as plain strings
 // (stored on Complaint.category) so adding one is a one-line change with no
-// migration. The three PAYOUT_AFFECTING ones, when a BUYER lodges them
-// against a still-HELD order, flip that order to DISPUTED to block payout.
+// migration. Only NOT_ARRIVED — a buyer's complaint that the item never
+// arrived — flips a still-HELD order to DISPUTED to block payout. Condition,
+// description and damage complaints are NOT a platform refund ground: they are
+// recorded and passed to the seller, with no payout hold.
 export const COMPLAINT_CATEGORIES = [
   'ITEM_NOT_AS_DESCRIBED',
   'DAMAGED',
@@ -36,27 +38,19 @@ export const COMPLAINT_CATEGORIES = [
 ] as const;
 export type ComplaintCategory = (typeof COMPLAINT_CATEGORIES)[number];
 
-const PAYOUT_AFFECTING = new Set<string>([
-  'ITEM_NOT_AS_DESCRIBED',
-  'DAMAGED',
-  'NOT_ARRIVED',
-]);
+// Only non-delivery holds the seller's payout. Condition, description and
+// damage complaints are handled between buyer and seller and must never freeze
+// the seller's money.
+const PAYOUT_AFFECTING = new Set<string>(['NOT_ARRIVED']);
 
 // Categories serious enough to flag the operator alert as urgent.
-const URGENT_CATEGORIES = new Set<string>([
-  'ITEM_NOT_AS_DESCRIBED',
-  'DAMAGED',
-  'NOT_ARRIVED',
-  'PAYOUT',
-]);
+const URGENT_CATEGORIES = new Set<string>(['NOT_ARRIVED', 'PAYOUT']);
 
 const MAX_PHOTOS = 6;
 
-// "I received the item and it's wrong/damaged" — the buyer has the goods, so
-// they can and MUST show us. An evidence photo is required before the dispute
-// is accepted (and before it can freeze the seller's payout); a short video is
-// optional. NOT_ARRIVED is excluded: there is no item to photograph.
-const ITEM_RECEIVED_CATEGORIES = new Set<string>([
+// Condition/description concerns are NOT a platform refund ground, but the
+// seller should hear about them so they can resolve it directly with the buyer.
+const SELLER_CONCERN_CATEGORIES = new Set<string>([
   'ITEM_NOT_AS_DESCRIBED',
   'DAMAGED',
 ]);
@@ -77,9 +71,11 @@ export class ComplaintsService {
 
   // ------------------------------------------------------------------
   // Lodge a complaint. Allocates a CO-case number, optionally links an
-  // order (verified server-side that the complainant is a party to it),
-  // and — for a buyer's payout-affecting complaint on a still-HELD order —
+  // order (verified server-side that the complainant is a party to it).
+  // A buyer's NON-DELIVERY (NOT_ARRIVED) complaint on a still-HELD order
   // flips that order to DISPUTED so payout is blocked pending review.
+  // Condition/description complaints do not hold payout — the seller is
+  // sent a neutral heads-up so buyer and seller resolve it directly.
   // ------------------------------------------------------------------
   async create(
     userId: string,
@@ -89,8 +85,8 @@ export class ComplaintsService {
       body: string;
       transactionId?: string | null;
       /**
-       * Evidence already uploaded via `uploadEvidence`. Required (>=1) for a
-       * buyer's item-received dispute (DAMAGED / ITEM_NOT_AS_DESCRIBED).
+       * Evidence already uploaded via `uploadEvidence`. Always optional —
+       * photos/videos support the case but never gate it.
        */
       photos?: {
         url: string;
@@ -133,6 +129,8 @@ export class ComplaintsService {
       swapId: string | null;
       adminNote: string | null;
       listingTitle: string;
+      sellerEmail: string;
+      sellerFirstName: string | null;
     } | null = null;
 
     if (dto.transactionId) {
@@ -147,6 +145,7 @@ export class ComplaintsService {
           swapId: true,
           adminNote: true,
           listing: { select: { title: true } },
+          seller: { select: { email: true, firstName: true } },
         },
       });
       if (!tx) throw new NotFoundException('That order could not be found.');
@@ -162,28 +161,19 @@ export class ComplaintsService {
         swapId: tx.swapId,
         adminNote: tx.adminNote,
         listingTitle: tx.listing?.title ?? 'item',
+        sellerEmail: tx.seller.email,
+        sellerFirstName: tx.seller.firstName,
       };
     }
 
-    // Evidence gate — a buyer claiming an item they RECEIVED is wrong or
-    // damaged must attach at least one photo before the dispute is accepted
-    // (and before it can freeze the seller's payout). Video is optional.
-    // Runs BEFORE the case number is allocated so a rejected request never
-    // burns a CO number.
+    // Evidence is optional for every category — photos/videos support a case
+    // but never gate it (and never gate the seller's payout). Only the caps
+    // are enforced: up to 6 photos and one optional video.
     const photos = dto.photos ?? [];
     const imageCount = photos.filter((p) => (p.mediaType ?? 'IMAGE') === 'IMAGE').length;
     const videoCount = photos.filter((p) => p.mediaType === 'VIDEO').length;
     if (imageCount > MAX_PHOTOS || videoCount > 1 || photos.length > MAX_PHOTOS + 1) {
       throw new BadRequestException('Attach up to 6 photos and one optional video.');
-    }
-    if (
-      role === 'BUYER' &&
-      ITEM_RECEIVED_CATEGORIES.has(category) &&
-      imageCount === 0
-    ) {
-      throw new BadRequestException(
-        'Please attach at least one photo of the item so we can review your dispute.',
-      );
     }
 
     const referenceNumber = await this.reference.allocate('CO');
@@ -215,8 +205,31 @@ export class ComplaintsService {
       });
     }
 
-    // Payout hold — a buyer's payout-affecting complaint on a still-HELD,
-    // non-swap, paid order moves that order to DISPUTED so it can't be
+    // A buyer's condition/description concern does not hold payout and is not
+    // a platform refund ground — but the seller should know it was raised so
+    // the two can resolve it directly. Neutral heads-up by email only: no
+    // complaint body or evidence, no buyer identity, no inbox row.
+    if (
+      heldTx &&
+      role === 'BUYER' &&
+      SELLER_CONCERN_CATEGORIES.has(category)
+    ) {
+      void this.notifications
+        .complaintConcernForSeller({
+          email: heldTx.sellerEmail,
+          name: heldTx.sellerFirstName ?? 'there',
+          listingTitle: heldTx.listingTitle,
+          referenceNumber,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Seller concern notice failed for complaint ${referenceNumber}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    // Payout hold — only a buyer's NOT_ARRIVED complaint can hold a still-HELD,
+    // non-swap, paid order; it moves the order to DISPUTED so it can't be
     // released while we investigate. CAS on paymentStatus='HELD' so we never
     // clobber a concurrent release/refund; if it already moved, we simply
     // don't hold (the money is no longer HELD anyway).
@@ -318,9 +331,9 @@ export class ComplaintsService {
     return photo;
   }
 
-  // Pre-upload for the dispute form. Uploads the file to Cloudinary and returns
-  // the pointer so `create` can attach it — a dispute that must carry evidence
-  // up front cannot rely on the add-after-create order.
+  // Pre-upload for the complaint form. Uploads the file to Cloudinary and
+  // returns the pointer so `create` can attach it. Evidence is optional, so
+  // this only exists to let the form attach photos/videos at intake.
   async uploadEvidence(
     userId: string,
     file: { buffer: Buffer; mimetype?: string } | undefined,

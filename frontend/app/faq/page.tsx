@@ -41,7 +41,9 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How does payment protection work?',
-    a: 'Every order is covered: the seller is only paid after your delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund — so you never pay for an item that does not arrive.',
+    // Payout trigger, not funds-holding: per the operator rule, public copy says
+    // when the SELLER IS PAID. It covers non-delivery only.
+    a: 'The seller is only paid after you confirm you have received the item. If the item is never delivered — the seller never dispatches or hands it over, or the courier records no delivery — we refund you in full, including delivery and the Platform Fee. That is what the Platform Fee funds. It does not cover the condition of an item: condition, description, fit and change of mind are between you and the seller.',
   },
   {
     q: 'Do I need to verify my identity?',
@@ -49,7 +51,15 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How do refunds and disputes work?',
-    a: 'If a problem arises before you confirm delivery, open a dispute from the order page. Our team reviews it and either completes the sale or refunds you — and the seller is not paid while a dispute is open, so you are not out of pocket while it is resolved. See our Refund & Dispute Policy for full detail.',
+    a: 'We refund an order only when the item is not delivered. Report it from the order page before you confirm delivery and our team checks it against the courier or hand-over record; where there is no delivery you are refunded in full. For courier orders, a seller who does not dispatch within 5 days triggers an automatic full refund. Condition, description, fit and change of mind are not refund grounds — message the seller from the order page and, if you want it on record, lodge a complaint. See our Refund & Dispute Policy for full detail.',
+  },
+  {
+    q: 'What if the item is not as described?',
+    a: 'That is between you and the seller, not a platform refund. We do not inspect, test or warrant the goods, and the seller is responsible for the accuracy of the listing and the condition of the item. Read the listing and ask questions before you buy; after delivery, message the seller from the order page. You can also lodge a complaint — we record it, pass it to the seller and can act against a seller who misdescribes an item, but we do not refund it and we do not hold the seller\'s payout for it. Your rights against the seller under the Consumer Protection Act are unaffected. See our Refund & Dispute Policy for full detail.',
+  },
+  {
+    q: 'How do I ask a question about a listing?',
+    a: 'Every listing has a public Questions & answers section. Ask your question there before you buy — the seller usually replies, and answered questions stay published on the listing so other buyers can read them. A seller cannot hide an answered question. For anything about an order you have already placed, message the seller from the order page.',
   },
   {
     q: 'What does it cost to buy or sell?',

@@ -7,20 +7,22 @@ import Link from 'next/link';
 // on the server throws at runtime with an opaque Next.js digest.
 /**
  * The buyer's pre-payment acknowledgement: they have seen where the item is,
- * and location or travel distance is not a refund ground.
+ * that location or travel distance is not a refund ground, and that condition,
+ * description and change of mind are not refund grounds.
  *
  * ONE component, imported by every payment surface (single-item checkout, offer
  * checkout, cart). Not copy-pasted: the offer checkout already carries two
  * duplicated consent blocks that have drifted from the originals, which is the
  * codebase's own written record of what copy-pasting consent costs.
  *
- * WHY JUST ONE SENTENCE. The detail — cancellation deductions, what location
+ * WHY ONE SHORT PARAGRAPH. The detail — cancellation deductions, what location
  * means for collection, and the full refund rules — lives in the Terms of
- * Service (§9, §11) and the Refund & Dispute Policy (§5). They already state
- * that location and distance are not refund grounds and what a cancellation
+ * Service (§7, §11) and the Refund & Dispute Policy (§2–4). They already state
+ * that location and distance are not refund grounds, that condition and
+ * description are between the buyer and the seller, and what a cancellation
  * costs. Checkout keeps only the specific acknowledgement CPA s49 requires:
- * the buyer's attention is drawn to the term that narrows their rights, and
- * they affirm it, rather than re-reading a policy summary as bullets.
+ * the buyer's attention is drawn to the terms that narrow their rights, and
+ * they affirm them, rather than re-reading a policy summary as bullets.
  *
  * The wording is versioned server-side (REFUND_TERMS_VERSION) and the vicinity
  * string is snapshotted onto the transaction, so a dispute can reconstruct
@@ -83,7 +85,10 @@ export function BuyerTermsAck({
             </>
           ) : null}{' '}
           and I understand that its location and the distance to it are not
-          grounds for a refund or a dispute.
+          grounds for a refund or a dispute. I have read the listing and asked
+          any questions I have before paying. I understand that condition,
+          description and change of mind are not refund grounds: ALL Outdoor
+          verifies the seller and refunds only an item that is not delivered.
         </span>
       </label>
 

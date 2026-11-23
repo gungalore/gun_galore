@@ -26,7 +26,7 @@ export default function TermsPage() {
     <>
       <LegalDocHeader
         title="Terms of Service"
-        lastUpdated="Effective 24 June 2026 · Updated 5 November 2026"
+        lastUpdated="Effective 24 June 2026 · Updated 23 November 2026"
       />
 
       <h2>1. About us</h2>
@@ -61,7 +61,10 @@ export default function TermsPage() {
         users (<strong>&quot;Buyers&quot;</strong>) may buy those items, place
         bids or make offers. We provide the marketplace, checkout, payment
         facilitation, delivery arrangement and support. We do not manufacture,
-        own, stock, inspect or dispatch the goods sold by Sellers.
+        own, stock, inspect, test or dispatch the goods sold by Sellers, and we
+        do not warrant their condition, description or fitness for any purpose.
+        Sellers are identity- and bank-verified before they are paid; that
+        verification confirms who the Seller is, not the condition of the item.
       </p>
 
       <h3>Regulated items</h3>
@@ -87,6 +90,13 @@ export default function TermsPage() {
         responsible for the listing, title, legality, condition and delivery of
         the goods. The Buyer is responsible for eligibility, payment, the
         delivery information provided and lawful use of the goods.
+      </p>
+      <p>
+        We do not inspect, test or warrant the goods. The Seller is responsible
+        for the accuracy of the listing and for the condition of the item,
+        including any defect, damage, missing part or difference from the
+        description. Sections 7 and 11 set out what we do about a sale that is
+        not completed — and what remains between the Buyer and the Seller.
       </p>
       <p>
         Where an item requires a licence or permit, physical possession is
@@ -311,6 +321,16 @@ export default function TermsPage() {
           them for the whole transaction;
         </li>
         <li>
+          you have read the listing — its description, photographs, condition
+          grade and terms — and have asked the Seller any question you need
+          answered <strong>before</strong> you pay;
+        </li>
+        <li>
+          you understand that questions and answers about a listing may be
+          published publicly on that listing, and that a Seller cannot hide an
+          answered question;
+        </li>
+        <li>
           you are authorised to use the payment method and have sufficient
           funds;
         </li>
@@ -348,12 +368,16 @@ export default function TermsPage() {
         release the amount once the issue is resolved.
       </p>
       <p>
-        Deferred settlement is a buyer-protection measure. It is not a banking,
-        savings, investment or deposit-taking product. ALL Outdoor is not a
-        bank, does not pay interest on amounts pending settlement, does not
-        guarantee those amounts against the insolvency of the payment service
-        provider, and is not a registered financial services provider. We do
-        not operate a wallet or stored-value balance.
+        Deferred settlement is a payment safeguard, not a guarantee about the
+        item: it means the Seller is not paid until delivery is confirmed (or a
+        dealer transfer is verified), so the money is not released before you
+        have the item. It covers non-delivery — an item that is never dispatched
+        or handed over — and nothing else. It is not a banking, savings,
+        investment or deposit-taking product. ALL Outdoor is not a bank, does not
+        pay interest on amounts pending settlement, does not guarantee those
+        amounts against the insolvency of the payment service provider, and is
+        not a registered financial services provider. We do not operate a wallet
+        or stored-value balance.
       </p>
 
       <h3>In-person handover</h3>
@@ -363,21 +387,24 @@ export default function TermsPage() {
         SAPS-licensed dealer where the item is a firearm. The payment is
         collected at checkout and held pending settlement. It is released when
         the Buyer confirms receipt, or automatically <strong>five days after
-        payment</strong> if no dispute is raised before then. We send WhatsApp,
-        SMS, email and in-app notifications with a one-tap confirmation link
-        when the handover is due, subject to your notification settings. Either
-        party may raise a dispute before release, which holds the payment for
-        review by our admin team. The in-person handover option is available on
-        every listing that is not collection-only, including firearms, subject
-        to the Regulated Items Annex.
+        payment</strong> if the Buyer has not reported that the item was never
+        handed over. We send WhatsApp, SMS, email and in-app notifications with a
+        one-tap confirmation link when the handover is due, subject to your
+        notification settings. Either party may report a non-delivery before
+        release, which holds the payment for review by our admin team. A
+        condition or description complaint does not hold the payment. The
+        in-person handover option is available on every listing that is not
+        collection-only, including firearms, subject to the Regulated Items
+        Annex.
       </p>
       <p>
         <strong>The Platform Fee on an in-person handover.</strong> If the
         Seller declines the order before dispatch, the Buyer is refunded in
-        full. If a Buyer-requested cancellation or an upheld dispute results in
-        a refund, the Buyer is refunded the item price only; the Platform Fee is
-        non-refundable. Nothing in this clause limits a refund required by the
-        Consumer Protection Act.
+        full. On a Buyer-requested cancellation the Buyer is refunded the item
+        price only; the Platform Fee is non-refundable. If the Seller never
+        hands the item over, that is non-delivery and the refund is full,
+        including the Platform Fee. Nothing in this clause limits a refund
+        required by the Consumer Protection Act.
       </p>
       <p>
         <strong>Contact details for an in-person handover.</strong> When you
@@ -575,15 +602,30 @@ export default function TermsPage() {
 
       <h2 id="disputes">11. Disputes, cancellations and refunds</h2>
       <p>
-        If you believe a Buyer or Seller has not met their obligations, you may
-        raise a dispute within the time limits in our{' '}
+        Our dispute and refund process is for one thing only:{' '}
+        <strong>an item that is not delivered.</strong> If the Seller never
+        accepts or dispatches the item, never hands it over, or the courier
+        records no delivery, report it from the order page in line with our{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>
           Refund &amp; Dispute Policy
         </a>
-        . We aim to make first contact within <strong>48 hours</strong>. Outcomes
-        may include a full refund, a partial refund, payment to the Seller or
-        referral to the appropriate authorities. We may ask for photographs,
+        . We aim to make first contact within <strong>48 hours</strong>, check the
+        record and, where the item was never delivered, refund you in full — item
+        price, delivery and the Platform Fee. We may ask for photographs,
         tracking records or other evidence.
+      </p>
+      <p>
+        <strong>Condition is not a dispute and not a platform refund.</strong> If
+        an item is not as described, arrives damaged, does not fit, is not what
+        you expected or you have changed your mind, that is between you and the
+        Seller. We do not inspect, test or warrant the goods. Message the Seller
+        from the order page, and ask any question before you buy; if you want the
+        matter on record, lodge a{' '}
+        <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>. We
+        record it, pass it to the Seller and can act against a Seller who
+        misdescribes items, but we do not refund it and we do not hold the
+        Seller&apos;s payout for it. Nothing in this paragraph limits your rights
+        against the Seller under the Consumer Protection Act.
       </p>
       <p>
         <strong>An item&apos;s location, or the distance to it, is not a ground
@@ -594,8 +636,7 @@ export default function TermsPage() {
         <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>{' '}
         rather than a dispute; we will try to help the parties resolve it, and
         that route does not hold the Seller&apos;s payment. This does not
-        restrict a claim for an item that never arrived, arrived damaged, or was
-        not as described.
+        restrict a refund for an item that is never delivered.
       </p>
       <p>
         Nothing in these Terms limits the rights you have under the Consumer
@@ -604,19 +645,18 @@ export default function TermsPage() {
         place).
       </p>
       <p id="buyer-protection">
-        <strong>Buyer protection.</strong> Every order includes the following
+        <strong>Payment safeguards.</strong> Every order includes the following
         safeguards, funded by the Platform Fee: the Seller is paid only once
         delivery is confirmed or a dealer transfer is verified; Sellers are
-        identity-verified, and their bank details are reviewed against that
-        identity, before any payout; raising an issue instead of confirming
-        delivery freezes the payment and puts the order in front of our team;
-        and where a claim is upheld the Buyer is refunded and the Seller is not
-        paid. These safeguards are not insurance, and they do not change the
-        fact that the agreement of sale is between the Buyer and the Seller.
-        They do not cover buyer&apos;s remorse or a change of mind after
-        delivery, an item the Buyer inspected and accepted where the fault was
-        apparent at the time, or losses caused by something outside our control
-        after a correct delivery.
+        identity- and bank-verified, and their bank details are reviewed against
+        that identity, before any payout; and if the item is never delivered, you
+        can report it from the order page and we refund you in full. These
+        safeguards cover non-delivery only. They are not insurance, and they do
+        not change the fact that the agreement of sale is between the Buyer and
+        the Seller. Condition, description, fit, change of mind and location are
+        between you and the Seller — see the paragraph above. Nothing in this
+        paragraph limits your rights against the Seller under the Consumer
+        Protection Act.
       </p>
 
       <h3>Cancelling an order</h3>
@@ -639,7 +679,9 @@ export default function TermsPage() {
         request is reviewed. A cancellation cannot be requested after the Seller
         marks the order dispatched, after a private-arrangement handover has
         been recorded, or after a store collection has been confirmed. Once the
-        item has been dispatched, the Buyer&apos;s remedy is the dispute process.
+        item has been dispatched, the order cannot be cancelled. From that point
+        the only platform refund route is non-delivery (section 11 above); a
+        condition or description issue is between the Buyer and the Seller.
       </p>
       <p>
         If a cancellation for the Buyer&apos;s convenience is approved before

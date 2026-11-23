@@ -395,6 +395,17 @@ export function SellerQuestionsCard({
             })}
           </ol>
 
+          {/* Buyer-side Q&A disclosure: the seller's private reply may later
+              be published (anonymously) in the listing's public Q&A. */}
+          {thread.role === 'BUYER' && (
+            <p
+              className="text-[11px] mb-2"
+              style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+            >
+              The seller&apos;s reply may be published anonymously.
+            </p>
+          )}
+
           <textarea
             rows={2}
             maxLength={2000}
@@ -435,6 +446,19 @@ export function SellerQuestionsCard({
               {busy ? 'Sending…' : 'Send'}
             </button>
           </div>
+
+          {/* Seller-side Q&A disclosure, at the point of writing the answer.
+              There is deliberately NO hide/show control: an answered question
+              is published and the seller cannot remove it (ListingFaq). */}
+          {thread.role === 'SELLER' && (
+            <p
+              className="text-[11px] mt-2"
+              style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+            >
+              Your reply may be published in this listing&apos;s public Q&amp;A.
+              Don&apos;t include personal details.
+            </p>
+          )}
 
           {/* Seller-only media reply */}
           {thread.role === 'SELLER' && (

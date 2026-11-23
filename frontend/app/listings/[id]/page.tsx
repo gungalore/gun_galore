@@ -26,6 +26,7 @@ import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
 import ModerationBanner from './moderation-banner';
 import { QuestionsPanel } from './questions-panel';
+import { ListingFaq } from '@/components/listing-faq';
 import { ImageGallery } from './image-gallery';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
@@ -63,6 +64,14 @@ function straightLineKm(lat1: number, lng1: number, lat2: number, lng2: number):
       Math.cos(toRad(lat2)) *
       Math.sin(dLng / 2) ** 2;
   return Math.round(2 * 6371 * Math.asin(Math.min(1, Math.sqrt(a))));
+}
+
+// Shape of the public listing Q&A endpoint. Kept local rather than in
+// lib/types.ts because only this page + ListingFaq consume it, and the page
+// treats every field defensively anyway (see the fallback below).
+interface ListingFaqPayload {
+  entries: { id: string; question: string; answer: string }[];
+  sellerReply: { label: string; sampleSize: number } | null;
 }
 
 export async function generateMetadata({
@@ -152,10 +161,20 @@ export default async function ListingDetailPage({
   const { userId, getToken } = await auth();
   const token = await getToken().catch(() => null);
 
-  const listing = await apiFetch<Listing>(`/listings/${id}`, {
-    cache: 'no-store',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }).catch(() => null);
+  // Fetch the public Q&A in PARALLEL with the listing so its latency never
+  // stacks on top of the page fetch. It is deliberately fault-tolerant: a FAQ
+  // failure must not take the listing down, so the catch resolves to the empty
+  // payload and the section renders its required empty state instead. The
+  // listing itself has no such fallback — a missing listing is still a 404.
+  const [listing, faq] = await Promise.all([
+    apiFetch<Listing>(`/listings/${id}`, {
+      cache: 'no-store',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }).catch(() => null),
+    apiFetch<ListingFaqPayload>(`/listings/${encodeURIComponent(id)}/faq`, {
+      cache: 'no-store',
+    }).catch((): ListingFaqPayload => ({ entries: [], sellerReply: null })),
+  ]);
 
   if (!listing) return notFound();
 
@@ -1163,9 +1182,15 @@ export default async function ListingDetailPage({
             )}
           </div>
 
+          {/* Public Q&A — cleaned, anonymised answers the seller has already
+              given to other buyers. Sits immediately ABOVE the private thread:
+              read the public answer first, then ask privately if it is not
+              covered. A FAQ fetch failure renders the section's required empty
+              state (see components/listing-faq.tsx), never a broken page. */}
+          <ListingFaq entries={faq.entries} sellerReply={faq.sellerReply} />
           {/* Contact seller - private 1-to-1 thread, moderated for contact
               details. The seller can answer with photos or a video. Sits
-              directly below the bid/buy controls, at the point of decision. */}
+              directly below the public Q&A, at the point of decision. */}
           <QuestionsPanel
             listingId={listing.id}
             sellerId={sellerUserId}

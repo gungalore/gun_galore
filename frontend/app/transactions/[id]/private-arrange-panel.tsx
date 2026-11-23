@@ -11,7 +11,11 @@ const API_URL =
 
 // Private Arrangement handover (Phase 4 W2). Funds are HELD: the seller marks
 // "Item delivered", the buyer confirms "Item received" (which releases the
-// seller's payment), or either party raises a dispute (funds frozen for admin).
+// seller's payment), or either party reports that the handover did not happen
+// (funds frozen for admin). That report is a NON-DELIVERY route only — a
+// condition/description concern about an item that was received is between
+// the buyer and the seller (message + complaint), not a dispute or refund.
+// The 5-day auto-release after payment is untouched.
 export default function PrivateArrangePanel({
   txId,
   isBuyer,
@@ -70,7 +74,12 @@ export default function PrivateArrangePanel({
           ? ' The seller has accepted; waiting for the handover to be marked delivered.'
           : ''}
         {delivered && !received ? ' The seller has marked it delivered.' : ''}
-        {received ? ' Receipt confirmed — payment released to the seller.' : ''}
+        {received ? ' Receipt confirmed — payment released to the seller.' : ''}{' '}
+        Use &ldquo;Report that the handover did not happen&rdquo; if the item
+        was never handed over or the seller is unreachable — the payment stays
+        held while we review. If you received the item but it is not as
+        expected, message the seller from this order or lodge a complaint;
+        that is between you and the seller, not a platform refund.
       </p>
 
       {error && <p className="text-xs text-[var(--red)] mb-2">{error}</p>}
@@ -105,7 +114,7 @@ export default function PrivateArrangePanel({
             disabled={busy !== null}
             className="text-sm px-3 py-1.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] disabled:opacity-50"
           >
-            {busy === 'dispute' ? 'Raising…' : 'Raise a dispute'}
+            {busy === 'dispute' ? 'Reporting…' : 'Report that the handover did not happen'}
           </button>
         )}
       </div>

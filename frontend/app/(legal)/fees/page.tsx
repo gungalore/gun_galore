@@ -202,15 +202,20 @@ export default function FeesPage() {
           <strong>{money(lateRefund)}</strong>.
         </li>
         <li>
-          <strong>After dispatch:</strong> the order cannot be cancelled. The
-          buyer must use the dispute process instead.
+          <strong>After dispatch:</strong> cancellation ends at dispatch. The
+          order cannot be cancelled, and the non-delivery route is only for an
+          item that never arrives. A condition, description, fit or
+          change-of-mind issue is between the buyer and the seller — message the
+          seller from the order page and, if you want it on record, lodge a{' '}
+          <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>.
         </li>
         <li>
           <strong>Seller fault:</strong> where the seller declines the sale,
-          fails to dispatch, or never delivers, the buyer receives a{' '}
-          <strong>100% refund</strong> with no 4% deduction, except where the
-          in-person handover rules in section 7 of the Terms of Service provide
-          otherwise.
+          fails to dispatch, or never delivers the item, the buyer receives a{' '}
+          <strong>100% refund</strong> — including the Platform Fee and delivery
+          — with no 4% deduction. On an in-person handover the Platform Fee is
+          non-refundable only on a buyer-requested cancellation, not where the
+          seller never hands the item over (section 7 of the Terms of Service).
         </li>
         <li>
           <strong>Death or hospitalisation:</strong> no cancellation fee is

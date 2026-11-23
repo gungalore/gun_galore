@@ -34,17 +34,19 @@ export class ListingInquiriesController {
 
   // Buyer sends the first (or a subsequent) message. Creates the thread on
   // the first send. Tight throttle: every send runs the Jev text battery.
+  // `force: true` is the buyer's "ask anyway" after the FAQ answered it.
   @Post(':id/inquiry/messages')
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   send(
     @Param('id') listingId: string,
     @CurrentUser() userId: string,
-    @Body() body: { content?: string },
+    @Body() body: { content?: string; force?: boolean },
   ) {
     return this.inquiries.sendAsBuyer(
       listingId,
       userId,
       body?.content ?? '',
+      { force: body?.force === true },
     );
   }
 }

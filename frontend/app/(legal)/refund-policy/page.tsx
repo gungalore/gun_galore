@@ -1,14 +1,21 @@
-﻿// Refund & Dispute Policy — explains when and how refunds happen,
-// the dispute flow timeline, and what the buyer's statutory rights
-// are under the Consumer Protection Act.
+﻿// Refund & Dispute Policy — states the operator's refund position plainly:
+// we refund an order only when the item is not delivered, and condition,
+// description, damage, fit and change of mind are between the Buyer and the
+// Seller. The contract of sale is theirs; our role is the marketplace, payment
+// facilitation and seller verification. Nothing here limits the Buyer's
+// statutory rights against the seller under the Consumer Protection Act.
 //
 // Mapped to the actual implementation:
-//   - Funds-held mechanism in transactions.service.ts (HELD → RELEASED
-//     on confirm-delivery or auto-release after the cron decides)
-//   - Buyer-initiated dispute (raise-dispute-button.tsx + raiseDispute
-//     in TransactionsService) — sets paymentStatus DISPUTED, pauses
-//     dispatch-SLA auto-refund, raises admin alert
-//   - Admin dossier actions: release / refund / resolve-dispute-release
+//   - Payment is collected by the appointed third-party payment service
+//     provider and the Seller is paid only once delivery is confirmed
+//     (transactions.service.ts: funds held -> released on confirm-delivery
+//     or by the auto-release cron).
+//   - The courier dispatch-SLA auto-refund after 5 days is unchanged.
+//   - A non-delivery report from the order page pauses the payout while the
+//     admin team checks it against the courier record (raiseDispute in
+//     TransactionsService).
+//   - Condition complaints are recorded and passed to the Seller; they are
+//     not a refund route and do not pause the Seller's payout.
 
 import Link from 'next/link';
 import { SUPPORT_EMAIL } from '@/lib/brand';
@@ -17,7 +24,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Refund & Dispute Policy',
   description:
-    'When refunds happen, how the dispute process works, and your statutory rights under the Consumer Protection Act.',
+    'When ALL Outdoor refunds an order that is not delivered, what is not a refund ground, and your statutory rights under the Consumer Protection Act.',
 };
 
 export default function RefundPolicyPage() {
@@ -25,7 +32,7 @@ export default function RefundPolicyPage() {
     <>
       <LegalDocHeader
         title="Refund & Dispute Policy"
-        lastUpdated="Effective 24 June 2026 · Updated 19 October 2026"
+        lastUpdated="Effective 24 June 2026 · Updated 23 November 2026"
       />
 
       <h2>Quick reference</h2>
@@ -41,132 +48,182 @@ export default function RefundPolicyPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          <strong>If your item never arrived, arrived damaged or is
-          not what was listed:</strong> raise a dispute on the
-          transaction page <em>before</em> you click "Confirm
-          delivery". The seller is not paid while the admin team reviews
-          (typically within 48 hours). Don't click confirm if you're
-          unhappy — confirming triggers payment to the seller and is
-          final.
+          <strong>We refund an order only when the item is not delivered.</strong>{' '}
+          That means the seller never dispatches it, never hands it over
+          (collection, dealer transfer or private arrangement), or the courier
+          records no delivery. That refund is <strong>full</strong>: the item
+          price, delivery and the Platform Fee.
+        </p>
+        <p style={{ margin: '10px 0 0' }}>
+          <strong>Condition is not a refund ground.</strong> If an item is not
+          as described, arrives damaged, does not fit, is not what you expected
+          or you have changed your mind, that is between you and the seller.
+          Message the seller from the order page and, if you want it on record,
+          lodge a complaint. We record it, pass it to the seller and can act
+          against a seller who misdescribes an item — but we do not refund it
+          and we do not hold the seller&apos;s payout for it.
         </p>
       </div>
 
-      <h2>1. How payment protection works</h2>
+      <h2>1. How payment works, and when the seller is paid</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        For most transactions, the buyer's payment is collected by our
-        appointed third-party payment service provider (a licensed South
-        African payment service provider), and the seller is only paid
-        once delivery is confirmed:
+        ALL Outdoor is an online marketplace and a payment facilitator. Sellers
+        are identity- and bank-verified before they can receive a payout. We do
+        not inspect, test, own, store or warrant the goods. The contract of sale
+        is between the buyer and the seller, and the seller is responsible for
+        the listing, the description and the condition of the item.
+      </p>
+      <p>
+        For most transactions, the buyer&apos;s payment is collected by our
+        appointed third-party payment service provider (a licensed South African
+        payment service provider), and the seller is paid only once delivery is
+        confirmed:
       </p>
       <ol>
         <li><strong>You pay</strong> — the payment service provider captures the amount from your chosen payment method and the transaction moves to <strong>Paid — awaiting delivery</strong>.</li>
         <li><strong>Seller dispatches</strong> — they confirm dispatch, which starts your delivery clock.</li>
-        <li><strong>You receive the parcel</strong> — inspect it before doing anything else.</li>
+        <li><strong>You receive the parcel</strong> — check that the item has arrived before doing anything else.</li>
         <li><strong>You confirm delivery</strong> — the seller is paid and the transaction completes.</li>
       </ol>
       <p>
-        The "Confirm delivery" button is intentionally a two-step
-        flow with a three-point inspection checklist. Once you confirm,
-        the seller is paid immediately and the transaction is final — you
-        will <strong>not</strong> be able to raise a dispute afterwards
-        on the same issue.
+        The &quot;Confirm delivery&quot; button is intentionally a two-step flow
+        with a three-point checklist. Confirm only when you have the item: once
+        you confirm, the seller is paid immediately and the transaction
+        completes. If the item has <strong>not</strong> arrived, report that from
+        the order page before you confirm (section 2). A condition issue is
+        raised with the seller, not through a platform refund (section 3).
       </p>
       <p>
         Where a transaction uses the{' '}
         <strong>in-person handover</strong> option (the buyer and seller meet
         and complete the handover themselves, at a licensed dealer for a
-        firearm), the payment is captured and <strong>held</strong>. It is
-        released when the buyer confirms the handover, or automatically five
-        days after payment if there is no dispute. Both parties receive a
-        WhatsApp, SMS, email and in-app confirmation link. If a dispute is
-        upheld and refunded, the buyer is refunded the item price only — the
-        Platform Fee is non-refundable on this option. See our{' '}
-        <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
-        section 7 for the binding text. Additional terms apply to
-        regulated categories. See the{' '}
+        firearm), the payment is collected and the seller is paid when the buyer
+        confirms the handover, or automatically five days after payment if the
+        buyer has not reported that the item was never handed over. Both parties
+        receive a WhatsApp, SMS, email and in-app confirmation link. If the
+        seller never hands the item over, that is non-delivery and the refund is
+        full, including the Platform Fee (section 2). On a buyer-requested
+        cancellation the Platform Fee is non-refundable on this option (section
+        4). See our{' '}
+        <Link href="/terms" style={{ color: 'var(--red)' }}>
+          Terms of Service
+        </Link>{' '}
+        section 7 for the binding text. Additional terms apply to regulated
+        categories. See the{' '}
         <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items Annex
         </Link>
         , available to registered members.
       </p>
 
-      <h2>2. When you can raise a dispute</h2>
-      <p>
-        You can raise a dispute on a transaction <strong>provided all
-        of the following are true</strong>:
-      </p>
+      <h2>2. When we refund — the item is not delivered</h2>
+      <p>We refund an order only where the item is not delivered. That means:</p>
       <ul>
-        <li>The transaction's payment status is still <strong>Paid — awaiting delivery</strong>.</li>
-        <li>The seller has confirmed dispatch (we don't accept disputes against undispatched orders — see paragraph 4 for what happens there instead).</li>
-        <li>You have not already confirmed delivery on this transaction.</li>
-      </ul>
-      <p>
-        Disputes can be raised for these reasons:
-      </p>
-      <ul>
-        <li><strong>Arrived damaged</strong> — item is broken, scratched, malfunctioning, or otherwise not in the condition described.</li>
-        <li><strong>Wrong item</strong> — what you received doesn't match the listing (different model, different specification, accessories missing, etc.).</li>
-        <li><strong>Never arrived</strong> — seller marked dispatched but the parcel never showed up.</li>
-        <li><strong>Other</strong> — describe in your own words.</li>
-      </ul>
-      <p>
-        <strong>Distance and location are not dispute grounds.</strong> If you
-        cannot reach an item you have paid for, lodge a{' '}
-        <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>{' '}
-        instead and we will try to help you and the seller sort it out. That
-        route does not hold the seller's payment.
-      </p>
-
-      <h2>3. How a dispute is reviewed and resolved</h2>
-      <ol>
-        <li>You click <strong>Raise dispute</strong> on the transaction page, pick a reason and write at least 10 characters describing what happened. (The admin team may ask for photos by email if relevant.)</li>
-        <li>The transaction moves to <strong>Disputed</strong> status. The seller is not paid while it is open; the dispatch-SLA auto-refund cron is paused; both you and the seller see a "Dispute raised — admin is reviewing" notice on the transaction page.</li>
-        <li>An admin alert is raised with the dispute details so the team sees it immediately. <strong>We aim to make first contact within 48 hours.</strong></li>
-        <li>The admin team gathers evidence from you, the seller and (where relevant) the courier's tracking record.</li>
-        <li>One of four outcomes is recorded, with a written reason in the audit log:
-          <ul>
-            <li><strong>Full refund to you</strong> — payment is reversed to your original payment method; you receive the full amount including shipping (typically 3–7 business days).</li>
-            <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance paid to the seller.</li>
-            <li><strong>Payment to seller</strong> — where the dispute is not upheld; the seller is paid as normal. You will be told why.</li>
-            <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to the relevant law-enforcement authority and may be paused indefinitely.</li>
-          </ul>
+        <li>
+          <strong>The seller never accepts or never dispatches the item</strong>{' '}
+          — the order is paid and nothing is sent.
         </li>
-      </ol>
-
-      <h2>4. Seller doesn't dispatch — automatic refund</h2>
+        <li>
+          <strong>The seller never hands the item over</strong> — on a
+          collection, a dealer transfer or a private arrangement, the hand-over
+          never happens.
+        </li>
+        <li>
+          <strong>The courier records no delivery</strong> — the parcel is not
+          recorded as delivered to you.
+        </li>
+      </ul>
       <p>
-        For courier orders, the seller has{' '}
-        <strong>5 days from accepting your order</strong> to dispatch it.
-        We send them a reminder before the deadline. If they still haven't
-        dispatched by the end of that window, the system{' '}
-        <strong>automatically refunds you in full</strong> and notifies
-        both parties — you don't need to do anything. The refund records
-        as a &quot;dispatch SLA auto-refund&quot; in your transaction
-        history. (This automatic refund applies to courier orders;
-        collection orders, and orders that complete through a licensed
-        dealer, follow the dispute route in sections&nbsp;2 and&nbsp;3
-        instead.)
+        <strong>The refund is full.</strong> You are refunded the item price, the
+        delivery charge and the Platform Fee, back to your original payment
+        method. Report a non-delivery from the order page before you confirm
+        delivery, and our team checks it against the courier or hand-over record.
+      </p>
+      <p>
+        <strong>The automatic 5-day refund for courier orders is unchanged.</strong>{' '}
+        The seller has five days from accepting your order to dispatch it. We
+        send a reminder before the deadline. If the window lapses with no
+        dispatch, the system <strong>automatically refunds you in full</strong>{' '}
+        and notifies both parties — you do not need to do anything. The refund
+        records as a &quot;dispatch SLA auto-refund&quot; in your transaction
+        history. Collection orders, dealer transfers and private arrangements do
+        not run on that automatic timer: if one of those is never handed over,
+        report it from the order page and our team checks the record and refunds
+        you in full.
+      </p>
+      <p>
+        <strong>An item that has been delivered is not a non-delivery.</strong>{' '}
+        Where the courier records delivery, or you confirm receipt, the item has
+        been delivered; a complaint about what was in the parcel, its condition
+        or its description is a matter for the seller (section 3), not a platform
+        refund.
       </p>
 
-      <h2>4a. Item damaged in transit</h2>
+      <h2>3. What we do not refund, and what to do instead</h2>
+      <p>We do not refund an order for any of the following:</p>
+      <ul>
+        <li>
+          <strong>Condition</strong> — the item is worn, scratched, damaged,
+          faulty, incomplete or otherwise not in the condition you expected.
+        </li>
+        <li>
+          <strong>&quot;Not as described&quot;</strong> — the item is not the
+          model, specification, colour, accessories or finish you expected.
+        </li>
+        <li>
+          <strong>Damage after delivery</strong> — anything that happens to the
+          item once it has been delivered.
+        </li>
+        <li>
+          <strong>Wrong expectation, fit or suitability</strong> — the item does
+          not suit your purpose, size or preference.
+        </li>
+        <li>
+          <strong>Change of mind</strong> — you no longer want the item.
+        </li>
+        <li>
+          <strong>Location or travel</strong> — the item is further away than you
+          wanted, you cannot get to it, it costs more than you expected to
+          collect, or a licensed dealer you must use is inconvenient. Every
+          listing shows the town and province before you buy, and you confirm at
+          checkout that you have seen it.
+        </li>
+      </ul>
       <p>
-        If your parcel arrives damaged, <strong>do not confirm receipt</strong>.
-        Photograph the packaging and the damage, then raise it from the order
-        page (or lodge a{' '}
-        <Link href="/complaints/new" style={{ color: 'var(--red)' }}>
-          formal complaint
+        These are matters between you and the seller. We do not inspect, test or
+        warrant the goods, and we are not the seller. We verify the seller&apos;s
+        identity and bank details and facilitate the payment; the seller is
+        responsible for the accuracy of the listing and the condition of the
+        item.
+      </p>
+      <p>
+        <strong>Ask before you buy.</strong> Read the listing carefully and ask
+        any question you need answered before you pay. Listings now have a public{' '}
+        <strong>Questions &amp; answers</strong> section built from previous
+        buyer and seller conversations. Ask your question there; the seller
+        usually replies, and answered questions stay published on the listing —
+        the seller cannot hide them.
+      </p>
+      <p>
+        <strong>After delivery.</strong> Message the seller from the order page.
+        If you want the matter on record, lodge a{' '}
+        <Link href="/complaints" style={{ color: 'var(--red)' }}>
+          complaint
         </Link>
-        ) within 48&nbsp;hours of delivery. The seller is not paid while we
-        investigate with you, the seller and the courier. Where the courier is
-        at fault we pursue the courier claim; where the item was misrepresented
-        or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;3.
+        . We record it, pass it to the seller and can act against a seller who
+        misdescribes items. We do not refund it and we do not hold the
+        seller&apos;s payout for it.
+      </p>
+      <p>
+        None of this limits your rights against the seller under the Consumer
+        Protection Act — see section 5.
       </p>
 
-      <h2>5. Cancelling an order, and what is not refundable</h2>
+      <h2>4. Cancelling an order, and the 4% handling fee</h2>
       <p>
-        You cannot self-cancel a paid order, and you cannot cancel it at all
-        once the seller has marked it dispatched. To cancel before dispatch, use{' '}
+        You cannot self-cancel a paid order, and you cannot cancel it at all once
+        the seller has marked it dispatched. To cancel before dispatch, use{' '}
         <strong>Request cancellation</strong> on the order page (or email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}
@@ -195,15 +252,15 @@ export default function RefundPolicyPage() {
         </li>
         <li>
           <strong>Once the item has been dispatched, the order cannot be
-          cancelled.</strong> Use the dispute process in sections&nbsp;2
-          and&nbsp;3 instead. If the item never arrives, arrives damaged, or is
-          not what was listed, the dispute route applies in full.
+          cancelled.</strong> From that point the only platform refund route is
+          non-delivery (section 2). A condition or description issue after
+          dispatch is between you and the seller (section 3).
         </li>
         <li>
           <strong>The 4% fee does not apply when the cancellation is the
           seller&rsquo;s fault.</strong> If the seller declines the sale, never
-          dispatches (our automatic refund), or the item never arrives, you are
-          refunded <strong>in full — including the Platform Fee and delivery</strong>.
+          dispatches, or never delivers the item, you are refunded{' '}
+          <strong>in full — including the Platform Fee and delivery</strong>.
         </li>
         <li>
           <strong>No cancellation fee applies on death or hospitalisation of the
@@ -211,31 +268,26 @@ export default function RefundPolicyPage() {
           Protection Act.
         </li>
         <li>
-          <strong>Where the item is, or how far you have to travel to it.</strong>{' '}
-          Every listing shows the town and province the item is in before you
-          buy, and you confirm at checkout that you have seen it. The location
-          shown is part of what you agree to buy. We do not refund an order
-          because the item turned out to be further away than you wanted,
-          because you could not get there, because collecting it cost more than
-          you expected, or because a licensed dealer you have to use is
-          inconvenient. This does not affect your other rights: if an item never
-          arrives, arrives damaged, is not what was listed, or the seller never
-          hands it over, the dispute route in sections&nbsp;2 and&nbsp;3 applies
-          in full.
-        </li>
-        <li>
           <strong>The Platform Fee on an in-person handover.</strong> If you
           chose an in-person handover (arrange privately / meet the seller), the
-          Platform Fee is non-refundable. Where a dispute is upheld and refunded,
-          you are refunded the item price only; ALL Outdoor retains the Platform
-          Fee regardless of the reason for the dispute. This does not affect a
-          refund owed because the item never arrived or was not as described
-          under the courier rail, where the Platform Fee is refunded with the
-          item price.
+          Platform Fee is non-refundable on a buyer-requested cancellation. It is
+          not retained where the seller never hands the item over: non-delivery
+          on this option is refunded in full, including the Platform Fee, under
+          section 2.
         </li>
       </ul>
+      <p>
+        <strong>Seller failure charge (unchanged).</strong> Where a paid sale
+        ends because the seller declined it, failed to dispatch it or never
+        delivered it, the seller failure charge in section 11 of the{' '}
+        <Link href="/terms" style={{ color: 'var(--red)' }}>
+          Terms of Service
+        </Link>{' '}
+        applies to the seller. It does not apply to condition complaints, which
+        are not a refund route on this platform.
+      </p>
 
-      <h2>6. Your statutory rights under the Consumer Protection Act</h2>
+      <h2>5. Your statutory rights under the Consumer Protection Act</h2>
       <p>
         Nothing in this policy excludes or limits the rights you have
         under the Consumer Protection Act 68 of 2008, including:
@@ -247,10 +299,11 @@ export default function RefundPolicyPage() {
         <li><strong>Section 19</strong> — the right to delivery at the agreed time and place. Section&nbsp;19 applies <em>unless otherwise expressly provided or anticipated in an agreement</em>: where a listing is marked collection-only, or is a regulated item that transfers through a licensed dealer, the town shown on the listing is the agreed place, and you confirm it at checkout before paying.</li>
       </ul>
       <p>
-        Where a dispute cannot be resolved by ALL Outdoor and falls
-        within the jurisdiction of the National Consumer Commission or
-        the Consumer Goods and Services Ombud, you may escalate it
-        directly to them:
+        We limit our own role and our own refunds. We do not, and cannot, erase
+        the seller&apos;s statutory obligations to you. Where a complaint against
+        ALL Outdoor cannot be resolved by us and falls within the jurisdiction of
+        the National Consumer Commission or the Consumer Goods and Services
+        Ombud, you may escalate it directly to them:
       </p>
       <ul>
         <li>
@@ -282,19 +335,19 @@ export default function RefundPolicyPage() {
         </li>
       </ul>
 
-      <h2>7. Chargebacks</h2>
+      <h2>6. Chargebacks</h2>
       <p>
-        If you initiate a chargeback through your bank or card
-        provider without first raising a dispute with ALL Outdoor, your
-        account may be suspended while the chargeback is investigated.
-        We strongly prefer the on-site dispute route — it is
-        faster, your seller is protected from punitive chargeback
-        fees, and the outcome is generally the same.
+        Chargebacks are unchanged. If you initiate a chargeback through your bank
+        or card provider without first raising the issue with ALL Outdoor, your
+        account may be suspended while the chargeback is investigated. We prefer
+        you report a non-delivery from the order page or lodge a complaint first
+        — it is faster, your seller is protected from punitive chargeback fees,
+        and the outcome is generally the same.
       </p>
 
-      <h2>8. Contact</h2>
+      <h2>7. Contact</h2>
       <p>
-        For any refund or dispute enquiry that you cannot resolve via
+        For any refund or complaint enquiry that you cannot resolve via
         the in-product flows, email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
           {SUPPORT_EMAIL}

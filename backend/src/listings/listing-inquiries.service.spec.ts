@@ -52,9 +52,26 @@ function makeService(
       : over.inquiry;
 
   const prisma = {
+    listing: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'L1',
+        sellerId: 'S',
+        status: 'ACTIVE',
+        title: 'Scope',
+      }),
+    },
     listingInquiry: {
-      findUnique: jest.fn().mockResolvedValue(inquiry),
+      // `findUnique` serves two shapes: the participant lookup (returns the
+      // thread) and the "does this buyer already have a thread?" probe, which
+      // must answer null so a first message can reach the FAQ check.
+      findUnique: jest.fn().mockImplementation((args: { where?: Record<string, unknown> }) =>
+        args?.where && 'listingId_buyerId' in args.where
+          ? Promise.resolve(null)
+          : Promise.resolve(inquiry),
+      ),
       update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      upsert: jest.fn().mockResolvedValue({ id: 'INQ1' }),
       count: jest.fn().mockResolvedValue(0),
     },
     listingInquiryMessage: {
@@ -104,6 +121,11 @@ function makeService(
       .fn()
       .mockResolvedValue(over.verdict ?? { decision: 'APPROVE', reasons: [] }),
   };
+  // Public Q&A side-car. Default: nothing has been answered yet.
+  const faq = {
+    match: jest.fn().mockResolvedValue(null),
+    distil: jest.fn().mockResolvedValue(undefined),
+  };
 
   const service = new ListingInquiriesService(
     prisma as never,
@@ -112,8 +134,9 @@ function makeService(
     notifications as never,
     cloudinary as never,
     moderation as never,
+    faq as never,
   );
-  return { service, prisma, cloudinary, moderation, notifications };
+  return { service, prisma, cloudinary, moderation, notifications, faq };
 }
 
 describe('ListingInquiriesService', () => {
@@ -249,5 +272,73 @@ describe('ListingInquiriesService', () => {
       'INQ1',
       { userId: 'B', types: ['listing_inquiry_message'] },
     );
+  });
+
+  // ⚠️ THE FAQ COMES FIRST. A question the listing has already answered
+  // publicly must not open a thread or notify the seller; the buyer is handed
+  // the answer instead. `force` is the only bypass (the "ask anyway" button).
+  it('answers a duplicate from the public FAQ without creating a thread', async () => {
+    const { service, prisma, faq } = makeService();
+    faq.match.mockResolvedValue({
+      id: 'F1',
+      question: 'Does it come with a case?',
+      answer: 'Yes, it ships with the hard case shown.',
+    });
+
+    const res = await service.sendAsBuyer('L1', 'B', 'Does it have a case?');
+
+    expect(res).toMatchObject({ answeredFromFaq: true });
+    expect(prisma.listingInquiry.upsert).not.toHaveBeenCalled();
+    expect(prisma.listingInquiryMessage.create).not.toHaveBeenCalled();
+  });
+
+  it('lets the buyer ask anyway with force', async () => {
+    const { service, prisma, faq } = makeService();
+    faq.match.mockResolvedValue({
+      id: 'F1',
+      question: 'Does it come with a case?',
+      answer: 'Yes.',
+    });
+
+    await service.sendAsBuyer('L1', 'B', 'Does it have a case?', {
+      force: true,
+    });
+
+    expect(faq.match).not.toHaveBeenCalled();
+    expect(prisma.listingInquiry.upsert).toHaveBeenCalled();
+    expect(prisma.listingInquiryMessage.create).toHaveBeenCalled();
+  });
+
+  it('stamps the seller first-reply time and distils an answered thread', async () => {
+    const { service, prisma, faq } = makeService();
+    await service.sendMessage('INQ1', 'S', 'Yes, it comes with the case.');
+
+    expect(prisma.listingInquiry.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'INQ1', sellerFirstReplyAt: null },
+        data: expect.objectContaining({ sellerFirstReplyAt: expect.any(Date) }),
+      }),
+    );
+    expect(faq.distil).toHaveBeenCalledWith('INQ1');
+  });
+
+  it('does not intercept a follow-up in an existing thread', async () => {
+    const { service, prisma, faq } = makeService();
+    // First call (the thread-existence probe) says the thread already exists.
+    prisma.listingInquiry.findUnique.mockResolvedValueOnce({ id: 'INQ1' });
+
+    await service.sendAsBuyer('L1', 'B', 'One more question about the case.');
+
+    expect(faq.match).not.toHaveBeenCalled();
+    expect(prisma.listingInquiry.upsert).not.toHaveBeenCalled();
+    expect(prisma.listingInquiryMessage.create).toHaveBeenCalled();
+  });
+
+  it('does not treat a buyer message as a seller reply', async () => {
+    const { service, prisma, faq } = makeService();
+    await service.sendMessage('INQ1', 'B', 'still interested');
+
+    expect(prisma.listingInquiry.updateMany).not.toHaveBeenCalled();
+    expect(faq.distil).not.toHaveBeenCalled();
   });
 });

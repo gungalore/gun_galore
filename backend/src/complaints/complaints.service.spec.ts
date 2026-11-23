@@ -19,9 +19,11 @@ function makeService(over: { tx?: unknown; heldCount?: number } = {}) {
   };
   const reference = { allocate: jest.fn().mockResolvedValue('CO000001') };
   const cloudinary = { uploadImage: jest.fn() };
-  // adminUpdate now tells the complainant when their case moves.
+  // adminUpdate tells the complainant when their case moves; the seller gets
+  // a neutral heads-up for condition/description concerns.
   const notifications = {
     complaintStatusChanged: jest.fn().mockResolvedValue(undefined),
+    complaintConcernForSeller: jest.fn().mockResolvedValue(undefined),
   };
   const svc = new ComplaintsService(
     prisma as never,
@@ -29,7 +31,7 @@ function makeService(over: { tx?: unknown; heldCount?: number } = {}) {
     cloudinary as never,
     notifications as never,
   );
-  return { svc, prisma, notifications };
+  return { svc, prisma, notifications, created };
 }
 
 const HELD_TX = {
@@ -41,17 +43,17 @@ const HELD_TX = {
   swapId: null,
   adminNote: null,
   listing: { title: 'Scope' },
+  seller: { email: 'seller@example.com', firstName: 'Sam' },
 };
 
 describe('ComplaintsService.create', () => {
-  it('flips a HELD order to DISPUTED for a buyer payout-affecting complaint', async () => {
+  it('flips a HELD order to DISPUTED for a buyer NOT_ARRIVED complaint', async () => {
     const { svc, prisma } = makeService({ tx: HELD_TX });
     const res = await svc.create('clerk1', {
-      category: 'ITEM_NOT_AS_DESCRIBED',
-      subject: 'Wrong scope',
-      body: 'The scope delivered is a different model to the listing.',
+      category: 'NOT_ARRIVED',
+      subject: 'Never came',
+      body: 'The item was marked delivered but nothing arrived at my address.',
       transactionId: 'TX1',
-      photos: [{ url: 'https://img/1.jpg', publicId: 'p1' }],
     });
     expect(res.drovePayoutHold).toBe(true);
     expect(prisma.transaction.updateMany).toHaveBeenCalledWith(
@@ -67,6 +69,34 @@ describe('ComplaintsService.create', () => {
     );
   });
 
+  it('does NOT hold payout for an ITEM_NOT_AS_DESCRIBED complaint and needs no photo', async () => {
+    const { svc, prisma } = makeService({ tx: HELD_TX });
+    const res = await svc.create('clerk1', {
+      category: 'ITEM_NOT_AS_DESCRIBED',
+      subject: 'Wrong scope',
+      body: 'The scope delivered is a different model to the listing.',
+      transactionId: 'TX1',
+    });
+    expect(res.drovePayoutHold).toBe(false);
+    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+    // Photos are optional — nothing was attached and the complaint was accepted.
+    expect(prisma.complaintPhoto.createMany).not.toHaveBeenCalled();
+    expect(prisma.complaint.create).toHaveBeenCalled();
+  });
+
+  it('does NOT hold payout for a DAMAGED complaint and needs no photo', async () => {
+    const { svc, prisma } = makeService({ tx: HELD_TX });
+    const res = await svc.create('clerk1', {
+      category: 'DAMAGED',
+      subject: 'Arrived broken',
+      body: 'The item arrived damaged in transit, no photos attached yet.',
+      transactionId: 'TX1',
+    });
+    expect(res.drovePayoutHold).toBe(false);
+    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+    expect(prisma.complaintPhoto.createMany).not.toHaveBeenCalled();
+  });
+
   it('does NOT hold payout for a non-payout category (e.g. DELIVERY)', async () => {
     const { svc, prisma } = makeService({ tx: HELD_TX });
     const res = await svc.create('clerk1', {
@@ -80,7 +110,9 @@ describe('ComplaintsService.create', () => {
   });
 
   it('does NOT hold when the complainant is the SELLER on the order', async () => {
-    const { svc, prisma } = makeService({ tx: { ...HELD_TX, buyerId: 'X', sellerId: 'U1' } });
+    const { svc, prisma, notifications } = makeService({
+      tx: { ...HELD_TX, buyerId: 'X', sellerId: 'U1' },
+    });
     const res = await svc.create('clerk1', {
       category: 'DAMAGED',
       subject: 'Damage claim',
@@ -89,6 +121,8 @@ describe('ComplaintsService.create', () => {
     });
     expect(res.drovePayoutHold).toBe(false);
     expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+    // The seller is the complainant — no seller heads-up.
+    expect(notifications.complaintConcernForSeller).not.toHaveBeenCalled();
   });
 
   it('rejects a linked order the user is not a party to', async () => {
@@ -125,30 +159,47 @@ describe('ComplaintsService.create', () => {
     expect(res.drovePayoutHold).toBe(false);
   });
 
-  it('requires at least one evidence photo for a buyer item-received dispute', async () => {
-    const { svc, prisma } = makeService({ tx: HELD_TX });
+  it('notifies the seller for a buyer condition complaint linked to an order', async () => {
+    const { svc, notifications } = makeService({ tx: HELD_TX });
+    await svc.create('clerk1', {
+      category: 'ITEM_NOT_AS_DESCRIBED',
+      subject: 'Wrong scope',
+      body: 'The scope delivered is a different model to the listing.',
+      transactionId: 'TX1',
+    });
+    expect(notifications.complaintConcernForSeller).toHaveBeenCalledTimes(1);
+    expect(notifications.complaintConcernForSeller).toHaveBeenCalledWith({
+      email: 'seller@example.com',
+      name: 'Sam',
+      listingTitle: 'Scope',
+      referenceNumber: 'CO000001',
+    });
+  });
+
+  it('does NOT send the seller a condition heads-up for a NOT_ARRIVED complaint', async () => {
+    const { svc, notifications } = makeService({ tx: HELD_TX });
+    await svc.create('clerk1', {
+      category: 'NOT_ARRIVED',
+      subject: 'Never came',
+      body: 'The item was marked delivered but nothing arrived at my address.',
+      transactionId: 'TX1',
+    });
+    expect(notifications.complaintConcernForSeller).not.toHaveBeenCalled();
+  });
+
+  it('keeps the photo/video caps', async () => {
+    const { svc } = makeService({ tx: HELD_TX });
     await expect(
       svc.create('clerk1', {
         category: 'DAMAGED',
         subject: 'Arrived broken',
         body: 'The item arrived damaged in transit, please see the photos.',
         transactionId: 'TX1',
+        photos: Array.from({ length: 7 }, (_, i) => ({
+          url: `https://img/${i}.jpg`,
+          publicId: `p${i}`,
+        })),
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // The dispute must not have frozen the seller's payout without evidence.
-    expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('accepts the item-received dispute once a photo is attached', async () => {
-    const { svc, prisma } = makeService({ tx: HELD_TX });
-    const res = await svc.create('clerk1', {
-      category: 'DAMAGED',
-      subject: 'Arrived broken',
-      body: 'The item arrived damaged in transit, please see the attached photo.',
-      transactionId: 'TX1',
-      photos: [{ url: 'https://img/1.jpg', publicId: 'p1' }],
-    });
-    expect(res.drovePayoutHold).toBe(true);
-    expect(prisma.complaintPhoto.createMany).toHaveBeenCalled();
   });
 });

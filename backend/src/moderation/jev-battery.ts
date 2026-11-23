@@ -168,8 +168,35 @@ export function conductQuestions(): Record<string, JevQuestion> {
   };
 }
 
-export type JevLadderDecision = 'PASS' | 'BLOCK' | 'REVIEW';
+/**
+ * FAQ duplicate question — asked on the FIRST buyer message in a listing
+ * inquiry, with the listing's published Q&A entries in the same state string.
+ *
+ * ⚠️ SAME QUESTION, NOT THE SAME TOPIC. Jev is judging whether the seller has
+ * already answered the exact thing this buyer needs, so the platform can point
+ * them at the public answer instead of creating another thread. A different
+ * accessory, spec, condition aspect, size or model variant is NOT a duplicate —
+ * the cost of asking the seller is one message; the cost of a wrong "already
+ * answered" is a buyer who leaves.
+ *
+ * High precision is the whole point, so the caller treats only the BLOCK band
+ * (>= blockThreshold) as a duplicate and falls through to the seller otherwise.
+ */
+export function faqQuestions(): Record<string, JevQuestion> {
+  return {
+    faq_duplicate: {
+      type: 'noul',
+      instructions:
+        'You are given a listing\u2019s published FAQ entries and a new buyer question. Does at least one FAQ entry FULLY answer the new question for the same item, so that asking the seller again would add nothing? Judge the product substance: a different accessory, specification, condition aspect, size, model variant, or a broader/different request is NOT the same question. A question that is merely on the same topic, or that asks something no entry covers, is NOT this.',
+      criteria: {
+        true: 'An FAQ entry already answers it for the same item',
+        false: 'No FAQ entry answers that question',
+      },
+    },
+  };
+}
 
+export type JevLadderDecision = 'PASS' | 'BLOCK' | 'REVIEW';
 export interface JevTextVerdict {
   decision: JevLadderDecision;
   /** The category that drove the decision, where there is one. */

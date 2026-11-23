@@ -14,6 +14,29 @@ What each session did, found, and changed — so the next one does not re-derive
 
 ---
 
+## 2026-11-23 — NON-DELIVERY REFUNDS; PUBLIC LISTING Q&A + REPLY BADGE
+
+**Goal:** stop platform-funded condition remedies; publish cleaned Q&A from buyer/seller conversations; Jev deflects duplicate questions; show the seller’s usual reply time. Local only.
+
+**Changed**
+- `payments/transactions.{service,controller}.ts`: dispute reasons narrowed to `NEVER_ARRIVED`; retired reasons → guidance 400; attestation snapshot removed; cancel-refusal copy corrected.
+- `complaints/complaints.service.ts`: `PAYOUT_AFFECTING = {NOT_ARRIVED}`; photo gate removed; condition complaint emails the seller (`complaintConcernForSeller`) with no hold.
+- New `listings/listing-faq.{service,controller}.ts` + `seller-reply-time.ts`; `ListingFaq` model + `ListingInquiry.sellerFirstReplyAt` (migration `20261123120000_listing_faq`); `GET /listings/:id/faq`; inquiry send hooks (Jev duplicate → FAQ; seller reply → distil + first-reply stamp). Seller has **no** hide control.
+- `LlmService`: `listing.faq.*` pinned to Gemini + `gemini-3.1-flash-lite`; `jev-battery.ts` gains `faqQuestions()`.
+- Frontend: `components/listing-faq.tsx` (+ spec), PDP fetch, “Already answered” card + force bypass, order/complaint copy, legal pages, `/faq`, Help Centre seed, buyer ack.
+- Terms version `2026-11-23`.
+
+**Findings**
+- `ListingQuestion` (public Q&A) is dead behind a live endpoint; the live conversation is `ListingInquiry`. Built the FAQ on inquiries instead of reviving it.
+- Public Q&A must use the same visibility gate as the PDP; `PUBLICLY_VISIBLE_STATUSES` moved to `listing-visibility.ts` to share it.
+- Existing conversations are not backfilled; FAQ content starts with new seller replies.
+- Help Centre rows are seeded, not live-edited: production copy needs `npm run seed:help`.
+
+**Verified**
+- Backend `tsc` 0, jest **435 passed / 1 skipped, 6,431 pass**; frontend `tsc` 0, vitest **176 files / 1,994 pass**, `next build` clean. Local migration applied; nothing deployed.
+
+---
+
 ## 2026-09-23 — WARDEN DAEMON PROXY REBUILT; PANEL DAEMON SURFACE
 
 **Goal:** wire the standalone `warden/` daemon into the new `/admin` panel (the last "NOT WIRED" card). Local only; nothing deployed.

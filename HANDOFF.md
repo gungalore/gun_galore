@@ -7,6 +7,66 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
+## 2026-11-23 — REFUNDS ARE NON-DELIVERY ONLY; LISTING Q&A IS PUBLIC
+
+Operator: *"We cannot financially take responsibility for items that is not as
+described or if the buyer is not happy with what they got… The only time we will
+refund is if item has not been send by the seller… questions and answers
+displayed for other buyers to see… gemini 3.1 lite to clean up the conversations
+and jev to sort double asked questions and tell the buyer to see the FAQ… usually
+replies in time."*
+
+**Policy (implemented, not deployed).** ALL Outdoor refunds only an item that is
+never delivered — seller never dispatches/hands over, or the courier records no
+delivery — in full (item + delivery + Platform Fee). Condition, “not as
+described”, damage after delivery, fit, change of mind and location are between
+buyer and seller: message + complaint, **no platform refund and no payout hold**.
+Seller failure charge, cancellation/4% fee and chargebacks unchanged. The T&Cs
+keep the CPA rights against the seller intact.
+
+- `POST /transactions/:id/dispute` accepts only `NEVER_ARRIVED`; the retired
+  reasons return a guidance 400. The service re-checks it (defence in depth).
+- `ComplaintsService`: `PAYOUT_AFFECTING = {NOT_ARRIVED}` only; evidence photos
+  are optional for every category; a buyer condition complaint emails the seller
+  a neutral heads-up (`complaintConcernForSeller`) and does **not** hold payout.
+- **Public listing Q&A**: new `ListingFaq` (one row per inquiry, `inquiryId`
+  unique) + `ListingInquiry.sellerFirstReplyAt`; migration
+  `20261123120000_listing_faq`. `GET /listings/:id/faq` returns the visible
+  entries and the seller reply badge, and 404s a non-public listing.
+- On a seller reply, Gemini **3.1 Flash-Lite** (`listing.faq.distil`, pinned in
+  `LlmService` + `modelFor`) distils the conversation into one anonymised Q&A
+  entry. The distil prompt strips names/contact/addresses/serials/order numbers;
+  the regex floor and the **Jev** contact+conduct battery (fail-closed) must both
+  pass before publication. A later seller reply refreshes the same row.
+- A buyer’s message is checked against up to 10 published entries: **Jev** answers
+  one duplicate question (`listing.faq.duplicate`; only the ≥80 % band counts),
+  then Flash-Lite names the entry (`listing.faq.match`). A hit opens no thread
+  and sends no seller notification; `force: true` is the “Ask the seller anyway”
+  bypass. The panel shows the answer with a `#faq-<id>` link.
+- ⚠️ **The seller cannot hide an answered question.** No seller endpoint or UI
+  exists; `ListingFaq.hiddenAt` is platform moderation only.
+- **Reply badge**: “Usually replies within …” from the median time to the
+  seller’s first text/media reply over the last 90 days, at least 3 samples;
+  otherwise “New seller — reply time not yet known”. Pure buckets in
+  `listings/seller-reply-time.ts`.
+- Public copy rewritten: Refund & Dispute Policy, Terms §2/§6/§7/§11, complaints
+  page + “What we can and cannot do”, `/faq` (incl. not-as-described and how to
+  ask), fees line, Regulated Items Annex §13/§15, Help Centre seed entries, buyer
+  checkout acknowledgement. `REFUND_TERMS_VERSION = '2026-11-23'`.
+- Order surfaces: one non-delivery dispute reason; confirm-delivery copy fixed
+  (and the “Gun Galore” brand leak removed); condition → seller/complaint;
+  withdrawn “add photos” dispute CTA.
+
+**Verified**: backend `tsc` 0, **435 suites passed / 1 skipped, 6,431 tests**
+(8 skipped); frontend `tsc` 0, **176 files / 1,994 tests** (1 skipped), production
+build clean. Migration applied to the **local** DB only.
+
+**Not deployed.** At the next deploy: back up, pull, `prisma migrate deploy`,
+`prisma generate`, builds, PM2 reload, health/public ×2, then run
+`npm run seed:help` on the box so the live Help Centre copy matches. Existing
+conversations are **not backfilled** — the public Q&A fills from new seller
+replies onward.
+
 ## 2026-11-23 — THE PRINT EMAIL BOOKS THE COURIER WITH ONE CLICK
 
 Operator: *"the email I receive should have a link I can click to make the BOB GO

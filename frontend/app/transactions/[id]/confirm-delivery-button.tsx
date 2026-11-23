@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../../lib/auth';
 import { useRouter } from 'next/navigation';
+import { BRAND_NAME } from '../../../lib/brand';
 import { RaiseDisputeModal } from './raise-dispute-button';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -15,12 +16,16 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // can't accidentally release funds before they've actually checked
 // the parcel.
 //
-// The modal also exposes a "Something's wrong — raise a dispute"
-// secondary action. Before this fix, a buyer who opened the modal
-// and found a problem with the parcel had no in-modal alternative —
-// they'd cancel and have to find a separate path (or worse, get
-// pressured into ticking the checkboxes anyway). Now the escape
-// hatch hands them straight to the dispute reason picker.
+// Confirming is only ever about an item the buyer actually has in
+// hand. Condition, description, damage after delivery and change of
+// mind are between the buyer and the seller — message the seller from
+// the order or lodge a complaint; they are not a platform refund. A
+// dispute is for non-delivery only.
+//
+// The modal therefore exposes an "item never arrived" secondary
+// action. A buyer who opened the modal before the parcel arrived (or
+// before a collection handover happened) has a real in-modal
+// alternative instead of being pressured into ticking the boxes.
 
 export function ConfirmDeliveryButton({
   transactionId,
@@ -118,10 +123,14 @@ export function ConfirmDeliveryButton({
               className="text-sm mb-4"
               style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
             >
-              Confirming releases the payment to the seller. After this,
-              you can&apos;t open a dispute or claim a refund through Gun
-              Galore. Before you tick the boxes below, take 30 seconds
-              to actually inspect the item.
+              Confirming releases the payment to the seller and is final.
+              Once you confirm, {BRAND_NAME} will not refund the item for a
+              condition, description or change-of-mind concern — those are
+              between you and the seller, so message the seller from this
+              order or lodge a complaint. Take 30 seconds to inspect the item
+              before you tick the boxes below. If the item has not{' '}
+              {isCollection ? 'been handed over' : 'arrived'}, don&apos;t
+              confirm — report non-delivery instead.
             </p>
 
             <div
@@ -144,7 +153,7 @@ export function ConfirmDeliveryButton({
                   style={{ marginTop: 3, accentColor: 'var(--red)' }}
                 />
                 <span>
-                  I have <strong style={{ color: 'var(--text-primary)' }}>physically inspected</strong> the item — opened the package, checked condition matches the listing.
+                  I have <strong style={{ color: 'var(--text-primary)' }}>physically inspected</strong> the item and it matches the listing.
                 </span>
               </label>
               <label
@@ -158,7 +167,7 @@ export function ConfirmDeliveryButton({
                   style={{ marginTop: 3, accentColor: 'var(--red)' }}
                 />
                 <span>
-                  Serial numbers / accessories match the listing description (if applicable).
+                  Any <strong style={{ color: 'var(--text-primary)' }}>condition or description concern</strong> is between me and the seller.
                 </span>
               </label>
               <label
@@ -172,9 +181,9 @@ export function ConfirmDeliveryButton({
                   style={{ marginTop: 3, accentColor: 'var(--red)' }}
                 />
                 <span>
-                  I understand this releases payment{' '}
-                  <strong style={{ color: 'var(--text-primary)' }}>irreversibly</strong>{' '}
-                  and I forfeit my right to refund.
+                  I understand confirming{' '}
+                  <strong style={{ color: 'var(--text-primary)' }}>releases payment to the seller</strong>{' '}
+                  and is final.
                 </span>
               </label>
             </div>
@@ -216,10 +225,10 @@ export function ConfirmDeliveryButton({
               </button>
             </div>
 
-            {/* Escape hatch — if the inspection turned up a problem,
-                don't pressure the buyer into ticking the boxes anyway.
-                Hand them straight to the dispute flow with payment
-                still held. */}
+            {/* Escape hatch — the item has not arrived (or a collection
+                handover never happened), so payment must stay held. Hand
+                the buyer straight to the non-delivery dispute flow instead
+                of pressuring them into ticking the boxes anyway. */}
             <div
               style={{
                 marginTop: 16,
@@ -242,9 +251,10 @@ export function ConfirmDeliveryButton({
                   border: 'none',
                   cursor: 'pointer',
                   textDecoration: 'underline',
+                  lineHeight: 1.5,
                 }}
               >
-                Something's wrong — raise a dispute instead
+                The item has not {isCollection ? 'been handed over' : 'arrived'} — report non-delivery instead
               </button>
             </div>
           </div>

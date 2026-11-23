@@ -60,3 +60,34 @@ describe('NotificationsService.complaintStatusChanged — supersede', () => {
     expect(svc.persistByEmail).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('NotificationsService.complaintConcernForSeller', () => {
+  // A condition/description concern is between buyer and seller: the seller
+  // gets ONE neutral email, with no inbox row, no complaint body, no evidence
+  // and no buyer identity.
+  it('emails the seller once and does not persist an inbox row', async () => {
+    const { svc, calls } = makeService();
+
+    await svc.complaintConcernForSeller({
+      email: 'seller@example.com',
+      name: 'Sam',
+      listingTitle: 'Scope',
+      referenceNumber: 'CO000123',
+    });
+
+    expect(svc.send).toHaveBeenCalledTimes(1);
+    expect(svc.persistByEmail).not.toHaveBeenCalled();
+    expect(svc.sendSms).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+
+    const [to, subject, html] = svc.send.mock.calls[0];
+    expect(to).toBe('seller@example.com');
+    expect(subject).toContain('Scope');
+    expect(html).toContain('Scope');
+    expect(html).toContain('does not affect your payment');
+    expect(html).toContain('CO000123');
+    // Plain email only — no attachment and no complaint body/evidence.
+    expect(svc.send.mock.calls[0]).toHaveLength(3);
+    expect(html).not.toContain('bob');
+  });
+});

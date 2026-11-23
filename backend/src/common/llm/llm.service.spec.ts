@@ -221,6 +221,30 @@ describe('LlmService', () => {
     expect(gemini.calls[1].model).toBe('gemini-3.1-flash-lite');
   });
 
+  // ⚠️ THE LISTING-FAQ COPY IS PINNED TO GEMINI AT 3.1-FLASH-LITE. Operator
+  // decision 2026-11-23. It must not follow LLM_PROVIDER or LLM_MODEL: the
+  // public Q&A wording is the operator's chosen model's output, and the
+  // purposes are cheap text transforms.
+  it('⚠️ PINS THE LISTING-FAQ COPY TO GEMINI AT 3.1-FLASH-LITE', async () => {
+    process.env.LLM_PROVIDER = 'deepseek';
+    process.env.LLM_MODEL = 'gemini-3.8-flash';
+    const { svc, gemini, deepseek } = build();
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'listing.faq.distil',
+    });
+    await svc.complete({
+      messages: [],
+      maxTokens: 10,
+      purpose: 'listing.faq.match',
+    });
+    expect(deepseek.calls).toHaveLength(0);
+    expect(gemini.calls).toHaveLength(2);
+    expect(gemini.calls[0].model).toBe('gemini-3.1-flash-lite');
+    expect(gemini.calls[1].model).toBe('gemini-3.1-flash-lite');
+  });
+
   // ⚠️ VALUATION IS PINNED TO GEMINI NOW, retiring Qwen.
   it('⚠️ PINS VALUATION TO GEMINI, NOT QWEN, UNDER LLM_PROVIDER=deepseek', async () => {
     process.env.LLM_PROVIDER = 'deepseek';

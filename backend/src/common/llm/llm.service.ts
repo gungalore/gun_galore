@@ -296,6 +296,13 @@ export class LlmService {
     // Qwen-specific degenerate-`[]` retry. Pinned so a global LLM_PROVIDER
     // switch cannot move it. An explicit per-purpose env var still wins, above.
     if (purpose.startsWith('valuation.')) return this.gemini;
+    // ⚠️ THE LISTING-FAQ PIPELINE IS GEMINI-ONLY. Operator decision 2026-11-23:
+    // Gemini 3.1 Flash-Lite distils a private buyer↔seller conversation into
+    // the public Q&A pair and picks the matching FAQ entry for a duplicate
+    // question. A global LLM_PROVIDER switch must not drag that copy onto a
+    // provider the operator did not choose. The model is pinned to the cheap
+    // flash-lite in modelFor below.
+    if (purpose.startsWith('listing.faq.')) return this.gemini;
     const name = process.env.LLM_PROVIDER ?? 'gemini';
     if (name === 'anthropic') return this.anthropic;
     if (name === 'deepseek') return this.deepseek;
@@ -390,6 +397,12 @@ export class LlmService {
       return FAST_GEMINI_MODEL;
     }
     if (isDocumentPurpose(purpose)) return FAST_GEMINI_MODEL;
+    // ⚠️ THE LISTING-FAQ COPY RUNS ON THE CHEAP FLASH-LITE. Operator decision
+    // 2026-11-23 ("use gemini 3.1 lite to clean up the conversations"). Both
+    // purposes are short text transforms, and providerFor has already pinned
+    // them to Gemini; without this a global LLM_MODEL of gemini-3.8-flash
+    // would pull them onto the bigger model.
+    if (purpose.startsWith('listing.faq.')) return FAST_GEMINI_MODEL;
     return undefined;
   }
 

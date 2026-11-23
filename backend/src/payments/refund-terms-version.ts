@@ -6,10 +6,10 @@
  * version the client can choose is not evidence of anything.
  *
  * BUMP THIS whenever the acknowledgement copy in
- * frontend/components/buyer-terms-ack.tsx changes, or when Refund & Dispute
- * Policy paragraph 5 changes. If it goes stale, every dispute after the change
- * points at wording the buyer never saw — which is exactly how
- * POLICY_VERSION ended up frozen at 2026-07-17 while /terms and /privacy both
- * moved underneath it.
+ * frontend/components/buyer-terms-ack.tsx changes, or when the refund /
+ * cancellation terms in the Refund & Dispute Policy (sections 2–4) change. If
+ * it goes stale, every dispute after the change points at wording the buyer
+ * never saw — which is exactly how POLICY_VERSION ended up frozen at
+ * 2026-07-17 while /terms and /privacy both moved underneath it.
  */
-export const REFUND_TERMS_VERSION = '2026-10-22';
+export const REFUND_TERMS_VERSION = '2026-11-23';

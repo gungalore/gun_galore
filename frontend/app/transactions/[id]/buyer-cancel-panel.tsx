@@ -22,7 +22,10 @@ const REASONS: { value: string; label: string }[] = [
 // the order (no accept/dispatch/payout), notifies the seller, and hands it to
 // support. A 4% transaction handling fee is retained, delivery is retained
 // once a waybill is booked, and no cancellation is possible after dispatch.
-// Only rendered when the order is actually requestable (gates on the parent).
+// After dispatch the routes split: non-delivery => dispute (tracking review);
+// a condition/description concern => message the seller / complaint, which is
+// not a platform refund. Only rendered when the order is actually requestable
+// (gates on the parent).
 export default function BuyerCancelPanel({ txId }: { txId: string }) {
   const { getToken } = useAuth();
   const router = useRouter();
@@ -93,8 +96,11 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
         processed by our team — a <strong>4% transaction handling fee</strong>{' '}
         is retained to cover payment costs we have already paid, and delivery
         is also retained once a courier waybill has been booked. Once the item
-        has been dispatched you cannot cancel; raise a dispute instead. Tell us
-        why:
+        has been dispatched you cannot cancel: if the item never arrives,
+        raise a dispute from this order page and payment stays held while we
+        review the tracking. For a condition or description issue, message the
+        seller from this order — that is between you and the seller, not a
+        platform refund. Tell us why:
       </p>
       <div className="space-y-1.5 mb-3">
         {REASONS.map((r) => (

@@ -53,7 +53,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the Platform Fee?',
     question: 'Why is there a Platform Fee added at checkout?',
     answer:
-      'Every order carries one Platform Fee, calculated last on the item price plus delivery and shown at checkout before you pay. On a marketplace sale it is banded (10/9/8/7, minimum R10); on an auction it is a flat 10% split 5% buyer / 5% seller. It replaced the old Buyer Protection Fee. It funds secure payment handling, seller verification and dispute resolution, including a refund where a claim is valid.',
+      'Every order carries one Platform Fee, calculated last on the item price plus delivery and shown at checkout before you pay. On a marketplace sale it is banded (10/9/8/7, minimum R10); on an auction it is a flat 10% split 5% buyer / 5% seller. It replaced the old Buyer Protection Fee. It funds secure payment handling, seller verification and the non-delivery guarantee on every order: the seller is paid only after you confirm you have the item, and if the item is never delivered we refund you in full, including delivery and the Platform Fee.',
     tags: ['fees', 'payments', 'checkout'],
   },
   {
@@ -137,7 +137,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How does payment protection work?',
     question: 'Is my money safe when I buy on All Outdoor?',
     answer:
-      'When you pay, the funds are held by All Outdoor — the seller does not receive them yet. They are only released after you confirm delivery (or, for a firearm, after the dealer transfer is verified). If something goes wrong before then, you can raise a dispute and request a refund, so you are never out of pocket for an item that never arrives. Full detail: [Refund & Dispute Policy](/refund-policy).',
+      'When you pay, the seller is not paid yet: ALL Outdoor collects the payment and the seller is paid only once you confirm you have received the item (or, for a firearm, once the dealer transfer is verified). If the item is never delivered — the seller never dispatches or hands it over, or the courier records no delivery — we refund you in full, including delivery and the Platform Fee. That protection covers non-delivery only; condition, description and change of mind are between you and the seller. Full detail: [Refund & Dispute Policy](/refund-policy).',
     tags: ['buying', 'payment held', 'protection'],
   },
   {
@@ -145,23 +145,23 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: "What does 'Confirm delivery' do?",
     question: 'Should I confirm delivery as soon as my parcel arrives?',
     answer:
-      "Inspect the item first. Confirming delivery releases the held payment to the seller immediately and is final — you cannot raise a dispute on the same issue afterwards. That is why it is a deliberate two-step flow with an inspection checklist. If the item is damaged, wrong, or missing anything, do not confirm — raise a dispute from the order page instead, and your payment stays held while it is reviewed.",
+      "Check the item first, then confirm. Confirming tells us the item has been received and releases the seller's payout; the order is complete. If the item has not arrived — the seller never dispatched it, never handed it over, or the courier records no delivery — do not confirm. Report it from the order page instead. Condition, description or damage issues are between you and the seller: message the seller from the order page and, if you want it recorded, lodge a complaint — we record it and pass it to the seller, but it is not a refund route.",
     tags: ['buying', 'delivery', 'confirm'],
   },
   {
     sourceKey: 'buy-raise-dispute',
     title: 'How do I raise a dispute?',
-    question: 'My item arrived damaged or never arrived — what do I do?',
+    question: 'My item never arrived — what do I do?',
     answer:
-      'Open the transaction on [My orders](/my/orders) and tap Raise dispute before you confirm delivery. Disputes can be raised while your payment is still held and the seller has confirmed dispatch. Pick a reason — arrived damaged, wrong item, never arrived, or other — and describe what happened. The transaction moves to Disputed, your payment stays held, and the admin team aims to make first contact within 48 hours.',
+      'If the item has not arrived, open the transaction on [My orders](/my/orders) and report it from the order page before you confirm delivery. This route is for non-delivery only: the seller never dispatched the item, never handed it over, or the courier records no delivery. Our team checks the record and, where the item was never delivered, refunds you in full — item, delivery and the Platform Fee. If the item arrived but is not as described, damaged or not what you expected, message the seller from the order page and, if you want it recorded, lodge a complaint.',
     tags: ['disputes', 'buying', 'refunds'],
   },
   {
     sourceKey: 'buy-dispute-outcomes',
     title: 'How is a dispute resolved?',
-    question: 'What happens after I raise a dispute?',
+    question: 'What happens after I report a non-delivery?',
     answer:
-      "The team gathers evidence from you, the seller and, where relevant, the courier's tracking record, then records one of four outcomes with a written reason: a full refund to you (including shipping); a partial refund where the item is usable but not as described; release to the seller where the dispute is not upheld (you are told why); or escalation to SAPS where fraud is suspected. Your payment stays held throughout, so you are not out of pocket during the review.",
+      "A non-delivery report has two outcomes. Where the seller never dispatched or handed over the item, or the courier records no delivery, you are refunded in full — item, delivery and the Platform Fee. Where the courier record or hand-over confirmation shows delivery, the sale completes and the seller is paid. Either way you are told the reason. A condition complaint is separate: we record it, pass it to the seller and can act against a seller who misdescribes an item, but we do not refund it and we do not hold the seller's payout for it.",
     tags: ['disputes', 'refunds', 'buying'],
   },
   {
@@ -177,8 +177,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is not refundable?',
     question: 'Is anything not refundable?',
     answer:
-      'Shipping costs are not refunded on an order you cancel by choice after the courier has already collected the parcel. Everything else follows the normal [Refund & Dispute Policy](/refund-policy).',
-    tags: ['refunds', 'shipping'],
+      "We refund only an item that is not delivered. Condition, 'not as described', damage after delivery, fit, a change of mind and location or travel are not refund grounds — they are between you and the seller: message the seller from the order page and, if you want it recorded, lodge a complaint. On a buyer-requested cancellation before dispatch, a 4% handling fee is retained and delivery is not refundable once a waybill is booked. Where the seller is at fault or the item is never delivered, the refund is full, including delivery and the Platform Fee.",
+    tags: ['refunds', 'condition', 'cancellation'],
   },
 
   // ── Shipping & delivery ────────────────────────────────────────────
@@ -346,7 +346,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I contact All Outdoor support?',
     question: 'Where do I get help with an order or my account?',
     answer:
-      `Open a ticket at [Support](/support) — pick a category (general, payment, shipping/delivery, account, a listing, or other), describe the problem, and reply in the same thread when the team answers. You can also email ${SUPPORT_EMAIL}; include your order reference so we find it fast. For a problem with a paid order, the Raise dispute button on the order page is the best route — it also keeps your payment held while we review.`,
+      `Open a ticket at [Support](/support) — pick a category (general, payment, shipping/delivery, account, a listing, or other), describe the problem, and reply in the same thread when the team answers. You can also email ${SUPPORT_EMAIL}; include your order reference so we find it fast. For an item that has not arrived, report it from the order page — the seller's payout is not released while we check it. For a condition, description or change-of-mind issue, message the seller from the order page and, if you want it recorded, lodge a complaint.`,
     tags: ['support', 'tickets', 'help'],
   },
   {

@@ -22,7 +22,10 @@ import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthOrTokenGuard } from '../auth/auth-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { TransactionsService } from './transactions.service';
+import {
+  DISPUTE_NEVER_ARRIVED_ONLY_GUIDANCE,
+  TransactionsService,
+} from './transactions.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { parseAcceptSchedule } from '../shipping/pickup-dates';
 import { DealerVerificationService } from './dealer-verification.service';
@@ -482,9 +485,11 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Buyer raises a dispute. Body: { reason, details }
-  // reason: 'DAMAGED' | 'WRONG_ITEM' | 'NEVER_ARRIVED' | 'OTHER'
-  // details: min 10 chars free-text describing the issue.
+  // Buyer raises a NON-DELIVERY dispute. Body: { reason, details }
+  // reason: only 'NEVER_ARRIVED'. Condition, description, damage, fit and
+  // change-of-mind issues are between the buyer and the seller — not a
+  // platform refund — so they are refused here with guidance.
+  // details: min 10 chars free-text describing the non-delivery.
   // ---------------------------------------------------------------
   @Post(':id/dispute')
   @UseGuards(AuthGuard)
@@ -494,10 +499,10 @@ export class TransactionsController {
     @CurrentUser() userId: string,
     @Body() body: { reason?: string; details?: string },
   ) {
-    const allowed = ['DAMAGED', 'WRONG_ITEM', 'NEVER_ARRIVED', 'OTHER'] as const;
+    const allowed = ['NEVER_ARRIVED'] as const;
     const reason = (body.reason ?? '').toUpperCase() as (typeof allowed)[number];
     if (!allowed.includes(reason)) {
-      throw new BadRequestException('Invalid dispute reason');
+      throw new BadRequestException(DISPUTE_NEVER_ARRIVED_ONLY_GUIDANCE);
     }
     return this.txService.raiseDispute(id, userId, reason, body.details ?? '');
   }

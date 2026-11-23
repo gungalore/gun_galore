@@ -26,6 +26,7 @@ import { ReferenceNumberService } from '../common/reference-number.service';
 import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
 import { assertContactVerified } from '../common/contact-verification';
+import { PUBLICLY_VISIBLE_STATUSES } from './listing-visibility';
 import {
   optimizedVideoThumbnailUrl,
   optimizedVideoUrl,
@@ -298,20 +299,9 @@ const OWNER_LISTING_EXTRAS_SELECT = {
   plannedDealerEmail: true,
 } satisfies Prisma.ListingSelect;
 
-// Statuses whose detail page is visible to the public. DRAFT /
-// PENDING_REVIEW / CANCELLED are visible ONLY to the owner (below); this stops
-// anonymous callers probing not-yet-approved or withdrawn listings by id.
-// PAYMENT_PENDING is public: a single-item listing sits here while a buyer
-// completes checkout and the "sale pending" PDP must still load.
-//
-// EXPIRED is deliberately NOT here. An expired auction (or a listing delisted
-// because the seller's licence lapsed) is dead inventory: the public PDP must
-// 404, not stay crawlable. The seller still sees it via the owner branch.
-const PUBLICLY_VISIBLE_STATUSES: ListingStatus[] = [
-  ListingStatus.ACTIVE,
-  ListingStatus.PAYMENT_PENDING,
-  ListingStatus.SOLD,
-];
+// Statuses whose detail page is visible to the public live in
+// listing-visibility.ts so the public FAQ sub-resource can apply the same gate
+// without importing this service.
 
 // A card needs a cover photo (or an approved hero video). Listings are created
 // ACTIVE before their photos upload (the create call only receives imageCount),
@@ -2217,7 +2207,6 @@ export class ListingsService {
             wishlistedBy: true,
             offers: true,
             watchers: true,
-            questions: true,
           },
         },
       },
@@ -2242,6 +2231,7 @@ export class ListingsService {
       saves7d,
       offers7d,
       questions7d,
+      questionsTotal,
       watchers7d,
       bids7d,
       openOffers,
@@ -2254,8 +2244,11 @@ export class ListingsService {
         where: { listingId: id, ...last7d },
       }),
       this.prisma.offer.count({ where: { listingId: id, ...last7d } }),
-      this.prisma.listingQuestion.count({
-        where: { listingId: id, ...last7d },
+      this.prisma.listingFaq.count({
+        where: { listingId: id, hiddenAt: null, ...last7d },
+      }),
+      this.prisma.listingFaq.count({
+        where: { listingId: id, hiddenAt: null },
       }),
       // Watchers and bids only exist on auctions; a buy-now listing can skip
       // both round-trips entirely.
@@ -2289,7 +2282,12 @@ export class ListingsService {
       // so the lifetime figure needs no aggregate at all.
       bids: { total: listing.bidCount, last7d: bids7d },
       watchers: { total: listing._count.watchers, last7d: watchers7d },
-      questions: { total: listing._count.questions, last7d: questions7d },
+      // Hidden entries are platform-moderated out of the public Q&A, so they
+      // must not count as visible questions either.
+      questions: {
+        total: questionsTotal,
+        last7d: questions7d,
+      },
     };
   }
 

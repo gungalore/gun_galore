@@ -1,6 +1,7 @@
 import {
   blockThreshold,
   contactQuestions,
+  faqQuestions,
   JEV_CATEGORY_REASONS,
   jevLadder,
   reviewThreshold,
@@ -115,5 +116,14 @@ describe('contactQuestions', () => {
         'third_party_advertising',
       ].sort(),
     );
+  });
+});
+
+describe('faqQuestions', () => {
+  it('asks one duplicate question and nothing that could block a message', () => {
+    const q = faqQuestions();
+    expect(Object.keys(q)).toEqual(['faq_duplicate']);
+    expect(q.faq_duplicate.type).toBe('noul');
+    expect(q.faq_duplicate.instructions).toMatch(/FULLY answer/i);
   });
 });

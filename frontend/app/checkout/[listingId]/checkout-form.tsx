@@ -1668,7 +1668,7 @@ export function CheckoutForm({
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
                   The Platform Fee covers secure payment handling, seller
-                  verification and dispute resolution on this order.
+                  verification and non-delivery protection on this order.
                 </p>
               )}
             </div>

@@ -1,67 +1,42 @@
 ﻿'use client';
 
-// Buyer-facing dispute flow. Opens a modal with:
-//   1. Reason picker (radio): damaged / wrong item / never arrived / other
+// Buyer-facing NON-DELIVERY dispute flow. A dispute exists for one situation
+// only: the item never arrived / was never handed over. The modal carries:
+//   1. A fixed reason (NEVER_ARRIVED — the backend enum value)
 //   2. Free-text details (min 10 chars — backend enforces)
-//   3. Consent line: "Admin reviews disputes — release usually within 48h"
+//
+// Condition, description, damage after delivery and change of mind are NOT
+// dispute grounds and carry no platform refund: those are between the buyer
+// and the seller (message the seller from this order, or lodge a complaint).
+// That is why there is no reason picker any more — a dispute that is not about
+// non-delivery is the wrong route by definition.
 //
 // On submit: POST /transactions/:id/dispute, then a success step (NOT an
 // immediate refresh — the refresh flips the order to DISPUTED, which unmounts
 // this whole block and would rip the success step off the screen). The success
-// step is where the buyer is handed the evidence route: the complaints module
-// (/complaints/new) takes private photos and issues a CO case number, and it
-// was previously reachable only from the legal pages. Closing the success step
-// refreshes the tx page so the "Disputed" banner takes over.
+// step tells the buyer we will review the tracking; there is no item to
+// photograph here, so it no longer hands them the complaints evidence route.
+// Closing the success step refreshes the tx page so the "Disputed" banner
+// takes over.
 //
 // Used in two places:
 //   - Directly on the transaction page (primary call site)
-//   - From inside ConfirmDeliveryButton's modal as the "something's
-//     wrong" escape hatch (HIGH-4)
+//   - From inside ConfirmDeliveryButton's modal as the "item never arrived"
+//     escape hatch
 //
-// Exported `RaiseDisputeModal` so the escape hatch can mount it
-// without re-rendering the full button card.
+// Exported `RaiseDisputeModal` so the escape hatch can mount it without
+// re-rendering the full button card.
 
 import { useState, FormEvent } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-type Reason = 'DAMAGED' | 'WRONG_ITEM' | 'NEVER_ARRIVED' | 'OTHER';
-
-const REASON_OPTIONS: { value: Reason; label: string; hint: string }[] = [
-  {
-    value: 'DAMAGED',
-    label: 'Arrived damaged',
-    hint: 'Item is broken, scratched, or otherwise not in the condition described',
-  },
-  {
-    value: 'WRONG_ITEM',
-    label: 'Wrong item',
-    hint: "What I received isn't what was listed (different model, calibre, etc.)",
-  },
-  {
-    value: 'NEVER_ARRIVED',
-    label: 'Never arrived',
-    hint: 'Seller marked as dispatched but the parcel never showed up',
-  },
-  {
-    value: 'OTHER',
-    label: 'Something else',
-    hint: 'Different issue — describe below',
-  },
-];
-
-// The formal-complaint intake — the ONLY in-app route that takes evidence
-// photos (kept private to the user + review team) and issues a CO case
-// number. It used to be linked from the legal pages only, so a disputing
-// buyer was told to email photos instead. The tx id rides in the query so the
-// picker can preselect the order once /complaints/new reads it; it does not
-// today, which is why the copy tells the buyer to choose this order.
-function complaintHref(transactionId: string) {
-  return `/complaints/new?tx=${encodeURIComponent(transactionId)}`;
-}
+// The only reason this form can submit. The backend still takes a reason
+// string, but the buyer no longer picks one: non-delivery is the only
+// platform-handled dispute.
+const DISPUTE_REASON = 'NEVER_ARRIVED';
 
 export function RaiseDisputeButton({ transactionId }: { transactionId: string }) {
   const [open, setOpen] = useState(false);
@@ -103,17 +78,16 @@ export function RaiseDisputeModal({
 }) {
   const router = useRouter();
   const { getToken } = useAuth();
-  const [reason, setReason] = useState<Reason | null>(null);
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Dispute accepted by the backend. Holds the modal open on a success step
   // instead of vanishing silently — that silence was the whole complaint:
-  // no reference, no evidence route, no idea it worked.
+  // no reference, no next step, no idea it worked.
   const [submitted, setSubmitted] = useState(false);
 
   const detailsOk = details.trim().length >= 10;
-  const canSubmit = reason !== null && detailsOk && !busy;
+  const canSubmit = detailsOk && !busy;
 
   // Dismissing AFTER a successful submit is what refreshes the tx page, so
   // the "Disputed" banner replaces the action buttons. Refreshing earlier
@@ -129,7 +103,7 @@ export function RaiseDisputeModal({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!reason) return;
+    if (!detailsOk) return;
     setBusy(true);
     setError(null);
     try {
@@ -140,7 +114,7 @@ export function RaiseDisputeModal({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ reason, details: details.trim() }),
+        body: JSON.stringify({ reason: DISPUTE_REASON, details: details.trim() }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -190,48 +164,27 @@ export function RaiseDisputeModal({
             Dispute logged
           </p>
           <p
+            className="text-sm mb-3"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+          >
+            Your payment stays held while our team reviews the tracking.
+            Don&apos;t confirm delivery in the meantime — that releases the
+            seller&apos;s payout.
+          </p>
+          <p
             className="text-sm mb-4"
             style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
           >
-            Your payment stays held while our team reviews it. We&apos;ll
-            contact you within 48 hours. Don&apos;t confirm delivery in the
-            meantime — that releases the seller&apos;s payout.
+            If the item has not arrived, we will review the tracking and
+            contact you. You do not need to do anything else.
           </p>
-
-          {/* The evidence route. Photos decide most of these cases, and the
-              complaints module is the only place that takes them (privately)
-              and gives the buyer a reference to quote back to us. */}
-          <div
-            className="rounded-[6px] p-3 mb-4"
-            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
+          <p
+            className="text-xs mb-4"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
           >
-            <p
-              className="text-sm mb-1"
-              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-            >
-              Have photos of the problem?
-            </p>
-            <p
-              className="text-xs mb-3"
-              style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
-            >
-              Open a formal case to upload them — you get a case reference
-              (CO number) to track it, and the photos stay private to you and
-              our review team. Pick this order from the list on that page.
-            </p>
-            <Link
-              href={complaintHref(transactionId)}
-              className="inline-block py-2 px-3 rounded-[6px] text-sm"
-              style={{
-                background: 'var(--red)',
-                color: '#fff',
-                fontWeight: 500,
-                textDecoration: 'none',
-              }}
-            >
-              Add photos and evidence →
-            </Link>
-          </div>
+            If you need to reach the seller about anything else, message them
+            from this order page.
+          </p>
 
           <button
             type="button"
@@ -274,66 +227,48 @@ export function RaiseDisputeModal({
           className="text-base mb-2"
           style={{ color: 'var(--text-primary)', fontWeight: 500 }}
         >
-          Raise a dispute
+          Raise a dispute — item never arrived
         </p>
         <p
-          className="text-sm mb-4"
+          className="text-sm mb-2"
           style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
         >
-          Your payment will stay held while the admin team reviews. We'll
-          contact you within 48 hours. Don't confirm delivery if you're
-          unhappy — that releases the seller's payout immediately.
+          A dispute is only for an item that has not arrived. Your payment
+          stays held while our team reviews the tracking, and we will contact
+          you within 48 hours.
+        </p>
+        <p
+          className="text-xs mb-4"
+          style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
+        >
+          Condition, description, damage after delivery or change of mind are
+          between you and the seller — message the seller from this order or
+          lodge a complaint. They are not grounds for a dispute or a refund
+          here.
         </p>
 
-        <fieldset className="space-y-2 mb-4" style={{ border: 'none', padding: 0 }}>
-          <legend
-            className="text-xs uppercase tracking-wider mb-2"
+        {/* Replaces the old 4-reason radio picker: there is exactly one
+            platform-handled reason, shown here rather than chosen. */}
+        <div
+          className="rounded-[6px] px-3 py-2.5 mb-4"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p
+            className="text-xs uppercase tracking-wider mb-1"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            What's wrong?
-          </legend>
-          {REASON_OPTIONS.map((opt) => {
-            const selected = reason === opt.value;
-            return (
-              <label
-                key={opt.value}
-                className="flex items-start gap-3 px-3 py-2.5 rounded-[6px] cursor-pointer"
-                style={{
-                  background: selected
-                    ? 'rgba(227,6,19,0.08)'
-                    : 'var(--bg-inset)',
-                  border: selected
-                    ? '1px solid var(--red)'
-                    : '0.5px solid var(--border)',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="dispute-reason"
-                  value={opt.value}
-                  checked={selected}
-                  onChange={() => setReason(opt.value)}
-                  className="mt-1"
-                  style={{ accentColor: 'var(--red)' }}
-                />
-                <span className="flex-1">
-                  <span
-                    className="block text-sm"
-                    style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-                  >
-                    {opt.label}
-                  </span>
-                  <span
-                    className="block text-xs mt-0.5"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    {opt.hint}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
-        </fieldset>
+            Reason
+          </p>
+          <p
+            className="text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            Item never arrived / was not handed over
+          </p>
+        </div>
 
         <div className="mb-4">
           <label
@@ -346,7 +281,7 @@ export function RaiseDisputeModal({
             value={details}
             onChange={(e) => setDetails(e.target.value)}
             rows={4}
-            placeholder="Describe the issue so the admin team can investigate — what you expected, what arrived, and any serial or model numbers."
+            placeholder="Tell us what you bought and what has not arrived — the dispatch date, tracking reference, and any dates you contacted the seller."
             className="w-full px-3 py-2 rounded text-sm outline-none"
             style={{
               background: 'var(--bg-inset)',
@@ -365,13 +300,12 @@ export function RaiseDisputeModal({
           >
             {details.length}/10 minimum · {details.length}/1000
           </p>
-          {/* Old copy told the buyer to email photos. They upload them in-app
-              now — say so here, and again on the success step. */}
           <p
             className="text-xs mt-1"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            You&apos;ll be able to upload photos as evidence after you submit.
+            There is no item to photograph — we will check the tracking with
+            the seller and the courier.
           </p>
         </div>
 
@@ -411,43 +345,6 @@ export function RaiseDisputeModal({
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-/** Next step for an order already sitting in DISPUTED.
- *
- * The DISPUTED banner on the order page is currently a dead end: "we'll
- * contact you within 48 hours" and nothing to do, no reference, no way to
- * hand us the photos that decide the case. This is that missing step — drop
- * it inside the banner (it's deliberately just a hint line + link so it
- * inherits the banner's own framing):
- *
- *     {isBuyer && <DisputeEvidenceLink transactionId={tx.id} />}
- *
- * Lives here rather than in the page because the complaints URL and its
- * caveat (the picker isn't preselected yet) are owned by this file. */
-export function DisputeEvidenceLink({ transactionId }: { transactionId: string }) {
-  return (
-    <div className="mt-3">
-      <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
-        Photos usually settle these faster. Open a formal case to upload them —
-        you get a case reference (CO number) and they stay private to you and
-        our review team. Pick this order from the list on that page.
-      </p>
-      <Link
-        href={complaintHref(transactionId)}
-        className="inline-block py-2 px-3 rounded-[6px] text-sm"
-        style={{
-          background: 'var(--bg-card)',
-          color: 'var(--red)',
-          border: '0.5px solid var(--red)',
-          fontWeight: 500,
-          textDecoration: 'none',
-        }}
-      >
-        Add photos and details to your case →
-      </Link>
     </div>
   );
 }

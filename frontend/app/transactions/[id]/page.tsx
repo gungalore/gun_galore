@@ -724,12 +724,13 @@ export default async function TransactionPage({
             )}
           </div>
 
-          {/* Buyer: confirm delivery OR raise a dispute. Both surface
-              while the payment is HELD and the seller has dispatched.
-              The dispute path is the escape hatch when the item is
-              damaged / wrong / never arrived — confirm-delivery is
-              irreversible (releases payout) so the buyer needs a
-              visible alternative before they get pressured into it. */}
+          {/* Buyer: confirm delivery OR raise a non-delivery dispute. Both
+              surface while the payment is HELD and the seller has dispatched.
+              The dispute path is the escape hatch ONLY when the item has not
+              arrived — confirm-delivery is irreversible (releases payout) so
+              the buyer needs a visible alternative before they get pressured
+              into it. A condition/description problem is not a dispute: it is
+              between the buyer and the seller (message + complaint). */}
           {canConfirmDelivery && (
             <div
               className="rounded-[8px] p-4 space-y-3"
@@ -740,7 +741,7 @@ export default async function TransactionPage({
                   Have you received the item?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Confirming delivery releases payment to the seller and is final. If there is an issue, raise a dispute instead — payment stays held while we review.
+                  Confirming delivery releases payment to the seller and is final. If the item has not arrived, raise a dispute instead — payment stays held while we review the tracking. If you have a condition or description concern about an item you did receive, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} />
               </div>
@@ -751,7 +752,8 @@ export default async function TransactionPage({
           {/* Buyer: confirm collection (COLLECTION only). Same
               confirm-delivery endpoint as the courier flow, relabelled
               for in-person pickup. Releases payment to the seller and is
-              final; the dispute path stays available as the escape hatch. */}
+              final; the non-delivery dispute path stays available as the
+              escape hatch when the handover never happened. */}
           {canConfirmCollection && (
             <div
               className="rounded-[8px] p-4 space-y-3"
@@ -762,7 +764,7 @@ export default async function TransactionPage({
                   Have you collected the item?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Confirming collection releases payment to the seller and is final. If there&apos;s an issue, raise a dispute instead — payment stays held while we review.
+                  Confirming collection releases payment to the seller and is final. If the seller is unreachable or the item was never handed over, raise a dispute instead — payment stays held while we review. If you received the item but it is not as expected, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} variant="collection" />
               </div>
@@ -792,7 +794,9 @@ export default async function TransactionPage({
           )}
 
           {/* Buyer: once the item is dispatched the order can no longer be
-              cancelled — the remedy is the dispute process below. */}
+              cancelled. A non-delivery dispute is the remedy if it never
+              arrives; a condition/description problem is between the buyer
+              and the seller (message + complaint), not a refund. */}
           {isBuyer &&
             !!tx.dispatchedAt &&
             tx.paymentStatus === 'HELD' &&
@@ -802,9 +806,12 @@ export default async function TransactionPage({
                   This item has shipped
                 </p>
                 <p className="text-xs text-[var(--text-tertiary)]">
-                  Cancellation is no longer available after dispatch. If
-                  something is wrong with the order, raise a dispute instead —
-                  payment stays held while we review.
+                  Cancellation is no longer available after dispatch. If the
+                  item never arrives, raise a dispute — payment stays held
+                  while we review the tracking. If the item arrives but has a
+                  condition or description problem, message the seller from
+                  this order or lodge a complaint; that is between you and the
+                  seller, not a platform refund.
                 </p>
               </div>
             )}
@@ -833,14 +840,17 @@ export default async function TransactionPage({
             />
           )}
 
-          {/* Buyer: standalone dispute panel if we're past confirm
-              window for some reason but still HELD + dispatched (e.g.,
-              modal flow couldn't proceed, or someone wants to dispute
-              before pressing confirm). Identical control surface.
-              FLOW-F4 (H16) — also show it for a DEALER_TRANSFER buyer once
-              paid: a firearm has no courier dispatch event, so without this
-              a stalled dealer transfer left the buyer with NO exit at all.
-              The backend raiseDispute now accepts DT once paid + HELD. */}
+           {/* Buyer: standalone dispute panel if we're past confirm
+               window for some reason but still HELD + dispatched (e.g.,
+               modal flow couldn't proceed, or someone wants to dispute
+               before pressing confirm). Identical control surface.
+               FLOW-F4 (H16) — also show it for a DEALER_TRANSFER buyer once
+               paid: a firearm has no courier dispatch event, so without this
+               a stalled dealer transfer left the buyer with NO exit at all.
+               The backend raiseDispute now accepts DT once paid + HELD.
+               ⚠️ This is a NON-DELIVERY route only. Condition/description
+               problems at/after handover are between the buyer and the
+               seller (message + complaint) and are not raised here. */}
           {!canConfirmDelivery &&
             !canConfirmCollection &&
             isBuyer &&
@@ -856,21 +866,23 @@ export default async function TransactionPage({
                 style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
               >
                 <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                  Issue with this order?
+                  Has the item not arrived?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
                   {tx.shippingMethod === 'DEALER_TRANSFER'
-                    ? 'If the dealer transfer has stalled or something is wrong, raise it here. Your payment stays held while admin reviews.'
+                    ? "Use this only if the dealer transfer has stalled — the seller is unreachable or the firearm was never handed over. Payment stays held while we review the tracking. A condition or description concern is between you and the seller: message the seller or lodge a complaint."
                     : isCollection
-                    ? "If the seller is unreachable, or the item isn't as described at handover, raise it here. Your payment stays held while admin reviews — don't confirm collection until it's resolved."
-                    : 'Payment stays held while admin reviews.'}
+                    ? "Use this only if the seller is unreachable or the item was never handed over. Payment stays held while we review. If you received the item but it is not as expected, that is between you and the seller — message the seller from this order or lodge a complaint; it is not a dispute or a platform refund."
+                    : "Use this only if the item has not arrived. Payment stays held while we review the tracking. If the item arrived but has a condition or description problem, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund."}
                 </p>
                 <RaiseDisputeButton transactionId={tx.id} />
               </div>
             )}
 
-          {/* DISPUTED banner — shown to both parties once a dispute is
-              raised. Replaces the action buttons (those gate on HELD). */}
+          {/* DISPUTED banner — shown to both parties once a non-delivery
+              dispute is raised. Replaces the action buttons (those gate on
+              HELD). Buyer copy is deliberately tracking/non-delivery only:
+              a dispute is not a condition or description remedy. */}
           {tx.paymentStatus === 'DISPUTED' && (
             <div
               className="rounded-[8px] p-4"
@@ -884,8 +896,8 @@ export default async function TransactionPage({
               </p>
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                 {isBuyer
-                  ? "Your payment is held while we investigate. We'll contact you within 48 hours with next steps. Please don't confirm delivery until the dispute is resolved."
-                  : 'The buyer has raised a dispute. Payment is paused while admin reviews. You will be contacted with the outcome.'}
+                  ? "We're checking the delivery and the tracking. Your payment stays held while we review — we'll contact you within 48 hours with next steps. If the item does arrive in the meantime, don't confirm delivery until the dispute is resolved. You do not need to do anything else."
+                  : 'The buyer has reported that the item has not arrived. Payment is paused while we review the delivery and tracking. You will be contacted with the outcome.'}
               </p>
             </div>
           )}

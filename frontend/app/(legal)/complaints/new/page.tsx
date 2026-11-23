@@ -3,29 +3,52 @@
 // Formal complaint intake form. Lodges a Complaint (case number CO000123),
 // optionally linked to one of the user's own orders (picked from a list so we
 // store the transaction id in the background), with optional evidence photos.
-// A buyer's payout-affecting complaint on a still-held order auto-holds payout.
+//
+// POLICY: ALL Outdoor verifies sellers and holds the payment for a NON-DELIVERY
+// claim only. Condition, description, damage after delivery and change of mind
+// are between the buyer and the seller — this form records the concern and
+// passes it to the seller; it does not refund it or hold the seller's payment.
+// Hence NOT_ARRIVED leads the category list and is the only payout-affecting
+// option here; the other item categories are labelled "passed to the seller";
+// and evidence photos are optional for every category (there is no item to
+// photograph for a non-delivery claim).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth';
 import { PhotoDropzone } from '@/components/photo-dropzone';
-import { SUPPORT_EMAIL } from '@/lib/brand';
+import { BRAND_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const CATEGORIES = [
-  { value: 'ITEM_NOT_AS_DESCRIBED', label: 'Item not as described', item: true },
-  { value: 'DAMAGED', label: 'Item arrived damaged', item: true },
-  { value: 'NOT_ARRIVED', label: "Item didn't arrive", item: true },
+  // Only this one holds the seller's payment. Keep it first.
+  {
+    value: 'NOT_ARRIVED',
+    label: "Item never arrived (we hold the seller's payment)",
+    item: true,
+  },
+  // Recorded and passed to the seller — not a refund ground and not a payout
+  // hold. See the policy notice rendered above the form.
+  {
+    value: 'ITEM_NOT_AS_DESCRIBED',
+    label: 'Item not as described — passed to the seller, not a refund ground',
+    item: true,
+  },
+  {
+    value: 'DAMAGED',
+    label: 'Item arrived damaged — passed to the seller, not a refund ground',
+    item: true,
+  },
   { value: 'DELIVERY', label: 'Delivery / courier problem', item: false },
   { value: 'PAYOUT', label: 'Payout / payment', item: false },
   { value: 'ACCOUNT', label: 'Account or privacy', item: false },
   { value: 'LISTING', label: 'A listing or another user', item: false },
   // Not payout-affecting by design — see complaints.service.ts. It exists so a
   // buyer who can't reach an item has somewhere real to go instead of filing
-  // "Item didn't arrive", which would freeze the seller's money.
+  // "Item never arrived", which would freeze the seller's money.
   {
     value: 'LOCATION_OR_ACCESS',
     label: "I can't get to the item / it's further than I thought",
@@ -56,8 +79,8 @@ interface TxRow {
 export default function NewComplaintPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  const [category, setCategory] = useState('ITEM_NOT_AS_DESCRIBED');
-  // Order to preselect, sent by the raise-a-dispute flow on a transaction.
+  const [category, setCategory] = useState('');
+  // Order to preselect, sent by an order-page link with ?tx=<id>.
   const preselectTx = useSearchParams().get('tx');
   const [transactionId, setTransactionId] = useState('');
   const [subject, setSubject] = useState('');
@@ -69,11 +92,10 @@ export default function NewComplaintPage() {
    * Did the order list fail to load?
    *
    * ⚠️ NOT THE SAME AS HAVING NO ORDERS, and this form is on the money path:
-   * a buyer lodging one of the three payout-affecting complaint categories
-   * holds the seller's funds. Both fetches swallowed failure into `[]`, so an
-   * API blip told somebody "No orders found on your account yet" — from which
-   * the reasonable conclusion is that they cannot complain at all, about an
-   * order that is sitting there.
+   * a buyer lodging a NOT_ARRIVED complaint holds the seller's payment. Both
+   * fetches swallowed failure into `[]`, so an API blip told somebody "No
+   * orders found on your account yet" — from which the reasonable conclusion
+   * is that they cannot complain at all, about an order that is sitting there.
    */
   const [ordersFailed, setOrdersFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,8 +106,6 @@ export default function NewComplaintPage() {
     () => CATEGORIES.find((c) => c.value === category)?.item ?? false,
     [category],
   );
-  const requiresEvidence =
-    category === 'ITEM_NOT_AS_DESCRIBED' || category === 'DAMAGED';
 
   const authed = useCallback(
     async (path: string, init?: RequestInit) => {
@@ -141,13 +161,13 @@ export default function NewComplaintPage() {
           }));
         const all = [...fmt(buys, 'Purchases'), ...fmt(sales, 'Sales')];
         setOrders(all);
-        // ?tx=<id> preselect. The dispute flow on a transaction page sends the
-        // buyer here to attach evidence to THAT order — making them re-find it
-        // in a list of every order they've ever placed is exactly the friction
-        // that stops evidence being uploaded at all. Only honoured once the
-        // orders have loaded and only for an order that is genuinely theirs,
-        // so a hand-crafted ?tx= can't attach a complaint to someone else's
-        // order (the backend re-checks party membership regardless).
+        // ?tx=<id> preselect. An order-page link can hand this form THAT
+        // order — making the buyer re-find it in a list of every order they've
+        // ever placed is exactly the friction that stops the complaint being
+        // lodged at all. Only honoured once the orders have loaded and only
+        // for an order that is genuinely theirs, so a hand-crafted ?tx= can't
+        // attach a complaint to someone else's order (the backend re-checks
+        // party membership regardless).
         if (preselectTx && all.some((o) => o.id === preselectTx)) {
           setTransactionId((current) => current || preselectTx);
         }
@@ -167,16 +187,16 @@ export default function NewComplaintPage() {
 
   async function submit() {
     setError(null);
+    if (!category) return setError('Choose what your complaint is about.');
     if (subject.trim().length < 3) return setError('Add a short subject.');
     if (body.trim().length < 15)
       return setError('Please describe the issue in a bit more detail.');
-    if (requiresEvidence && photos.length === 0)
-      return setError('Attach at least one photo of the item to submit this dispute.');
     setBusy(true);
     try {
-      // Pre-upload so an item-received dispute arrives with evidence attached;
-      // the backend refuses to freeze payout for DAMAGED / ITEM_NOT_AS_DESCRIBED
-      // without at least one image. Video can be added later if useful.
+      // Pre-upload any photos the user attached. Evidence is optional for
+      // every category: a non-delivery claim has no item to photograph, and
+      // the condition/description categories are passed to the seller rather
+      // than holding payout. Video can be added later if useful.
       const uploadedPhotos: {
         url: string;
         publicId: string;
@@ -194,7 +214,7 @@ export default function NewComplaintPage() {
           body: fd,
         });
         const evidence = await upload.json().catch(() => ({}));
-        if (!upload.ok) throw new Error(evidence?.message ?? 'Could not upload dispute evidence.');
+        if (!upload.ok) throw new Error(evidence?.message ?? 'Could not upload the evidence photos.');
         uploadedPhotos.push(evidence as (typeof uploadedPhotos)[number]);
       }
       const created = (await authed('/complaints', {
@@ -253,9 +273,11 @@ export default function NewComplaintPage() {
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           We aim to acknowledge within 2 business days and resolve within 14.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           {done.held
-            ? ' Because this concerns a paid order, we’ve placed the payout on hold while we investigate.'
-            : ''}
+            ? "Because this is a non-delivery claim on a paid order, we've held the seller's payment while we review the delivery and tracking. We'll contact you with next steps — you do not need to do anything else. If the item does arrive in the meantime, don't confirm delivery until we've resolved this."
+            : "We've recorded your concern and passed it to the seller. Message the seller from the order page if you need to take it further. This form does not refund the item or hold the seller's payment."}
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
           <Link
@@ -278,6 +300,7 @@ export default function NewComplaintPage() {
               setBody('');
               setPhotos([]);
               setTransactionId('');
+              setCategory('');
             }}
             style={{
               background: 'transparent',
@@ -315,6 +338,42 @@ export default function NewComplaintPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Policy notice. This is the first thing a buyer reads on the money-path
+          form, so it must not be buried: only non-delivery moves money. */}
+      <div
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--warning)',
+          borderRadius: 8,
+          padding: '12px 14px',
+        }}
+      >
+        <p
+          style={{
+            margin: '0 0 6px',
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+          }}
+        >
+          What {BRAND_NAME} can and cannot do
+        </p>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.55,
+          }}
+        >
+          {BRAND_NAME} verifies sellers and holds the payment for a
+          non-delivery claim only. Condition, description, damage after
+          delivery or change of mind are between you and the seller: this form
+          records the concern and passes it to the seller. It does not refund
+          it or hold the seller&apos;s payment.
+        </p>
+      </div>
+
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
         Lodge a formal complaint. You&apos;ll get a case reference number to
         track it. For quick questions,{' '}
@@ -331,6 +390,9 @@ export default function NewComplaintPage() {
           onChange={(e) => setCategory(e.target.value)}
           style={fieldStyle}
         >
+          <option value="" disabled>
+            — Choose what your complaint is about —
+          </option>
           {CATEGORIES.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
@@ -406,20 +468,18 @@ export default function NewComplaintPage() {
 
       {isItemCategory && (
         <div>
-          <label style={labelStyle}>
-            Photos of the item {requiresEvidence ? '(at least one required)' : '(optional)'}
-          </label>
+          <label style={labelStyle}>Photos of the item (optional)</label>
           <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '0 0 8px' }}>
-            Clear photos of the problem — all angles, plus any damage, wrong
-            markings or serial numbers — help us review it. At least one photo
-            is required for an item-not-as-described or damage dispute. A video
-            of up to 30 seconds is optional. Evidence stays private; an admin
-            will contact you if more is needed.
+            Optional evidence — packaging, labels, serial numbers or anything
+            relevant — helps the seller and our team understand the concern.
+            Photos are optional for every category (there is nothing to
+            photograph for a non-delivery claim), and a video of up to 30
+            seconds is also optional. Evidence stays private; we may contact
+            you if more is needed.
           </p>
           <PhotoDropzone
             files={photos}
             onChange={setPhotos}
-            minFiles={requiresEvidence ? 1 : 0}
             maxFiles={6}
           />
           <label className="mt-3 block text-xs" style={{ color: 'var(--text-secondary)' }}>

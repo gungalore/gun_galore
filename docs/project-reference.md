@@ -635,6 +635,17 @@ picks the rail at checkout; Ozow is the default.
   captured the payment (`ozow.refundPayment` or `peach.refundPayment`) BEFORE
   flipping the row to `REFUNDED`. Money moves first, ledger second — never the
   other way around. Legacy rows with no provider are treated as Ozow.
+- **Refund policy (operator decision 2026-11-23) — non-delivery only.** The
+  platform refunds ONLY where the item was never delivered: the seller never
+  dispatched/handed over, or the carrier records no delivery. That refund is
+  full — item, delivery and Platform Fee — and the courier 5-day no-dispatch
+  auto-refund is unchanged. Condition, “not as described”, damage after
+  delivery, wrong expectation, change of mind and location/travel are between
+  buyer and seller: the buyer messages the seller from the order and may lodge
+  a complaint, which does **not** hold the seller's payout and does not trigger
+  a platform refund. `POST /transactions/:id/dispute` accepts only
+  `NEVER_ARRIVED`; the retired reasons return a guidance 400. The buyer's CPA
+  rights against the SELLER are untouched, and the T&Cs must keep saying so.
 - **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,
   `DISPUTED`, `REFUNDED`.
 - **BANV:** every bank-details save requests Peach BANV when the user has an
@@ -772,9 +783,9 @@ picks the rail at checkout; Ozow is the default.
   enabled it in the Sell form: it books no courier and the checkout
   hard-consent screen spells out the terms. Funds stay HELD until the buyer
   confirms the handover (or auto-release 5 days after payment); both parties
-  get WhatsApp/SMS/email/in-app confirmation links. On any refund or upheld
-  dispute, **ALL Outdoor keeps the Platform Fee** — the buyer is refunded the
-  item price only.
+  get WhatsApp/SMS/email/in-app confirmation links. A **non-delivery** refund
+  is full — item, delivery and Platform Fee (2026-11-23 policy). A condition
+  or change-of-mind issue after the handover is not a platform refund at all.
 - **Seller pickup scheduling:** on accept the seller picks a collection day
   (soonest business day, or the following business day) and an optional window
   (`08:00-11:00` / `11:00-14:00` / `14:00-17:00`). Stored on
@@ -964,6 +975,21 @@ listing/transaction thread resolves that thread's `listing_inquiry_message` /
 Listing conversations live at `/messages` (buyer and seller in one inbox); the
 dashboard keeps an inline copy. Message notifications and email CTAs deep-link
 to `/messages?inquiry=<id>#inquiries`, which opens that thread directly.
+
+**Public listing Q&A is distilled from those private conversations (2026-11-23).**
+When the seller replies, Gemini 3.1 Flash-Lite turns the buyer's first question
+and the seller's reply into one anonymised `ListingFaq` entry (names, contact
+details, addresses and order numbers stripped; the Jev contact/conduct battery
+and the regex floor must both pass). The entry is published on the listing's
+**Questions & answers** section and **the seller cannot hide it** — `hiddenAt` is
+platform moderation only. A buyer's first message is checked against up to 10
+published entries first: Jev answers one duplicate question and, only on a
+`BLOCK`-band hit, Gemini Flash-Lite names the entry the buyer should read. A
+match opens **no** thread and sends **no** seller notification; `force: true` is
+the buyer's "ask anyway" bypass. The same public endpoint returns the seller's
+**“Usually replies within …”** badge, computed from the median time to the
+seller's first reply over the last 90 days (minimum 3 samples; otherwise
+“reply time not yet known”).
 
 API: `persist(...)`, `persistByEmail(email, ...)`, and
 `resolveByEntity(linkedType, linkedId, {userId?, resolvedBy?})`, called from action
@@ -1869,8 +1895,15 @@ Spec: `docs/design/the-bench/SPEC-BUILD.md`.
   reports near the applicant's precinct, past twelve months, printed as cuttings
   cited by paper, date and annexure letter.
 - **`complaints/`** — the formal complaints register. Every complaint gets a
-  `CO`-prefixed case number. ⚠️ **A buyer lodging one of the three payout-affecting
-  categories holds the seller's money**, so this module is on the money path.
+  `CO`-prefixed case number. ⚠️ **Only a `NOT_ARRIVED` buyer complaint holds the
+  seller's money** (the HELD→DISPUTED CAS). Condition/“not as described”/damaged
+  complaints do **not** hold payout: they are recorded, the seller is emailed a
+  neutral notice, and the parties resolve it between themselves. Photos are
+  optional (caps unchanged). This is the money-path rule from the 2026-11-23
+  non-delivery-only refund policy.
+- **`listings/listing-faq.*`** — the public listing Q&A described above
+  (`GET /listings/:id/faq`), plus `seller-reply-time.ts` (pure reply-time
+  buckets). `hiddenAt` is platform moderation only; no seller route sets it.
 - **`reloading/`** — admin-only manual corpus. The operator SCPs PDFs into
   `RELOADING_MANUALS_INBOX_DIR`, hits `POST /admin/reloading/scan`, and the service
   SHA-256-dedupes and stores under random hex filenames.

@@ -37,7 +37,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
     href: '/refund-policy',
     title: 'Refund & Dispute Policy',
     description:
-      'When refunds happen, how disputes are reviewed, and your statutory rights under the CPA.',
+      'When we refund an order that is not delivered, what is not a refund ground, and your statutory rights under the CPA.',
   },
   {
     href: '/members/regulated-items',

@@ -108,14 +108,54 @@ export default function ComplaintsPage() {
         <li>Any supporting screenshots, messages or documents.</li>
       </ul>
 
-      <h2>2. How we handle your complaint</h2>
+      <h2>2. What we can and cannot do</h2>
+      <p>
+        So that you know what to expect, this is the boundary between what the
+        Platform does and what is between you and the seller.
+      </p>
+      <ul>
+        <li>
+          <strong>We verify sellers.</strong> Sellers complete identity and bank
+          verification before any payout. That confirms who the seller is — it
+          does not confirm the condition of the item.
+        </li>
+        <li>
+          <strong>We hold the payment and refund a non-delivery.</strong> The
+          seller is not paid until delivery is confirmed (or a dealer transfer is
+          verified). If the item is never delivered — the seller never dispatches
+          it, never hands it over, or the courier records no delivery — we refund
+          you in full: item, delivery and the Platform Fee.
+        </li>
+        <li>
+          <strong>We record, pass on and mediate condition complaints.</strong> If
+          an item is not as described, arrives damaged, or is not in the
+          condition you expected, we record the complaint, pass it to the seller
+          and can act against a seller who misdescribes items. We do not refund
+          it and we do not hold the seller&apos;s payout for it.
+        </li>
+        <li>
+          <strong>We do not refund condition, change of mind, fit or location.</strong>{' '}
+          Those are between you and the seller. Message the seller from the order
+          page, and ask any question before you buy — every listing has a public
+          Questions &amp; answers section drawn from previous buyer and seller
+          conversations. Your rights against the seller under the Consumer
+          Protection Act are unaffected.
+        </li>
+      </ul>
+      <p>
+        We do not inspect, test, own or warrant the goods. The seller is
+        responsible for the accuracy of the listing and the condition of the
+        item, and we limit our own role and our own refunds accordingly.
+      </p>
+
+      <h2>3. How we handle your complaint</h2>
       <ul>
         <li>We aim to <strong>acknowledge</strong> your complaint within <strong>2 business days</strong> of receiving it.</li>
         <li>We aim to <strong>resolve</strong> it within <strong>14 business days</strong>. Where a matter is complex or depends on a third party — for example a courier, an authorised dealer handling the hand-over of a regulated item, or a payment reconciliation — it may take longer; if so, we will tell you, explain why, and keep you updated on progress.</li>
         <li>Every complaint is logged, assigned an owner and recorded together with its outcome.</li>
       </ul>
 
-      <h2>3. If you are not satisfied — external escalation</h2>
+      <h2>4. If you are not satisfied — external escalation</h2>
       <p>
         If we cannot resolve your complaint, or you are unhappy with the
         outcome, you may escalate it — free of charge — to the
@@ -124,7 +164,7 @@ export default function ComplaintsPage() {
         obliged to do so before approaching one of the bodies below.
       </p>
 
-      <h3>3.1 Privacy and personal information</h3>
+      <h3>4.1 Privacy and personal information</h3>
       <p>
         For complaints about how we have handled your personal
         information under the Protection of Personal Information Act 4 of
@@ -155,7 +195,7 @@ export default function ComplaintsPage() {
         </a>
       </p>
 
-      <h3>3.2 Consumer disputes (Consumer Protection Act)</h3>
+      <h3>4.2 Consumer disputes (Consumer Protection Act)</h3>
       <p>
         For a consumer dispute under the Consumer Protection Act 68 of
         2008 that we have not been able to resolve, you may approach:
@@ -185,7 +225,7 @@ export default function ComplaintsPage() {
         </a>
       </p>
 
-      <h3>3.3 Payment disputes</h3>
+      <h3>4.3 Payment disputes</h3>
       <p>
         For a dispute about a payment — for example money debited or held
         in connection with a purchase — you may escalate to:
@@ -211,7 +251,7 @@ export default function ComplaintsPage() {
         card issuer's dispute process.
       </p>
 
-      <h3>3.4 Regulated categories</h3>
+      <h3>4.4 Regulated categories</h3>
       <p>
         Some categories on this platform are regulated by statute and
         are open to registered members only. A complaint about the
@@ -229,15 +269,15 @@ export default function ComplaintsPage() {
       <p>
         This does not affect any of the routes above: if your complaint
         is about your personal information, a consumer-law issue or a
-        payment, use 3.1, 3.2 or 3.3 — whichever category the item
+        payment, use 4.1, 4.2 or 4.3 — whichever category the item
         itself falls into.
       </p>
 
-      <h2>4. Related documents</h2>
+      <h2>5. Related documents</h2>
       <ul>
         <li>
           <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>{' '}
-          — when refunds happen, how disputes are reviewed, and your rights under the CPA.
+          — when we refund an order that is not delivered, what is not a refund ground, and your rights under the CPA.
         </li>
         <li>
           <a href="/privacy" style={{ color: 'var(--red)' }}>Privacy Policy</a>{' '}

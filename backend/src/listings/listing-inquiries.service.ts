@@ -11,6 +11,7 @@ import { LlmService } from '../common/llm/llm.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ListingModerationService } from '../moderation/listing-moderation.service';
+import { ListingFaqService } from './listing-faq.service';
 import { optimizedVideoUrl } from '../common/image-url';
 import {
   JEV_CATEGORY_REASONS,
@@ -38,6 +39,10 @@ const MAX_INQUIRY_IMAGES = 4;
  *     deletes the Cloudinary asset and refuses the upload, so unscreened
  *     contact details/QR codes never reach the buyer.
  *   • Public projections are username-only — never a real name or email.
+ *   • Seller replies feed the PUBLIC listing Q&A (ListingFaqService): the
+ *     first buyer message is checked against the published answers first, and
+ *     an already-answered question is pointed at the FAQ instead of opening a
+ *     thread. The seller cannot hide an answered question.
  */
 @Injectable()
 export class ListingInquiriesService {
@@ -50,6 +55,7 @@ export class ListingInquiriesService {
     private readonly notifications: NotificationsService,
     private readonly cloudinary: CloudinaryService,
     private readonly moderation: ListingModerationService,
+    private readonly faq: ListingFaqService,
   ) {}
 
   // ── reads ──────────────────────────────────────────────────────────
@@ -173,8 +179,20 @@ export class ListingInquiriesService {
 
   // ── writes ─────────────────────────────────────────────────────────
 
-  /** Buyer starts (or reuses) the thread on a listing with a first message. */
-  async sendAsBuyer(listingId: string, buyerId: string, rawContent: string) {
+  /**
+   * Buyer starts (or reuses) the thread on a listing with a first message.
+   *
+   * ⚠️ THE FAQ IS CHECKED FIRST. If the listing has already answered this
+   * question publicly, no thread and no seller notification are created — the
+   * buyer is handed the answer instead. `force` is the buyer's "ask anyway"
+   * escape hatch and skips only this check, never moderation.
+   */
+  async sendAsBuyer(
+    listingId: string,
+    buyerId: string,
+    rawContent: string,
+    opts?: { force?: boolean },
+  ) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
       select: { id: true, sellerId: true, status: true, title: true },
@@ -189,6 +207,33 @@ export class ListingInquiriesService {
       );
     }
 
+    // Validate before the FAQ lookup so an empty/oversized message cannot
+    // spend a model call.
+    const text = (rawContent ?? '').trim();
+    if (!text) throw new BadRequestException('Message is empty');
+    if (text.length > MAX_INQUIRY_MESSAGE_LEN) {
+      throw new BadRequestException(
+        `Message is too long (max ${MAX_INQUIRY_MESSAGE_LEN} characters)`,
+      );
+    }
+
+    // A thread that already exists is a live conversation: never intercept a
+    // follow-up with the public FAQ. Only the FIRST message on a listing is
+    // checked, which is where a duplicate question actually costs the seller a
+    // reply (and the buyer a wait).
+    const existing = await this.prisma.listingInquiry.findUnique({
+      where: { listingId_buyerId: { listingId, buyerId } },
+      select: { id: true },
+    });
+    if (existing) return this.sendMessage(existing.id, buyerId, text);
+
+    if (!opts?.force) {
+      const hit = await this.faq.match(listingId, text);
+      if (hit) {
+        return { answeredFromFaq: true as const, faq: hit };
+      }
+    }
+
     const inquiry = await this.prisma.listingInquiry.upsert({
       where: { listingId_buyerId: { listingId, buyerId } },
       create: { listingId, buyerId, sellerId: listing.sellerId },
@@ -196,7 +241,7 @@ export class ListingInquiriesService {
       select: { id: true },
     });
 
-    return this.sendMessage(inquiry.id, buyerId, rawContent);
+    return this.sendMessage(inquiry.id, buyerId, text);
   }
 
   /** Either participant sends a text message in an existing thread. */
@@ -231,6 +276,28 @@ export class ListingInquiriesService {
       categories,
     );
     await this.notifyCounterparty(inquiry, userId, content);
+
+    // Seller replies feed the public Q&A. The first reply's timing also powers
+    // the "usually replies within ..." badge; the CAS keeps the FIRST reply
+    // even if two sends race. Best-effort: the message is already committed, so
+    // a failed side-write must not turn a successful send into an error.
+    if (userId === inquiry.sellerId) {
+      try {
+        await this.prisma.listingInquiry.updateMany({
+          where: { id: inquiryId, sellerFirstReplyAt: null },
+          data: { sellerFirstReplyAt: message.createdAt },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `sellerFirstReplyAt stamp failed for ${inquiryId}: ${(err as Error).message}`,
+        );
+      }
+      void this.faq.distil(inquiryId).catch((err) =>
+        this.logger.warn(
+          `FAQ distill dispatch failed for ${inquiryId}: ${(err as Error).message}`,
+        ),
+      );
+    }
 
     return this.toMessage(message);
   }
@@ -365,6 +432,19 @@ export class ListingInquiriesService {
       });
 
       await this.touch(inquiryId);
+      // A seller media reply is a reply for the response-time badge, but it
+      // carries no text to distil into a public answer. Best-effort: the media
+      // message is already stored, so a failed side-write must not delete it.
+      try {
+        await this.prisma.listingInquiry.updateMany({
+          where: { id: inquiryId, sellerFirstReplyAt: null },
+          data: { sellerFirstReplyAt: message.createdAt },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `sellerFirstReplyAt stamp failed for ${inquiryId}: ${(err as Error).message}`,
+        );
+      }
       await this.notifyCounterparty(
         inquiry,
         userId,

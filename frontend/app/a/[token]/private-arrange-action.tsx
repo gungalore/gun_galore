@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { BRAND_NAME } from '../../../lib/brand';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -9,8 +10,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
  * party (seller or buyer) and one transaction; the backend verifies the party
  * before acting. No session, no phone number in the URL.
  *
- * Seller: Item delivered / Dispute
- * Buyer:  Item received  / Dispute
+ * Seller: Item delivered / Report that the handover did not happen
+ * Buyer:  Item received  / Report that the handover did not happen
+ *
+ * That report is a NON-DELIVERY route only: the item was never handed over, or
+ * the seller is unreachable. If the item was received but is not as expected,
+ * that is between the buyer and the seller (message + complaint), not a
+ * platform refund.
  */
 export interface PrivateArrangeActionPayload {
   kind: 'PRIVATE_ARRANGE_ACTION';
@@ -83,7 +89,7 @@ export function PrivateArrangeActionPage({
       setMessage(
         err instanceof Error
           ? err.message
-          : "Couldn't reach ALL Outdoor - try again in a moment.",
+          : `Couldn't reach ${BRAND_NAME} - try again in a moment.`,
       );
       setView('error');
     }
@@ -93,7 +99,7 @@ export function PrivateArrangeActionPage({
     const closed: Record<string, { title: string; body: string }> = {
       DISPUTED: {
         title: 'This handover is under review',
-        body: 'Our team has been alerted and will review the handover. No money will move while it is disputed.',
+        body: 'Our team has been alerted to check whether the handover happened. No money will move while it is disputed.',
       },
       PENDING_ADMIN_VERIFICATION: {
         title: 'This handover is being checked',
@@ -127,11 +133,11 @@ export function PrivateArrangeActionPage({
     return (
       <Card>
         <h1 style={heading}>
-          {outcome === 'disputed' ? 'Dispute raised' : 'Done'}
+          {outcome === 'disputed' ? 'Handover reported' : 'Done'}
         </h1>
         <p style={bodyText}>
           {outcome === 'disputed'
-            ? 'Our team has been alerted and will review the handover. The payment stays held while they do.'
+            ? 'Our team has been alerted to check whether the handover happened. The payment stays held while they do. If you received the item but it is not as expected, message the seller from the order page or lodge a complaint — that is between you and the seller, not a platform refund.'
             : outcome === 'delivered'
               ? 'Marked as delivered. We have asked the buyer to confirm receipt.'
               : 'Receipt confirmed. The seller has been paid.'}
@@ -171,10 +177,16 @@ export function PrivateArrangeActionPage({
   if (view === 'dispute') {
     return (
       <Card>
-        <h1 style={heading}>Raise a dispute</h1>
+        <h1 style={heading}>Report that the handover did not happen</h1>
         <p style={bodyText}>
-          Tell us what went wrong. The payment stays held while our team
-          reviews it.
+          Use this only if the item was never handed over or the seller is
+          unreachable. The payment stays held while our team reviews whether
+          the handover happened.
+        </p>
+        <p style={bodyText}>
+          If you received the item but it is not as expected, that is between
+          you and the seller — message the seller from the order page or lodge
+          a complaint; it is not a platform refund.
         </p>
         <textarea
           value={reason}
@@ -192,7 +204,7 @@ export function PrivateArrangeActionPage({
           }
           style={primaryButton}
         >
-          Send dispute
+          Report it
         </button>
         <button
           type="button"
@@ -253,7 +265,7 @@ export function PrivateArrangeActionPage({
           onClick={() => setView('dispute')}
           style={secondaryButton}
         >
-          Dispute
+          Report that the handover did not happen
         </button>
         <p style={finePrint}>
           {isSeller

@@ -50,7 +50,7 @@ Legal references were checked against the bundled Firearms Control Act 60 of 200
 | Never claim SAPS affiliation on the tracker. | `licence-tracker.service.ts` |
 
 ### 1.5 Contact-detail (fee-bypass) filter
-Two-layer filter on user-to-user free text: regex (fail-closed) then model check (fail-open). Blocks phone numbers in any form, emails, own URLs/domains, social handles and platform names, "DM me / WhatsApp me / meet me at", street addresses. Wired into: offer buyer note, counter-offer seller note, ratings comments. Listing text/photos and public Q&A have their own moderators. (`moderation/contact-detail-filter.service.ts`)
+Two-layer filter on user-to-user free text: regex (fail-closed) then model check (fail-open). Blocks phone numbers in any form, emails, own URLs/domains, social handles and platform names, "DM me / WhatsApp me / meet me at", street addresses. Wired into: offer buyer note, counter-offer seller note, ratings comments. Listing text/photos and the public listing Q&A have their own moderators; the Q&A text is generated from a private conversation, so it passes the regex floor **and** the Jev contact/conduct battery (fail-closed) before publication. (`moderation/contact-detail-filter.service.ts`, `listings/listing-faq.service.ts`)
 
 ---
 

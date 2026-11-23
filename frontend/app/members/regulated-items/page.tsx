@@ -1,4 +1,4 @@
-﻿// Regulated Items Annex — the members-only half of the legal split.
+// Regulated Items Annex — the members-only half of the legal split.
 //
 // The public policies (/terms, /privacy, /paia, /aml-policy, /acceptable-use,
 // /refund-policy, /fees, /about, /complaints,
@@ -119,7 +119,7 @@ export default function RegulatedItemsAnnexPage() {
         to:
       </p>
       <ul>
-        <li>verifying the Seller&apos;s identity via Home Affairs lookup and selfie face-match before any payout is released;</li>
+        <li>verifying the Seller&apos;s identity via a government ID document check and selfie face-match before any payout is released;</li>
         <li>maintaining the directory of SAPS-licensed dealers members may choose from at checkout;</li>
         <li>holding the buyer&apos;s payment until the transfer is verified — on a Private Arrangement, until the Buyer confirms receipt or five days pass (paragraph 11);</li>
         <li>recording the transaction for audit and providing those records to SAPS or another competent authority where compelled by valid legal process.</li>
@@ -270,7 +270,7 @@ export default function RegulatedItemsAnnexPage() {
         <li>hold a valid <strong>Competency Certificate</strong> issued by SAPS for the relevant firearm category;</li>
         <li>where you are the buyer of a firearm requiring a Possession Licence, either already hold a Possession Licence in that category or have applied for one and have a pending application on file;</li>
         <li>not be subject to a court order, interdict or licence revocation prohibiting you from possessing firearms;</li>
-        <li>complete ALL Outdoor KYC verification (Home Affairs ID lookup + selfie face-match) where you are a seller.</li>
+        <li>complete ALL Outdoor identity and bank verification (government ID document check + selfie face-match) where you are a seller.</li>
       </ul>
 
       <h2>7. What counts as a "firearm" for this Annex</h2>
@@ -343,8 +343,10 @@ export default function RegulatedItemsAnnexPage() {
           Condition Guide
         </a>{' '}
         apply to these listings exactly as they do to every other
-        listing on the Platform, and payment is held until the buyer
-        confirms the item arrived as described. Before you grade a
+        listing on the Platform, and the Seller is paid only once the
+        Buyer confirms they have received the item. Condition is the
+        Seller&apos;s responsibility and is not a refund ground — see
+        paragraph 15. Before you grade a
         firearm or firearm part, check:
       </p>
       <ol>
@@ -397,7 +399,7 @@ export default function RegulatedItemsAnnexPage() {
         advance</strong> to that option being shown on the listing.
       </p>
       <ul>
-        <li>Payment is captured at checkout and <strong>held</strong>. The funds-held mechanism applies: the Seller is paid when the Buyer confirms receipt of the item, or automatically five (5) days after payment if the order is not disputed before then. Both parties may raise a dispute before release, which holds the payment for review — see paragraph 13.</li>
+        <li>Payment is captured at checkout and <strong>held</strong>. The funds-held mechanism applies: the Seller is paid when the Buyer confirms receipt of the item, or automatically five (5) days after payment if the Buyer has not reported that the item was never handed over. Either party may report a non-delivery before release, which holds the payment for review — see paragraph 13. A condition or description complaint does not hold the payment.</li>
         <li>The parties&apos; contact details are revealed to each other on payment so the meet can be coordinated. That sharing happens only with the Seller&apos;s recorded consent — see paragraph 21.</li>
       </ul>
       <p>
@@ -446,8 +448,21 @@ export default function RegulatedItemsAnnexPage() {
         For a firearm, therefore, confirmation of delivery is not the
         payout trigger; verification of the completed dealer transfer
         is. On a Private Arrangement, the payment is held until the
-        Buyer confirms receipt (or five days after payment if not
-        disputed) — paragraph 11.
+        Buyer confirms receipt (or five days after payment if the Buyer
+        has not reported a non-delivery) — paragraph 11.
+      </p>
+      <p>
+        Refunds follow the same rule as the rest of the Platform. We
+        refund an order only where the item is not delivered — the
+        Seller never hands it over (including where a dealer transfer
+        never completes) or the courier records no delivery. That
+        refund is full: item, delivery and the Platform Fee. Condition,
+        &quot;not as described&quot;, damage after delivery, fit, change
+        of mind and location or travel are between the Buyer and the
+        Seller: the Buyer messages the Seller from the order page and
+        may lodge a complaint, which we record and pass to the Seller,
+        but we do not refund it and we do not hold the Seller&apos;s
+        payout for it. We do not inspect, test or warrant the goods.
       </p>
 
       <h2>14. Fees and charges on regulated transactions</h2>
@@ -486,14 +501,28 @@ export default function RegulatedItemsAnnexPage() {
       <h2>15. Refunds, disputes and cancellations</h2>
       <ul>
         <li>
+          <strong>We refund only an item that is not delivered.</strong>{' '}
+          That means the Seller never dispatches it, never hands it over
+          (including where a dealer transfer never completes), or the
+          courier records no delivery. The refund is full: item,
+          delivery and the Platform Fee. Condition, &quot;not as
+          described&quot;, damage after delivery, fit, change of mind and
+          location or travel are between the Buyer and the Seller. The
+          Buyer messages the Seller from the order page and may lodge a
+          complaint, which we record and pass to the Seller, but we do
+          not refund it and we do not hold the Seller&apos;s payout for
+          it. We do not inspect, test or warrant the goods.
+        </li>
+        <li>
           <strong>Private Arrangement — funds held.</strong>{' '}
           Where a transaction uses the Private Arrangement transfer
           option, payment is captured at checkout and held: the Seller
           is paid when the Buyer confirms receipt of the item, or five
-          (5) days after payment if the order is not disputed before
-          then. Either party may raise a dispute before release, which
-          holds the payment for review. See paragraph 11 above and
-          section 7 of the Terms of Service for the binding text.
+          (5) days after payment if the Buyer has not reported that the
+          item was never handed over. Either party may report a
+          non-delivery before release, which holds the payment for
+          review. See paragraph 11 above and section 7 of the Terms of
+          Service for the binding text.
         </li>
         <li>
           <strong>Dispatch-SLA auto-refund does not apply to
@@ -501,7 +530,7 @@ export default function RegulatedItemsAnnexPage() {
           refund applies to courier orders only. Collection orders and
           firearm dealer-transfer orders are not automatically refunded
           when the seller misses the 5-day dispatch window; the buyer
-          must instead follow the dispute route set out in the{' '}
+          must instead report the non-delivery and follow the{' '}
           <a href="/refund-policy" style={linkStyle}>
             Refund &amp; Dispute Policy
           </a>

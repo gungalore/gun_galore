@@ -1329,6 +1329,8 @@ model Listing {
   video                ListingVideo?
   // Private buyer↔seller "contact seller" threads on this listing.
   inquiries            ListingInquiry[]
+  // Public Q&A distilled from those private threads. One row per inquiry.
+  faqEntries           ListingFaq[]
   valuationOutcome     ValuationOutcome?
   transactions         Transaction[]
   orderLineItems       OrderLineItem[]
@@ -1457,13 +1459,44 @@ model ListingInquiry {
   sellerId      String
   seller        User     @relation("ListingInquirySeller", fields: [sellerId], references: [id], onDelete: Cascade)
   lastMessageAt DateTime @default(now())
+  // When the seller sent their FIRST text or media reply. The buyer's first
+  // message is the inquiry's createdAt (the thread is created by it), so
+  // reply-time = sellerFirstReplyAt - createdAt. Null until they reply.
+  // Drives the public "Usually replies within ..." badge; never shown as an
+  // individual buyer's wait time.
+  sellerFirstReplyAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   messages      ListingInquiryMessage[]
+  // The public Q&A entry distilled from this conversation, if published.
+  faq           ListingFaq?
 
   @@unique([listingId, buyerId])
   @@index([sellerId, lastMessageAt(sort: Desc)])
   @@index([buyerId, lastMessageAt(sort: Desc)])
+}
+
+/// A public Q&A entry on a listing, distilled by Gemini 3.1 Flash-Lite from a
+/// private buyer↔seller inquiry once the seller has replied. The question is
+/// paraphrased and both sides are stripped of names/contact/addresses before
+/// publication, so the buyer is never identified here.
+///
+/// ⚠️ THE SELLER CANNOT HIDE OR DELETE AN ANSWERED QUESTION. `hiddenAt` exists
+/// for PLATFORM moderation only; no seller endpoint or UI may set it.
+model ListingFaq {
+  id          String         @id @default(cuid())
+  listingId   String
+  listing     Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  inquiryId   String         @unique
+  inquiry     ListingInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  question    String
+  answer      String
+  /// Platform moderation only — never seller-controlled.
+  hiddenAt    DateTime?
+  generatedAt DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([listingId, hiddenAt, updatedAt])
 }
 
 enum ListingInquiryMediaKind {

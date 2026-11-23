@@ -10,6 +10,8 @@ import {
   ListingQuestionsController,
   SellerQuestionsController,
 } from './listing-questions.controller';
+import { ListingFaqService } from './listing-faq.service';
+import { ListingFaqController } from './listing-faq.controller';
 import { ListingInquiriesService } from './listing-inquiries.service';
 import {
   ListingInquiriesController,
@@ -33,6 +35,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     ListingsController,
     ListingQuestionsController,
     SellerQuestionsController,
+    ListingFaqController,
     ListingInquiriesController,
     MyInquiriesController,
   ],
@@ -45,6 +48,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     // the seller's ask at create/update time.
     FeeCalculator,
     ListingQuestionsService,
+    ListingFaqService,
     ListingInquiriesService,
     FirearmLicenceService,
     PriceEstimateService,

@@ -3577,7 +3577,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'shipping_delivered',
       title: 'Delivered — confirm receipt',
-      body: `${listingTitle} was delivered. You have 24 hours to confirm it is good or raise a dispute.`,
+      body: `${listingTitle} was delivered. Please confirm receipt. If it never arrived, raise a dispute.`,
       url: `/transactions/${transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -3845,7 +3845,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Confirm your collection',
-      body: `Hi ${b(d.buyerName)}, you paid for ${b(d.listingTitle)} ${b(d.daysElapsed + ' days')} ago and it's waiting to be collected. This is an in-person collection — the seller's contact details are on your order page. Please arrange the pickup, and once you have the item tap <b>Confirm collection</b> so the seller's payment can be released. If you've had trouble reaching the seller or the item wasn't as described at the handover, you can raise a dispute from the same page.`,
+      body: `Hi ${b(d.buyerName)}, you paid for ${b(d.listingTitle)} ${b(d.daysElapsed + ' days')} ago and it's waiting to be collected. This is an in-person collection — the seller's contact details are on your order page. Please arrange the pickup, and once you have the item tap <b>Confirm collection</b> so the seller's payment can be released. If the seller never hands the item over, you can raise a dispute from the same page; for condition or description issues, message the seller directly.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Paid', value: `${d.daysElapsed} days ago` },
@@ -4027,11 +4027,36 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // A buyer raised a condition/description concern about an item. This is
+  // between the buyer and the seller — no platform refund and no payout hold.
+  // The seller is told so they can resolve it directly. Email only: no inbox
+  // row, no complaint body or evidence, and no buyer identity.
+  // ---------------------------------------------------------------
+  async complaintConcernForSeller(d: {
+    email: string;
+    name: string;
+    listingTitle: string;
+    referenceNumber: string;
+  }) {
+    const url = `${this.appUrl}/my/sales`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Buyer concern' },
+      headline: 'A buyer raised a concern',
+      body: `Hi ${b(d.name)}, a buyer raised a concern about ${b(d.listingTitle)}. This does not affect your payment. Please message the buyer from the order page and resolve it between you.`,
+      rows: [{ label: 'Reference', value: d.referenceNumber }],
+      cta: { label: 'Open my sales', url },
+      preheader: `Buyer concern about ${d.listingTitle}`,
+    });
+    await this.send(d.email, 'Buyer concern: ' + d.listingTitle, html);
+  }
+
+  // ---------------------------------------------------------------
   // Courier confirm-receipt nudge (48h after DELIVERED, buyer never
   // confirmed, funds still HELD). Sits UNDER the 72h stuck-funds admin
   // alert — a gentle self-heal reminder so a forgetful buyer releases the
-  // seller's money without a human chasing them. Mentions the raise-an-
-  // issue alternative for the "delivered but wrong/damaged" case.
+  // seller's money without a human chasing them. The dispute route is
+  // mentioned ONLY for an item that never arrived; condition issues are
+  // between the buyer and the seller.
   // ---------------------------------------------------------------
   async confirmReceiptNudgeBuyer(d: {
     buyerEmail: string;
@@ -4046,7 +4071,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'confirm_receipt_nudge',
       title: 'Confirm your delivery',
-      body: `${d.listingTitle} was delivered. Confirm it is good or raise a dispute within 24 hours.`,
+      body: `${d.listingTitle} was marked delivered. Please confirm you received it. If it never arrived, raise a dispute within 24 hours.`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4057,7 +4082,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Confirm you received your order',
-       body: `Hi ${b(d.buyerName)}, ${b(d.listingTitle)} was marked delivered. You have 24 hours to confirm it is good or <b>raise an issue</b> from the same page — don't confirm if anything is wrong.`,
+       body: `Hi ${b(d.buyerName)}, ${b(d.listingTitle)} was marked delivered. Please confirm you received it. If it never arrived, <b>raise a dispute</b> from the same page — for condition or description issues, message the seller from the order page.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
       ],
@@ -4071,7 +4096,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 22)} delivered. Confirm or dispute within 24h: ${txUrl}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 22)} delivered. Confirm receipt within 24h, or dispute if it never arrived: ${txUrl}`,
       `confirm-receipt-nudge-${d.transactionId}`,
     );
   }
@@ -4463,7 +4488,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Did you receive your item?',
-      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the handover page — that releases the seller's payment. If something's wrong, raise a dispute instead and we'll hold the funds while we help.`,
+      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the handover page — that releases the seller's payment. If it never reached you, raise a dispute instead and we'll hold the funds while we look into it. For condition or description issues, message the seller from the order page.`,
       rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
       cta: { label: 'Confirm receipt or dispute', url },
       preheader: `Confirm receipt of ${d.listingTitle}`,
@@ -4471,7 +4496,7 @@ export class NotificationsService {
     await this.send(d.buyerEmail, 'Confirm you received: ' + d.listingTitle, html);
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: seller marked ${truncate(d.listingTitle, 30)} delivered. Confirm receipt to release payment, or dispute.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
+      `ALL Outdoor: seller marked ${truncate(d.listingTitle, 30)} delivered. Confirm receipt to release payment, or dispute if it never arrived.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-delivered-${d.transactionId}`,
       {
         whatsapp: {
@@ -4498,7 +4523,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'private_arrange_reminder',
       title: 'Still need to confirm receipt',
-      body: `${d.listingTitle} - please confirm you received it, or raise a dispute. Funds auto-release to the seller 5 days after payment.`,
+      body: `${d.listingTitle} - please confirm you received it. If it never arrived, raise a dispute. Funds auto-release to the seller 5 days after payment.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4511,7 +4536,7 @@ export class NotificationsService {
       this.email({
         status: { tone: 'pending', label: 'Reminder' },
         headline: 'Please confirm you received your item',
-        body: `Hi ${b(d.buyerName)}, we haven't heard from you about ${b(d.listingTitle)}. Please confirm receipt (or raise a dispute) — the payment auto-releases to the seller 5 days after you paid.`,
+        body: `Hi ${b(d.buyerName)}, we haven't heard from you about ${b(d.listingTitle)}. Please confirm receipt — the payment auto-releases to the seller 5 days after you paid. If it never arrived, raise a dispute instead; for condition or description issues, message the seller from the order page.`,
         rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
         cta: { label: 'Confirm receipt or dispute', url },
         preheader: `Reminder: confirm receipt of ${d.listingTitle}`,
@@ -4519,7 +4544,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute). Payment auto-releases to the seller 5 days after payment.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
+      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute if it never arrived). Payment auto-releases to the seller 5 days after payment.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
       `pa-reminder-${d.transactionId}`,
       {
         whatsapp: {
@@ -4589,7 +4614,7 @@ export class NotificationsService {
     const buyerHtml = this.email({
       status: { tone: 'pending', label: 'Awaiting handover' },
       headline: 'Arrange the handover',
-      body: `Hi ${b(buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. After the handover, the seller marks it delivered and you confirm receipt to release payment. The Platform Fee is non-refundable, even if a dispute is refunded.`,
+      body: `Hi ${b(buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. After the handover, the seller marks it delivered and you confirm receipt to release payment. If the seller never hands the item over, raise a dispute from the order page and you are refunded in full. Condition or description issues are between you and the seller.`,
       rows: buyerRows,
       cta: { label: 'View order', url },
       preheader: `Seller contact details for ${d.listingTitle}`,
@@ -6200,7 +6225,7 @@ export class NotificationsService {
         }
         return {
           action:
-            'The seller marked your item delivered — confirm receipt or dispute',
+            'The seller marked your item delivered — confirm receipt, or dispute if it never arrived',
           cta: 'Confirm receipt',
           url: this.fallbackActionUrl(vars, `/transactions/${txId}`),
         };

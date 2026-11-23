@@ -87,6 +87,14 @@ import {
 import { sellerPaysForSaleReject } from '../common/seller-failure-policy';
 export { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive };
 
+// The only buyer-dispute reason the platform acts on. A dispute refunds the
+// buyer ONLY when the item was never delivered — condition, description,
+// damage, fit and change-of-mind issues are between the buyer and the seller.
+// Shared by the controller and the service (defence in depth) so the two
+// cannot drift apart.
+export const DISPUTE_NEVER_ARRIVED_ONLY_GUIDANCE =
+  'Condition or description issues are between you and the seller — message them from the order page or lodge a complaint. Disputes here cover an item that never arrived.';
+
 // Ozow's terminal payout failure sub-statuses, from the Payouts API OpenAPI
 // enum (hub.ozow.com/api-reference/specs/payouts-api.yaml): 100/101
 // PayoutReceived, 202/204/205 Verification, 401/402/404/405
@@ -4650,20 +4658,20 @@ export class TransactionsService {
     }
     if (tx.dispatchedAt) {
       throw new BadRequestException(
-        'Already dispatched — it can no longer be cancelled. If there is a problem, raise a dispute instead.',
+        'Already dispatched — it can no longer be cancelled. The dispute route is only for an item that never arrives; for condition issues, message the seller from the order page.',
       );
     }
     // Non-courier rails have no dispatchedAt. Once the seller has handed the
     // item over (Private Arrangement) or the buyer has collected it, a
-    // cancellation is a dispute, not a pre-delivery change of mind.
+    // cancellation is no longer available — condition issues go to the seller.
     if (tx.privateArrangeDeliveredAt || tx.privateArrangeReceivedAt) {
       throw new BadRequestException(
-        'This handover has already progressed — raise a dispute instead of cancelling.',
+        'This handover has already progressed — it can no longer be cancelled. The dispute route is only for an item that never arrives; for condition issues, message the seller from the order page.',
       );
     }
     if (tx.collectedAt) {
       throw new BadRequestException(
-        'This item has already been collected — raise a dispute instead of cancelling.',
+        'This item has already been collected — it can no longer be cancelled. The dispute route is only for an item that never arrives; for condition issues, message the seller from the order page.',
       );
     }
     if (tx.paymentStatus !== 'HELD') {
@@ -4809,7 +4817,7 @@ export class TransactionsService {
       throw new BadRequestException('This order was already cancelled by the seller.');
     }
     if (tx.dispatchedAt) {
-      throw new BadRequestException('Already dispatched — it can no longer be cancelled. If there is a problem, raise a dispute.');
+      throw new BadRequestException('Already dispatched — it can no longer be cancelled. The dispute route is only for an item that never arrives; for condition issues, message the seller from the order page.');
     }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(`Order is no longer cancellable (status: ${tx.paymentStatus}).`);
@@ -4823,7 +4831,7 @@ export class TransactionsService {
     }
     if (tx.shippingMethod !== 'COURIER') {
       throw new BadRequestException(
-        'This order type cannot be self-cancelled. Please contact support or raise a dispute.',
+        'This order type cannot be self-cancelled. Please contact support. The dispute route is only for an item that never arrives; for condition issues, message the seller from the order page.',
       );
     }
     // PAY-8 — a paid order MUST have a stored gateway payment id to refund.
@@ -5825,11 +5833,14 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Buyer raises a dispute (item damaged / wrong / never arrived / other)
+  // Buyer raises a NON-DELIVERY dispute (item never arrived only)
   // ------------------------------------------------------------------
   //
   // Only allowed while payment is HELD AND the seller has already
   // dispatched (no point disputing a seller who hasn't even shipped).
+  // Condition, description, damage, fit and change-of-mind issues are NOT
+  // platform refund grounds — they are between the buyer and the seller and
+  // are refused here (the buyer is pointed at the seller/message thread).
   // Sets paymentStatus → DISPUTED which:
   //   - pauses the dispatch SLA auto-refund cron
   //   - surfaces in the admin command-center "disputed payments" card
@@ -5840,15 +5851,20 @@ export class TransactionsService {
   async raiseDispute(
     transactionId: string,
     buyerId: string,
-    reason: 'DAMAGED' | 'WRONG_ITEM' | 'NEVER_ARRIVED' | 'OTHER',
+    reason: 'NEVER_ARRIVED',
     details: string,
   ) {
+    // Defence in depth — the controller narrows this too, but an internal
+    // caller or a stale client must never lodge a condition/damage dispute.
+    if ((reason as string) !== 'NEVER_ARRIVED') {
+      throw new BadRequestException(DISPUTE_NEVER_ARRIVED_ONLY_GUIDANCE);
+    }
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
         buyer: true,
         seller: true,
-        listing: { select: { title: true, testedWorkingAttestedAt: true } },
+        listing: { select: { title: true } },
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
@@ -5887,8 +5903,8 @@ export class TransactionsService {
     // dispatch SLA auto-refunds a seller who never ships. Every OTHER funds-
     // held method has no courier dispatch event, so blocking pre-dispatch
     // disputes left those buyers with no exit at all:
-    //   • COLLECTION — buyer collects in person (seller no-show / not-as-
-    //     described at handover).
+    //   • COLLECTION — buyer collects in person (seller never hands the
+    //     item over).
     //   • DEALER_TRANSFER — the firearm routes through a dealer; dispatchedAt
     //     is NEVER stamped pre-approval, the DT path has no auto-refund cron,
     //     and cancelByBuyer rejects DT — so a stalled dealer transfer used to
@@ -5921,14 +5937,7 @@ export class TransactionsService {
     // Combine reason + details into a single adminNote — operator sees
     // both on the admin dossier. The reason enum stays machine-readable
     // for future filtering.
-    // P5.4 — snapshot the seller's "tested & working" claim into the dispute
-    // record so the admin resolving a not-working/DAMAGED dispute sees the
-    // exact CPA-relevant fact ("seller attested it worked; buyer says it
-    // doesn't"). It's the seller's own claim, never a GG certification.
-    const attestationLine = tx.listing.testedWorkingAttestedAt
-      ? `\n[SELLER ATTESTATION — "tested & working" claimed at listing on ${tx.listing.testedWorkingAttestedAt.toISOString()}]`
-      : '';
-    const note = `[BUYER DISPUTE: ${reason}] ${trimmedDetails}${attestationLine}`;
+    const note = `[BUYER DISPUTE: ${reason}] ${trimmedDetails}`;
 
     await this.prisma.transaction.update({
       where: { id: transactionId },

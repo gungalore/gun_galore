@@ -26,6 +26,7 @@ function makeService(
     saves7d?: number;
     offers7d?: number;
     questions7d?: number;
+    questionsTotal?: number;
     watchers7d?: number;
     bids7d?: number;
     openOffers?: number;
@@ -53,8 +54,15 @@ function makeService(
       count: jest.fn().mockResolvedValue(counts.saves7d ?? 0),
     },
     offer: { count: offerCount },
-    listingQuestion: {
-      count: jest.fn().mockResolvedValue(counts.questions7d ?? 0),
+    listingFaq: {
+      count: jest.fn(
+        (args: { where: { createdAt?: unknown; hiddenAt?: unknown } }) =>
+          Promise.resolve(
+            args.where.createdAt
+              ? (counts.questions7d ?? 0)
+              : (counts.questionsTotal ?? 3),
+          ),
+      ),
     },
     auctionWatch: {
       count: jest.fn().mockResolvedValue(counts.watchers7d ?? 0),
@@ -75,7 +83,7 @@ function listingRow(overrides: Record<string, unknown> = {}) {
     listingType: 'BUY_NOW',
     createdAt: new Date(Date.now() - 19 * 86_400_000),
     bidCount: 0,
-    _count: { wishlistedBy: 5, offers: 2, watchers: 0, questions: 3 },
+    _count: { wishlistedBy: 5, offers: 2, watchers: 0 },
     ...overrides,
   };
 }
@@ -135,9 +143,10 @@ describe('ListingsService.interest', () => {
     expect(
       prisma.watchedListing.count.mock.calls[0][0].where.createdAt.gte,
     ).toEqual(gte);
-    expect(prisma.listingQuestion.count.mock.calls[0][0].where.createdAt.gte).toEqual(
-      gte,
-    );
+    const faqWeek = prisma.listingFaq.count.mock.calls[0][0] as {
+      where: { createdAt: { gte: Date } };
+    };
+    expect(faqWeek.where.createdAt.gte).toEqual(gte);
   });
 
   it('returns lifetime totals from the counts and the open-offer figure', async () => {
@@ -179,7 +188,7 @@ describe('ListingsService.interest', () => {
       listingRow({
         listingType: 'AUCTION',
         bidCount: 12,
-        _count: { wishlistedBy: 5, offers: 2, watchers: 4, questions: 3 },
+        _count: { wishlistedBy: 5, offers: 2, watchers: 4 },
       }),
       { watchers7d: 1, bids7d: 4 },
     );
