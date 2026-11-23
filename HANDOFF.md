@@ -7,6 +7,42 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
+## 2026-11-23 — THE PRINT EMAIL BOOKS THE COURIER WITH ONE CLICK
+
+Operator: *"the email I receive should have a link I can click to make the BOB GO
+booking … So I should just click the link and the booking should be made."*
+
+- The print-desk email now has a **Book Bob Go collection** button. It opens
+  `/licence-centre/print/book/<token>`; that page fetches the order and POSTs the
+  booking **automatically on open**, then shows the waybill. No sign-in.
+- `MotivationPrintOrder.bookingToken` — 32 random bytes (base64url), stable
+  across resends, one order only. Public `GET/POST
+  /api/motivations/print/book/:token`; the POST is idempotent, so a refresh or a
+  double-click returns the existing waybill instead of booking a second
+  shipment. A double-click race is caught and re-read as BOOKING/BOOKED.
+- ⚠️ The email links to a **page**, not to a booking-on-GET endpoint. Email link
+  scanners fetch HTML but do not run the JavaScript that makes the POST, so a
+  scanned link cannot dispatch a courier.
+- The booking page had to be added to the public route matcher: without it the
+  email button 307'd to `/sign-in` and nothing booked.
+- The Desk's **Printed — book Bob Go collection** button remains as the manual
+  fallback; both call the same `book()` claim.
+- Migration `20261123100000_motivation_print_booking_token` adds the column
+  (ordered after the print-order table, which the migration-order spec caught
+  the first time around).
+
+**Deployed**: backend `7e10fea1` (migration applied, build, reload, health ×2);
+frontend `f1c1096f` (`BUILD_ID=XjqbHa1VOQ4HZ3X8YoJZm`, reload, health); public
+200 ×2; the booking page answers 200 while a bogus API token answers 404.
+Rollback `alloutdoor-20261123-074038.dump` (38.9 MB).
+
+**Verified**: backend **432 suites / 6,388 tests**, frontend **175 files /
+1,988 tests**, both builds clean; public token route matches no sign-in.
+
+**⚠️ The first real click spends the Bob Go wallet.** Do not click the email
+button until the envelope is actually printed — there is no un-book in the
+product (cancel in the Bob Go portal).
+
 ## 2026-11-23 — PRINT AND DELIVER IS OPEN
 
 The collection mobile is now in production `backend/.env` as
