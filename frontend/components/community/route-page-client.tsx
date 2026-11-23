@@ -12,6 +12,7 @@ import {
   setRouteGpxShared,
   type FeedPost,
   type FeedRoute,
+  type FeedRoutePoint,
 } from '../../lib/community-api';
 import {
   NOT_IN_GPX,
@@ -26,6 +27,13 @@ import {
   formatSpeed,
 } from '../../lib/feed-route';
 import { readRouteMapConfig } from '../../lib/route-map-config';
+import {
+  applyTerrainElevations,
+  fetchTerrainElevations,
+  sampleRouteForTerrain,
+  terrainElevationStats,
+  type TerrainElevationStats,
+} from '../../lib/terrain-elevation';
 import { RouteElevation } from './route-elevation';
 import { RouteFallback } from './route-fallback';
 
@@ -76,6 +84,11 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
   const [savingShare, setSavingShare] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [terrainSegments, setTerrainSegments] = useState<FeedRoutePoint[][] | null>(null);
+  const [terrainStats, setTerrainStats] = useState<TerrainElevationStats | null>(null);
+  const [terrainStatus, setTerrainStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'unavailable'
+  >('idle');
 
   // Read once: NEXT_PUBLIC_* values are fixed for the life of the build.
   const mapConfig = useMemo(() => readRouteMapConfig(), []);
@@ -125,13 +138,77 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
   // The stored route stays simplified; densify a display copy only for the
   // map/chart/slider so the inspector moves at ~5 m instead of stepping between
   // the handful of simplified vertices.
-  const displayRoute = useMemo(
+  const baseDisplay = useMemo(
     () =>
       route
         ? { ...route, segments: densifyRoute(route.segments) }
         : null,
     [route],
   );
+
+  // Elevation is MapTiler's terrain, not the GPX's `<ele>`: a planned or
+  // synthetic GPX can be metres out of step with the 3D map. One Elevation API
+  // call supplies up to 50 samples; the dense display series interpolates them.
+  // If the key/host/API refuses, the GPX elevation remains the fallback.
+  useEffect(() => {
+    setTerrainSegments(null);
+    setTerrainStats(null);
+    if (!route || !baseDisplay) {
+      setTerrainStatus('idle');
+      return;
+    }
+    if (!mapConfig.hasKey) {
+      setTerrainStatus('unavailable');
+      return;
+    }
+    const samples = sampleRouteForTerrain(baseDisplay.segments);
+    if (!samples.length) {
+      setTerrainStatus('unavailable');
+      return;
+    }
+    let cancelled = false;
+    setTerrainStatus('loading');
+    fetchTerrainElevations(samples, mapConfig.key)
+      .then((elevations) => {
+        if (cancelled) return;
+        if (!elevations) {
+          setTerrainStatus('unavailable');
+          return;
+        }
+        const applied = applyTerrainElevations(
+          baseDisplay.segments,
+          samples,
+          elevations,
+        );
+        if (!applied.length) {
+          setTerrainStatus('unavailable');
+          return;
+        }
+        setTerrainSegments(applied);
+        setTerrainStats(terrainElevationStats(applied));
+        setTerrainStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setTerrainStatus('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route, baseDisplay, mapConfig.hasKey, mapConfig.key]);
+
+  const displayRoute = useMemo(
+    () =>
+      route
+        ? {
+            ...route,
+            segments: terrainSegments ?? baseDisplay?.segments ?? [],
+            hasElevation: terrainSegments ? true : route.hasElevation,
+          }
+        : null,
+    [route, terrainSegments, baseDisplay],
+  );
+  const elevationSource: 'terrain' | 'gpx' =
+    terrainStatus === 'ready' ? 'terrain' : 'gpx';
   const flatPoints = useMemo(
     () => (displayRoute ? flattenRoute(displayRoute) : []),
     [displayRoute],
@@ -248,11 +325,19 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
   }
   if (!post || !route || !displayRoute) return null;
 
+  const ascentM = terrainStats?.ascentM ?? route.ascentM;
+  const descentM = terrainStats?.descentM ?? route.descentM;
   const title = post.title?.trim() || 'GPX route';
   const stats: Array<{ label: string; value: string }> = [
     { label: 'Distance', value: formatDistance(route.distanceM) },
-    { label: 'Ascent', value: formatAscent(route.ascentM) },
-    { label: 'Descent', value: formatDescent(route.descentM) },
+    {
+      label: terrainStats ? 'Ascent · terrain' : 'Ascent',
+      value: formatAscent(ascentM),
+    },
+    {
+      label: terrainStats ? 'Descent · terrain' : 'Descent',
+      value: formatDescent(descentM),
+    },
   ];
   if (route.durationSeconds !== null) {
     stats.push({ label: 'Duration', value: formatDuration(route.durationSeconds) });
@@ -372,7 +457,8 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
         points={flatPoints}
         selectedIndex={selectedIndex}
         onSelect={setSelectedIndex}
-        hasElevation={route.hasElevation}
+        hasElevation={displayRoute.hasElevation}
+        source={elevationSource}
       />
 
       <p className="text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>

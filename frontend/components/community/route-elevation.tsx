@@ -16,6 +16,8 @@ export interface RouteElevationProps {
   selectedIndex: number;
   onSelect: (index: number) => void;
   hasElevation: boolean;
+  /** Where the heights came from. Terrain is MapTiler's DEM, not the GPX. */
+  source?: 'terrain' | 'gpx' | 'none';
 }
 
 function clampSelection(index: number, length: number): number {
@@ -57,6 +59,7 @@ export function RouteElevation({
   selectedIndex,
   onSelect,
   hasElevation,
+  source = 'none',
 }: RouteElevationProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const rangeId = `route-elevation-${useId().replace(/:/g, '')}`;
@@ -148,7 +151,9 @@ export function RouteElevation({
         aria-label="Elevation profile"
       >
         <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
-          No elevation data in this GPX.
+          {source === 'gpx'
+            ? 'No elevation data in this GPX.'
+            : 'No elevation data for this route.'}
         </p>
         {rangeControl}
       </section>
@@ -190,6 +195,11 @@ export function RouteElevation({
           style={{ color: 'var(--text-tertiary)' }}
         >
           Elevation
+          {source === 'terrain'
+            ? ' · MapTiler terrain'
+            : source === 'gpx'
+              ? ' · GPX'
+              : ''}
         </h2>
         <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
           max <span style={{ color: 'var(--text-secondary)' }}>{formatElevation(geometry.maxEle)}</span>

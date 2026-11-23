@@ -36,6 +36,7 @@ describe('RouteElevation', () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         hasElevation={false}
+        source="gpx"
       />,
     );
     expect(screen.getByText('No elevation data in this GPX.')).toBeTruthy();
@@ -70,6 +71,19 @@ describe('RouteElevation', () => {
     expect(dot.style.left).toBe('50%');
     expect(dot.style.top).toBe('6%');
     expect(screen.getByTestId('route-elevation-crosshair').style.left).toBe('50%');
+  });
+
+  it('names the elevation source so GPX and terrain cannot be confused', () => {
+    render(
+      <RouteElevation
+        points={points}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        hasElevation
+        source="terrain"
+      />,
+    );
+    expect(screen.getByText(/MapTiler terrain/i)).toBeTruthy();
   });
 
   it('moves the selection from the range input (keyboard path)', async () => {
