@@ -1213,6 +1213,6 @@ The original GPX is never stored. `PostRoute.gpxShared` (default true) controls 
 - `GET /community/posts/:id/route.gpx` — generated GPX; 403 for non-authors when sharing is off.
 
 ### Viewer
-`/community/p/[id]/route` (auth gate, noindex). MapLibre GL JS with MapTiler `outdoor-v2` and terrain-RGB; 2D/3D toggle; route line; no start/end markers. Point inspector: map click, chart pointer/drag/tap or range slider selects the nearest point and shows elevation, speed and gradient (missing inputs labelled). `gpxShared` controls the Download button; the author sees a toggle. Missing key/WebGL/terrain → local SVG fallback; no OSM/AWS fallback.
+`/community/p/[id]/route` (auth gate, noindex). MapLibre GL JS **v5** (WebGL1-compatible; v6 requires WebGL2) with MapTiler `outdoor-v2` and terrain-RGB; 2D/3D toggle; route line; no start/end markers. Point inspector: map click, chart pointer/drag/tap or distance-based range slider selects the nearest point and shows elevation, speed and gradient (missing inputs labelled). `gpxShared` controls the Download button; the author sees a toggle. Missing key/WebGL/terrain → local SVG fallback with the selected point marked; no OSM/AWS fallback.
 
 Tests: `backend/src/feed/feed-route.parser.spec.ts`, `feed-route.service.spec.ts`; `frontend/lib/feed-route.spec.ts`, `post-route-card.spec.tsx`, `route-elevation.spec.tsx`, `route-map.spec.tsx`, `route-page-client.spec.tsx`, composer/post-card specs.

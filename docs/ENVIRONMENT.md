@@ -937,6 +937,16 @@ dashboard to `http://localhost:3000`, `https://alloutdoor.co.za` and
 is `https://api.maptiler.com/tiles/terrain-rgb-v2/{z}/{x}/{y}.webp?key=…`
 (`raster-dem`, `encoding: mapbox`, max zoom 12).
 
+⚠️ **MapLibre GL JS is pinned to v5.** v6 requires WebGL2 and throws
+`GPUInitializationError` on a WebGL1-only browser; the route page then shows the
+static sketch instead of a map. v5 keeps 2D and 3D terrain working on WebGL1.
+Do not bump it without checking the operator's browser and a real device.
+
+The key's allowed origins must include **`https://alloutdoor.co.za`,
+`https://www.alloutdoor.co.za` and `http://localhost:3000`**. A missing origin
+makes the style request 403 and silently falls back to the sketch; the map logs
+a key-redacted error and the fallback names the WebGL/style reason.
+
 ⚠️ Both are `NEXT_PUBLIC_*`, so they are baked at build time. Adding or changing
 the key requires a frontend rebuild; a PM2 restart does nothing. If the key is
 missing, the route page still shows the stats, elevation and point inspector,
