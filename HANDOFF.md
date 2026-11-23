@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
+## 2026-11-23 — LISTING ACTIONS MOVED TO THE TOP; Q&A AND COMPOSER IN ONE CARD
+
+Operator screenshot: *"the red needs to move to where indicated. The blue needs
+to be consolidated into one neat section … remove the personal details removed
+text there, just implement the rule. do this for all listings on buy now and
+auctions."*
+
+- **Save to wishlist / Share** moved out of the foot of the buy column (below
+  the contact panel) to the breadcrumb row above the two-pane shell: breadcrumbs
+  left on `md+`, actions right; on mobile the breadcrumb nav is hidden and the
+  actions stay. Shared listing page, so Buy Now and auctions both get it.
+- **One Questions & answers card.** `ListingFaq` now takes the private composer
+  as children: public answers → hairline divider → "Ask the seller" thread. The
+  separate "Contact seller" card is gone; the panel's own card styling was
+  removed so it sits inside the section.
+- The subtitle no longer says “Personal details removed.” — the anonymisation
+  stays a pipeline rule (distil prompt + regex floor + Jev gate).
+- **Deployed** `a5641e53` frontend-only: dump
+  `alloutdoor-20261123-105941.dump` (39,000,955 bytes), frontend build, health
+  ×2, public 200 ×2. Backend stayed on `185bcb2e` (untouched).
+- Tests: frontend **176 files / 1,995 tests** (1 skipped); production build
+  clean.
+
 ## 2026-11-23 — S13 “WHAT ELSE DID YOU CONSIDER” NO LONGER LOOPS ON “NONE”
 
 Operator: *"in the motivations question on the section 13 … make that question
