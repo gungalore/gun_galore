@@ -348,7 +348,10 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
           hasKey={mapConfig.hasKey}
         />
       ) : (
-        <RouteFallback segments={route.segments} />
+        <RouteFallback
+          segments={route.segments}
+          selectedIndex={selectedIndex}
+        />
       )}
 
       <RouteElevation

@@ -74,6 +74,26 @@ export function RouteElevation({
           : formatElevation(selectedPoint.ele),
       ].join(' · ')
     : '';
+  const totalDistanceM = points[points.length - 1]?.distM ?? 0;
+  const selectedDistanceM = selectedPoint?.distM ?? 0;
+
+  // ⚠️ THE SLIDER IS DISTANCE-BASED, NOT INDEX-BASED. The chart's crosshair is
+  // placed by cumulative distance; an index-valued range input puts its thumb
+  // by point count, so on an unevenly spaced track the thumb and the crosshair
+  // visibly disagree. Moving in metres makes the two agree.
+  function selectNearestDistance(targetM: number) {
+    if (!points.length) return;
+    let best = points[0];
+    let bestGap = Infinity;
+    for (const point of points) {
+      const gap = Math.abs(point.distM - targetM);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = point;
+      }
+    }
+    onSelect(points.indexOf(best));
+  }
 
   // The range input is the accessible way to move along the route and it must
   // survive a GPX with no elevation: speed and gradient can still be inspected
@@ -87,10 +107,10 @@ export function RouteElevation({
         id={rangeId}
         type="range"
         min={0}
-        max={Math.max(0, points.length - 1)}
+        max={Math.max(1, Math.round(totalDistanceM))}
         step={1}
-        value={selected}
-        onChange={(event) => onSelect(Number(event.target.value))}
+        value={Math.round(selectedDistanceM)}
+        onChange={(event) => selectNearestDistance(Number(event.target.value))}
         aria-label="Route point"
         aria-valuetext={valueText}
         className="w-full"

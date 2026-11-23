@@ -29,7 +29,7 @@ import {
   prefersReducedMotion,
   readRouteMapConfig,
 } from '../../lib/route-map-config';
-import { RouteFallback } from './route-fallback';
+import { RouteFallback, type RouteFallbackReason } from './route-fallback';
 
 export interface RouteMapProps {
   segments: FeedRoutePoint[][];
@@ -66,13 +66,15 @@ interface MapErrorEvent {
 }
 
 /**
- * ⚠️ MAPLIBRE v6 DOES NOT PUT `sourceId` ON ITS ERROR EVENTS (the typed
- * ErrorEvent has only `error`), so a DEM tile failure is identified by the
- * failing URL/message instead. A `raster-dem` source only requests tiles once
- * 3D is switched on, which is what makes this marker unambiguous: nothing else
- * on this map ever touches a terrain-rgb tile.
+ * MapLibre v5 puts `sourceId` on tile errors; v6 removed it from the typed
+ * event, so the DEM URL/message is also checked. A `raster-dem` source only
+ * requests tiles once 3D is switched on, which makes that marker unambiguous:
+ * nothing else on this map ever touches a terrain-rgb tile.
  */
 const TERRAIN_ERROR_PATTERN = /terrain-rgb/i;
+
+/** How long to wait for the style before replacing a blank map with the sketch. */
+const STYLE_TIMEOUT_MS = 12_000;
 
 /**
  * The interactive route map. Client-only and loaded through `next/dynamic`
@@ -110,6 +112,7 @@ export function RouteMap({
 
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [failureReason, setFailureReason] = useState<RouteFallbackReason>(null);
   const [terrainUnavailable, setTerrainUnavailable] = useState(false);
   const [is3D, setIs3D] = useState(false);
 
@@ -133,10 +136,19 @@ export function RouteMap({
     let disposed = false;
     let removed = false;
     let map: MapLibreMap | null = null;
+    let styleTimer: number | null = null;
 
-    const fail = () => {
+    const clearStyleTimer = () => {
+      if (styleTimer !== null) {
+        window.clearTimeout(styleTimer);
+        styleTimer = null;
+      }
+    };
+
+    const fail = (reason: Exclude<RouteFallbackReason, null> = 'error') => {
       if (disposed) return;
       disposed = true;
+      clearStyleTimer();
       const current = map;
       map = null;
       mapRef.current = null;
@@ -149,8 +161,31 @@ export function RouteMap({
           // Nothing else to do: the map is unusable either way.
         }
       }
+      setFailureReason(reason);
       setFailed(true);
     };
+
+    // MapLibre v6 requires WebGL2; v5 also works on WebGL1. Probe before
+    // constructing so a browser without any WebGL gets a clear reason instead
+    // of a blank card (and so the sketch is selected without a 12 s wait).
+    // jsdom defines neither constructor, so tests skip the probe and exercise
+    // the mocked Map instead.
+    const hasWebGL =
+      typeof WebGL2RenderingContext !== 'undefined' ||
+      typeof WebGLRenderingContext !== 'undefined';
+    if (hasWebGL) {
+      try {
+        const probe = document.createElement('canvas');
+        const gl = probe.getContext('webgl2') ?? probe.getContext('webgl');
+        if (!gl) {
+          fail('webgl');
+          return;
+        }
+      } catch {
+        fail('webgl');
+        return;
+      }
+    }
 
     try {
       map = new MapLibreMap({
@@ -165,8 +200,9 @@ export function RouteMap({
         scrollZoom: false,
         maxPitch: 85,
       });
-    } catch {
-      fail();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      fail(/webgl|gpu/i.test(message) ? 'webgl' : 'error');
       return;
     }
 
@@ -175,8 +211,16 @@ export function RouteMap({
     map.addControl(new ScaleControl({ unit: 'metric', maxWidth: 100 }), 'bottom-left');
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
 
+    // A style that never finishes (worker boot failure, a hung request) must
+    // not leave a blank 360 px box forever. Tile/glyph errors are ignored; only
+    // a style failure or this timeout replaces the map.
+    styleTimer = window.setTimeout(() => {
+      if (!styleReadyRef.current) fail('error');
+    }, STYLE_TIMEOUT_MS);
+
     const onLoad = () => {
       if (disposed || !map) return;
+      clearStyleTimer();
       try {
         map.addSource(ROUTE_SOURCE_ID, {
           type: 'geojson',
@@ -264,7 +308,11 @@ export function RouteMap({
       if (disposed) return;
       const error =
         typeof event?.error === 'object' && event.error !== null
-          ? (event.error as { message?: unknown; url?: unknown })
+          ? (event.error as {
+              message?: unknown;
+              url?: unknown;
+              status?: unknown;
+            })
           : {};
       const detail = `${String(error.message ?? '')} ${String(error.url ?? '')}`;
       if (event?.sourceId === TERRAIN_SOURCE_ID || TERRAIN_ERROR_PATTERN.test(detail)) {
@@ -279,7 +327,23 @@ export function RouteMap({
         }
         return;
       }
-      if (!styleReadyRef.current) fail();
+
+      // Log enough to diagnose a failed map, but never the browser key.
+      const safeDetail = detail.replace(/([?&]key=)[^&\s]+/g, '$1REDACTED');
+      console.error('[community-route-map]', safeDetail);
+      if (styleReadyRef.current) return; // A tile/sprite/glyph miss is not fatal.
+
+      const status = typeof error.status === 'number' ? error.status : null;
+      if (
+        /style\.json/i.test(detail) ||
+        status === 401 ||
+        status === 403 ||
+        /webgl|gpu|worker/i.test(detail)
+      ) {
+        fail(/webgl|gpu|worker/i.test(detail) ? 'webgl' : 'style');
+      }
+      // Anything else is left to the style timeout, so one missing tile cannot
+      // replace a working 2D map with the sketch.
     };
 
     map.on('load', onLoad);
@@ -288,6 +352,7 @@ export function RouteMap({
 
     return () => {
       disposed = true;
+      clearStyleTimer();
       const current = map;
       map = null;
       mapRef.current = null;
@@ -351,7 +416,14 @@ export function RouteMap({
   }, [is3D, ready, terrainUnavailable]);
 
   if (!resolvedHasKey || failed || flatPoints.length === 0) {
-    return <RouteFallback segments={segments} className={className} />;
+    return (
+      <RouteFallback
+        segments={segments}
+        selectedIndex={selectedIndex}
+        reason={failed ? failureReason : null}
+        className={className}
+      />
+    );
   }
 
   return (

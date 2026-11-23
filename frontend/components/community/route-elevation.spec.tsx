@@ -81,7 +81,9 @@ describe('RouteElevation', () => {
     expect(slider.getAttribute('aria-label')).toBe('Route point');
     expect(slider.getAttribute('aria-valuetext')).toContain('0 m');
     await userEvent.click(slider);
-    fireEvent.change(slider, { target: { value: '2' } });
+    // The slider is in metres, so 2000 m is the last sample. This is what keeps
+    // its thumb under the chart's distance-based crosshair.
+    fireEvent.change(slider, { target: { value: '2000' } });
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 
@@ -103,6 +105,8 @@ describe('RouteElevation', () => {
     );
     // Falls back to the nearest sample already on the chart.
     expect(screen.getByTestId('route-elevation-dot').style.left).toBe('100%');
-    expect((screen.getByRole('slider') as HTMLInputElement).value).toBe('2');
+    expect((screen.getByRole('slider') as HTMLInputElement).value).toBe(
+      '2000',
+    );
   });
 });

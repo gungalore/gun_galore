@@ -239,8 +239,14 @@ describe('RouteMap', () => {
     fake.throwOnConstruct = true;
     renderMap();
     await waitFor(() =>
-      expect(screen.getByText('Map unavailable — route shape only.')).toBeTruthy(),
+      expect(
+        screen.getByText(
+          'This browser could not start WebGL, so the 3D map is unavailable. Enable hardware acceleration or try another browser.',
+        ),
+      ).toBeTruthy(),
     );
+    // The sketch still shows where the selected point is.
+    expect(screen.getByTestId('route-fallback-selected')).toBeTruthy();
   });
 
   it('keeps 2D, disables 3D and says so when the terrain tiles fail', async () => {
