@@ -231,7 +231,7 @@ export function QuestionsPanel({
             letterSpacing: '0.05em',
           }}
         >
-          Ask the seller
+          {isOwner ? 'Buyer questions' : 'Ask the seller'}
         </p>
         {thread && (
           <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
