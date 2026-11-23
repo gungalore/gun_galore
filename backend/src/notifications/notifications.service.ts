@@ -737,19 +737,21 @@ export class NotificationsService {
     });
   }
 
-  async postPublished(d: {
+  /**
+   * A post was put aside for a human moderator. This is the ONLY "your post"
+   * notification that fires before publication — a successfully published post
+   * is silent by operator decision (2026-11-23).
+   */
+  async postHeldForReview(d: {
     recipientId: string;
     postId: string;
-    title?: string;
   }): Promise<void> {
     await this.persist({
       userId: d.recipientId,
       category: 'ACCOUNT',
-      type: 'post_published',
-      title: 'Your post is live',
-      body: d.title
-        ? `"${d.title}" is now on your feed.`
-        : 'Your post is now on your feed.',
+      type: 'post_held',
+      title: 'Your post is being reviewed',
+      body: 'A moderator needs to take a look before it appears in the feed.',
       url: `/community/p/${d.postId}`,
       linkedType: 'post',
       linkedId: d.postId,
@@ -766,7 +768,7 @@ export class NotificationsService {
       userId: d.recipientId,
       category: 'ACCOUNT',
       type: 'post_rejected',
-      title: 'Your post was blocked',
+      title: 'Your post was removed',
       body: 'Something in it broke our content rules. Open it to dispute the decision.',
       url: `/community/p/${d.postId}`,
       linkedType: 'post',

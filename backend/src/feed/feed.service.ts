@@ -1077,6 +1077,16 @@ export class FeedService {
       include: this.postInclude(userId),
     })) as PostWithRelations;
 
+    // A text-only post can be refused before it is ever submitted. That is a
+    // removal, so it gets the same notification as a later rejection.
+    if (status === PostStatus.REJECTED) {
+      await this.notifications.postRejected({
+        recipientId: userId,
+        postId: post.id,
+        reason: verdict.reasons.join('; ') || undefined,
+      });
+    }
+
     return {
       post: this.shapePost(post, v, false),
       moderation: {
@@ -1144,8 +1154,10 @@ export class FeedService {
   /**
    * The moderation pass itself. Idempotent: it skips a post already ruled on
    * (`moderatedAt` set), awards points only on a genuine new publish, and
-   * notifies the author only on a real transition. Called fire-and-forget from
-   * submitPost and from the sweep cron in TasksService.
+   * notifies the author only when the post is held for review or rejected.
+   * A successful publish is deliberately silent (operator, 2026-11-23).
+   * Called fire-and-forget from submitPost and from the sweep cron in
+   * TasksService.
    */
   async runModeration(postId: string): Promise<void> {
     const post = await this.prisma.post.findUnique({
@@ -1224,16 +1236,18 @@ export class FeedService {
     if (becamePublished) {
       await this.bumpSocial(post.authorId, { postCount: 1 });
       await this.awards.award(post.authorId, FeedAwardReason.POST, postId);
-      await this.notifications.postPublished({
-        recipientId: post.authorId,
-        postId,
-        title: post.title ?? undefined,
-      });
+      // ⚠️ NO "PUBLISHED" NOTIFICATION (operator, 2026-11-23). Only a held or
+      // removed post notifies; a successful post is silent.
     } else if (status === PostStatus.REJECTED) {
       await this.notifications.postRejected({
         recipientId: post.authorId,
         postId,
         reason: verdict.reasons.join('; ') || undefined,
+      });
+    } else if (status === PostStatus.PENDING_MODERATION) {
+      await this.notifications.postHeldForReview({
+        recipientId: post.authorId,
+        postId,
       });
     }
   }
@@ -2163,6 +2177,7 @@ export class FeedService {
     await this.assertEnabled();
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException();
+    const wasRejected = post.status === PostStatus.REJECTED;
     const status =
       action === 'APPROVE' ? PostStatus.PUBLISHED : PostStatus.REJECTED;
     const updated = await this.prisma.post.update({
@@ -2178,6 +2193,14 @@ export class FeedService {
     });
     if (status === PostStatus.PUBLISHED && !post.publishedAt) {
       await this.bumpSocial(post.authorId, { postCount: 1 });
+      // No "published" notification — only held/removed notifies.
+    }
+    if (status === PostStatus.REJECTED && !wasRejected) {
+      await this.notifications.postRejected({
+        recipientId: post.authorId,
+        postId,
+        reason: reason ?? post.moderationReason ?? undefined,
+      });
     }
     return updated;
   }

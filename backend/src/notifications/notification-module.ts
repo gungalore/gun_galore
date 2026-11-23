@@ -145,7 +145,7 @@ export function moduleForNotification(
     type === 'post_liked' ||
     type === 'comment_reply' ||
     type === 'new_follower' ||
-    type === 'post_published' ||
+    type === 'post_held' ||
     type === 'post_rejected'
   ) {
     return '/community';
