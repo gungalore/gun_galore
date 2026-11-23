@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
+## 2026-11-23 — S13 “WHAT ELSE DID YOU CONSIDER” NO LONGER LOOPS ON “NONE”
+
+Operator: *"in the motivations question on the section 13 … make that question
+optional. Because if I skip it it just returns and if I say None i comes up
+again."*
+
+- **Root cause:** `shownValue()` runs member-typed text through `answerValue()`,
+  which blanks the word “None” (correct for a licence card, wrong for a real
+  answer). The planner then overwrote the saved answer with that blank, so
+  `isPending` kept `alternative_considered` pending and re-asked it on every
+  card. Pressing **Skip** did nothing because `skipAnswer()` returns early when
+  an answer is already stored.
+- **Fix:** keep “None” as the sheet value for `alternative_considered` (same
+  exception as `firearm_model`); a blank sheet value no longer erases a saved
+  answer in the planner merge; `pendingFields()` now shares that merge instead
+  of re-implementing it. The question stays optional and skippable — “None”,
+  Skip, or a real answer all settle it.
+- **Deployed** `185bcb2e`: dump `alloutdoor-20261123-102118.dump` (39,000,465
+  bytes), no pending migrations, backend + frontend builds, health ×2 each,
+  public 200 ×2, warden online.
+- Tests: new planner case “does not re-ask the comparison once the member
+  answers None”; backend **435 suites / 6,432 tests** (8 skipped).
+
 ## 2026-11-23 — REFUNDS ARE NON-DELIVERY ONLY; LISTING Q&A IS PUBLIC
 
 Operator: *"We cannot financially take responsibility for items that is not as

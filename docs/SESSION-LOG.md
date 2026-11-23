@@ -36,6 +36,7 @@ What each session did, found, and changed — so the next one does not re-derive
 - Backend `tsc` 0, jest **435 passed / 1 skipped, 6,431 pass**; frontend `tsc` 0, vitest **176 files / 1,994 pass**, `next build` clean.
 - **Deployed** `b8209ca8` via `deploy.sh`: dump `alloutdoor-20261123-095809.dump`, migration `20261123120000_listing_faq` applied, health ×2 both, warden online, public 200 ×2, `seed:help` 54 updated. Production has no publicly visible listing yet; FAQ rows 0.
 - First full `npm test` hit the flaky Chromium PDF timeout (120s); isolated + rerun passed.
+- **Follow-up deployed** `185bcb2e`: the optional S13 "What else did you consider" question looped because `shownValue` blanked a saved "None" and the planner overwrote the answer with that blank; Skip no-opped because an answer was stored. Keep None on the sheet for that field, don't let a blank sheet value erase a saved answer, and share the planner merge with `pendingFields`. Dump `alloutdoor-20261123-102118.dump`; health ×2; backend 6,432 tests.
 
 ---
 
