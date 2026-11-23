@@ -19,9 +19,15 @@
 // firearms storefront invites a stranger to shop mid-statement, and — for a
 // link from an unfamiliar sender — reads as the wrong site entirely, which is
 // the difference between completing it and closing it.
+//
+// /motivation is the public licence-application entry. It is deliberately
+// chromeless for the same family of reasons: it is shared in WhatsApp, and the
+// marketplace nav/footer carry category vocabulary that must not appear in a
+// Meta link preview. The page itself supplies a neutral logo header; the
+// detailed application stays behind auth.
 // ────────────────────────────────────────────────────────────────────
 
-export const CHROMELESS_PREFIXES = ['/witness', '/consent'];
+export const CHROMELESS_PREFIXES = ['/witness', '/consent', '/motivation'];
 
 /** True when the page must render without any marketplace chrome. */
 export function isChromelessRoute(pathname: string | null): boolean {

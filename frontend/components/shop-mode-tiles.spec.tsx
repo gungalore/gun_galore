@@ -1,20 +1,16 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ShopModeBar } from './shop-mode-tiles';
 
 // ────────────────────────────────────────────────────────────────────
-// THE BAR'S JOB IS PARTLY A NEGATIVE ONE.
-//
-// It was moved out of the homepage hero and mounted in the shell, which means
-// it now renders on EVERY route the shell covers — including the policy pages
-// and the checkout flow, neither of which had marketplace tile furniture over
-// them before. So the assertions that matter most here are the ones that say
-// it is ABSENT.
-//
-// The route it is on comes from usePathname, and the session from useUser.
-// Both are mocked rather than driven, because the point is the gate and not
-// the router: a spec that navigated for real would be testing Next.
+// The bar is a set of static boxes with explicit actions, not clickable tiles.
+// The assertions that matter:
+//   * it still hides on fine-print/checkout routes;
+//   * the box surface is never a link or button;
+//   * the Armory disclosure is opened by its button and closes with the page;
+//   * the public licence-motivation entry is present and points at the neutral
+//     public page signed out, directly at the application signed in.
 // ────────────────────────────────────────────────────────────────────
 
 const nav = vi.hoisted(() => ({ path: '/' }));
@@ -45,10 +41,16 @@ beforeEach(() => {
 });
 
 describe('ShopModeBar — where it hides itself', () => {
-  it('renders on the landing page', () => {
+  it('renders on the landing page with the public motivation entry', () => {
     render(<ShopModeBar />);
     expect(screen.getByRole('navigation')).toBeInTheDocument();
-    expect(screen.getByText('Buy Now')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Buy Now' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Licence motivation' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Start my application/i }).getAttribute('href'),
+    ).toBe('/motivation');
   });
 
   // ⚠️ ONE POLICY PAGE STANDS FOR THE SET. Every entry in FINE_PRINT_PATHS is
@@ -73,7 +75,6 @@ describe('ShopModeBar — where it hides itself', () => {
     expect(container.querySelector('[data-shop-mode-bar]')).toBeNull();
   });
 
-  // A path that merely BEGINS with the same letters is not the checkout.
   it('is not fooled by a route that merely starts with the same word', () => {
     nav.path = '/checkouts-of-the-world';
     render(<ShopModeBar />);
@@ -99,59 +100,54 @@ describe('ShopModeBar — the mobile scope stamp', () => {
   });
 });
 
-describe('ShopModeBar — the mini phone row', () => {
-  // Operator, 2026-09-30: the bar occupied the whole first screen and the
-  // product feed is what sells, so on a phone the three controls are now mini
-  // icon buttons in ONE row — icon over label, no copy, no count. The hiding
-  // and the single row are what the compact layout depends on, so both are
-  // asserted here rather than left to the stylesheet.
-  it('hides the tile blurb and count below sm', () => {
-    render(<ShopModeBar />);
-    const blurb = screen.getByText(/Fixed prices/);
-    expect(blurb.className).toContain('hidden');
-    expect(blurb.className).toContain('sm:block');
+describe('ShopModeBar — static boxes with explicit actions', () => {
+  it('signed out: three boxes, three explicit links, no whole-box action', () => {
+    const { container } = render(<ShopModeBar />);
+    const links = within(screen.getByRole('navigation')).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Shop Buy Now',
+      'Browse Auctions',
+      'Start my application',
+    ]);
+    // The box itself is a div; the heading is not inside a link/button.
+    const heading = screen.getByRole('heading', { name: 'Buy Now' });
+    expect(heading.closest('a, button')).toBeNull();
+    expect(container.querySelector('nav')?.className).toContain('sm:grid-cols-3');
+    // Descriptions are visible at every width — no mini tile hides them.
+    expect(screen.getByText(/Fixed prices/)).toBeInTheDocument();
   });
 
-  it('lays the phone row out as three mini buttons', () => {
+  it('signed in: four boxes including Armory, with a direct application link', () => {
     auth.isSignedIn = true;
     const { container } = render(<ShopModeBar />);
-    const nav = container.querySelector('nav');
-    expect(nav?.className).toContain('grid-cols-3');
-
-    // Armory is a mini button in the same row, not the full-width row beneath
-    // it that it was — the col-span is what would put it on its own line.
-    const armory = screen.getByRole('button', { name: /armory/i });
-    expect(armory.className).not.toContain('col-span');
-    expect(armory.className).toContain('flex-col');
-    expect(armory.className).toContain('sm:flex-row');
+    expect(screen.getByRole('heading', { name: 'Armory' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Continue application/i }).getAttribute('href'),
+    ).toBe('/licence-centre/applications');
+    expect(container.querySelector('nav')?.className).toContain('lg:grid-cols-4');
   });
 });
 
 describe('ShopModeBar — the Armory disclosure', () => {
-  it('offers no Armory tile when signed out', () => {
+  it('offers no Armory box when signed out', () => {
     render(<ShopModeBar />);
     expect(screen.queryByRole('button', { name: /armory/i })).toBeNull();
   });
 
-  it('offers the Armory tile and reveals its four tools when signed in', () => {
+  it('opens four tool boxes from its own button', () => {
     auth.isSignedIn = true;
     render(<ShopModeBar />);
-    const armory = screen.getByRole('button', { name: /armory/i });
-    expect(armory).toBeInTheDocument();
-    // Collapsed to begin with — the panel is the point of the control.
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+    const armory = screen.getByRole('button', { name: /Open Armory/i });
+    expect(armory.getAttribute('aria-expanded')).toBe('false');
+    expect(armory.getAttribute('aria-controls')).toBe('armory-panel');
+    expect(document.querySelector('#armory-panel')).toBeNull();
 
     fireEvent.click(armory);
-    // Every sub-tile is a link, and the cascade class is what staggers them.
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(4);
-    // ⚠️ THE STAGGER IS THE DELAY, AND IT IS PER-INDEX. An earlier draft gave
-    // every tile the class but no delay, which renders all four at once and
-    // looks like a fade — the operator asked for them to fall one after
-    // another, so the ordering is asserted, not just the presence.
-    const delays = Array.from(
-      document.querySelectorAll('.gg-armory-sub'),
-    ).map((el) => (el as HTMLElement).style.animationDelay);
-    expect(delays).toEqual(['0ms', '200ms', '400ms', '600ms']);
+    expect(armory.getAttribute('aria-expanded')).toBe('true');
+    const panel = document.querySelector('#armory-panel') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(within(panel).getAllByRole('link')).toHaveLength(4);
+    expect(within(panel).getByRole('heading', { name: 'Motivation Writer' })).toBeInTheDocument();
   });
 });
 
@@ -159,34 +155,34 @@ describe('ShopModeBar — the Armory panel closes with the page', () => {
   function openArmory() {
     auth.isSignedIn = true;
     const view = render(<ShopModeBar />);
-    fireEvent.click(screen.getByRole('button', { name: /armory/i }));
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: /Open Armory/i }));
+    expect(document.querySelector('#armory-panel')).not.toBeNull();
     return view;
   }
 
   it('closes on a pointer press anywhere outside the bar', () => {
     openArmory();
     fireEvent.pointerDown(document.body);
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+    expect(document.querySelector('#armory-panel')).toBeNull();
   });
 
   it('closes when the page scrolls', () => {
     openArmory();
     fireEvent.scroll(document);
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+    expect(document.querySelector('#armory-panel')).toBeNull();
   });
 
   it('closes on Escape', () => {
     openArmory();
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+    expect(document.querySelector('#armory-panel')).toBeNull();
   });
 
   it('closes when the route changes', () => {
     const view = openArmory();
     nav.path = '/documents';
     view.rerender(<ShopModeBar />);
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(0);
+    expect(document.querySelector('#armory-panel')).toBeNull();
   });
 
   it('stays open when the press is inside the bar', () => {
@@ -194,7 +190,6 @@ describe('ShopModeBar — the Armory panel closes with the page', () => {
     fireEvent.pointerDown(
       document.querySelector('[data-shop-mode-bar]') as HTMLElement,
     );
-    expect(document.querySelectorAll('.gg-armory-sub')).toHaveLength(4);
+    expect(document.querySelector('#armory-panel')).not.toBeNull();
   });
 });
-

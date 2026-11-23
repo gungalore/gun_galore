@@ -33,6 +33,14 @@ function safeRedirect(raw: string | null): string {
 export function SignInForm() {
   const params = useSearchParams();
   const { adopt } = useSession();
+  const rawRedirect = params.get('redirect_url');
+  const safeRedirectTarget =
+    rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+      ? rawRedirect
+      : null;
+  const signUpHref = safeRedirectTarget
+    ? `/sign-up?redirect_url=${encodeURIComponent(safeRedirectTarget)}`
+    : '/sign-up';
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -177,7 +185,7 @@ export function SignInForm() {
           Forgot password?
         </Link>
         <Link
-          href="/sign-up"
+          href={signUpHref}
           className="text-xs"
           style={{ color: 'var(--text-secondary)' }}
         >

@@ -40,6 +40,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
   }> = [
     { url: '/', priority: 1.0, changeFrequency: 'daily' },
+    { url: '/motivation', priority: 0.9, changeFrequency: 'weekly' },
     { url: '/about', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/faq', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/how-selling-works', priority: 0.5, changeFrequency: 'monthly' },

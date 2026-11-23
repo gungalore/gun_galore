@@ -121,6 +121,10 @@ const isPublicRoute = createRouteMatcher([
                    // 307ing to a bare sign-in. The pages do their own
                    // server-side auth check and show no member content signed
                    // out — the auth wall, not cloaking.
+  '/motivation',   // Public, deliberately neutral licence-application entry.
+                   // The detailed application stays behind auth at
+                   // /licence-centre/applications. No crawler branch: this page
+                   // is neutral for every visitor (Meta/WhatsApp safety).
   '/faq',          // public help/FAQ page
   '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
   '/condition-guide', // public grading rubric — linked from the sell form and

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef, useId, FormEvent } from 'react';
 import { av } from '@/lib/asset-version';
@@ -174,6 +174,10 @@ export default function SignUpForm() {
   // Where to land after sign-up — honour a same-origin ?redirect_url, else
   // /dashboard. Validated so it can never become an open redirect.
   const redirectTarget = safeRelativePath(searchParams.get('redirect_url')) ?? '/dashboard';
+  // Carry the intent across the sign-in link too: a member who already has an
+  // account must still land on the page they clicked (e.g. the motivation
+  // application), not on /dashboard.
+  const signInHref = `/sign-in?redirect_url=${encodeURIComponent(redirectTarget)}`;
 
   const ids = {
     firstName: useId(),
@@ -804,7 +808,7 @@ export default function SignUpForm() {
 
         <p className="text-xs text-center mt-5" style={{ color: 'var(--text-tertiary)' }}>
           Already have an account?{' '}
-          <Link href="/sign-in" style={{ color: 'var(--red)', textDecoration: 'none' }}>
+          <Link href={signInHref} style={{ color: 'var(--red)', textDecoration: 'none' }}>
             Sign in
           </Link>
         </p>

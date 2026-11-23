@@ -18,6 +18,8 @@ import { useUser } from '@/lib/auth';
 import { useViewerFetch, viewerCacheKey } from '@/lib/use-viewer-fetch';
 import { isFinePrintRoute } from '@/lib/fine-print-routes';
 import { isTabRoute } from '@/lib/shell-routes';
+import { ActionBox } from './action-box';
+import { ActionBoxLink, actionBoxButtonStyle, type ActionBoxTone } from './action-box-link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -46,12 +48,14 @@ type Mode = {
   href: string;
   title: string;
   blurb: string;
+  cta: string;
   /** Live count. Null when we couldn't get one; 0 renders nothing. */
   count: number | null;
   /** "listing" / "auction" — pluralised here so the copy stays honest at 1. */
   noun: string;
   accent: string;
   ink: string;
+  tone: ActionBoxTone;
   Icon: FC<{ colour: string }>;
 };
 
@@ -99,6 +103,29 @@ function ShieldIcon({ colour }: { colour: string }) {
       />
       <path
         d="M9 12.2 11 14.3 15.3 9.7"
+        stroke={colour}
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// The public licence-application entry. Deliberately a document + pen, not a
+// firearm mark: this box sits on the public homepage and must stay neutral for
+// Meta/WhatsApp link previews.
+function MotivationIcon({ colour }: { colour: string }) {
+  return (
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 3.5h8.5L19 8v12.5H6Z"
+        stroke={colour}
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 3.5V8h4.5M9 12h6M9 15.5h4"
         stroke={colour}
         strokeWidth="1.7"
         strokeLinecap="round"
@@ -434,11 +461,13 @@ const ARMORY_SUB_TILES: Mode[] = ARMORY_PANEL_SOURCE.flatMap(
       {
         href: item.href,
         title: item.label,
+        cta: 'Open',
         blurb,
         count: null,
         noun: '',
         accent: 'var(--text-secondary)',
         ink: 'var(--text-primary)',
+        tone: 'secondary',
         Icon: item.Icon,
       },
     ];
@@ -650,6 +679,7 @@ export function ShopModeBar() {
     {
       href: '/?listingType=BUY_NOW',
       title: 'Buy Now',
+      cta: 'Shop Buy Now',
       // ⚠️ THE PACK'S COPY HERE SAID "buy instantly or take a shot with an
       // offer", and that is not true of a Buy Now listing. TAKE_A_SHOT is a
       // SEPARATE listingType with its own OfferPanel — app/listings/[id]/
@@ -663,36 +693,57 @@ export function ShopModeBar() {
       noun: 'listing',
       accent: 'var(--red)',
       ink: 'var(--link)',
+      tone: 'primary',
       Icon: TagIcon,
     },
     {
       href: '/?listingType=AUCTION',
       title: 'Auctions',
+      cta: 'Browse Auctions',
       blurb: 'Live bidding in R50 steps — auctions close daily.',
       count: counts.auction,
       noun: 'auction',
       accent: 'var(--gold)',
       ink: 'var(--gold)',
+      tone: 'accent',
       Icon: GavelIcon,
+    },
+    {
+      href: isSignedIn ? '/licence-centre/applications' : '/motivation',
+      title: 'Licence motivation',
+      cta: isSignedIn ? 'Continue application' : 'Start my application',
+      // Public/Meta-safe: no restricted product vocabulary on this surface.
+      blurb: 'Prepare the supporting document for your SAPS licence application.',
+      count: null,
+      noun: '',
+      accent: 'var(--red)',
+      ink: 'var(--red)',
+      tone: 'primary',
+      Icon: MotivationIcon,
     },
   ];
 
-  // The Armory disclosure tile — not a shopping mode, so it takes neither
+  // The Armory disclosure box — not a shopping mode, so it takes neither
   // --red (Buy Now) nor --gold (Auctions): a warm-dark keyline says "this
   // isn't a third way to buy" instead of competing with the two that are.
   const armoryMode: Mode = {
     href: '',
     title: 'Armory',
-    // ⚠️ SHORT ENOUGH TO SURVIVE THE TILE. The blurb span is `truncate` (one
-    // line, see TileBody), and on a 375px phone "…, in one place." ellipsised
-    // even at the full-width col-span-2. Every word here has to earn its place.
+    cta: 'Open Armory',
+    // Short enough to fit a box; the old mini tile truncated a longer line.
     blurb: 'Your licence paperwork and reloading bench.',
     count: null,
     noun: '',
     accent: 'var(--text-secondary)',
     ink: 'var(--text-primary)',
+    tone: 'secondary',
     Icon: ShieldIcon,
   };
+
+  const modeMeta = (m: Mode): string | null =>
+    m.count !== null && m.count > 0
+      ? `${m.count} live ${m.noun}${m.count === 1 ? '' : 's'}`
+      : null;
 
   return (
     // ⚠️ `data-shop-scope` IS THE MOBILE GATE, AND IT IS CSS-ONLY. On desktop
@@ -709,67 +760,59 @@ export function ShopModeBar() {
       data-shop-scope={isTabRoute(pathname) ? 'tabs' : 'tabs-only'}
     >
       <nav
-        // The row is no longer only ways to BUY once Armory joins it, and a
-        // landmark whose name lies about its contents is worse than a
-        // generic one.
         aria-label={isSignedIn ? 'Shop and member tools' : 'Ways to buy'}
-        // ⚠️ THREE MINI BUTTONS IN ONE PHONE ROW (operator, 2026-09-30).
-        // grid-cols-3 below sm gives ~115px each — enough for a 28px chip and
-        // a 13px label, which is exactly what the mini treatment draws and why
-        // the copy and the count are not rendered there (see TileBody). The
-        // sm+ layout is the three-column tile row it has always been, so
-        // desktop is untouched.
-        //
-        // Signed-out visitors have only two buttons, so they keep
-        // grid-cols-2 at every width rather than leaving a hole in a
-        // three-column row.
         className={
           isSignedIn
-            ? 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-3 gap-[11px] sm:gap-[14px]'
-            : 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-2 gap-[11px] sm:gap-[14px]'
+            ? 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[11px] sm:gap-[14px] items-stretch'
+            : 'max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] grid grid-cols-1 sm:grid-cols-3 gap-[11px] sm:gap-[14px] items-stretch'
         }
       >
         {modes.map((m) => (
-          <ModeTile key={m.title} mode={m} mini />
+          <ActionBox
+            key={m.title}
+            title={m.title}
+            description={m.blurb}
+            meta={modeMeta(m)}
+            icon={<m.Icon colour={m.ink} />}
+            action={
+              <ActionBoxLink href={m.href} tone={m.tone}>
+                {m.cta}
+              </ActionBoxLink>
+            }
+          />
         ))}
         {isSignedIn && (
-          <ArmoryTile
-            mode={armoryMode}
-            open={open}
-            mini
-            // Re-opening must replay the cascade from the top. The sub-tiles
-            // are remounted rather than re-animated (the whole panel is
-            // conditional), so closing and opening again restarts it for free
-            // — no animation-name juggling, no key churn.
-            onToggle={() => setOpen((o) => !o)}
+          <ActionBox
+            title={armoryMode.title}
+            description={armoryMode.blurb}
+            icon={<ShieldIcon colour={armoryMode.ink} />}
+            action={
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-controls="armory-panel"
+                onClick={() => setOpen((o) => !o)}
+                className="gg-press"
+                style={actionBoxButtonStyle('secondary')}
+              >
+                {open ? 'Close Armory' : armoryMode.cta}
+              </button>
+            }
           />
         )}
       </nav>
 
-      {/* The disclosure panel — same width/padding as the nav above, so the
-          sub-tiles line up with the row they expand from.
-          ⚠️ THE COLUMN COUNT TRACKS THE NUMBER OF SUB-TILES, and it is not the
-          nav row's `sm:grid-cols-3`. Four tiles in a three-column grid leaves
-          one wrapped alone on a second row at a different height — the exact
-          "reads as an oversight" the group-of-one comment above warns about.
-          `sm:grid-cols-2` keeps a 2×2 block on a tablet, where four columns
-          would squeeze each tile below the ~180px its internal layout has
-          already broken at once (see the nav row's comment). */}
       {isSignedIn && open && (
         <div
           className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6"
-          // The finger follows the panel while it is being dragged; at rest
-          // this is 0 and the transition is what returns it when a short drag
-          // is released short of the threshold.
           style={{
             transform: dragY ? `translateY(${dragY}px)` : undefined,
-            transition: drag.current.active ? 'none' : 'transform var(--dur-fast) var(--ease-out)',
+            transition: drag.current.active
+              ? 'none'
+              : 'transform var(--dur-fast) var(--ease-out)',
             touchAction: dragY ? 'none' : undefined,
           }}
         >
-          {/* The grab handle — the phone's only way to dismiss the panel
-              without tapping Armory again. Hidden from sm up (the panel is a
-              one-row disclosure there and drag-to-dismiss is not needed). */}
           <div
             className="sm:hidden flex justify-center pt-[11px]"
             style={{ cursor: 'grab', touchAction: 'none' }}
@@ -790,37 +833,24 @@ export function ShopModeBar() {
           </div>
           <div
             id="armory-panel"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[11px] sm:gap-[14px] pt-[11px]"
+            className="grid grid-cols-1 sm:grid-cols-2 gap-[11px] sm:gap-[14px] pt-[11px] items-stretch"
           >
-            {ARMORY_SUB_TILES.map((m, i) => (
-              // Each sub-tile navigates away, so the panel does not have to be
-              // collapsed on selection — the next page renders with `open`
-              // false. `dropIndex` is what staggers the cascade; see ModeTile.
-              <ModeTile key={m.href} mode={m} dropIndex={i} />
+            {ARMORY_SUB_TILES.map((m) => (
+              <ActionBox
+                key={m.href}
+                title={m.title}
+                description={m.blurb}
+                icon={<m.Icon colour={m.ink} />}
+                action={
+                  <ActionBoxLink href={m.href} tone="secondary">
+                    Open
+                  </ActionBoxLink>
+                }
+              />
             ))}
           </div>
         </div>
       )}
-
-      {/* Hover is colour-only and gated to real pointers — a hover that sticks
-          after a tap is worse than none. The press comes from .gg-press. */}
-      <style>{`
-        @media (hover: hover) and (pointer: fine) {
-          .gg-mode-tile {
-            transition:
-              background-color var(--dur-fast) var(--ease-standard),
-              border-color var(--dur-fast) var(--ease-standard);
-          }
-          /* ⚠️ A TRANSLUCENT tint, not var(--bg-card-hover). That token is an
-             opaque near-white; on a tile whose whole point is that the frosted
-             band shows through it, filling the tile solid on hover would kill
-             the blur under the pointer — the one place the eye is looking.
-             color-mix keeps the highlight and keeps the pane of glass. */
-          .gg-mode-tile:hover {
-            background: color-mix(in srgb, var(--bg-card-hover) 70%, transparent);
-          }
-        }
-      `}</style>
     </div>
   );
 }
