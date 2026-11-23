@@ -33,7 +33,12 @@ describe('ListingFaq', () => {
     expect(
       screen.getByRole('heading', { name: /questions & answers/i }),
     ).toBeTruthy();
-    expect(screen.getByText(/personal details removed/i)).toBeTruthy();
+    // The anonymisation is a rule in the pipeline, not a line we print at the
+    // buyer (operator, 2026-11-23: "remove the personal details removed text").
+    expect(
+      screen.getByText('Answers this seller has given to other buyers.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/personal details removed/i)).toBeNull();
     expect(screen.getByText('Does it come with a case?')).toBeTruthy();
     expect(
       screen.getByText('Yes, the original hard case is included.'),
@@ -43,6 +48,20 @@ describe('ListingFaq', () => {
     expect(
       screen.getByText(/based on this seller's recent replies/i),
     ).toBeTruthy();
+  });
+
+  it('renders the private composer inside the same section', () => {
+    const { container } = render(
+      <ListingFaq entries={ENTRIES} sellerReply={SELLER_REPLY}>
+        <p>Ask the seller</p>
+      </ListingFaq>,
+    );
+
+    const section = container.querySelector('section#questions');
+    expect(section).toBeTruthy();
+    expect(section?.textContent).toContain('Ask the seller');
+    // Still one card, not a nested second one.
+    expect(container.querySelectorAll('section')).toHaveLength(1);
   });
 
   it('renders the required empty state with the reply label', () => {

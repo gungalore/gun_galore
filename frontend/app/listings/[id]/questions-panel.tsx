@@ -54,13 +54,16 @@ function relativeTime(iso: string): string {
 }
 
 /**
- * The private "Contact seller" panel on a listing.
+ * The private "Ask the seller" thread, rendered INSIDE the listing's
+ * Questions & answers card (components/listing-faq.tsx).
  *
- * Sits below the public Q&A (components/listing-faq.tsx), which publishes
- * cleaned, anonymised answers distilled from these same conversations. Buyers
- * still ask the seller directly here, the conversation stays on ALL Outdoor,
- * and the SELLER can answer with photos or a video. Text is auto-stripped of
- * contact details; seller media is screened before it is stored.
+ * It used to be a separate "Contact seller" card directly below the public
+ * Q&A. The two are one conversation surface to a buyer — read what the seller
+ * already answered, then ask if it is not covered — so the panel carries no
+ * card of its own now. Buyers still ask the seller directly here, the
+ * conversation stays on ALL Outdoor, and the SELLER can answer with photos or
+ * a video. Text is auto-stripped of contact details; seller media is screened
+ * before it is stored.
  *
  * A question the public Q&A already answers comes back from the send endpoint
  * as `answeredFromFaq` (no message is created) — the panel then shows that
@@ -219,13 +222,7 @@ export function QuestionsPanel({
     threadImages.findIndex((x) => x.id === mediaId);
 
   return (
-    <div
-      className="rounded-[6px] p-3 mb-4 text-sm"
-      style={{
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-      }}
-    >
+    <div className="text-sm">
       <div className="flex items-center justify-between mb-3">
         <p
           className="text-xs uppercase"
@@ -234,7 +231,7 @@ export function QuestionsPanel({
             letterSpacing: '0.05em',
           }}
         >
-          Contact seller
+          Ask the seller
         </p>
         {thread && (
           <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>

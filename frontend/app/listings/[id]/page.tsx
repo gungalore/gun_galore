@@ -469,15 +469,25 @@ export default async function ListingDetailPage({
           matches the marketplace homepage so the product photo stays
           dominant without the background washing the page out. */}
 
-      {/* Breadcrumbs replace the "Back to listings" link that used to sit
-          here. Both are an "up" affordance, and stacking them (this page's
-          BackLink was md+ only, same as Breadcrumbs) is the exact problem
-          breadcrumbs.tsx's own header comment warns about on mobile, just
-          reproduced on desktop instead. The breadcrumb wins: it states the
-          listing's place in the category structure — JSON-LD'd for crawlers
-          too — which router.back()'s jump to the previous filtered search
-          never did. Stays OUTSIDE PageReveal so it's clickable instantly. */}
-      <Breadcrumbs trail={breadcrumbTrail} className="mb-6" />
+      {/* Breadcrumbs on the left, the listing-level actions on the right.
+          The breadcrumb states where the listing sits in the category
+          structure — JSON-LD'd for crawlers too — and stays first in DOM
+          order; breadcrumbs.tsx hides the nav on a phone, where the shell
+          header already carries a real back affordance, and the actions stay.
+          The wishlist/share pair used to sit at the foot of the buy column
+          under the contact panel, where a buyer had to scroll past the price,
+          delivery and the whole Q&A to reach it. Operator, 2026-11-23: move it
+          to the empty row above the two-pane shell. */}
+      <div className="mb-6 flex items-center justify-end gap-3 md:justify-between">
+        <Breadcrumbs trail={breadcrumbTrail} />
+        <div className="flex shrink-0 gap-2">
+          <WishlistButton listingId={listing.id} variant="inline" />
+          <ShareListingButton
+            title={listing.title}
+            text={`Check out this listing on ALL Outdoor: ${listing.title}`}
+          />
+        </div>
+      </div>
 
       {/* ⚠️ THE className IS LOAD-BEARING, NOT DECORATION. PageReveal renders a
           plain wrapper div, so at lg it sits between <main> (which owns the
@@ -1182,32 +1192,18 @@ export default async function ListingDetailPage({
             )}
           </div>
 
-          {/* Public Q&A — cleaned, anonymised answers the seller has already
-              given to other buyers. Sits immediately ABOVE the private thread:
-              read the public answer first, then ask privately if it is not
-              covered. A FAQ fetch failure renders the section's required empty
-              state (see components/listing-faq.tsx), never a broken page. */}
-          <ListingFaq entries={faq.entries} sellerReply={faq.sellerReply} />
-          {/* Contact seller - private 1-to-1 thread, moderated for contact
-              details. The seller can answer with photos or a video. Sits
-              directly below the public Q&A, at the point of decision. */}
-          <QuestionsPanel
-            listingId={listing.id}
-            sellerId={sellerUserId}
-          />
-
-          {/* Quick-actions row — Wishlist (save for later) + Share
-              (Web Share API → clipboard fallback). Sits directly under
-              the buy-panel so it's the natural next-click for a buyer
-              who's interested but not ready to commit. Spans both
-              buttons evenly on mobile, sits inline on desktop. */}
-          <div className="flex gap-2 mb-3">
-            <WishlistButton listingId={listing.id} variant="inline" />
-            <ShareListingButton
-              title={listing.title}
-              text={`Check out this listing on ALL Outdoor: ${listing.title}`}
+          {/* One Questions & answers section: the public answers this seller
+              has given, and the private composer directly beneath them. The
+              two used to be separate cards, which made the composer look
+              unrelated to the answer above it and pushed the wishlist/share
+              pair to the bottom of the column. Works the same on Buy Now and
+              auctions — this page is shared by both. */}
+          <ListingFaq entries={faq.entries} sellerReply={faq.sellerReply}>
+            <QuestionsPanel
+              listingId={listing.id}
+              sellerId={sellerUserId}
             />
-          </div>
+          </ListingFaq>
 
           {/* Report — hidden on your own listing. */}
           {!isOwnListing && (

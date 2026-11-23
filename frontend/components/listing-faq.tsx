@@ -13,6 +13,8 @@
 // may be added. Platform moderation sets ListingFaq.hiddenAt server-side; the
 // API only ever returns entries that are already public.
 
+import type { ReactNode } from 'react';
+
 export interface ListingFaqEntry {
   id: string;
   question: string;
@@ -27,6 +29,16 @@ export interface ListingFaqSellerReply {
 export interface ListingFaqProps {
   entries: ListingFaqEntry[];
   sellerReply: ListingFaqSellerReply | null;
+  /**
+   * The private ask-the-seller thread, rendered INSIDE this card.
+   *
+   * The public answers and the composer that produces the next one are one
+   * section to a buyer: read what the seller has already answered, then ask if
+   * it is not covered. Two stacked cards made them look unrelated and buried
+   * the composer (operator, 2026-11-23: "consolidate into one neat section as
+   * they are directly correlated").
+   */
+  children?: ReactNode;
 }
 
 /**
@@ -90,7 +102,11 @@ function ReplyBadge({
   );
 }
 
-export function ListingFaq({ entries, sellerReply }: ListingFaqProps) {
+export function ListingFaq({
+  entries,
+  sellerReply,
+  children,
+}: ListingFaqProps) {
   return (
     <section
       id="questions"
@@ -112,7 +128,7 @@ export function ListingFaq({ entries, sellerReply }: ListingFaqProps) {
         className="text-xs mt-1 mb-3"
         style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
       >
-        Answers this seller has given to other buyers. Personal details removed.
+        Answers this seller has given to other buyers.
       </p>
 
       <ReplyBadge sellerReply={sellerReply} />
@@ -174,6 +190,19 @@ export function ListingFaq({ entries, sellerReply }: ListingFaqProps) {
           ))}
         </div>
       )}
+
+      {/* The private ask-the-seller composer. One section, not two cards: the
+          answer the buyer just read and the box that asks the next question are
+          directly correlated. */}
+      {children ? (
+        <>
+          <div
+            className="mt-3 pt-3"
+            style={{ borderTop: '0.5px solid var(--border-divider)' }}
+          />
+          {children}
+        </>
+      ) : null}
     </section>
   );
 }
