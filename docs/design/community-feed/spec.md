@@ -1218,4 +1218,7 @@ The original GPX is never stored. `PostRoute.gpxShared` (default true) controls 
 ### Feed route card
 `PostRoute.preview` holds ≤60 points for the 2D card thumbnail (migration `20261123180000_post_route_preview` backfilled existing routes from `segments`). `PostRouteCard` draws the shape locally and shows **Distance**, the post's **Location** and the **Elevation** range (or `+ascent` when only ascent exists). Full `segments`/`bounds` remain route-page-only. The card's elevation is the stored GPX summary; the route page's terrain profile is authoritative.
 
+### Post notifications
+A successfully published post is **silent** (operator, 2026-11-23). The author is notified only when the post is **held for human review** (`post_held`) or **rejected/removed** (`post_rejected`). Admin approval is silent; an admin rejection notifies. The immediate text-only rejection at create time also notifies. Existing `post_published` rows are historical and are not deleted.
+
 Tests: `backend/src/feed/feed-route.parser.spec.ts`, `feed-route.service.spec.ts`; `frontend/lib/feed-route.spec.ts`, `post-route-card.spec.tsx`, `route-elevation.spec.tsx`, `route-map.spec.tsx`, `route-page-client.spec.tsx`, composer/post-card specs.
