@@ -2,7 +2,7 @@ import {
   FEED_MAX_ROUTE_POINTS,
   FEED_MAX_ROUTE_SOURCE_POINTS,
 } from './feed.types';
-import { GpxRouteError, parseGpxRoute } from './feed-route.parser';
+import { GpxRouteError, buildRoutePreview, parseGpxRoute } from './feed-route.parser';
 
 // ─────────────────────────────────────────────────────────────────────
 // The GPX parser is the security and correctness boundary for route uploads:
@@ -325,6 +325,26 @@ describe('parseGpxRoute', () => {
       const route = parseGpxRoute(doc(`<trk>${trkseg(points)}</trk>`));
       expect(route.segments[0][10].speedKph).toBeNull();
       expect(route.segments[0][9].speedKph).not.toBeNull();
+    });
+  });
+
+  describe('card preview', () => {
+    it('keeps the endpoints and caps the preview at 60 points', () => {
+      const route = parseGpxRoute(doc(`<trk>${trkseg(hikePoints(80))}</trk>`));
+      const preview = buildRoutePreview(route.segments);
+      expect(preview.length).toBeLessThanOrEqual(60);
+      expect(preview[0].lat).toBeCloseTo(route.segments[0][0].lat, 6);
+      expect(preview[preview.length - 1].lat).toBeCloseTo(
+        route.segments[0][route.segments[0].length - 1].lat,
+        6,
+      );
+      expect(preview.every((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))).toBe(
+        true,
+      );
+    });
+
+    it('returns an empty preview for no points', () => {
+      expect(buildRoutePreview([])).toEqual([]);
     });
   });
 

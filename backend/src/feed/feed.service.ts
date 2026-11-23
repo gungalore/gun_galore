@@ -33,9 +33,11 @@ import { FeedAwardsService, levelFor } from './feed-awards.service';
 import { FeedAdsService } from './feed-ads.service';
 import {
   GpxRouteError,
+  buildRoutePreview,
   parseGpxRoute,
   RouteBounds,
   RoutePoint,
+  RoutePreviewPoint,
 } from './feed-route.parser';
 import {
   authorName,
@@ -95,6 +97,8 @@ type PostRouteSummary = {
   distanceM: number;
   ascentM: number | null;
   descentM: number | null;
+  minElevationM: number | null;
+  maxElevationM: number | null;
   durationSeconds: number | null;
   pointCount: number;
   segmentCount: number;
@@ -102,6 +106,8 @@ type PostRouteSummary = {
   hasSpeed: boolean;
   gpxShared: boolean;
   profile: number[] | null;
+  /** Up to 60 points for the feed card's 2D thumbnail; never the full segments. */
+  preview: RoutePreviewPoint[] | null;
 };
 
 /** Summary columns, shared by the feed include and the route endpoints. */
@@ -109,6 +115,8 @@ const POST_ROUTE_SUMMARY_SELECT = {
   distanceM: true,
   ascentM: true,
   descentM: true,
+  minElevationM: true,
+  maxElevationM: true,
   durationSeconds: true,
   pointCount: true,
   segmentCount: true,
@@ -116,6 +124,7 @@ const POST_ROUTE_SUMMARY_SELECT = {
   hasSpeed: true,
   gpxShared: true,
   profile: true,
+  preview: true,
 };
 
 const POST_ROUTE_FULL_SELECT = {
@@ -293,13 +302,20 @@ export class FeedService {
    * fetched explicitly through `getRoute`, never leaked via the feed.
    */
   private routeSummary(
-    route: (Omit<PostRouteSummary, 'profile'> & { profile: unknown }) | null,
+    route:
+      | (Omit<PostRouteSummary, 'profile' | 'preview'> & {
+          profile: unknown;
+          preview: unknown;
+        })
+      | null,
   ): PostRouteSummary | null {
     if (!route) return null;
     return {
       distanceM: route.distanceM,
       ascentM: route.ascentM,
       descentM: route.descentM,
+      minElevationM: route.minElevationM,
+      maxElevationM: route.maxElevationM,
       durationSeconds: route.durationSeconds,
       pointCount: route.pointCount,
       segmentCount: route.segmentCount,
@@ -307,6 +323,9 @@ export class FeedService {
       hasSpeed: route.hasSpeed,
       gpxShared: route.gpxShared,
       profile: Array.isArray(route.profile) ? (route.profile as number[]) : null,
+      preview: Array.isArray(route.preview)
+        ? (route.preview as RoutePreviewPoint[])
+        : null,
     };
   }
 
@@ -1505,6 +1524,7 @@ export class FeedService {
       hasSpeed: route.hasSpeed,
       gpxShared,
       profile,
+      preview: buildRoutePreview(route.segments) as unknown as Prisma.InputJsonValue,
       segments: route.segments as unknown as Prisma.InputJsonValue,
       bounds: route.bounds as unknown as Prisma.InputJsonValue,
     };

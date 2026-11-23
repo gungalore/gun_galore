@@ -216,7 +216,11 @@ export function PostModal({
             link to the route page. No map/modal is nested inside this one. */}
         {post.route && (
           <div className="mt-2">
-            <PostRouteCard postId={post.id} route={post.route} />
+            <PostRouteCard
+              postId={post.id}
+              route={post.route}
+              location={post.location}
+            />
           </div>
         )}
       </div>

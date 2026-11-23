@@ -457,7 +457,11 @@ export function PostCard({
           `mx-4 mt-3` inset as the listing block below. */}
       {post.route && (
         <div className="mx-4 mt-3">
-          <PostRouteCard postId={post.id} route={post.route} />
+          <PostRouteCard
+            postId={post.id}
+            route={post.route}
+            location={post.location}
+          />
         </div>
       )}
 

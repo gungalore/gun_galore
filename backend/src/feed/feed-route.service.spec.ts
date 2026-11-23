@@ -39,6 +39,8 @@ function routeSummaryRow(overrides: Record<string, unknown> = {}) {
     distanceM: 423,
     ascentM: 40,
     descentM: 0,
+    minElevationM: 100,
+    maxElevationM: 140,
     durationSeconds: 1200,
     pointCount: 21,
     segmentCount: 1,
@@ -46,6 +48,10 @@ function routeSummaryRow(overrides: Record<string, unknown> = {}) {
     hasSpeed: true,
     gpxShared: true,
     profile: [100, 120, 140],
+    preview: [
+      { lat: -33.1, lon: 18.1 },
+      { lat: -33.1001, lon: 18.1001 },
+    ],
     ...overrides,
   };
 }
@@ -258,6 +264,9 @@ describe('FeedService GPX routes', () => {
       expect(args.create.pointCount).toBeGreaterThanOrEqual(20);
       expect(args.create.gpxShared).toBe(true);
       expect(args.update.gpxShared).toBe(true);
+      expect(Array.isArray(args.create.preview)).toBe(true);
+      expect((args.create.preview as Array<unknown>).length).toBeGreaterThan(0);
+      expect(args.select.preview).toBe(true);
       // ⚠️ Full points/bounds must NEVER ride the feed summary select.
       expect(args.select.segments).toBeUndefined();
       expect(args.select.bounds).toBeUndefined();

@@ -56,6 +56,8 @@ export interface FeedRouteSummary {
   distanceM: number;
   ascentM: number | null;
   descentM: number | null;
+  minElevationM?: number | null;
+  maxElevationM?: number | null;
   durationSeconds: number | null;
   pointCount: number;
   segmentCount: number;
@@ -65,6 +67,8 @@ export interface FeedRouteSummary {
   gpxShared: boolean;
   /** ~80 elevation samples for the feed sparkline; null without elevation. */
   profile: number[] | null;
+  /** Up to 60 points for the feed card's 2D thumbnail. */
+  preview?: Array<{ lat: number; lon: number }> | null;
 }
 
 export interface FeedRoute extends FeedRouteSummary {

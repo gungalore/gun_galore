@@ -7770,6 +7770,9 @@ model PostRoute {
   hasSpeed        Boolean  @default(false)
   gpxShared       Boolean  @default(true)
   profile         Json?
+  /// Up to 60 {lat,lon} points for the feed card's 2D thumbnail. Never the
+  /// stored segments; the card must not carry the full route.
+  preview         Json?
   segments        Json
   bounds          Json
   createdAt       DateTime @default(now())

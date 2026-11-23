@@ -80,6 +80,44 @@ export class GpxRouteError extends Error {
   }
 }
 
+/** A tiny 2D shape for the feed card; never the stored point list. */
+export type RoutePreviewPoint = { lat: number; lon: number };
+
+/**
+ * Sample the simplified route down to a card-sized shape. The feed card must
+ * not carry `segments` (up to 2,000 points); 60 points is enough to keep a loop
+ * or switchback recognisable, and the first/last are always kept.
+ */
+export function buildRoutePreview(
+  segments: ReadonlyArray<ReadonlyArray<Pick<RoutePoint, 'lat' | 'lon'>>>,
+  maxPoints = 60,
+): RoutePreviewPoint[] {
+  const flat: Array<Pick<RoutePoint, 'lat' | 'lon'>> = [];
+  for (const segment of segments) {
+    for (const point of segment) {
+      if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) flat.push(point);
+    }
+  }
+  if (!flat.length) return [];
+  const count = Math.max(1, Math.min(maxPoints, flat.length));
+  if (count === 1) {
+    return [{ lat: round6(flat[0].lat), lon: round6(flat[0].lon) }];
+  }
+  const step = (flat.length - 1) / (count - 1);
+  const out: RoutePreviewPoint[] = [];
+  let lastIndex = -1;
+  for (let i = 0; i < count; i += 1) {
+    const index = Math.min(flat.length - 1, Math.round(i * step));
+    if (index === lastIndex) continue;
+    lastIndex = index;
+    out.push({
+      lat: round6(flat[index].lat),
+      lon: round6(flat[index].lon),
+    });
+  }
+  return out;
+}
+
 /** Douglas–Peucker start tolerance: 2 m keeps a real trail's shape. */
 const SIMPLIFY_START_M = 2;
 /**
