@@ -178,6 +178,10 @@ const isPublicRoute = createRouteMatcher([
                          // server-side via /api/actions/:token and shows a
                          // scoped UI for one single action. Never requires
                          // a Clerk session.
+  // Print-desk one-click booking. The operator is not necessarily signed in to
+  // a member account, and the token in the path is the credential. Without this
+  // the email button 307s to /sign-in and the collection is never booked.
+  '/licence-centre/print/book/(.*)',
   '/coming-soon',        // pre-launch holding page
   '/preview',            // bypass-cookie setter for the coming-soon gate
 ]);
@@ -193,6 +197,7 @@ const isPublicRoute = createRouteMatcher([
 //   /preview      — the cookie-setting route
 const isComingSoonBypassRoute = createRouteMatcher([
   '/a/(.*)',
+  '/licence-centre/print/book/(.*)',
   '/api/(.*)',
   '/admin(.*)',
   '/coming-soon',
