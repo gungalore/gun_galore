@@ -11,7 +11,7 @@ import { ActionBoxLink } from '@/components/action-box-link';
 // behind auth at /licence-centre/applications. Do not add a crawler/user-agent
 // branch here — the page is genuinely neutral for every visitor.
 export const metadata: Metadata = {
-  title: `SAPS licence application motivation | ${BRAND_NAME}`,
+  title: 'SAPS licence application motivation',
   description:
     'Prepare the supporting motivation document for your SAPS licence application. Sign in to use your profile and documents, then review and submit.',
   alternates: { canonical: '/motivation' },
