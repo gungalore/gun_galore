@@ -6,6 +6,7 @@ import {
   buildProfileGeometry,
   buildRouteGeoJSON,
   buildSelectedPointGeoJSON,
+  densifyRoute,
   flattenRoute,
   formatAscent,
   formatDescent,
@@ -167,6 +168,52 @@ describe('haversineMeters / nearestPointIndex', () => {
     expect(nearestPointIndex(points, -30.9, 18.9)).toBe(1);
     expect(nearestPointIndex(points, -32, 20)).toBe(2);
     expect(nearestPointIndex([], -30, 18)).toBe(-1);
+  });
+});
+
+describe('densifyRoute', () => {
+  it('adds evenly spaced display points without moving the stored endpoints', () => {
+    const dense = densifyRoute(
+      [
+        [
+          point({ lat: 0, lon: 0, ele: 100, speedKph: 4, gradientPct: 1, distM: 0 }),
+          point({ lat: 0, lon: 0.01, ele: 200, speedKph: 6, gradientPct: 3, distM: 1000 }),
+        ],
+      ],
+      { maxPoints: 50, minStepM: 10 },
+    );
+    expect(dense).toHaveLength(1);
+    // 1000 m at ~20 m spacing, plus both vertices.
+    expect(dense[0].length).toBeGreaterThan(40);
+    expect(dense[0].length).toBeLessThanOrEqual(55);
+    expect(dense[0][0].distM).toBe(0);
+    expect(dense[0][0].lat).toBe(0);
+    expect(dense[0][0].lon).toBe(0);
+    expect(dense[0][dense[0].length - 1].distM).toBe(1000);
+    expect(dense[0][dense[0].length - 1].lon).toBeCloseTo(0.01, 6);
+    // The midpoint is genuinely interpolated.
+    const middle = dense[0].find((p) => p.distM >= 500)!;
+    expect(middle.lat).toBeCloseTo(0, 6);
+    expect(middle.lon).toBeCloseTo(0.005, 2);
+    expect(middle.ele).toBeCloseTo(150, 0);
+    expect(middle.speedKph).toBeCloseTo(5, 0);
+    expect(middle.gradientPct).toBeCloseTo(2, 0);
+  });
+
+  it('does not invent speed or gradient where an end has none', () => {
+    const dense = densifyRoute([
+      [
+        point({ distM: 0, speedKph: null, gradientPct: null }),
+        point({ distM: 1000, speedKph: 5, gradientPct: 2 }),
+      ],
+    ]);
+    expect(dense[0].some((p) => p.speedKph !== null && p.distM < 1000)).toBe(false);
+    expect(dense[0].some((p) => p.gradientPct !== null && p.distM < 1000)).toBe(false);
+  });
+
+  it('returns an empty array for an empty route', () => {
+    expect(densifyRoute(null)).toEqual([]);
+    expect(densifyRoute([])).toEqual([]);
   });
 });
 

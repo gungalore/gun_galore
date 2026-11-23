@@ -15,6 +15,7 @@ import {
 } from '../../lib/community-api';
 import {
   NOT_IN_GPX,
+  densifyRoute,
   flattenRoute,
   formatAscent,
   formatDescent,
@@ -121,7 +122,20 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
     void load();
   }, [isLoaded, isSignedIn, load]);
 
-  const flatPoints = useMemo(() => (route ? flattenRoute(route) : []), [route]);
+  // The stored route stays simplified; densify a display copy only for the
+  // map/chart/slider so the inspector moves at ~5 m instead of stepping between
+  // the handful of simplified vertices.
+  const displayRoute = useMemo(
+    () =>
+      route
+        ? { ...route, segments: densifyRoute(route.segments) }
+        : null,
+    [route],
+  );
+  const flatPoints = useMemo(
+    () => (displayRoute ? flattenRoute(displayRoute) : []),
+    [displayRoute],
+  );
   const selectedPoint = flatPoints[selectedIndex] ?? null;
 
   const isAuthor = !!post && !!userId && post.author.id === userId;
@@ -232,7 +246,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
       </div>
     );
   }
-  if (!post || !route) return null;
+  if (!post || !route || !displayRoute) return null;
 
   const title = post.title?.trim() || 'GPX route';
   const stats: Array<{ label: string; value: string }> = [
@@ -339,7 +353,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
 
       {mapConfig.hasKey ? (
         <RouteMap
-          segments={route.segments}
+          segments={displayRoute.segments}
           bounds={route.bounds}
           selectedIndex={selectedIndex}
           onSelect={setSelectedIndex}
@@ -349,7 +363,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
         />
       ) : (
         <RouteFallback
-          segments={route.segments}
+          segments={displayRoute.segments}
           selectedIndex={selectedIndex}
         />
       )}

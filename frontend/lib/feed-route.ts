@@ -23,6 +23,14 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function round6(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+
 /**
  * Thousands-separated integer, e.g. 1240 -> "1,240".
  *
@@ -177,6 +185,85 @@ export function nearestPointIndex(
     }
   }
   return best;
+}
+
+/** Linear interpolation of an optional numeric field; a missing end means no data. */
+function lerpOptional(
+  a: number | null,
+  b: number | null,
+  t: number,
+): number | null {
+  if (!isFiniteNumber(a) || !isFiniteNumber(b)) return null;
+  return a + (b - a) * t;
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/**
+ * Resample the simplified route at a regular distance so the inspector's
+ * slider moves like a slider rather than stepping between a handful of stored
+ * vertices. A 9-point, 8 km track otherwise jumps about a kilometre per notch;
+ * at ~5 m spacing the same track has ~1,600 inspectable positions without
+ * changing the stored route or its metrics.
+ *
+ * ⚠️ THE STORED ROUTE IS NOT REPLACED. This is a client-side display series:
+ * the map line, chart, slider and point markers use it; the GPX download and
+ * every server response keep the original simplified points.
+ */
+export function densifyRoute(
+  segments: ReadonlyArray<ReadonlyArray<FeedRoutePoint>> | null | undefined,
+  options: { maxPoints?: number; minStepM?: number } = {},
+): FeedRoutePoint[][] {
+  const maxPoints = Math.max(2, options.maxPoints ?? 2_000);
+  const minStepM = Math.max(0.5, options.minStepM ?? 5);
+  const input = (segments ?? []).filter(
+    (segment) => Array.isArray(segment) && segment.length > 0,
+  );
+  if (!input.length) return [];
+
+  const totalDistanceM = input.reduce((total, segment) => {
+    const last = segment[segment.length - 1];
+    return Math.max(total, isFiniteNumber(last?.distM) ? last.distM : 0);
+  }, 0);
+  const step = Math.max(minStepM, totalDistanceM / maxPoints);
+  const out: FeedRoutePoint[][] = [];
+
+  for (const segment of input) {
+    if (segment.length === 1) {
+      out.push([{ ...segment[0] }]);
+      continue;
+    }
+    const dense: FeedRoutePoint[] = [{ ...segment[0] }];
+    for (let i = 1; i < segment.length; i += 1) {
+      const from = segment[i - 1];
+      const to = segment[i];
+      const span = to.distM - from.distM;
+      if (!(span > 0)) {
+        dense.push({ ...to });
+        continue;
+      }
+      // Fill fixed-distance samples between the two stored vertices, then the
+      // vertex itself, so every original point survives.
+      let next = dense[dense.length - 1].distM + step;
+      while (next < to.distM - 0.01) {
+        const t = Math.min(1, Math.max(0, (next - from.distM) / span));
+        dense.push({
+          lat: round6(lerp(from.lat, to.lat, t)),
+          lon: round6(lerp(from.lon, to.lon, t)),
+          ele: lerpOptional(from.ele, to.ele, t),
+          speedKph: lerpOptional(from.speedKph, to.speedKph, t),
+          gradientPct: lerpOptional(from.gradientPct, to.gradientPct, t),
+          distM: round1(next),
+        });
+        next += step;
+      }
+      dense.push({ ...to });
+    }
+    out.push(dense);
+  }
+  return out;
 }
 
 // ── Elevation geometry ─────────────────────────────────────────────────────
