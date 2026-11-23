@@ -24,9 +24,12 @@ auctions."*
   removed so it sits inside the section.
 - The subtitle no longer says “Personal details removed.” — the anonymisation
   stays a pipeline rule (distil prompt + regex floor + Jev gate).
-- **Deployed** `a5641e53` frontend-only: dump
-  `alloutdoor-20261123-105941.dump` (39,000,955 bytes), frontend build, health
-  ×2, public 200 ×2. Backend stayed on `185bcb2e` (untouched).
+- The consolidated panel is labelled for its viewer: a buyer sees **Ask the
+  seller**, the seller viewing their own listing sees **Buyer questions**.
+- **Deployed** `2ee0e666` frontend-only (the owner-label fix followed
+  `a5641e53`): dump `alloutdoor-20261123-110501.dump` (39,001,086 bytes),
+  frontend build, health ×2, public 200 ×2. Backend stayed on `185bcb2e`
+  (untouched).
 - Tests: frontend **176 files / 1,995 tests** (1 skipped); production build
   clean.
 
