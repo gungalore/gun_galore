@@ -14,18 +14,19 @@ What each session did, found, and changed — so the next one does not re-derive
 
 ---
 
-## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (PREPARED, NOT DEPLOYED)
+## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (DEPLOYED)
 
 **Goal:** members attach a GPX to Hiking / Overlanding & 4x4 / Camping & Bushcraft posts, alongside photos/video; MapTiler/MapLibre route map with 3D terrain, point inspector (elevation/speed/gradient), author-controlled GPX download.
 
-**Changed (uncommitted)**
+**Changed**
 - Backend: `PostRoute` model + `HIKING` enum (migrations `20261123140000_post_routes`, `20261123141000_hiking_post_type`); `feed-route.parser.ts` (`@tmcw/togeojson` + `@xmldom/xmldom`; strips metadata/timestamps, stores simplified points + derived `speedKph`/`gradientPct`/`distM`); route endpoints in `feed.controller.ts`; `feed.service.ts` summary/download/gating; `POST /route` multipart + `gpxShared`, `PATCH /route`, `GET /route`, `GET /route.gpx`.
 - Frontend: `Hiking` in `lib/post-types.ts` + `post-fields.ts`; composer route picker + GPX-share checkbox (additive to photos/video); `PostRouteCard` in feed/modal; `/community/p/[id]/route` with MapTiler `outdoor-v2` + terrain-RGB, 2D/3D toggle, interactive elevation chart/range scrubber, map click nearest point, detail card, author toggle; fallback SVG sketch when no key/WebGL/terrain.
 - Docs: `docs/design/community-feed/spec.md` §22, `docs/ENVIRONMENT.md`, `.env.example`, privacy/guidelines, `COMPLIANCE-RULES.md`.
 
-**State / next**
-- Local migrations applied; local `.env.local` has `NEXT_PUBLIC_MAPTILER_KEY` / `_STYLE`. **Not committed, not deployed.**
-- Before deploy: restrict/rotate the MapTiler key (it was pasted into chat) to localhost + production origins; put it in `frontend/.env.production` on the box and rebuild (`NEXT_PUBLIC_*` is build-time). Full deploy needs both migrations.
+**Deployed**
+- `d9491547` full, dump `alloutdoor-20261123-144236.dump` (39,003,881 bytes). Both migrations applied; backend/frontend builds, PM2 reload, health ×2, public 200 ×2, three services online.
+- Live: `PostRoute` present, `HIKING` enum valid, unauth route API 401, route page 200 gate; MapTiler style + terrain 200 from the box; built chunk present.
+- Production `.env.production` (mode 600) has `NEXT_PUBLIC_MAPTILER_KEY` / `_STYLE=outdoor-v2`; key was pasted into chat, so restrict/rotate it in MapTiler.
 - Checks: backend 437 suites / 6,481 passed (8 skipped); frontend 181 files / 2,061 passed (1 skipped); both `tsc` clean; production build clean. `rte`-only GPX files carry no times through togeojson, so speed is null there; track GPX gets speed.
 
 ---

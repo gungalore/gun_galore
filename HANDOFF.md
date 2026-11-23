@@ -7,16 +7,17 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
-## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (PREPARED, NOT DEPLOYED)
+## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (DEPLOYED)
 
 Operator: *"if we want users to upload .gpx files onto the commutiny to share routes … It must be 3D caplabe"*; later *"add Hiking as a category. So Hiking, 4x4 and camping & Bushcraft are maps capable"*, *"they must be able to add a route along with pictures or a video"*, *"toggle to enable sharing of the .gpx or not"*, and point inspection for elevation/speed/gradient.
 
 - **Hiking** (`HIKING`) is a community post type; route-capable types are Hiking, Overlanding & 4x4 and Camping & Bushcraft. A GPX is additive to text, up to 6 photos and one video.
 - **Backend:** `PostRoute` (one per post, cascade) + two migrations; `feed-route.parser.ts` (`@tmcw/togeojson` + `@xmldom/xmldom`) rejects DOCTYPE/ENTITY, strips metadata/waypoints/timestamps, stores simplified points + derived speed/gradient/dist; route upload/patch/delete/get/download endpoints; `gpxShared` defaults true and gates non-author downloads (403).
 - **Frontend:** composer route picker + “Allow other members to download this GPX”; route card in feed/modal; `/community/p/[id]/route` with MapTiler `outdoor-v2` + terrain-RGB, MapLibre 2D/3D, elevation chart/scrubber, map-click point inspector, fallback SVG when no key/WebGL/terrain.
-- **Not committed, not deployed.** Local DB has both migrations; local `.env.local` has `NEXT_PUBLIC_MAPTILER_KEY` / `_STYLE`.
-- **Before deploy:** restrict or rotate the MapTiler key (it was pasted into chat) to localhost:3000 + `alloutdoor.co.za` / `www.alloutdoor.co.za`; put `NEXT_PUBLIC_MAPTILER_KEY` in `frontend/.env.production` on the box (gitignored) before the build. Full deploy (schema + backend deps + frontend dep): backup, pull, `prisma migrate deploy` (both), `prisma generate`, `npm install` both, builds, PM2 reload, health ×2, public ×2.
-- **Checks:** backend 437 suites / 6,481 tests (8 skipped); frontend 181 files / 2,061 tests (1 skipped); both type-checks clean; production build clean. First backend full run had one Jest worker OOM while frontend tests/build ran concurrently; the suite passed alone and `motivation-plates.spec.ts` passed isolated.
+- **Deployed `d9491547` (full)**, rollback point `alloutdoor-20261123-144236.dump` (39,003,881 bytes). Both migrations applied (`20261123140000_post_routes`, `20261123141000_hiking_post_type`); backend/frontend builds, `pm2 reload`, backend health ×2, frontend health ×2, warden online, public 200 ×2, three PM2 services online.
+- **Live verification:** `PostRoute` table exists; `'HIKING'::"PostType"` resolves; unauth `GET /api/community/posts/x/route` → 401 (route mounted); `/community/p/x/route` → 200 gate; MapTiler `outdoor-v2` style and terrain-RGB both 200 from the box with the production key; built frontend has the MapTiler chunk. Signed-in GPX upload still needs a member session (not exercised with production data).
+- **Production env:** `NEXT_PUBLIC_MAPTILER_KEY` and `NEXT_PUBLIC_MAPTILER_STYLE=outdoor-v2` in `frontend/.env.production` (mode 600, backup alongside). The key was pasted into chat, so it should be restricted/rotated in the MapTiler dashboard; production style/terrain requests currently succeed.
+- **Checks:** backend 437 suites / 6,481 tests (8 skipped); frontend 181 files / 2,061 tests (1 skipped); both type-checks clean; production build clean. A parallel backend run once OOM'd a Jest worker; the full suite passed alone and the affected spec passed isolated.
 
 ## 2026-11-23 — LISTING ACTIONS MOVED TO THE TOP; Q&A AND COMPOSER IN ONE CARD
 
