@@ -114,7 +114,18 @@ function valueOf(
   answers: Record<string, string>,
   items: Map<string, SheetItem>,
 ): string {
-  return (items.get(key)?.value ?? answers[key] ?? '').trim();
+  /**
+   * ⚠️ THE STORED ANSWER IS THE FALLBACK WHEN THE SHEET BLANKS A PLACEHOLDER.
+   * The sheet runs member-typed values through answerValue(), which turns the
+   * word "None" into '' — correct for a licence card, wrong for an optional
+   * question the member answered in words. `item.value ?? answer` stopped at
+   * the empty item, so the planner saw "needs_you" forever and re-asked a
+   * question that was already answered (operator, 2026-11-23). Prefer what is
+   * on screen, then what was saved; only when neither carries a value is the
+   * question pending.
+   */
+  const fromSheet = (items.get(key)?.value ?? '').trim();
+  return fromSheet || (answers[key] ?? '').trim();
 }
 
 /**
@@ -315,16 +326,14 @@ function orderPending(
 export function pendingFields(
   input: PlannerInput,
 ): { key: string; field: MotivationField }[] {
-  const strategy = strategyFor(input.type);
-  const items = new Map(input.sheet.items.map((i) => [i.key, i]));
-  const merged = { ...input.answers };
-  for (const item of input.sheet.items) merged[item.key] = item.value;
   /**
-   * ⚠️ SAME PENDING RULE AS planQuestion, NOT "VALUE IS EMPTY". The shooting
-   * history with a one-line answer is answered but not yet enough, and every
-   * caller of this list must agree with the two planners about that or the
-   * order tests and the interview disagree about what is left.
+   * ⚠️ ONE MERGE RULE, NOT TWO. This used to re-implement `plannerContext`'s
+   * merge and overwrite a stored answer with the sheet's blank projection,
+   * which is exactly how an answered optional question ("None") stayed
+   * pending in the extractor's candidate list. Use the shared context so the
+   * three planners cannot disagree about what is answered.
    */
+  const { strategy, items, merged } = plannerContext(input);
   return visibleFields(input.type, strategy, merged).filter(({ key }) =>
     isPending(key, merged, items, input.provenance),
   );
@@ -523,7 +532,18 @@ function plannerContext(input: PlannerInput) {
   const strategy = strategyFor(input.type);
   const items = new Map(input.sheet.items.map((i) => [i.key, i]));
   const merged = { ...input.answers };
-  for (const item of input.sheet.items) merged[item.key] = item.value;
+  /**
+   * ⚠️ A BLANK SHEET VALUE IS A DISPLAY PROJECTION, NOT AN ERASER.
+   * The sheet runs member-typed answers through answerValue(), which blanks the
+   * word "None" — correct for a licence card, wrong for an optional question
+   * the member answered in words. Overwriting the stored answer with that ''
+   * made the comparison ("what else did you consider") pending forever, so
+   * typing None re-asked it (operator, 2026-11-23). Keep the saved answer when
+   * the sheet has nothing to show; a real sheet value still wins.
+   */
+  for (const item of input.sheet.items) {
+    if ((item.value ?? '').trim()) merged[item.key] = item.value;
+  }
   const fields = visibleFields(input.type, strategy, merged, input.brief).filter(
     // ⚠️ THE CARTRIDGE COUNTS ONLY WHEN THE SHEET SAID IT APPLIES. A resolved
     // calibre has no cartridge item, and leaving the field in the total would

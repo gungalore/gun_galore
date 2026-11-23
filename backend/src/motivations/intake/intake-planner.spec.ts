@@ -458,6 +458,41 @@ describe('the document gate decides what the conversation asks', () => {
     expect(question?.optional).toBe(true);
   });
 
+  it('does not re-ask the comparison once the member answers None', () => {
+    const answers = filled(MotivationLicenceType.S13_SELF_DEFENCE);
+    answers.alternative_considered = 'None';
+    /**
+     * The real sheet blanks a member-typed "None" (answerValue) and leaves a
+     * `needs_you` item behind. The stored answer must still settle it — this is
+     * the "if I say None it comes up again" loop.
+     */
+    const sheet = {
+      ...EMPTY_SHEET,
+      items: [
+        {
+          key: 'alternative_considered',
+          label: 'What else you considered, and why this one',
+          kind: 'short',
+          state: 'needs_you',
+          value: '',
+          provenance: null,
+          section: 'case',
+          scope: 'application',
+          required: false,
+        },
+      ],
+    } as unknown as SheetResponse;
+
+    const pending = pendingFields({
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      sheet,
+    });
+    expect(pending.map((entry) => entry.key)).not.toContain(
+      'alternative_considered',
+    );
+  });
+
   it('asks the quarry even though the registry does not mark it required', () => {    const answers = filled(MotivationLicenceType.S15_OCCASIONAL_HUNTER);
     delete answers.intended_quarry;
     const group = planGroup({

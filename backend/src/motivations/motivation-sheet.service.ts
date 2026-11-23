@@ -119,8 +119,19 @@ function shownValue(
    * blanked the sheet item, so the planner saw an unanswered required field and
    * re-asked the model card forever (MO000127, the supplied Section 15 Howa).
    * The writer still never sees "Model NONE" - this is the sheet only.
+   *
+   * ⚠️ AND SO IS "WHAT ELSE YOU CONSIDERED". A member with no alternative types
+   * "None" and expects the interview to move on. answerValue() blanked it, the
+   * sheet item read as unanswered, and the optional comparison came back on
+   * every card (operator, 2026-11-23: "if I say None it comes up again"). The
+   * word is the answer here; the writer is still free to omit it.
    */
-  if (key === 'firearm_model' && /^none$/i.test(text)) return text;
+  if (
+    (key === 'firearm_model' || key === 'alternative_considered') &&
+    /^none$/i.test(text)
+  ) {
+    return text;
+  }
   return answerValue(text);
 }
 
