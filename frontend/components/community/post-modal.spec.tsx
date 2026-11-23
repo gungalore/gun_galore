@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { FeedPost } from '../../lib/community-api';
+import type { FeedPost, FeedRouteSummary } from '../../lib/community-api';
 
 // ────────────────────────────────────────────────────────────────────
 // GETTING OUT OF THE FULLSCREEN PHOTO.
@@ -26,6 +26,16 @@ vi.mock('./comment-thread', () => ({
 
 vi.mock('../verification-badges', () => ({
   VerificationBadges: () => null,
+}));
+
+// The route viewer's own card is tested in its own spec; here we pin only that
+// the modal renders it (a link out) and does not embed a map or download.
+vi.mock('./post-route-card', () => ({
+  PostRouteCard: ({ postId }: { postId: string; route: unknown }) => (
+    <a href={`/community/p/${postId}/route`} data-testid="route-card">
+      View route &amp; elevation
+    </a>
+  ),
 }));
 
 const post: FeedPost = {
@@ -67,6 +77,7 @@ const post: FeedPost = {
     { id: 'i2', url: 'https://example.test/two.jpg', order: 1 },
   ],
   video: null,
+  route: null,
   listing: null,
   liked: false,
   disliked: false,
@@ -80,7 +91,21 @@ vi.mock('../../lib/community-api', () => ({
   undislikePost: vi.fn(async () => undefined),
 }));
 
+import { fetchPost } from '../../lib/community-api';
 import { PostModal } from './post-modal';
+
+const ROUTE: FeedRouteSummary = {
+  distanceM: 5200,
+  ascentM: 310,
+  descentM: 290,
+  durationSeconds: 5400,
+  pointCount: 400,
+  segmentCount: 1,
+  hasElevation: true,
+  hasSpeed: true,
+  gpxShared: true,
+  profile: [1, 2, 3],
+};
 
 async function openPhoto(onClose: () => void) {
   render(<PostModal postId="p1" photoIndex={0} onClose={onClose} />);
@@ -123,5 +148,41 @@ describe('community photo viewer — getting back', () => {
       ?.parentElement as HTMLElement;
     await userEvent.click(stage);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('community post modal — the GPX route card', () => {
+  const routePost: FeedPost = { ...post, type: 'HIKING', route: ROUTE };
+
+  beforeEach(() => {
+    window.history.replaceState(null, '');
+    // Persistent, not `Once`: the modal's load effect can re-run, and a queue
+    // would fall back to the route-less default post on the second fetch.
+    vi.mocked(fetchPost).mockResolvedValue({
+      post: routePost,
+      comments: [],
+    });
+  });
+
+  it('links to the route from the centred modal body, with no map embedded', async () => {
+    render(<PostModal postId="p1" onClose={vi.fn()} />);
+
+    const card = await screen.findByTestId('route-card');
+    expect(card.getAttribute('href')).toBe('/community/p/p1/route');
+    // One dialog — the post overlay itself. No nested map/modal.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    // The card links out to the route page; the modal embeds no downloader.
+    expect(screen.queryByRole('button', { name: /download/i })).toBeNull();
+  });
+
+  it('links to the route from the photo-mode sidebar too', async () => {
+    render(<PostModal postId="p1" photoIndex={0} onClose={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(screen.getByAltText('Photo 1 of 2')).toBeTruthy(),
+    );
+    expect(screen.getByTestId('route-card').getAttribute('href')).toBe(
+      '/community/p/p1/route',
+    );
   });
 });

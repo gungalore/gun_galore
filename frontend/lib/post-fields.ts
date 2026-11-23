@@ -58,6 +58,9 @@ const SPECIFIC_FIELDS: Record<PostTypeKey, PostFieldDef[]> = {
   GENERAL: [
     { key: 'flair', label: FLAIR_LABELS.GENERAL as string, kind: 'chips', vocab: 'flair-general' },
   ],
+  // Hiking carries no category-specific fields; the attached GPX supplies
+  // distance, ascent and duration. The common date field still shows.
+  HIKING: [],
   HUNTING: [
     { key: 'species', label: 'Species', kind: 'chips', vocab: 'species-hunting' },
     {

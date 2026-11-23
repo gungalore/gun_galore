@@ -8,6 +8,7 @@ import { ImageLightbox } from '../image-lightbox';
 import PostDetails from './post-details';
 import { LikedBySheet } from './liked-by-sheet';
 import { PostCollage } from './post-collage';
+import { PostRouteCard } from './post-route-card';
 import { VerificationBadges } from '../verification-badges';
 
 interface PostCardProps {
@@ -450,6 +451,15 @@ export function PostCard({
         hiddenForever={hiddenForever}
         onReveal={() => setRevealed(true)}
       />
+
+      {/* The GPX summary sits beside the media, never instead of it: a Hiking
+          post can carry photos, a video and a route all at once. Same
+          `mx-4 mt-3` inset as the listing block below. */}
+      {post.route && (
+        <div className="mx-4 mt-3">
+          <PostRouteCard postId={post.id} route={post.route} />
+        </div>
+      )}
 
       {post.listing && (
         <div className="mx-4 mt-3">

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   deletePost: vi.fn(),
   submitPost: vi.fn(),
   uploadPostImage: vi.fn(),
+  uploadPostRoute: vi.fn(),
   uploadPostVideo: vi.fn(),
 }));
 
@@ -103,6 +104,50 @@ function pickVideoFile(name = 'clip.mp4') {
   return file;
 }
 
+function categorySelect() {
+  return screen.getByRole('combobox', {
+    name: 'Post category',
+  }) as HTMLSelectElement;
+}
+
+function photoInput() {
+  return document.querySelector(
+    'input[type="file"][accept^="image"]',
+  ) as HTMLInputElement;
+}
+
+function routeInput() {
+  return document.querySelector(
+    'input[type="file"][accept^=".gpx"]',
+  ) as HTMLInputElement;
+}
+
+const ROUTE_SUMMARY = {
+  distanceM: 5200,
+  ascentM: 310,
+  descentM: 290,
+  durationSeconds: 5400,
+  pointCount: 400,
+  segmentCount: 1,
+  hasElevation: true,
+  hasSpeed: true,
+  gpxShared: true,
+  profile: [1, 2, 3],
+};
+
+/** Pick a GPX on a route-capable category (the picker is hidden otherwise). */
+function pickRouteFile(name = 'berg.gpx') {
+  const file = new File(['<gpx></gpx>'], name, {
+    type: 'application/gpx+xml',
+  });
+  fireEvent.change(routeInput(), { target: { files: [file] } });
+  return file;
+}
+
+function selectCapableCategory(type = 'HIKING') {
+  fireEvent.change(categorySelect(), { target: { value: type } });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -116,10 +161,13 @@ beforeEach(() => {
     moderation: { decision: 'PROCESSING', reasons: [] },
   });
   mocks.uploadPostImage.mockResolvedValue({ image: { id: 'i1', url: 'u', order: 0 } });
+  mocks.uploadPostRoute.mockResolvedValue({ route: ROUTE_SUMMARY });
   mocks.uploadPostVideo.mockResolvedValue({
     video: { id: 'v1', url: 'u', thumbnailUrl: null, durationSeconds: 1 },
   });
-  URL.createObjectURL = vi.fn(() => 'blob:mock');
+  // Unique per file: two picked photos share a preview grid keyed by URL.
+  let blobSeq = 0;
+  URL.createObjectURL = vi.fn(() => `blob:mock-${++blobSeq}`);
   URL.revokeObjectURL = vi.fn();
 });
 
@@ -282,5 +330,193 @@ describe('PostComposer', () => {
     expect(mocks.submitPost).toHaveBeenCalledWith('t', 'p1');
     expect(mocks.deletePost).not.toHaveBeenCalled();
     await waitFor(() => expect(onPosted).toHaveBeenCalledTimes(1));
+  });
+
+  it('offers Hiking and a route picker only on the route-capable categories', () => {
+    openComposer();
+    expect(screen.getByRole('option', { name: 'Hiking' })).toBeTruthy();
+
+    // General & Community cannot carry a route.
+    expect(screen.queryByText('Choose GPX route')).toBeNull();
+
+    selectCapableCategory('HIKING');
+    expect(screen.getByText('Choose GPX route')).toBeTruthy();
+    expect(routeInput().accept).toBe(
+      '.gpx,application/gpx+xml,application/xml,text/xml',
+    );
+
+    for (const capable of ['OVERLANDING_4X4', 'CAMPING_BUSHCRAFT']) {
+      selectCapableCategory(capable);
+      expect(screen.getByText('Choose GPX route')).toBeTruthy();
+    }
+
+    // Neither can Fishing.
+    selectCapableCategory('FISHING');
+    expect(screen.queryByText('Choose GPX route')).toBeNull();
+  });
+
+  it('clears only the route when the category stops supporting one', () => {
+    openComposer();
+    selectCapableCategory('HIKING');
+    fireEvent.change(photoInput(), {
+      target: { files: [new File(['x'], 'valley.jpg', { type: 'image/jpeg' })] },
+    });
+    pickRouteFile('berg.gpx');
+    expect(screen.getByText(/berg\.gpx/)).toBeTruthy();
+
+    selectCapableCategory('HUNTING');
+
+    // The GPX is gone and the member is told why…
+    expect(screen.queryByText(/berg\.gpx/)).toBeNull();
+    expect(
+      screen.getByText(
+        'Routes are available on Hiking, 4x4 and Camping & Bushcraft posts.',
+      ),
+    ).toBeTruthy();
+    // …but the photo is untouched — it is valid on every category.
+    expect(document.querySelector('[data-media-preview]')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Remove photo' }),
+    ).toBeTruthy();
+  });
+
+  it('refuses a non-GPX or over-size route before it ever reaches the server', async () => {
+    openComposer();
+    selectCapableCategory('HIKING');
+
+    fireEvent.change(routeInput(), {
+      target: {
+        files: [new File(['x'], 'track.zip', { type: 'application/zip' })],
+      },
+    });
+    expect(await screen.findByText(/not a GPX/i)).toBeTruthy();
+
+    const huge = new File(['x'], 'huge.gpx', { type: 'application/gpx+xml' });
+    Object.defineProperty(huge, 'size', { value: 11 * 1024 * 1024 });
+    fireEvent.change(routeInput(), { target: { files: [huge] } });
+    expect(await screen.findByText(/maximum is 10 MB/i)).toBeTruthy();
+
+    // With no text or media, a rejected route leaves nothing to post.
+    expect(
+      (screen.getByRole('button', { name: 'Post' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('posts two photos, a video and a route together', async () => {
+    const onPosted = openComposer();
+    await userEvent.type(
+      screen.getByPlaceholderText("What's on your mind?"),
+      'Berg hike',
+    );
+    selectCapableCategory('HIKING');
+
+    fireEvent.change(photoInput(), {
+      target: {
+        files: [
+          new File(['x'], 'one.jpg', { type: 'image/jpeg' }),
+          new File(['x'], 'two.jpg', { type: 'image/jpeg' }),
+        ],
+      },
+    });
+    pickVideoFile();
+    const routeFile = pickRouteFile('berg.gpx');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }));
+
+    await waitFor(() =>
+      expect(mocks.submitPost).toHaveBeenCalledWith('t', 'p1'),
+    );
+    expect(mocks.createPost).toHaveBeenCalledWith(
+      't',
+      expect.objectContaining({ type: 'HIKING' }),
+    );
+    // All four attachments are sent — the route replaces nothing.
+    expect(mocks.uploadPostImage).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadPostVideo).toHaveBeenCalledWith(
+      't',
+      'p1',
+      expect.any(File),
+    );
+    expect(mocks.uploadPostRoute).toHaveBeenCalledWith(
+      't',
+      'p1',
+      routeFile,
+      true,
+    );
+
+    // Images, then the video, then the route, then submit.
+    const order = (fn: { mock: { invocationCallOrder: number[] } }) =>
+      fn.mock.invocationCallOrder[0];
+    expect(order(mocks.createPost)).toBeLessThan(order(mocks.uploadPostImage));
+    expect(order(mocks.uploadPostVideo)).toBeLessThan(
+      order(mocks.uploadPostRoute),
+    );
+    expect(order(mocks.uploadPostRoute)).toBeLessThan(order(mocks.submitPost));
+
+    expect(mocks.deletePost).not.toHaveBeenCalled();
+    await waitFor(() => expect(onPosted).toHaveBeenCalledTimes(1));
+  });
+
+  it('lets a route alone enable Post', async () => {
+    openComposer();
+    selectCapableCategory('HIKING');
+    pickRouteFile('berg.gpx');
+
+    const post = screen.getByRole('button', {
+      name: 'Post',
+    }) as HTMLButtonElement;
+    expect(post.disabled).toBe(false);
+
+    await userEvent.click(post);
+    await waitFor(() =>
+      expect(mocks.uploadPostRoute).toHaveBeenCalledWith(
+        't',
+        'p1',
+        expect.any(File),
+        true,
+      ),
+    );
+    expect(mocks.submitPost).toHaveBeenCalledWith('t', 'p1');
+  });
+
+  it('passes the members-download permission to the route upload', async () => {
+    openComposer();
+    selectCapableCategory('HIKING');
+    pickRouteFile('berg.gpx');
+
+    const share = screen.getByLabelText(
+      'Allow other members to download this GPX',
+    ) as HTMLInputElement;
+    expect(share.checked).toBe(true);
+    await userEvent.click(share);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() =>
+      expect(mocks.uploadPostRoute).toHaveBeenCalledWith(
+        't',
+        'p1',
+        expect.any(File),
+        false,
+      ),
+    );
+  });
+
+  it('deletes the half-created post when the route upload fails', async () => {
+    mocks.uploadPostRoute.mockRejectedValueOnce(
+      new CommunityApiError(400, '{"message":"No track points found in that GPX."}'),
+    );
+    const onPosted = openComposer();
+    selectCapableCategory('HIKING');
+    pickRouteFile('empty.gpx');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Post' }));
+
+    await waitFor(() =>
+      expect(mocks.deletePost).toHaveBeenCalledWith('t', 'p1'),
+    );
+    expect(await screen.findByText(/no track points/i)).toBeTruthy();
+    expect(mocks.submitPost).not.toHaveBeenCalled();
+    expect(onPosted).not.toHaveBeenCalled();
   });
 });

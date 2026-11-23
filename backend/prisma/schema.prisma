@@ -7439,6 +7439,7 @@ model NotificationConsent {
 
 enum PostType {
   GENERAL
+  HIKING
   HUNTING
   FIREARMS_SHOOTING
   RELOADING
@@ -7552,6 +7553,10 @@ model Post {
   comments Comment[]
   likes    PostLike[]
   video    PostVideo?
+  /// Optional GPX route metadata + simplified points (Hiking, and the other
+  /// route-capable outdoor types). One per post; never mutually exclusive
+  /// with images/video.
+  route    PostRoute?
 
   @@index([status, createdAt(sort: Desc)])
   @@index([authorId, createdAt(sort: Desc)])
@@ -7740,6 +7745,33 @@ model PostVideo {
   durationSeconds Float?
   width           Int?
   height          Int?
+  createdAt       DateTime @default(now())
+}
+
+/// Optional GPX route attached to a post, on top of its text/photos/video.
+/// ⚠️ Only the SIMPLIFIED, coordinate-only representation is stored: parsed
+/// points (`segments`), route metrics, and an elevation sparkline (`profile`).
+/// The raw GPX file is NEVER persisted — there is no blob/URL column — so a
+/// downloaded .gpx is regenerated from these rows, stripped of timestamps and
+/// every other author metadata. `gpxShared` is the author's download consent.
+model PostRoute {
+  id              String   @id @default(cuid())
+  postId          String   @unique
+  post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  distanceM       Int
+  ascentM         Int?
+  descentM        Int?
+  minElevationM   Int?
+  maxElevationM   Int?
+  durationSeconds Int?
+  pointCount      Int
+  segmentCount    Int
+  hasElevation    Boolean  @default(false)
+  hasSpeed        Boolean  @default(false)
+  gpxShared       Boolean  @default(true)
+  profile         Json?
+  segments        Json
+  bounds          Json
   createdAt       DateTime @default(now())
 }
 

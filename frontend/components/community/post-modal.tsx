@@ -13,6 +13,7 @@ import {
 } from '../../lib/community-api';
 import { postTypeLabel } from '../../lib/post-types';
 import { CommentThread } from './comment-thread';
+import { PostRouteCard } from './post-route-card';
 import { VerificationBadges } from '../verification-badges';
 import { useScrollLock } from '../../lib/use-scroll-lock';
 
@@ -210,6 +211,13 @@ export function PostModal({
           >
             {post.body}
           </p>
+        )}
+        {/* Shared by the centred overlay and the photo-mode sidebar, so both
+            link to the route page. No map/modal is nested inside this one. */}
+        {post.route && (
+          <div className="mt-2">
+            <PostRouteCard postId={post.id} route={post.route} />
+          </div>
         )}
       </div>
     );

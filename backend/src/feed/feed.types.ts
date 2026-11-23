@@ -24,8 +24,28 @@ export const FEED_MAX_IMAGES = 6;
 export const FEED_MAX_VIDEO_BYTES = 64 * 1024 * 1024;
 export const FEED_MAX_MUTES_PER_AXIS = 100;
 
+// ───────────────────────────────────────────────────────────────────────────
+// GPX routes. A route rides BESIDE the text/photos/video of a post (it is
+// never mutually exclusive with them), and only the simplified, coordinate-only
+// representation is stored — never the raw file. The parser in
+// feed-route.parser.ts enforces these caps.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Upload cap for the raw .gpx text, before any parsing. */
+export const FEED_MAX_ROUTE_BYTES = 10 * 1024 * 1024;
+/** Cap on the SOURCE point count read from the GPX, before simplification. */
+export const FEED_MAX_ROUTE_SOURCE_POINTS = 100_000;
+/** Cap on stored points after Douglas–Peucker simplification. */
+export const FEED_MAX_ROUTE_POINTS = 2_000;
+export const FEED_MAX_ROUTE_SEGMENTS = 20;
+/** A route shorter than this is a mis-drop, not a hike. */
+export const FEED_MIN_ROUTE_METERS = 100;
+/** Elevation samples kept for the feed's sparkline. */
+export const FEED_ROUTE_PROFILE_SAMPLES = 80;
+
 export const POST_TYPE_LABELS: Record<PostType, string> = {
   GENERAL: 'General & Community',
+  HIKING: 'Hiking',
   HUNTING: 'Hunting',
   FIREARMS_SHOOTING: 'Firearms & Shooting',
   RELOADING: 'Reloading',
@@ -37,6 +57,20 @@ export const POST_TYPE_LABELS: Record<PostType, string> = {
 };
 
 export const POST_TYPES = Object.keys(POST_TYPE_LABELS) as PostType[];
+
+/**
+ * The post types that may carry a GPX route. ⚠️ The frontend mirrors this list
+ * (`ROUTE_CAPABLE_TYPES` in frontend/lib/post-types.ts); keep the two in step.
+ */
+export const ROUTE_CAPABLE_POST_TYPES = [
+  PostType.HIKING,
+  PostType.OVERLANDING_4X4,
+  PostType.CAMPING_BUSHCRAFT,
+] as const;
+
+export function isRouteCapable(type: PostType | string): boolean {
+  return (ROUTE_CAPABLE_POST_TYPES as readonly string[]).includes(type);
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Optional per-category "details" fields. These are the ONLY permitted values
@@ -185,6 +219,7 @@ export const POST_NUMERIC_BOUNDS: Record<PostNumericField, { min: number; max: n
  */
 export const POST_DETAIL_FIELDS: Record<PostType, readonly string[]> = {
   GENERAL: ['flair', 'occurredAt'],
+  HIKING: ['occurredAt'],
   HUNTING: ['species', 'calibre', 'shotDistanceM', 'occurredAt'],
   FIREARMS_SHOOTING: ['firearmType', 'calibre', 'firearmModel', 'flair', 'occurredAt'],
   RELOADING: ['calibre', 'bulletWeightGr', 'powderChargeGr', 'testResult', 'occurredAt'],

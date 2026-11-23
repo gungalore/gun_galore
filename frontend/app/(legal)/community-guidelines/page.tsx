@@ -1,4 +1,4 @@
-﻿// Community Guidelines — the feed-specific rules. Public and crawlable, like
+// Community Guidelines — the feed-specific rules. Public and crawlable, like
 // the AUP it sits beside.
 //
 // ⚠️ PUBLIC PAGE. Do NOT name restricted product categories or use the
@@ -84,7 +84,22 @@ export default function CommunityGuidelinesPage() {
         <li>No content that facilitates the sale of items that may not lawfully be sold.</li>
       </ul>
 
-      <h2>6. Field and graphic photos</h2>
+      <h2>6. Sharing GPX routes</h2>
+      <p>
+        GPX routes can be attached to Hiking, Overlanding &amp; 4x4 and Camping
+        &amp; Bushcraft posts. Only share a route you have the right to publish:
+        respect private land, access conditions, closed trails and sensitive
+        sites. A route shows where you went even without a description.
+      </p>
+      <p>
+        We strip metadata, waypoint names and timestamps from the file; only the
+        simplified track, elevation and derived speed/gradient are kept. The
+        poster chooses whether other members may download the GPX. The map is
+        rendered with MapTiler, so opening it sends map-tile requests to
+        MapTiler; see the <a href="/privacy" style={{ color: 'var(--red)' }}>Privacy Policy</a>.
+      </p>
+
+      <h2>7. Field and graphic photos</h2>
       <p>
         Field photography is part of hunting and fishing culture, and it is
         welcome here. We do apply a content warning: photos showing blood or
@@ -93,7 +108,7 @@ export default function CommunityGuidelinesPage() {
         can appear. Post with consideration for other members.
       </p>
 
-      <h2>7. How moderation works</h2>
+      <h2>8. How moderation works</h2>
       <p>
         Every post and comment is automatically screened before it is
         published. Anything the system cannot confidently clear is held for a
@@ -101,7 +116,7 @@ export default function CommunityGuidelinesPage() {
         comment using the report control, and it will be reviewed.
       </p>
 
-      <h2>8. Enforcement and reporting</h2>
+      <h2>9. Enforcement and reporting</h2>
       <p>
         We apply the enforcement ladder in the{' '}
         <a href="/acceptable-use" style={{ color: 'var(--red)' }}>

@@ -263,6 +263,15 @@ The buyer can only pick a method the seller offered. (`validateShipping`, `shipp
 | An approved Didit session whose document disagrees with the typed ID/DOB is parked UNDER_REVIEW, never VERIFIED. Rejection copy never names the DOB check. | `kyc.service.ts`, `kyc-cross-check.ts` |
 | Names are taken from the verified document. | `kyc.service.ts` |
 
+### 5.10 Community GPX routes
+| Rule | Where |
+|---|---|
+| GPX attachments are only accepted on Hiking, Overlanding & 4x4 and Camping & Bushcraft posts. Server-enforced. | `feed-route.parser.ts`, `feed.service.ts` |
+| The original GPX is parsed in memory and discarded; never store raw XML, metadata, names, descriptions, waypoints or timestamps. Only simplified points, elevation, derived speed/gradient and duration seconds. | `feed-route.parser.ts` |
+| The route map is members-only and the poster controls GPX download (`gpxShared`). The route line itself remains visible when download is off. | `PostRoute.gpxShared`, `downloadRouteGpx` |
+| The only external map processor is MapTiler (Switzerland). No OSM/AWS fallback. Missing key/WebGL degrades to a local static sketch. | `route-map.tsx`, `docs/ENVIRONMENT.md` |
+| Routes are community-only; no route attachments on listings or auctions. | `feed` module only |
+
 ---
 
 ## 6. Motivation Creator

@@ -923,6 +923,25 @@ the frontend rebuilt (`NEXT_PUBLIC_*` is baked at build time, so changing the
 env alone does nothing until `npm run build`). `GOOGLE_VISION_API_KEY`
 (`All Outdoor - Vision OCR (server)`) was already on `alloutdoor-api`.
 
+### `NEXT_PUBLIC_MAPTILER_KEY` / `NEXT_PUBLIC_MAPTILER_STYLE`
+**Optional, but required for the community GPX route map.** Browser key for
+MapTiler, used by MapLibre GL JS on `/community/p/[id]/route`. It is a public
+client key by design, so it **must be HTTP-referrer restricted** in the MapTiler
+dashboard to `http://localhost:3000`, `https://alloutdoor.co.za` and
+`https://www.alloutdoor.co.za`. Never commit the value; local dev uses
+`frontend/.env.local`, production uses `frontend/.env.production` on the box
+(gitignored).
+
+`NEXT_PUBLIC_MAPTILER_STYLE` defaults to `outdoor-v2`. The style URL is
+`https://api.maptiler.com/maps/${style}/style.json?key=…`; the 3D terrain source
+is `https://api.maptiler.com/tiles/terrain-rgb-v2/{z}/{x}/{y}.webp?key=…`
+(`raster-dem`, `encoding: mapbox`, max zoom 12).
+
+⚠️ Both are `NEXT_PUBLIC_*`, so they are baked at build time. Adding or changing
+the key requires a frontend rebuild; a PM2 restart does nothing. If the key is
+missing, the route page still shows the stats, elevation and point inspector,
+but the map falls back to a static route sketch and the 3D toggle is hidden.
+
 ## The coming-soon gate
 
 Enforced in `frontend/middleware.ts`, **before** the session check runs. When active,

@@ -22,7 +22,7 @@ export async function generateMetadata({
     robots: { index: false, follow: false },
     openGraph: {
       title: `A post on ${BRAND_NAME}`,
-      description: 'Members share hunts, catches, camps and builds.',
+      description: 'Members share hunts, catches, camps, hikes and builds.',
       images: ['/og-default.jpg'],
     },
   };

@@ -1,5 +1,9 @@
 'use client';
 
+// The post composer: text, tags, an optional place and per-category details,
+// up to six photos, one video, and — on the route-capable categories — one GPX
+// route. The route is ADDITIVE: it never takes the place of a photo, the video
+// or the text (operator, 2026-11-23), so every attachment keeps its own state.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
@@ -9,12 +13,18 @@ import {
   deletePost,
   submitPost,
   uploadPostImage,
+  uploadPostRoute,
   uploadPostVideo,
   type PostDetailPayload,
 } from '../../lib/community-api';
 import DateField from '../date-field';
 import { processImage } from '../../lib/process-image';
-import { POST_TYPE_LABELS, POST_TYPE_ORDER, type PostTypeKey } from '../../lib/post-types';
+import {
+  POST_TYPE_LABELS,
+  POST_TYPE_ORDER,
+  isRouteCapable,
+  type PostTypeKey,
+} from '../../lib/post-types';
 import {
   buildDetailPayload,
   chipLabel,
@@ -108,12 +118,60 @@ const MAX_IMAGES = 6;
 const MAX_VIDEO_MB = 64;
 const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
 
-/** Turn a failed create/upload into a message that names the actual problem. */
-function describePostError(e: unknown): string {
+/**
+ * Mirrors `FEED_MAX_ROUTE_BYTES` in `backend/src/feed/feed.types.ts`. The GPX is
+ * validated here for the same reason as the video: the post row already exists
+ * once uploads start, and a late 413 would leave an orphan for the moderation
+ * sweep to publish without the route.
+ */
+const MAX_ROUTE_MB = 10;
+const MAX_ROUTE_BYTES = MAX_ROUTE_MB * 1024 * 1024;
+
+/**
+ * The OS file dialog filter is advisory — a renamed `.zip` still gets through —
+ * so the `.gpx` extension is also checked in `pickRoute`.
+ */
+const ROUTE_ACCEPT = '.gpx,application/gpx+xml,application/xml,text/xml';
+
+/** "2.4 MB" beside a picked file, so the member knows what will upload. */
+function fileSizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * Turn a failed create/upload into a message that names the actual problem.
+ * `failedUpload` says which attachment was in flight: the route API has its own
+ * vocabulary ("not a GPX", "no track points", "too short"), and reading those
+ * through the video branch would tell the member to re-encode their clip.
+ */
+function describePostError(
+  e: unknown,
+  failedUpload: 'media' | 'route' = 'media',
+): string {
   if (e instanceof CommunityApiError) {
     if (e.status === 401) return 'Your session expired — please sign in again.';
     if (e.status === 429) {
       return 'Too many attempts just now — please wait a moment and try again.';
+    }
+    if (failedUpload === 'route') {
+      if (e.status === 413 || /file size|too large|maximum/i.test(e.message)) {
+        return `That GPX route is too large. The maximum is ${MAX_ROUTE_MB} MB — please simplify or split the track.`;
+      }
+      if (/not a gpx|only .*gpx|gpx file|file type|expected type/i.test(e.message)) {
+        return 'That file is not a GPX. Please choose a .gpx route file.';
+      }
+      if (/track ?points?|no points|empty route/i.test(e.message)) {
+        return 'That GPX has no track points. Export a recorded track from your device and try again.';
+      }
+      if (/too short/i.test(e.message)) {
+        return 'That GPX route is too short to show. Record a longer track and try again.';
+      }
+      // A 400 for the route is never the "add some text" gate — that only comes
+      // from submit — so say what actually failed.
+      if (e.status === 400) {
+        return 'That GPX route could not be added. Please check the file and try again.';
+      }
     }
     if (e.status === 413 || /file size|too large|maximum/i.test(e.message)) {
       return `That video is too large. The maximum is ${MAX_VIDEO_MB} MB — please trim or compress it.`;
@@ -128,9 +186,11 @@ function describePostError(e: unknown): string {
       return 'Community is temporarily unavailable — please try again shortly.';
     }
     if (e.status === 400) {
-      // The "at least one of text/photo/video" gate, not a moderation block.
-      if (/add some text|a photo or a video/i.test(e.message)) {
-        return 'Add some text, a photo or a video before posting.';
+      // The "at least one of text/photo/video/route" gate, not a moderation
+      // block. Keep matching the old wording too, so a not-yet-updated backend
+      // still reads correctly.
+      if (/add some text|a photo or a video|a route/i.test(e.message)) {
+        return 'Add some text, a photo, a video or a GPX route before posting.';
       }
       return 'That post was blocked by our moderation rules.';
     }
@@ -445,6 +505,16 @@ export function PostComposer({
   const [tags, setTags] = useState('');
   const [images, setImages] = useState<Picked[]>([]);
   const [video, setVideo] = useState<Picked | null>(null);
+  // The optional GPX route. It has its own state on purpose: photos, one video
+  // and one route can all be attached to the same post — never one instead of
+  // the other. Only route-capable categories show the picker (see
+  // `isRouteCapable`); switching away drops the route alone, never the media.
+  const [route, setRoute] = useState<{ file: File } | null>(null);
+  const [gpxShared, setGpxShared] = useState(true);
+  // Shown inline when a category change drops the route. Deliberately NOT the
+  // `notice` state, which replaces the whole composer with the post-success
+  // confirmation.
+  const [routeNotice, setRouteNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -522,6 +592,35 @@ export function PostComposer({
     setVideo({ file, url: URL.createObjectURL(file) });
   }
 
+  function pickRoute(files: File[]) {
+    const file = files[0];
+    if (!file) {
+      setRoute(null);
+      return;
+    }
+    // `accept` only filters the OS dialog; a renamed archive still gets through.
+    if (!/\.gpx$/i.test(file.name)) {
+      setRoute(null);
+      setMessage('That file is not a GPX. Please choose a .gpx route file.');
+      return;
+    }
+    // Refuse an over-size track up front — see MAX_ROUTE_BYTES.
+    if (file.size > MAX_ROUTE_BYTES) {
+      setRoute(null);
+      setMessage(
+        `That GPX route is ${(file.size / (1024 * 1024)).toFixed(0)} MB. The maximum is ${MAX_ROUTE_MB} MB — please simplify or split the track.`,
+      );
+      return;
+    }
+    setMessage(null);
+    setRouteNotice(null);
+    setRoute({ file });
+  }
+
+  function removeRoute() {
+    setRoute(null);
+  }
+
   function removeImage(index: number) {
     setImages((prev) => {
       const copy = [...prev];
@@ -547,16 +646,22 @@ export function PostComposer({
     setPlaceId('');
     setImages([]);
     setVideo(null);
+    setRoute(null);
+    setGpxShared(true);
+    setRouteNotice(null);
   }
 
   async function submit() {
-    // Any ONE of text / photo / video is enough (operator, 2026-10-09).
-    if (busy || !(body.trim() || images.length || video)) return;
+    // Any ONE of text / photo / video / route is enough (operator, 2026-10-09;
+    // route added 2026-11-23).
+    if (busy || !(body.trim() || images.length || video || route)) return;
     setBusy(true);
     setMessage(null);
     setPhase(null);
     let token: string | null = null;
     let createdId: string | null = null;
+    // Tells the error mapper which attachment was in flight when it failed.
+    let routeFailed = false;
     try {
       token = await getToken();
       if (!token) {
@@ -580,7 +685,10 @@ export function PostComposer({
       });
       createdId = created.post.id;
 
-      const total = images.length + (video ? 1 : 0);
+      // The route is one more attachment in the same upload pass — photos, then
+      // the video, then the GPX — so the progress count and the delete-draft
+      // path below treat all of them alike.
+      const total = images.length + (video ? 1 : 0) + (route ? 1 : 0);
       let done = 0;
       for (const item of images) {
         setPhase(`Uploading media… ${done + 1}/${total}`);
@@ -591,6 +699,13 @@ export function PostComposer({
       if (video) {
         setPhase(`Uploading media… ${done + 1}/${total}`);
         await uploadPostVideo(token, created.post.id, video.file);
+        done += 1;
+      }
+      if (route) {
+        routeFailed = true;
+        setPhase(`Uploading media… ${done + 1}/${total}`);
+        await uploadPostRoute(token, created.post.id, route.file, gpxShared);
+        routeFailed = false;
       }
 
       setPhase('Reviewing…');
@@ -602,16 +717,16 @@ export function PostComposer({
       );
       onPosted();
     } catch (e) {
-      // A post row may already exist when a media upload fails. Remove it: the
+      // A post row may already exist when an upload fails. Remove it: the
       // moderation sweep would otherwise publish it a couple of minutes later
-      // WITHOUT the photos/video the member attached, which reads as "the post
-      // is up but the video never made it".
+      // WITHOUT the photos/video/route the member attached, which reads as "the
+      // post is up but the route never made it".
       if (createdId && token) {
         await deletePost(token, createdId).catch(() => {
           /* best effort — nothing more we can do */
         });
       }
-      setMessage(describePostError(e));
+      setMessage(describePostError(e, routeFailed ? 'route' : 'media'));
     } finally {
       setBusy(false);
       setPhase(null);
@@ -658,8 +773,11 @@ export function PostComposer({
     );
   }
 
-  // Any ONE of text / photo / video enables Post (operator, 2026-10-09).
-  const canPost = !busy && (body.trim().length > 0 || images.length > 0 || !!video);
+  // Any ONE of text / photo / video / route enables Post (operator, 2026-10-09;
+  // route added 2026-11-23).
+  const canPost =
+    !busy &&
+    (body.trim().length > 0 || images.length > 0 || !!video || !!route);
   const detailFields = detailFieldsFor(type);
   const chosenDetailCount = detailFields.filter((field) => {
     const value = details[memoryKey(type, field.key)];
@@ -678,7 +796,21 @@ export function PostComposer({
         <select
           value={type}
           aria-label="Post category"
-          onChange={(e) => setType(e.target.value as PostTypeKey)}
+          onChange={(e) => {
+            const next = e.target.value as PostTypeKey;
+            setType(next);
+            // The route is the only category-bound attachment: switching to a
+            // type that cannot carry one drops the GPX and says so, but every
+            // photo and the video stay (they are valid on every category).
+            if (route && !isRouteCapable(next)) {
+              setRoute(null);
+              setRouteNotice(
+                'Routes are available on Hiking, 4x4 and Camping & Bushcraft posts.',
+              );
+            } else if (isRouteCapable(next)) {
+              setRouteNotice(null);
+            }
+          }}
           className="px-2 py-2 rounded-[6px] text-[13px]"
           style={{
             background: 'var(--bg-inset)',
@@ -814,7 +946,67 @@ export function PostComposer({
             </FilePickerButton>
           </div>
         </div>
+        {/* Routes exist only on the categories that have a track to show. */}
+        {isRouteCapable(type) && (
+          <div className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
+            <span>GPX route (one, up to {MAX_ROUTE_MB} MB)</span>
+            <div className="mt-1">
+              <FilePickerButton
+                accept={ROUTE_ACCEPT}
+                disabled={busy}
+                onFiles={pickRoute}
+              >
+                Choose GPX route
+              </FilePickerButton>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* The picked route: its name and size, then the download permission. */}
+      {route && (
+        <div className="mb-3" data-route-picked>
+          <div
+            className="flex items-center gap-2 flex-wrap text-[13px]"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <span>
+              {route.file.name} ({fileSizeLabel(route.file.size)})
+            </span>
+            <button
+              type="button"
+              aria-label="Remove route"
+              onClick={removeRoute}
+              disabled={busy}
+              className="gg-press px-2 py-1 rounded-[6px] text-[12px]"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Remove
+            </button>
+          </div>
+          <label
+            className="flex items-center gap-2 mt-2 text-[12px]"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <input
+              type="checkbox"
+              checked={gpxShared}
+              disabled={busy}
+              onChange={(e) => setGpxShared(e.target.checked)}
+            />
+            Allow other members to download this GPX
+          </label>
+        </div>
+      )}
+      {routeNotice && (
+        <p className="text-[12px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+          {routeNotice}
+        </p>
+      )}
 
       {/* Live preview of what will be posted, as it is attached. */}
       {(images.length > 0 || video) && (

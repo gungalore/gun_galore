@@ -3,6 +3,7 @@ import { POST_TYPE_ORDER, postTypeLabel } from './post-types';
 
 describe('post types', () => {
   it('labels every known type', () => {
+    expect(postTypeLabel('HIKING')).toBe('Hiking');
     expect(postTypeLabel('HUNTING')).toBe('Hunting');
     expect(postTypeLabel('FIREARMS_SHOOTING')).toBe('Firearms & Shooting');
     expect(postTypeLabel('QUESTIONS_ADVICE')).toBe('Questions & Advice');
@@ -12,8 +13,9 @@ describe('post types', () => {
     expect(postTypeLabel('SOMETHING_NEW')).toBe('General & Community');
   });
 
-  it('orders all nine types exactly once', () => {
-    expect(POST_TYPE_ORDER).toHaveLength(9);
-    expect(new Set(POST_TYPE_ORDER).size).toBe(9);
+  it('orders all ten types exactly once', () => {
+    expect(POST_TYPE_ORDER).toHaveLength(10);
+    expect(new Set(POST_TYPE_ORDER).size).toBe(10);
+    expect(POST_TYPE_ORDER).toContain('HIKING');
   });
 });

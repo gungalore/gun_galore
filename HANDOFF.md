@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-11-23**.
 
+## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (PREPARED, NOT DEPLOYED)
+
+Operator: *"if we want users to upload .gpx files onto the commutiny to share routes … It must be 3D caplabe"*; later *"add Hiking as a category. So Hiking, 4x4 and camping & Bushcraft are maps capable"*, *"they must be able to add a route along with pictures or a video"*, *"toggle to enable sharing of the .gpx or not"*, and point inspection for elevation/speed/gradient.
+
+- **Hiking** (`HIKING`) is a community post type; route-capable types are Hiking, Overlanding & 4x4 and Camping & Bushcraft. A GPX is additive to text, up to 6 photos and one video.
+- **Backend:** `PostRoute` (one per post, cascade) + two migrations; `feed-route.parser.ts` (`@tmcw/togeojson` + `@xmldom/xmldom`) rejects DOCTYPE/ENTITY, strips metadata/waypoints/timestamps, stores simplified points + derived speed/gradient/dist; route upload/patch/delete/get/download endpoints; `gpxShared` defaults true and gates non-author downloads (403).
+- **Frontend:** composer route picker + “Allow other members to download this GPX”; route card in feed/modal; `/community/p/[id]/route` with MapTiler `outdoor-v2` + terrain-RGB, MapLibre 2D/3D, elevation chart/scrubber, map-click point inspector, fallback SVG when no key/WebGL/terrain.
+- **Not committed, not deployed.** Local DB has both migrations; local `.env.local` has `NEXT_PUBLIC_MAPTILER_KEY` / `_STYLE`.
+- **Before deploy:** restrict or rotate the MapTiler key (it was pasted into chat) to localhost:3000 + `alloutdoor.co.za` / `www.alloutdoor.co.za`; put `NEXT_PUBLIC_MAPTILER_KEY` in `frontend/.env.production` on the box (gitignored) before the build. Full deploy (schema + backend deps + frontend dep): backup, pull, `prisma migrate deploy` (both), `prisma generate`, `npm install` both, builds, PM2 reload, health ×2, public ×2.
+- **Checks:** backend 437 suites / 6,481 tests (8 skipped); frontend 181 files / 2,061 tests (1 skipped); both type-checks clean; production build clean. First backend full run had one Jest worker OOM while frontend tests/build ran concurrently; the suite passed alone and `motivation-plates.spec.ts` passed isolated.
+
 ## 2026-11-23 — LISTING ACTIONS MOVED TO THE TOP; Q&A AND COMPOSER IN ONE CARD
 
 Operator screenshot: *"the red needs to move to where indicated. The blue needs

@@ -37,8 +37,9 @@ export function CommunityGate({ as = 'main' }: { as?: 'main' | 'section' }) {
           className="text-[15px] leading-relaxed mb-6"
           style={{ color: 'var(--text-secondary)' }}
         >
-          Share hunts, catches, camps and builds. Ask questions, swap advice and
-          keep up with the people who love the outdoors as much as you do.
+          Share hunts, catches, camps, hikes and builds. Ask questions, swap
+          advice and keep up with the people who love the outdoors as much as
+          you do.
           Sign in to see what members are sharing.
         </p>
 

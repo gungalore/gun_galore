@@ -1,4 +1,4 @@
-﻿// Typed client for the community feed API. Mirrors lib/users-api.ts: the token
+// Typed client for the community feed API. Mirrors lib/users-api.ts: the token
 // is fetched INSIDE each call, every read is `no-store`, and errors carry the
 // HTTP status so the UI can distinguish "disabled" (404) from a real failure.
 
@@ -33,6 +33,43 @@ export interface FeedImage {
   id: string;
   url: string;
   order: number;
+}
+
+/**
+ * A GPX route attached to a post. The summary travels with the feed; the full
+ * `segments` are fetched only when the route page opens.
+ */
+export interface FeedRoutePoint {
+  lat: number;
+  lon: number;
+  /** Metres above sea level, or null when the GPX carried no elevation. */
+  ele: number | null;
+  /** Derived from the GPX timestamps; null when the file had none. */
+  speedKph: number | null;
+  /** Rise/run percent at the point; null without elevation. */
+  gradientPct: number | null;
+  /** Cumulative distance along the route, in metres. */
+  distM: number;
+}
+
+export interface FeedRouteSummary {
+  distanceM: number;
+  ascentM: number | null;
+  descentM: number | null;
+  durationSeconds: number | null;
+  pointCount: number;
+  segmentCount: number;
+  hasElevation: boolean;
+  hasSpeed: boolean;
+  /** Whether other members may download the .gpx (author can still do so). */
+  gpxShared: boolean;
+  /** ~80 elevation samples for the feed sparkline; null without elevation. */
+  profile: number[] | null;
+}
+
+export interface FeedRoute extends FeedRouteSummary {
+  segments: FeedRoutePoint[][];
+  bounds: { south: number; west: number; north: number; east: number };
 }
 
 export type GraphicTier = 'NONE' | 'FIELD' | 'EXTREME';
@@ -88,6 +125,8 @@ export interface FeedPost {
     thumbnailUrl: string | null;
     durationSeconds: number | null;
   } | null;
+  /** GPX route summary; the full points load on the route page. */
+  route?: FeedRouteSummary | null;
   listing: {
     id: string;
     title: string;
@@ -391,6 +430,82 @@ export async function uploadPostImage(
     throw new CommunityApiError(res.status, body);
   }
   return (await res.json()) as { image: FeedImage };
+}
+
+/** One route per post; re-uploading replaces it. */
+export async function uploadPostRoute(
+  token: string,
+  postId: string,
+  file: File,
+  gpxShared: boolean,
+): Promise<{ route: FeedRouteSummary }> {
+  const fd = new FormData();
+  fd.append('route', file);
+  fd.append('gpxShared', gpxShared ? 'true' : 'false');
+  const res = await fetch(`${API_URL}/community/posts/${postId}/route`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new CommunityApiError(res.status, body);
+  }
+  return (await res.json()) as { route: FeedRouteSummary };
+}
+
+/** The poster's download permission; can be changed after publishing. */
+export function setRouteGpxShared(
+  token: string,
+  postId: string,
+  gpxShared: boolean,
+): Promise<{ gpxShared: boolean }> {
+  return jsonFetch(`/community/posts/${postId}/route`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ gpxShared }),
+  });
+}
+
+export function deletePostRoute(
+  token: string,
+  postId: string,
+): Promise<{ deleted: boolean }> {
+  return jsonFetch(`/community/posts/${postId}/route`, token, {
+    method: 'DELETE',
+  });
+}
+
+/** Full route points; members-only and subject to post visibility. */
+export function fetchPostRoute(
+  token: string,
+  postId: string,
+): Promise<{ route: FeedRoute }> {
+  return jsonFetch(`/community/posts/${postId}/route`, token);
+}
+
+/**
+ * Download the generated (simplified, metadata-free) GPX. The endpoint refuses
+ * non-authors when the poster disabled sharing, so the button is only rendered
+ * when the summary says it is allowed.
+ */
+export async function downloadPostRouteGpx(
+  token: string,
+  postId: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${API_URL}/community/posts/${postId}/route.gpx`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new CommunityApiError(res.status, body);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  return {
+    blob: await res.blob(),
+    filename: match?.[1] || `alloutdoor-route-${postId}.gpx`,
+  };
 }
 
 /** One video per post; re-uploading replaces it. */

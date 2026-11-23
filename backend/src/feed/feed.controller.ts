@@ -9,6 +9,7 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -18,6 +19,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { ReactionKind } from '@prisma/client';
+import { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -27,8 +29,9 @@ import { FeedPreferencesDto } from './dto/feed-preferences.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
 import { FeedSearchDto } from './dto/feed-search.dto';
 import { ReportContentDto } from './dto/report-content.dto';
+import { SetRouteGpxSharedDto } from './dto/set-route-gpx-shared.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { FEED_MAX_VIDEO_BYTES } from './feed.types';
+import { FEED_MAX_ROUTE_BYTES, FEED_MAX_VIDEO_BYTES } from './feed.types';
 import { FeedService } from './feed.service';
 
 /**
@@ -138,6 +141,31 @@ export class FeedController {
   @Get('posts/:id')
   post(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.getPost(userId, id);
+  }
+
+  // Full GPX route points. Summary-only on the feed; this is the route page.
+  @Get('posts/:id/route')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  route(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.getRoute(userId, id);
+  }
+
+  // The regenerated, metadata-free .gpx. 403 when the author disabled sharing.
+  @Get('posts/:id/route.gpx')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async routeGpx(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { body, filename } = await this.feed.downloadRouteGpx(userId, id);
+    res.set({
+      'Content-Type': 'application/gpx+xml; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      // A member's route is personal data; never put it in a shared cache.
+      'Cache-Control': 'private, no-store',
+    });
+    return body;
   }
 
   // Who liked (or disliked) a post. Visible to any signed-in member
@@ -279,6 +307,46 @@ export class FeedController {
   @Delete('posts/:id/video')
   removeVideo(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.removeVideo(userId, id);
+  }
+
+  // ── GPX route (Hiking and the other route-capable types) ──────────
+
+  @Post('posts/:id/route')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('route', { storage: memoryStorage() }))
+  uploadRoute(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          // ⚠️ SIZE ONLY — the MIME type is NOT trusted. Browsers and phones
+          // routinely mislabel .gpx uploads; the parser validates the content
+          // itself, so no FileTypeValidator is used here.
+          new MaxFileSizeValidator({ maxSize: FEED_MAX_ROUTE_BYTES }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body() body: { gpxShared?: string },
+  ) {
+    // Multipart fields arrive as strings; only the literal "false" opts out.
+    return this.feed.uploadRoute(userId, id, file, body?.gpxShared !== 'false');
+  }
+
+  @Patch('posts/:id/route')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  setRouteGpxShared(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: SetRouteGpxSharedDto,
+  ) {
+    return this.feed.setRouteGpxShared(userId, id, dto.gpxShared);
+  }
+
+  @Delete('posts/:id/route')
+  removeRoute(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.feed.removeRoute(userId, id);
   }
 
   @Post('posts/:id/comments')

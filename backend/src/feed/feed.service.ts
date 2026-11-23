@@ -16,6 +16,7 @@ import {
   ReactionKind,
 } from '@prisma/client';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { BRAND_NAME } from '../common/brand';
 import { boundedImageUrl, IMAGE_EDGE, optimizedVideoUrl } from '../common/image-url';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { maskBadLanguage } from '../moderation/bad-language';
@@ -31,11 +32,18 @@ import { FeedModerationService } from './feed-moderation.service';
 import { FeedAwardsService, levelFor } from './feed-awards.service';
 import { FeedAdsService } from './feed-ads.service';
 import {
+  GpxRouteError,
+  parseGpxRoute,
+  RouteBounds,
+  RoutePoint,
+} from './feed-route.parser';
+import {
   authorName,
   FEED_MAX_IMAGES,
   FEED_PAGE_DEFAULT,
   FEED_PAGE_MAX,
   isOfficialEmail,
+  isRouteCapable,
   looksLikeSerial,
   normaliseMuteList,
   normaliseTags,
@@ -70,6 +78,8 @@ type PostWithRelations = Post & {
     thumbnailUrl: string | null;
     durationSeconds: number | null;
   } | null;
+  /** Route summary only. `segments`/`bounds` are fetched by the route page. */
+  route: PostRouteSummary | null;
   listing: {
     id: string;
     title: string;
@@ -79,6 +89,80 @@ type PostWithRelations = Post & {
   } | null;
   likes: { id: string; kind: ReactionKind }[];
 };
+
+/** The route shape every feed post carries — never the full point list. */
+type PostRouteSummary = {
+  distanceM: number;
+  ascentM: number | null;
+  descentM: number | null;
+  durationSeconds: number | null;
+  pointCount: number;
+  segmentCount: number;
+  hasElevation: boolean;
+  hasSpeed: boolean;
+  gpxShared: boolean;
+  profile: number[] | null;
+};
+
+/** Summary columns, shared by the feed include and the route endpoints. */
+const POST_ROUTE_SUMMARY_SELECT = {
+  distanceM: true,
+  ascentM: true,
+  descentM: true,
+  durationSeconds: true,
+  pointCount: true,
+  segmentCount: true,
+  hasElevation: true,
+  hasSpeed: true,
+  gpxShared: true,
+  profile: true,
+};
+
+const POST_ROUTE_FULL_SELECT = {
+  ...POST_ROUTE_SUMMARY_SELECT,
+  segments: true,
+  bounds: true,
+};
+
+/** Escape the five XML metacharacters for the generated GPX. */
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Regenerate a GPX 1.1 file from the stored simplified route.
+ *
+ * ⚠️ TIMESTAMPS, NAMES, WAYPOINTS AND METADATA ARE DELIBERATELY ABSENT. The
+ * member shared a route, not a recording of when they walked it or where they
+ * started; only the coordinates and elevation that already appear on the route
+ * page are exported.
+ */
+function buildRouteGpx(segments: RoutePoint[][]): string {
+  const track = segments
+    .map((segment) => {
+      const points = segment
+        .map((point) => {
+          const elevation =
+            point.ele === null ? '' : `<ele>${point.ele.toFixed(1)}</ele>`;
+          const coordinates = `lat="${point.lat.toFixed(7)}" lon="${point.lon.toFixed(7)}"`;
+          return `<trkpt ${coordinates}>${elevation}</trkpt>`;
+        })
+        .join('');
+      return `<trkseg>${points}</trkseg>`;
+    })
+    .join('');
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    `<gpx version="1.1" creator="${xmlEscape(BRAND_NAME)}" ` +
+    'xmlns="http://www.topografix.com/GPX/1/1">' +
+    `<trk>${track}</trk></gpx>\n`
+  );
+}
 
 @Injectable()
 export class FeedService {
@@ -155,6 +239,8 @@ export class FeedService {
           durationSeconds: true,
         },
       },
+      // Summary only: the point array is far too big for every feed page.
+      route: { select: POST_ROUTE_SUMMARY_SELECT },
     };
   }
 
@@ -199,6 +285,29 @@ export class FeedService {
       v.feedMutedAuthorIds.includes(post.authorId) ||
       post.tags.some((t) => v.feedMutedTags.includes(t))
     );
+  }
+
+  /**
+   * Normalise a stored route row to the summary every feed payload carries.
+   * ⚠️ This is the ONLY shape allowed on a post: `segments`/`bounds` must be
+   * fetched explicitly through `getRoute`, never leaked via the feed.
+   */
+  private routeSummary(
+    route: (Omit<PostRouteSummary, 'profile'> & { profile: unknown }) | null,
+  ): PostRouteSummary | null {
+    if (!route) return null;
+    return {
+      distanceM: route.distanceM,
+      ascentM: route.ascentM,
+      descentM: route.descentM,
+      durationSeconds: route.durationSeconds,
+      pointCount: route.pointCount,
+      segmentCount: route.segmentCount,
+      hasElevation: route.hasElevation,
+      hasSpeed: route.hasSpeed,
+      gpxShared: route.gpxShared,
+      profile: Array.isArray(route.profile) ? (route.profile as number[]) : null,
+    };
   }
 
   private shapePost(post: PostWithRelations, v: ViewerRow, includeFiltered: boolean) {
@@ -276,6 +385,9 @@ export class FeedService {
             playbackUrl: optimizedVideoUrl(post.video.url, 720),
           }
         : null,
+      // Optional GPX route summary (Hiking and the other route-capable types).
+      // Always present as a key so the client shape is stable; null when none.
+      route: this.routeSummary(post.route),
       listing: post.listing,
       liked: post.likes[0]?.kind === ReactionKind.LIKE,
       disliked: post.likes[0]?.kind === ReactionKind.DISLIKE,
@@ -962,19 +1074,26 @@ export class FeedService {
     const v = await this.viewer(userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      include: { images: true, video: true },
+      include: { images: true, video: true, route: true },
     });
     if (!post || post.authorId !== userId) throw new NotFoundException();
     if (post.status === PostStatus.REJECTED) {
       throw new BadRequestException('This post was rejected.');
     }
 
-    // A post must carry SOMETHING: text, a photo or a video. Media is attached
-    // after create (create → upload → submit), so this is the first point the
-    // full picture is known. Without it an abandoned empty create would publish
-    // as a blank post on the feed.
-    if (!post.body.trim() && post.images.length === 0 && !post.video) {
-      throw new BadRequestException('Add some text, a photo or a video first.');
+    // A post must carry SOMETHING: text, a photo, a video or a GPX route. Media
+    // is attached after create (create → upload → submit), so this is the first
+    // point the full picture is known. Without it an abandoned empty create
+    // would publish as a blank post on the feed.
+    if (
+      !post.body.trim() &&
+      post.images.length === 0 &&
+      !post.video &&
+      !post.route
+    ) {
+      throw new BadRequestException(
+        'Add some text, a photo, a video or a GPX route first.',
+      );
     }
 
     // ⚠️ BACKGROUND MODERATION. Queue the post and return at once — the member
@@ -1168,7 +1287,7 @@ export class FeedService {
     const v = await this.viewer(userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      include: { images: true, video: true },
+      include: { images: true, video: true, route: true },
     });
     if (!post || post.authorId !== userId) throw new NotFoundException();
 
@@ -1180,9 +1299,17 @@ export class FeedService {
     const title = dto.title !== undefined ? dto.title.trim() || null : post.title;
     const body = dto.body ?? post.body;
     const text = [title, body].filter(Boolean).join('\n');
-    // Same invariant as submitPost: an edit must not leave the post empty.
-    if (!text.trim() && post.images.length === 0 && !post.video) {
-      throw new BadRequestException('Add some text, a photo or a video first.');
+    // Same invariant as submitPost: an edit must not leave the post empty. A
+    // GPX route is content in its own right (route-only posts are valid).
+    if (
+      !text.trim() &&
+      post.images.length === 0 &&
+      !post.video &&
+      !post.route
+    ) {
+      throw new BadRequestException(
+        'Add some text, a photo, a video or a GPX route first.',
+      );
     }
     // The hard keyword block stays synchronous — it is cheap and the UI shows
     // the 400 inline. The judgement call (is this still allowed?) is queued.
@@ -1324,6 +1451,171 @@ export class FeedService {
       await this.prisma.postVideo.delete({ where: { postId } });
     }
     return { deleted: true };
+  }
+
+  // ── GPX route (Hiking and the other route-capable outdoor types) ──────
+  //
+  // ⚠️ NOTHING IS STORED IN CLOUDINARY. A route is reduced by the parser to
+  // `PostRoute.segments` (+ metrics) and the .gpx download is regenerated from
+  // those rows. There is no raw file and no public URL to leak or clean up.
+
+  /** Attach or replace the post's one GPX route. Author-only, pre-publish. */
+  async uploadRoute(
+    userId: string,
+    postId: string,
+    file: Express.Multer.File,
+    gpxShared = true,
+  ) {
+    await this.assertEnabled();
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: { route: true },
+    });
+    if (!post || post.authorId !== userId) throw new NotFoundException();
+    if (!isRouteCapable(post.type)) {
+      throw new BadRequestException(
+        'A GPX route can only be attached to a hiking, overlanding or camping post.',
+      );
+    }
+    // A published post's route is part of what members already saw; letting it
+    // be swapped afterwards would silently rewrite an approved post. Once
+    // published, only the author's gpxShared consent may change.
+    if (post.status === PostStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'The route cannot be changed after the post is published.',
+      );
+    }
+    if (post.status === PostStatus.REJECTED) {
+      throw new BadRequestException('This post was rejected.');
+    }
+
+    const route = this.parseRouteFile(file);
+    const profile: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+      route.profile === null ? Prisma.JsonNull : (route.profile as Prisma.InputJsonValue);
+    const data = {
+      distanceM: route.distanceM,
+      ascentM: route.ascentM,
+      descentM: route.descentM,
+      minElevationM: route.minElevationM,
+      maxElevationM: route.maxElevationM,
+      durationSeconds: route.durationSeconds,
+      pointCount: route.pointCount,
+      segmentCount: route.segmentCount,
+      hasElevation: route.hasElevation,
+      hasSpeed: route.hasSpeed,
+      gpxShared,
+      profile,
+      segments: route.segments as unknown as Prisma.InputJsonValue,
+      bounds: route.bounds as unknown as Prisma.InputJsonValue,
+    };
+    // One route per post: a re-upload REPLACES the stored one.
+    const saved = await this.prisma.postRoute.upsert({
+      where: { postId },
+      create: { postId, ...data },
+      update: data,
+      select: POST_ROUTE_SUMMARY_SELECT,
+    });
+    return { route: this.routeSummary(saved) };
+  }
+
+  /** Remove the post's route only — its photos, video and text stay. */
+  async removeRoute(userId: string, postId: string) {
+    await this.assertEnabled();
+    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    if (!post || post.authorId !== userId) throw new NotFoundException();
+    await this.prisma.postRoute.deleteMany({ where: { postId } });
+    return { deleted: true };
+  }
+
+  /**
+   * The author's consent for other members to download the .gpx. Allowed even
+   * after publishing: it grants or revokes a download, it does not change the
+   * moderated content of the post.
+   */
+  async setRouteGpxShared(userId: string, postId: string, gpxShared: boolean) {
+    await this.assertEnabled();
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: { route: { select: { id: true } } },
+    });
+    if (!post || post.authorId !== userId || !post.route) {
+      throw new NotFoundException();
+    }
+    await this.prisma.postRoute.update({
+      where: { postId },
+      data: { gpxShared },
+    });
+    return { gpxShared };
+  }
+
+  /** Full route points for the route page: published, or the author. */
+  async getRoute(userId: string, postId: string) {
+    await this.assertEnabled();
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        authorId: true,
+        status: true,
+        route: { select: POST_ROUTE_FULL_SELECT },
+      },
+    });
+    if (!post || !post.route) throw new NotFoundException();
+    if (post.status !== PostStatus.PUBLISHED && post.authorId !== userId) {
+      // Fail closed: a post still in moderation must not confirm its route.
+      throw new NotFoundException();
+    }
+    return {
+      route: {
+        ...this.routeSummary(post.route),
+        segments: post.route.segments as unknown as RoutePoint[][],
+        bounds: post.route.bounds as unknown as RouteBounds,
+      },
+    };
+  }
+
+  /**
+   * Download the generated .gpx. Visibility matches `getRoute`; on top of that
+   * the author must have enabled sharing for anyone but themselves.
+   */
+  async downloadRouteGpx(
+    userId: string,
+    postId: string,
+  ): Promise<{ body: string; filename: string }> {
+    await this.assertEnabled();
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        authorId: true,
+        status: true,
+        route: { select: POST_ROUTE_FULL_SELECT },
+      },
+    });
+    if (!post || !post.route) throw new NotFoundException();
+    const isAuthor = post.authorId === userId;
+    if (post.status !== PostStatus.PUBLISHED && !isAuthor) {
+      throw new NotFoundException();
+    }
+    if (!post.route.gpxShared && !isAuthor) {
+      throw new ForbiddenException('The author has not enabled the GPX download.');
+    }
+    return {
+      body: buildRouteGpx(post.route.segments as unknown as RoutePoint[][]),
+      filename: `alloutdoor-route-${postId}.gpx`,
+    };
+  }
+
+  /** Map a rejected GPX to the 400 the composer shows inline. */
+  private parseRouteFile(file: Express.Multer.File) {
+    try {
+      // ⚠️ Decoding is not trusted either: invalid UTF-8 becomes U+FFFD, which
+      // the parser rejects before any XML work happens.
+      return parseGpxRoute(file.buffer.toString('utf8'));
+    } catch (error) {
+      if (error instanceof GpxRouteError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   async addComment(

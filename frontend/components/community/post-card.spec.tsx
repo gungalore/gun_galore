@@ -9,6 +9,26 @@ vi.mock('../../lib/auth', () => ({
   useAuth: () => ({ getToken: async () => 't', userId: null }),
 }));
 
+// The real card is the route-viewer agent's component; this stub pins the
+// CONTRACT (postId + route in, stats + link out) so the card integration can be
+// tested without pulling a map renderer into jsdom.
+vi.mock('./post-route-card', () => ({
+  PostRouteCard: ({
+    postId,
+    route,
+  }: {
+    postId: string;
+    route: { distanceM: number; ascentM: number | null };
+  }) => (
+    <div data-testid="route-card">
+      <span>
+        {(route.distanceM / 1000).toFixed(1)} km · {route.ascentM ?? 0} m ascent
+      </span>
+      <a href={`/community/p/${postId}/route`}>View route &amp; elevation</a>
+    </div>
+  ),
+}));
+
 import { PostCard } from './post-card';
 
 const post: FeedPost = {
@@ -47,6 +67,7 @@ const post: FeedPost = {
   author: { id: 'a1', username: 'turbosnail', avatarUrl: null },
   images: [],
   video: null,
+  route: null,
   listing: null,
   liked: false,
   disliked: false,
@@ -166,5 +187,52 @@ describe('PostCard — the tagged place', () => {
     expect(link.getAttribute('href')).toBe(
       'https://www.google.com/maps/search/?api=1&query=Hunting%20Lodge',
     );
+  });
+});
+
+describe('PostCard — a photo post can also carry a GPX route', () => {
+  const routePost: FeedPost = {
+    ...post,
+    type: 'HIKING',
+    images: [{ id: 'i1', url: 'https://img/valley.jpg', order: 0 }],
+    route: {
+      distanceM: 5200,
+      ascentM: 310,
+      descentM: 290,
+      durationSeconds: 5400,
+      pointCount: 400,
+      segmentCount: 1,
+      hasElevation: true,
+      hasSpeed: true,
+      gpxShared: true,
+      profile: [0, 10, 30, 20, 0],
+    },
+  };
+
+  it('renders the photo collage and the route summary together', () => {
+    render(
+      <PostCard
+        post={routePost}
+        onToggleLike={vi.fn()}
+        onToggleDislike={vi.fn()}
+        onHideType={vi.fn()}
+        onMuteAuthor={vi.fn()}
+        onMuteTag={vi.fn()}
+      />,
+    );
+
+    // The photos are still the collage…
+    expect(screen.getByRole('button', { name: 'Open photo 1' })).toBeTruthy();
+    // …and the route card is additive, with its stats and route-page link.
+    const card = screen.getByTestId('route-card');
+    expect(card.textContent).toContain('5.2 km');
+    expect(card.textContent).toContain('310 m ascent');
+    const link = screen.getByRole('link', { name: /View route/i });
+    expect(link.getAttribute('href')).toBe('/community/p/p1/route');
+  });
+
+  it('renders no route card when the post has no route', () => {
+    renderCard();
+    expect(screen.queryByTestId('route-card')).toBeNull();
   });
 });

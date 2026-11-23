@@ -1185,3 +1185,34 @@ Frontend:
 
 Tests: `backend/src/feed/feed-follows.spec.ts`,
 `frontend/components/community/follows-sheet.spec.tsx`.
+
+---
+
+## 22. GPX routes, Hiking category and 3D maps (2026-11-23)
+
+**Hiking** is a new community post type (`HIKING`). It carries no extra detail fields; the attached route supplies distance/ascent/duration. The composer, feed filters, preferences and labels all include it, and it is map-capable.
+
+### Capability
+`ROUTE_CAPABLE_POST_TYPES = [HIKING, OVERLANDING_4X4, CAMPING_BUSHCRAFT]` (backend `feed.types.ts`, frontend `lib/post-types.ts`). Only those types accept a GPX. A route is **additive**: one `PostRoute` can coexist with up to 6 `PostImage` rows and one `PostVideo`; route-only posts are allowed. The composer shows photos, video and GPX together; changing to a non-capable type clears only the route.
+
+### Ingestion
+`backend/src/feed/feed-route.parser.ts` uses `@tmcw/togeojson` + `@xmldom/xmldom`:
+- Reject DOCTYPE/ENTITY, cap source at 100,000 points, require ≥20 valid points and ≥100 m.
+- Use `LineString`/`MultiLineString`; prefer tracks over routes; ignore waypoints and all properties except `coordinateProperties.times` (used only to derive speed/duration, then discarded).
+- Simplify per segment with Douglas–Peucker to ≤2,000 points (hard cap 2,500). Store `{lat,lon,ele,speedKph,gradientPct,distM}` per point. Timestamps are never stored; speed/gradient are derived, null when the GPX lacks the input.
+- Store distance, ascent/descent (2 m threshold), min/max elevation, duration seconds, bounds and an 80-sample elevation `profile`.
+
+### Privacy
+The original GPX is never stored. `PostRoute.gpxShared` (default true) controls whether other members may download the generated simplified GPX; the route line/map remain visible. The author can change it after publishing. No start/end markers. The map is members-only.
+
+### API
+- `POST /community/posts/:id/route` (multipart `route` + `gpxShared`) — author-only, route-capable, 10 MB, 10/min.
+- `PATCH /community/posts/:id/route` — author-only `{gpxShared}`.
+- `DELETE /community/posts/:id/route`.
+- `GET /community/posts/:id/route` — full route (PUBLISHED or author).
+- `GET /community/posts/:id/route.gpx` — generated GPX; 403 for non-authors when sharing is off.
+
+### Viewer
+`/community/p/[id]/route` (auth gate, noindex). MapLibre GL JS with MapTiler `outdoor-v2` and terrain-RGB; 2D/3D toggle; route line; no start/end markers. Point inspector: map click, chart pointer/drag/tap or range slider selects the nearest point and shows elevation, speed and gradient (missing inputs labelled). `gpxShared` controls the Download button; the author sees a toggle. Missing key/WebGL/terrain → local SVG fallback; no OSM/AWS fallback.
+
+Tests: `backend/src/feed/feed-route.parser.spec.ts`, `feed-route.service.spec.ts`; `frontend/lib/feed-route.spec.ts`, `post-route-card.spec.tsx`, `route-elevation.spec.tsx`, `route-map.spec.tsx`, `route-page-client.spec.tsx`, composer/post-card specs.

@@ -1,4 +1,4 @@
-﻿// Privacy Policy — drafted with reference to the Protection of
+// Privacy Policy — drafted with reference to the Protection of
 // Personal Information Act 4 of 2013 (POPIA). Mirrors the actual data
 // the codebase collects + the actual third-party processors used in
 // production.
@@ -257,6 +257,7 @@ export default function PrivacyPage() {
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
             ['Meta Platforms (WhatsApp Business Platform)', 'United States / Ireland', 'Your mobile number and the content of the WhatsApp messages we send you, and their delivery status'],
             ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); and documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction'],
+            ['MapTiler', 'Switzerland', 'Map-tile and terrain requests, including the approximate area of a GPX route, when you open a community route map'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{op}</td>
@@ -298,8 +299,8 @@ export default function PrivacyPage() {
       <p>
         Some of the operators above are located outside South Africa
         (notably Cloudinary, Resend, Google and Meta Platforms in
-        the United States, and Didit in the European Union). Where personal
-        information is transferred across
+        the United States, MapTiler in Switzerland, and Didit in the European
+        Union). Where personal information is transferred across
         borders, we rely on the following POPIA § 72 grounds:
       </p>
       <ul>
