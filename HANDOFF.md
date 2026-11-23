@@ -5,7 +5,22 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-22**.
+Last updated: **2026-11-23**.
+
+## 2026-11-23 — PRINT AND DELIVER IS OPEN
+
+The collection mobile is now in production `backend/.env` as
+`MOTIVATION_PRINT_PHONE` (mode 600, never written to this file, docs, code or the
+client). Backend reloaded, health ×2.
+
+Verified live against Bob Go from the actual pickup address: **7 rates**
+returned for 36 Sterappel Crescent → Cape Town (A4 envelope, 0.5 kg), cheapest
+door **R71.85** (Standard shipping). Nothing was booked — the first booking
+happens only when the desk prints a real order.
+
+A member can now choose **Print and Deliver**; the quote endpoint prices the
+live rate, one Yoco transaction includes it, and the Desk's **Print & delivery**
+queue books the collection after printing.
 
 ## 2026-11-22 (MOTIVATIONS) — TWO STEPS, BUTTONS, AND A WAY BACK
 
@@ -26,7 +41,8 @@ can go back to their previous choice."*
   copy problem, not a new limit).
 
 Deployed `4ddeaffc` (frontend-only): `BUILD_ID=F03zWV5dvhyUtc5BT7Dj0`, reload,
-health ×2. Print and Deliver still waits on `MOTIVATION_PRINT_PHONE`.
+health ×2. The collection phone has since been configured (see the 2026-11-23
+entry); Print and Deliver is open.
 
 ## 2026-11-22 (MOTIVATIONS) — PRINT / DOWNLOAD OR PRINT AND DELIVER, ONE PAYMENT
 
@@ -85,21 +101,19 @@ verified (table, `fulfilmentMode`, three payment columns); admin queue answers
 `PATCH /fulfilment` refuse DELIVER while the collection number is missing, so
 nobody can choose and pay for a delivery the desk cannot hand over.
 
-**⚠️ Print and Deliver is deliberately CLOSED on production until
-`MOTIVATION_PRINT_PHONE` is set.** Booking needs a reachable collection mobile;
-the code refuses the quote/booking rather than invent one. Digital Print /
-Download works fully. `MOTIVATION_PRINT_EMAIL` is already set to
-gerhard.fourie@alloutdoor.co.za.
+**Print and Deliver is OPEN.** `MOTIVATION_PRINT_PHONE` is set in production
+`backend/.env` (mode 600; the value is deliberately not in this file), and a live
+Bob Go quote from Sterappel returned 7 rates, cheapest door R71.85. The gate in
+`251d452d` stays as a safety: if the variable is ever removed, choosing DELIVER
+is refused before any money moves.
 
 **Verified**: backend **432 suites / 6,385 tests**, frontend **175 files /
 1,988 tests**, warden 394, both production builds clean. Local migration applied;
 backend boot checked with the new module graph.
 
-**Next**: set `MOTIVATION_PRINT_PHONE` to the number Bob Go should ring at
-Sterappel, reload backend, then run one **test-mode** motivation checkout with
-Print and Deliver (Yoco test key is still live on prod). Check the operator email
-and the Desk queue. Book a real collection only on a real order — it spends the
-Bob Go wallet.
+**Next**: run one **test-mode** motivation checkout with Print and Deliver (Yoco
+test key is still live on prod). Check the operator email and the Desk queue.
+Book a real collection only on a real order — it spends the Bob Go wallet.
 
 ## 2026-11-22 (MOTIVATIONS) — "9MM" NOW ASKS WHICH 9MM
 
