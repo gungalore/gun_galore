@@ -248,6 +248,42 @@ describe('parseGpxRoute', () => {
         );
       }
     });
+
+    it('accepts a short hand-drawn track of 16 points', () => {
+      // The operator's 1 KB Central Park sample: 16 points, ~8 km, elevation,
+      // no timestamps. A high point-count floor rejected this as a real file.
+      const points = [
+        [40.7681, -73.9819, 15],
+        [40.77, -73.974, 18],
+        [40.775, -73.971, 23],
+        [40.78, -73.968, 27],
+        [40.785, -73.965, 30],
+        [40.79, -73.962, 35],
+        [40.795, -73.959, 40],
+        [40.797, -73.962, 45],
+        [40.798, -73.966, 43],
+        [40.794, -73.97, 38],
+        [40.79, -73.972, 33],
+        [40.785, -73.974, 28],
+        [40.78, -73.976, 22],
+        [40.775, -73.978, 19],
+        [40.77, -73.98, 16],
+        [40.7681, -73.9819, 15],
+      ]
+        .map(([lat, lon, ele]) => pt(lat, lon, ele))
+        .join('');
+      const route = parseGpxRoute(
+        doc(`<trk><name>Central Park outer loop run</name><trkseg>${points}</trkseg></trk>`),
+      );
+      // Simplification keeps the shape, not every source point.
+      expect(route.pointCount).toBeGreaterThanOrEqual(2);
+      expect(route.pointCount).toBeLessThanOrEqual(16);
+      expect(route.segmentCount).toBe(1);
+      expect(route.distanceM).toBeGreaterThan(1000);
+      expect(route.hasElevation).toBe(true);
+      expect(route.hasSpeed).toBe(false);
+      expect(route.segments[0][0].gradientPct).not.toBeNull();
+    });
   });
 
   describe('speed and gradient', () => {
@@ -337,8 +373,11 @@ describe('parseGpxRoute', () => {
       expectRouteError(doc(`<trk>${trkseg(points)}</trk>`), /too short/i);
     });
 
-    it('rejects a route with fewer than 20 points', () => {
-      expectRouteError(doc(`<trk>${trkseg(hikePoints(10))}</trk>`), /at least 20/i);
+    it('rejects a track with a single point', () => {
+      expectRouteError(
+        doc(`<trk><trkseg>${pt(-33.1, 18.1)}</trkseg></trk>`),
+        /at least two|no track/i,
+      );
     });
 
     it('rejects a route whose coordinates are all unusable', () => {

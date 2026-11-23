@@ -423,10 +423,6 @@ export function parseGpxRoute(text: string): ParsedRoute {
     );
   }
 
-  const sourceTotal = segments.reduce((total, segment) => total + segment.length, 0);
-  if (sourceTotal < 20) {
-    throw new GpxRouteError('This GPX route needs at least 20 points.');
-  }
   const sourceDistanceM = segments.reduce(
     (total, segment) => total + segmentLengthM(segment),
     0,
