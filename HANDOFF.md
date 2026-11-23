@@ -57,15 +57,27 @@ keep the CPA rights against the seller intact.
   (and the “Gun Galore” brand leak removed); condition → seller/complaint;
   withdrawn “add photos” dispute CTA.
 
-**Verified**: backend `tsc` 0, **435 suites passed / 1 skipped, 6,431 tests**
-(8 skipped); frontend `tsc` 0, **176 files / 1,994 tests** (1 skipped), production
-build clean. Migration applied to the **local** DB only.
+**Deployed 2026-11-23, commit `b8209ca8`** — `infra/deploy/deploy.sh`: branch
+verified, pre-deploy dump `alloutdoor-20261123-095809.dump` (38,997,127 bytes),
+`prisma migrate deploy` applied `20261123120000_listing_faq`, backend + frontend
+builds, `pm2 reload`, backend health ×2, frontend health ×2, warden reloaded and
+online, public site 200 ×2, all three pm2 services online.
 
-**Not deployed.** At the next deploy: back up, pull, `prisma migrate deploy`,
-`prisma generate`, builds, PM2 reload, health/public ×2, then run
-`npm run seed:help` on the box so the live Help Centre copy matches. Existing
-conversations are **not backfilled** — the public Q&A fills from new seller
-replies onward.
+- `npm run seed:help` on the box: **0 created, 54 updated** (author
+  `gjpfourie@gmail.com`).
+- Live check: `/refund-policy`, `/terms`, `/complaints`, `/faq` all 200 with the
+  new copy; `GET /api/listings/:id/faq` returns 404 for a non-public listing and
+  a bogus id (route mounted, visibility guard working). The production catalogue
+  currently has **no publicly visible listing** (`/api/listings` total 0), so the
+  new listing Q&A has nowhere public to render yet; it appears when a
+  `publicVisible` listing is live and a seller answers an inquiry. `ListingFaq`
+  rows: 0.
+- Local gate: `tsc` both 0; backend `npm test` 435 suites passed / 6,431 tests
+  (8 skipped); frontend `npm test` 176 files / 1,994 tests; build clean.
+  ⚠️ The first full backend run hit the known flaky Chromium PDF spec at its
+  120 s timeout; the isolated spec and the rerun passed.
+- Existing conversations are **not backfilled** — the public Q&A fills from new
+  seller replies onward.
 
 ## 2026-11-23 — THE PRINT EMAIL BOOKS THE COURIER WITH ONE CLICK
 

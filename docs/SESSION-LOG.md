@@ -33,7 +33,9 @@ What each session did, found, and changed — so the next one does not re-derive
 - Help Centre rows are seeded, not live-edited: production copy needs `npm run seed:help`.
 
 **Verified**
-- Backend `tsc` 0, jest **435 passed / 1 skipped, 6,431 pass**; frontend `tsc` 0, vitest **176 files / 1,994 pass**, `next build` clean. Local migration applied; nothing deployed.
+- Backend `tsc` 0, jest **435 passed / 1 skipped, 6,431 pass**; frontend `tsc` 0, vitest **176 files / 1,994 pass**, `next build` clean.
+- **Deployed** `b8209ca8` via `deploy.sh`: dump `alloutdoor-20261123-095809.dump`, migration `20261123120000_listing_faq` applied, health ×2 both, warden online, public 200 ×2, `seed:help` 54 updated. Production has no publicly visible listing yet; FAQ rows 0.
+- First full `npm test` hit the flaky Chromium PDF timeout (120s); isolated + rerun passed.
 
 ---
 
