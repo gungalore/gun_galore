@@ -913,6 +913,18 @@ rifle does not get a human look. Three settings keys survive in the admin UI
 `high_value_review_threshold`) that **are read by nothing**, and the
 `claude_moderation_enabled` hint claims the opposite of what the code does.
 
+⚠️ **JEV photo screening has a 32k-token `state` budget, and the base64 image is
+tokenised as text** (~1 token per 9.5 chars, measured 2026-11-24). A 1568px photo
+plus the six-question listing/feed battery is ~42k and is rejected with
+`400 {"detail":{"error_type":"max_tokens_exceeded"}}`; 1280px is ~29.8k. Photo
+screening therefore goes through `askPhotoQuestions()`
+(`moderation/jev-image-battery.ts`), which tries **1280 → 1152 → 1024** and only
+steps down on that specific error — documents keep the 1568 default. Do NOT put
+`toJevImage` back to the document default for listing/feed photos: doing so
+silently blocks every photo upload (the listing is created, the photo fails, and
+the sell form deletes the listing). Verified live: a 1568-screened photo returned
+400, the same photo screened at 1280 returns 200 at ~29.8k input tokens.
+
 ---
 
 ## Notifications

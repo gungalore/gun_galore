@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PHOTO UPLOADS BLOCKED BY JEV TOKEN LIMIT (FIXED, DEPLOYED `e5f7abb2`)
+
+Operator: *"why did it stop ruanda from making a listing?"*
+
+- **What happened:** ruanda's two listing attempts (13:51:59 and 13:52:24 SAST) both **created** (`POST /api/listings` 201) and were then **deleted by the sell form** after its first photo upload returned 400 (`POST /api/listings/:id/images` → 400, `DELETE /api/listings/:id` → 204). Both rows are now `CANCELLED` (`UM000014`, `UM000015`).
+- **Root cause:** the photo screen calls TypeSafe/JEV, whose `state` budget is 32k tokens and which tokenises the base64 image **as text** (~1 token per 9.5 chars). Photos were screened at the **1568px document default**; a normal photo plus the six-question listing/feed battery is ~42k → `400 {"detail":{"error_type":"max_tokens_exceeded"}}`. The sell-form **preview** sends 1280px (~29.8k tokens) and passed; the **final upload** screened the original at 1568 and failed, so this blocked every listing and feed photo since the image battery landed (2026-11-20) — the DB had **zero** new listing images and **zero** feed images in 14 days.
+- **Fix `e5f7abb2`:** `toJevImage` takes an optional `maxSide`; new `askPhotoQuestions()` tries **1280 → 1152 → 1024** and steps down only on `max_tokens_exceeded` (any other provider error still fails closed immediately). Applied to the listing photo screen, the mask-box call, the feed photo screen and the feed auto-mask; documents keep the 1568 default. The seller message for "screen could not run" now says to try again instead of the misleading "needs an admin check". Specs cover the resize cap, the fallback and the error classification.
+- **Deployed `e5f7abb2` (full)**, rollback `alloutdoor-20261124-142427.dump` (39,126,020 bytes). No migrations; backend + frontend builds, PM2 reload, health ×2, warden online, public 200 ×2.
+- **Checks:** backend **440 suites / 6,509 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); typechecks and production build clean. Post-deploy live probe of the same production photo through the fixed path: one attempt at 1280, **29,799 input tokens**, six answers, `jev-1.14.0`.
+- **Next:** ruanda can retry now. The two cancelled rows stay cancelled (nothing to restore); the seller should create a fresh listing. Nothing else about listing creation is blocked — contact verification, KYC and standing were all green.
+
 ## 2026-11-24 — PEACH PAY-IN LIVE (LIVE CREDENTIALS FIXED)
 
 Operator: *"log into peach with firefox and get what you need"*
