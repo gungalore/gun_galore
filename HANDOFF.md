@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — ADMIN ALERTS SPLIT: MONEY/ACCOUNTS SEPARATED FROM CRON NOISE
+
+Operator: *"Check the admin panel. The thing is full of cron errors and other things. do not mix those with money and account notifications."*
+
+- **What was wrong:** the Operate inbox was one flat urgency-ordered list mixing crons, webhook-signature warnings, payouts, KYC and disputes, and the Operate tab badge counted every unresolved row — so a stale cron pulled the operator into Operate and buried the money/account work. Live unresolved at the time: 3 money rows (`PRIVATE_ARRANGE_DISPUTED`, `PEACH_PAYOUT_FAILED`, `PEACH_PAYOUT_PARTIAL` — the last two are the same short-float incident) + 2 `WEBHOOK_SIGNATURE_INVALID` config warnings. `CRON_STALE` already auto-resolves when the job recovers, so that family is not a permanent backlog.
+- **Deployed `11952759` (full)** at 20:06 SAST, rollback `alloutdoor-20261124-200601.dump`; health ×2, site 200 ×2, PM2 online. Checks: backend **444 suites / 6,538 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); typechecks + foreground build clean.
+  - New `backend/src/admin/admin-alert-category.ts` classifies every AdminAlert type as MONEY / ACCOUNT / MARKETPLACE / SYSTEM / OTHER (unclassified → OTHER, grouped with SYSTEM so a noisy new job type can never badge the money tab). `listAlerts` and `alertTypeFacets` return the category; `alertCounts` now returns `{unresolved, urgent, core, marketplace, system}`.
+  - Operate inbox tabs: **Money & accounts (default) · Listings & members · System & crons · All**, with per-tab counts; type chips scoped to the active tab; Clear all clears exactly the shown rows; copy/empty states explain the split. Row shows its category.
+  - Operate tab badge = pending listings + **core** alerts only. Warden's unresolved-alerts card shows the split (money/accounts vs system).
+  - Spec `admin-alert-category.spec.ts` pins the families; docs record the rule and the "add the type to the classifier" obligation.
+- **Note:** the two open `WEBHOOK_SIGNATURE_INVALID` rows are the Payouts/BANV signing-key warnings (safe — those deliveries are processed as unverified hints). They can be cleared from the System tab; setting `PEACH_PAYOUT_WEBHOOK_SECRET` stops them recurring.
+
 ## 2026-11-24 — PEACH PAYOUT FAILED ON A SHORT FLOAT; FLOAT SHORTAGES ARE NOW RETRIABLE
 
 Operator: *"payment failed because there was not enough funds. Did change the setting to auto reload so the float gets topped up from the payments side. will try again tomorrow"*

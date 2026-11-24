@@ -313,6 +313,18 @@ the next session must know.
 - **There is no Sentry.** Error and job-failure surfacing is in-house — AdminAlert
   rows into `/admin/alerts`, heartbeats on `/admin/health`, and Warden. Nothing
   pages anyone; somebody has to look.
+- ⚠️ **ALERTS ARE GROUPED BY CATEGORY SO CRON NOISE CANNOT BURY MONEY WORK**
+  (2026-11-24). Every AdminAlert type maps to `MONEY` / `ACCOUNT` /
+  `MARKETPLACE` / `SYSTEM` / `OTHER` in
+  `backend/src/admin/admin-alert-category.ts`; `MONEY + ACCOUNT` form the
+  **Money & accounts** tab of the Operate inbox and are the ONLY alerts the
+  Operate tab badge counts. Cron, webhook, channel and unknown types
+  (`SYSTEM`/`OTHER`) live in their own **System & crons** tab and on the Warden
+  board. The split is returned by `/admin/alerts`, `/admin/alerts/types` and
+  `/admin/alerts/count` (`{unresolved, urgent, core, marketplace, system}`).
+  ⚠️ A new alert type that is not added to the classifier lands in `OTHER` and
+  will not badge the money tab — add the type when you add the alert, and
+  extend `admin-alert-category.spec.ts`.
 
 ---
 
