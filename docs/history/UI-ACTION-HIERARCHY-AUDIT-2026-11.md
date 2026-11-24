@@ -2,12 +2,15 @@
 
 **Operator:** *"audit the buttons and options that are the same color as the background. Some buttons are blue in dark mode and some are grey. Bring variation into the mix: really important function that could lead to a sale → dark blue; less important → lighter blue; option to change something → transparent with a solid edge. Do research on what the industry does and make a suggestion."*
 
-**Status: IMPLEMENTED 2026-11-24 (Option A — one accent per theme; deployed frontend-only).**
-The four-tier tokens are live in `globals.css` (both themes), the T1 primary
+**Status: IMPLEMENTED 2026-11-24 — deployed `f2f4844c` (frontend-only), rollback
+`alloutdoor-20261124-222218.dump`.** Option A — one accent per theme; the four-tier
+tokens are live in `globals.css` (both themes), the T1 primary
 fills were migrated repo-wide, T2/T3/DANGER mappings were applied to the shared
 pickers and the sale-critical controls, the PWA chrome was switched to outlined
 T3-neutral, the hardcoded literals were replaced, and DESIGN.md §3/§8/§11 now
-carry the tier rules. Palette sheet below; the per-control list in §4 is what
+carry the tier rules. Frontend typecheck clean, 186 spec files / 2,084 tests
+passed, production build + theme gate clean, public smoke test 200s with no new
+frontend error lines. Palette sheet below; the per-control list in §4 is what
 shipped.
 
 ![Proposed action hierarchy palette](UI-ACTION-HIERARCHY-PALETTE-2026-11.png)

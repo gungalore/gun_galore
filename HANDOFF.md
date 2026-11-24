@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — ACTION HIERARCHY SHIPPED: DEEP PRIMARY / TONAL / OUTLINED OPTIONS / DANGER
+
+Operator: *"…buttons and options same colour as the background. Some buttons are blue in dark mode and some are grey. Bring in variation: really important function that could lead to a sale → dark blue; less important → lighter blue; option to change something → transparent with a solid edge."* → chose **Option A** (keep one accent per theme: deep/lighter ochre in light, deep/lighter blue in dark) and said **"option A, build and deploy"**.
+
+- **Audit** ([docs/history/UI-ACTION-HIERARCHY-AUDIT-2026-11.md](docs/history/UI-ACTION-HIERARCHY-AUDIT-2026-11.md), palette [PNG](docs/history/UI-ACTION-HIERARCHY-PALETTE-2026-11.png)): of 629 member-app buttons, **90 accent fills, 113 neutral grey fills, 373 ghost**, plus ~192 with hardcoded literals. `--danger` was **2.53:1** on the dark card. Several screens had multiple filled primaries (licence start = 4, interview = 5). Research: Material 3 (filled/tonal/outlined/text; "filled tonal suits add to cart/sign in"), GOV.UK (one default button per page), Polaris, Baymard (primary CTA prominence).
+- **Deployed `f2f4844c` (frontend-only)** at 22:22 SAST; rollback `alloutdoor-20261124-222218.dump`; frontend 200 ×2, public 200 ×2; smoke test of `/`, `/listings`, `/community`, `/motivation`, `/sign-in`, a live listing = 200 / expected 307s, **no new frontend error lines**. Checks: typecheck clean, **186 files / 2,084 tests passed**, production build + theme-sync gate clean. Backend untouched (2h uptime).
+- **Tokens (both themes):** `--action-primary-bg/-hover/-ink` (T1 deep: `#92400E` light 7.09:1, `#0B47C4` dark 7.74:1), `--action-secondary-bg/-hover/-ink` (T2 tonal: `#F4E7DD`/`#8A3F07` light, `#192840`/`#9CC9FF` dark), `--action-option-edge/-selected-*` (T3 transparent + 1.5px solid edge), `--danger-fill/-hover/-ink/-edge` (separate red; dark ink `#FCA5A5`). Cards still use `--border`; controls use `--border-visible`.
+- **What changed:** 266 primary fills moved from `var(--red)` to `--action-primary-bg`; payment rail / delivery / address / cart-route toggles / pills / chips are now T3 (transparent + solid edge; selected = accent tint + edge + ink, replacing the black chip pill); add-to-cart, offer entry, save-search, licence consent, wishlist unsaved = T2 tonal; decline/withdraw/reject/cancel/close/delete/dispute/report = danger tokens (solid for final confirms, outlined for entry buttons); PWA quick actions, Armory, search field, bug FAB outlined; old `rgba(227,6,19,…)`/amber/green literals, `#C7050F`, `#6b7280`, `#2563eb` and the `--info` Counter button normalised.
+- **Design rules:** DESIGN.md §3/§8/§11 now define T1/T2/T3/quiet/destructive, the "one T1 per view" rule and the 3:1 control-boundary rule. Do not paint a primary fill with `var(--red)` any more — use `--action-primary-bg`.
+- **Left for a later pass (not blocking):** physical-phone visual pass for the four tiers; a few `B-lite` quiet controls from the contrast audit; `frontend/components/scan*` and the admin console intentionally untouched (their own themes).
+
 ## 2026-11-24 — UI CONTRAST PASS SHIPPED: QUIET CONTROLS GET A VISIBLE EDGE
 
 Operator: *"There are a lot of options and buttons on the website and PWA that is the same color as the theme and is hard to spot. … make me a list of which ones makes sense to give them color"* → then ***"apply all your suggestions"***.
