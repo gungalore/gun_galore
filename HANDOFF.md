@@ -19,6 +19,10 @@ Operator: *"harden it, we can't have issues on launch."*
   - `listings.service.addImage`/`replaceImage` — re-check listing status **after** the await; if CANCELLED/EXPIRED/SOLD (or gone), delete the just-stored asset and refuse, so no image row lands on a dead listing.
   - Sell form ([listings/new/page.tsx](frontend/app/listings/new/page.tsx)) — retries a 5xx/network photo upload **once** before rolling the listing back.
 - **Docs:** `docs/project-reference.md` carries the rule (bounded bytes + bounded time, never raise `proxy_read_timeout`). Video uploads stay a long synchronous request — known follow-up if a 64 MB clip ever 504s.
+- **Deployed `5be735ba` (full),** rollback `alloutdoor-20261124-171118.dump` (39,128,364 bytes). No migrations; both builds, artefact checks, PM2 reload ×3, backend health **200 ×2** (1.9 ms / 0.5 ms), frontend **200 ×2**, public site **200 ×2**, warden online.
+- **Checks:** backend **442 suites / 6,519 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); both typechecks and the foreground production build clean.
+- **Live smoke on the box after deploy** (diagnostic uploads deleted afterwards): a synthetic 12 MP photo (3024×4032, 9,912,545 bytes) optimises to **1,440×1,920 / 738,843 bytes in 398 ms**; Cloudinary then stores it in **3,060 ms (504,549 B)** versus **5,997 ms / 6,538,937 B** for the raw original. The SDK accepted `options.timeout` (no unknown-parameter rejection) — a stalled provider now aborts at 25 s with a retriable 503 instead of running to nginx's 95 s wall.
+- **Seller can retry now.** Her cancelled attempts (`UM000014`–`UM000016`) stay cancelled; the sell form keeps typed details on screen after a rollback, so she re-selects the photos and publishes. The orphan `ListingImage` row from the 16:29:58 upload sits on the CANCELLED listing `cmwusha99000cxdvnuxcuygiz` and can be purged with the cancelled-media archival sweep if wanted.
 
 ## 2026-11-24 — PHOTOS FAIL OPEN; SCREEN FITS THE JEV BUDGET (DEPLOYED `5a5df537`)
 
