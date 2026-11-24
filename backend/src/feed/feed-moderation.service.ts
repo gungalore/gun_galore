@@ -39,12 +39,12 @@ import {
   jevLadder,
 } from '../moderation/jev-battery';
 import {
+  askPhotoQuestions,
   evaluateFeedPhoto,
   evaluateListingPhotoBoxes,
   feedPhotoQuestions,
   listingPhotoBoxQuestions,
   listingPhotoQuestions,
-  toJevPhotoAsset,
 } from '../moderation/jev-image-battery';
 import { maskPhotoRegions } from '../moderation/photo-mask';
 import { FEED_MAX_IMAGES, POST_TYPE_LABELS } from './feed.types';
@@ -460,8 +460,8 @@ export class FeedModerationService {
     const results = await Promise.all(
       imageParts.map(async (part, index) => {
         try {
-          const asset = await toJevPhotoAsset(part);
-          const res = await this.llm.decide({
+          const res = await askPhotoQuestions(this.llm, {
+            part,
             state: {
               photo: 'photo',
               postType: input.postType
@@ -474,7 +474,6 @@ export class FeedModerationService {
             questions: feedPhotoQuestions(
               input.redactedImageIndexes?.includes(index) ?? false,
             ),
-            assets: { photo: asset },
             purpose: 'moderation.feed.images',
             timeoutMs: 30_000,
           });
@@ -482,7 +481,7 @@ export class FeedModerationService {
         } catch (err) {
           const code = err instanceof LlmError ? err.code : 'unknown';
           this.logger.warn(
-            `feed photo ${index + 1} screening failed (${code}) — holding for review`,
+            `feed photo ${index + 1} screening failed (${code}): ${(err as Error).message} — holding for review`,
           );
           return null;
         }
@@ -557,22 +556,21 @@ export class FeedModerationService {
     part: Extract<LlmPart, { type: 'image' }>,
   ): Promise<Buffer | null> {
     try {
-      const asset = await toJevPhotoAsset(part);
-      const screen = await this.llm.decide({
+      const screen = await askPhotoQuestions(this.llm, {
+        part,
         state: { photo: 'photo' },
         questions: { contact: listingPhotoQuestions(false).contact },
-        assets: { photo: asset },
         purpose: 'moderation.feed.contact',
         timeoutMs: 30_000,
       });
       if (!this.contactStillReadable(screen.answers)) return null;
 
-      const boxRes = await this.llm.decide({
+      const boxRes = await askPhotoQuestions(this.llm, {
+        part,
         state: { photo: 'photo' },
         // Reuses the listing box battery: three ordinals per category, filtered
         // and deduped by evaluateListingPhotoBoxes.
         questions: listingPhotoBoxQuestions(['contact']),
-        assets: { photo: asset },
         purpose: 'moderation.feed.contact.boxes',
         timeoutMs: 30_000,
       });
@@ -585,16 +583,14 @@ export class FeedModerationService {
       );
       if (!masked) return null;
 
-      const recheck = await this.llm.decide({
+      const recheck = await askPhotoQuestions(this.llm, {
+        part: {
+          type: 'image',
+          mimeType: 'image/jpeg',
+          data: masked.toString('base64'),
+        },
         state: { photo: 'photo' },
         questions: { contact: listingPhotoQuestions(true).contact },
-        assets: {
-          photo: await toJevPhotoAsset({
-            type: 'image',
-            mimeType: 'image/jpeg',
-            data: masked.toString('base64'),
-          }),
-        },
         purpose: 'moderation.feed.contact.recheck',
         timeoutMs: 30_000,
       });
@@ -602,7 +598,7 @@ export class FeedModerationService {
     } catch (err) {
       const code = err instanceof LlmError ? err.code : 'unknown';
       this.logger.warn(
-        `feed photo auto-mask failed (${code}) — original verdict stands`,
+        `feed photo auto-mask failed (${code}): ${(err as Error).message} — original verdict stands`,
       );
       return null;
     }

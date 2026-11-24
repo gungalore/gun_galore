@@ -19,7 +19,10 @@ import {
   LlmError,
   type JevAnswer,
   type JevChoiceAnswer,
+  type JevDecideRequest,
+  type JevDecideResponse,
   type JevQuestion,
+  type JevState,
   type LlmPart,
 } from '../common/llm/llm.types';import { blockThreshold, reviewThreshold } from './jev-battery';
 
@@ -57,11 +60,76 @@ export const LISTING_PHOTO_REASON: Record<ListingPhotoCategory, string> = {
 
 /**
  * Transport a fetched/staged photo into the shape JEV accepts. Resizes and
- * re-encodes (max 1568px, JPEG); throws when the bytes are not a readable
- * image, so the caller can fail the photo closed.
+ * re-encodes (max 1568px by default, JPEG); throws when the bytes are not a
+ * readable image, so the caller can fail the photo closed.
  */
-export async function toJevPhotoAsset(part: PhotoPart) {
-  return toJevImage(Buffer.from(part.data, 'base64'), part.mimeType);
+export async function toJevPhotoAsset(part: PhotoPart, maxSide?: number) {
+  return toJevImage(
+    Buffer.from(part.data, 'base64'),
+    part.mimeType,
+    maxSide,
+  );
+}
+
+/**
+ * Longest-side ladder for screening a listing/feed PHOTO.
+ *
+ * ⚠️ JEV's `state` budget is 32k tokens and it tokenises the base64 image
+ * payload as text — measured live 2026-11-24: a 1280px photo plus the
+ * six-question battery is ~29.8k tokens, while the same photo at the document
+ * default (1568px) plus the battery is ~42k and is rejected with
+ * `400 {"detail":{"error_type":"max_tokens_exceeded"}}`. That rejection is
+ * what broke every listing photo upload (the sell form previews at 1280 and
+ * passed, then the final upload screened the original at 1568 and failed).
+ *
+ * 1280 is tried first to keep the most detail for contact-detail/QR detection;
+ * the smaller steps exist so a high-entropy photo cannot dead-end the seller.
+ */
+export const PHOTO_SCREEN_MAX_SIDES = [1280, 1152, 1024] as const;
+
+/** JEV's over-budget answer — the only error worth retrying smaller. */
+export function isJevMaxTokensError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  return (
+    e?.status === 400 &&
+    typeof e.message === 'string' &&
+    /max_tokens_exceeded/i.test(e.message)
+  );
+}
+
+/**
+ * Ask a photo's questions, shrinking the image if JEV reports the state
+ * exceeded its token budget. Every other error is rethrown unchanged so the
+ * caller's fail-closed handling stays in charge.
+ */
+export async function askPhotoQuestions(
+  llm: { decide: (req: JevDecideRequest) => Promise<JevDecideResponse> },
+  args: {
+    part: PhotoPart;
+    state: JevState;
+    questions: Record<string, JevQuestion>;
+    purpose: string;
+    timeoutMs?: number;
+    maxSides?: readonly number[];
+  },
+): Promise<JevDecideResponse> {
+  let lastErr: unknown;
+  for (const maxSide of args.maxSides ?? PHOTO_SCREEN_MAX_SIDES) {
+    const asset = await toJevPhotoAsset(args.part, maxSide);
+    try {
+      return await llm.decide({
+        state: args.state,
+        questions: args.questions,
+        assets: { photo: asset },
+        purpose: args.purpose,
+        timeoutMs: args.timeoutMs ?? 30_000,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isJevMaxTokensError(err)) throw err;
+    }
+  }
+  throw lastErr;
 }
 
 const REDACTION_NOTE =

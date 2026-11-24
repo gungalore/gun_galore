@@ -15,6 +15,12 @@ const MIN_SIDE = 280;
 export async function toJevImage(
   bytes: Buffer,
   mimeType: string,
+  /**
+   * Longest side after resizing. Docs need 1568; listing/feed photos screen at
+   * a smaller side because JEV tokenises the base64 payload (see
+   * `PHOTO_SCREEN_MAX_SIDES` in moderation/jev-image-battery.ts).
+   */
+  maxSide = MAX_SIDE,
 ): Promise<JevImageAsset> {
   if (!bytes?.length) throw new Error('The document is empty.');
   if (mimeType === 'application/pdf') {
@@ -31,10 +37,10 @@ export async function toJevImage(
 
   const longest = Math.max(meta.width, meta.height);
   const shortest = Math.min(meta.width, meta.height);
-  if (longest > MAX_SIDE || shortest < MIN_SIDE) {
+  if (longest > maxSide || shortest < MIN_SIDE) {
     const scale =
-      longest > MAX_SIDE
-        ? MAX_SIDE / longest
+      longest > maxSide
+        ? maxSide / longest
         : Math.max(1, MIN_SIDE / shortest);
     image = image.resize({
       width: Math.round(meta.width * scale),

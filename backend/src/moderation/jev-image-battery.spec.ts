@@ -1,13 +1,17 @@
 import { LlmError, type JevAnswer } from '../common/llm/llm.types';
 import {
+  askPhotoQuestions,
   evaluateFeedPhoto,
   evaluateListingPhoto,
   evaluateListingPhotoBoxes,
   feedPhotoQuestions,
+  isJevMaxTokensError,
   listingPhotoBoxQuestions,
   listingPhotoQuestions,
   maskablePhotoCategories,
+  PHOTO_SCREEN_MAX_SIDES,
 } from './jev-image-battery';
+import sharp from 'sharp';
 
 function noul(value: number): JevAnswer {
   return { type: 'noul', noul: value };
@@ -222,5 +226,102 @@ describe('listing photo boxes', () => {
     expect(out).toEqual([
       expect.objectContaining({ category: 'contact', confidence: 0.9 }),
     ]);
+  });
+});
+
+// 2026-11-24: every listing photo upload was failing with
+// "max_tokens_exceeded" because the screen sent the photo at the 1568px
+// document default plus the six-question battery, which is over JEV's 32k
+// state budget (a 1280px preview passed at ~29.8k). These lock the fallback.
+describe('askPhotoQuestions — JEV token-budget fallback', () => {
+  async function photoPart() {
+    const width = 1600;
+    const height = 1200;
+    const raw = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < raw.length; i += 997) raw[i] = (i * 37) % 255;
+    const buf = await sharp(raw, { raw: { width, height, channels: 3 } })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    return {
+      type: 'image' as const,
+      mimeType: 'image/jpeg',
+      data: buf.toString('base64'),
+    };
+  }
+
+  it('shrinks the image and retries when JEV reports max_tokens_exceeded', async () => {
+    const part = await photoPart();
+    const assetSizes: number[] = [];
+    let calls = 0;
+    const decide = jest.fn(async (req: any) => {
+      calls += 1;
+      assetSizes.push(String(req.assets.photo.data_base64).length);
+      if (calls === 1) {
+        throw new LlmError(
+          'unknown',
+          'typesafe 400: {"detail":{"error_type":"max_tokens_exceeded"}}',
+          400,
+        );
+      }
+      return {
+        model: 'jev-1.14.0',
+        answers: {},
+        usage: { inputTokens: 1, outputTokens: 0 },
+        provider: 'typesafe' as const,
+      };
+    });
+
+    await askPhotoQuestions(
+      { decide },
+      {
+        part,
+        state: { photo: 'photo' },
+        questions: { contact: listingPhotoQuestions(false).contact },
+        purpose: 'moderation.listing.images',
+      },
+    );
+
+    expect(decide).toHaveBeenCalledTimes(2);
+    // The retry must send a SMALLER payload than the one that was refused.
+    expect(assetSizes[1]).toBeLessThan(assetSizes[0]);
+  });
+
+  it('rethrows any other provider error without retrying', async () => {
+    const part = await photoPart();
+    const decide = jest.fn(async () => {
+      throw new LlmError('rate_limited', 'typesafe 429: slow down', 429);
+    });
+    await expect(
+      askPhotoQuestions(
+        { decide },
+        {
+          part,
+          state: { photo: 'photo' },
+          questions: {},
+          purpose: 'moderation.listing.images',
+        },
+      ),
+    ).rejects.toThrow(/slow down/);
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies only the provider over-budget response as retryable-smaller', () => {
+    expect(
+      isJevMaxTokensError(
+        new LlmError(
+          'unknown',
+          'typesafe 400: {"detail":{"error_type":"max_tokens_exceeded"}}',
+          400,
+        ),
+      ),
+    ).toBe(true);
+    expect(isJevMaxTokensError(new LlmError('bad_request', 'nope', 422))).toBe(
+      false,
+    );
+    expect(isJevMaxTokensError(new Error('max_tokens_exceeded'))).toBe(false);
+  });
+
+  it('tries 1280 first, then 1152 and 1024', () => {
+    expect([...PHOTO_SCREEN_MAX_SIDES]).toEqual([1280, 1152, 1024]);
   });
 });

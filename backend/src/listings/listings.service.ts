@@ -4118,9 +4118,18 @@ export class ListingsService {
       verdict.decision !== 'APPROVE' &&
       verdict.decision !== 'AUTO_FIX_AND_APPROVE'
     ) {
+      // Distinguish "the screen could not run" (transient provider/token
+      // failure) from "the screen looked at it and held it". The seller can do
+      // nothing about a provider hiccup except try again, and telling them the
+      // photo "needs an admin check" sends them to support instead.
+      const unavailable = (verdict.reasons ?? []).some((reason) =>
+        /moderation unavailable/i.test(reason),
+      );
       throw new BadRequestException(
         verdict.publicReason ??
-          'This photo still needs an admin check. Choose another photo.',
+          (unavailable
+            ? 'We couldn’t check that photo just now — please try uploading it again.'
+            : 'This photo still needs an admin check. Choose another photo.'),
       );
     }
     return verdict.maskedImage
