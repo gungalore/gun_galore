@@ -2,7 +2,10 @@
 
 **Operator:** *"audit Bulk, Clutter and order of importance. […] the order of the button and option are wrong. Buy option should be first, next should be important information like the delivery methods (they are bulky. I feel they can be slimmed down a lot by putting them in one box and removing the descriptions.) Check what other marketplaces and stores do like Takealot, eBay and Amazon and implement a plan. Do this for the whole sales side of the website."* (example: the Turret Tags listing page, dark theme, phone).
 
-**Status: Phase 1 (listing detail / buy box) implemented and deployed; Phases 2–4 specified below.** Companion: [UI-CONTRAST-AUDIT-2026-11.md](UI-CONTRAST-AUDIT-2026-11.md), [UI-ACTION-HIERARCHY-AUDIT-2026-11.md](UI-ACTION-HIERARCHY-AUDIT-2026-11.md).
+**Status: Phase 1 (listing detail / buy box) implemented and deployed `90097ae1`
+(frontend-only), rollback `alloutdoor-20261124-225440.dump`; Phases 2–4 specified
+below.** Companion: [UI-CONTRAST-AUDIT-2026-11.md](UI-CONTRAST-AUDIT-2026-11.md),
+[UI-ACTION-HIERARCHY-AUDIT-2026-11.md](UI-ACTION-HIERARCHY-AUDIT-2026-11.md).
 
 ---
 

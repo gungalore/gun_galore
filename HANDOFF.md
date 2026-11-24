@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — SALES LAYOUT PHASE 1 SHIPPED: BUY BOX FIRST, DELIVERY SLIMMED, BUY COLUMN DECLUTTERED
+
+Operator, with the Turret Tags listing page screenshot: *"audit Bulk, Clutter and order of importance… the order of the button and option are wrong. Buy option should be first, next should be important information like the delivery methods (they are bulky… put them in one box and remove the descriptions). Check what other marketplaces and stores do like Takealot, eBay and Amazon and implement a plan. Do this for the whole sales side."*
+
+- **Research** (in [docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md](docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md)): Amazon Buy Box (price/seller/delivery/Add to Cart; mobile buy box above the fold), eBay's single grey buy box with shipping/delivery/returns then seller, Takealot's delivery-first ranked Buy Box, and Baymard/CRO 2026 benchmarks (62% of mobile PDPs mediocre; delivery/returns next to the button; recommendations must not push the buy box down). Adopted rule: **buy → cost & delivery → trust → evidence → admin**.
+- **Deployed `90097ae1` (frontend-only)** at 22:54 SAST; rollback `alloutdoor-20261124-225440.dump`; frontend 200 ×2, public 200 ×2; new copy confirmed in the deployed server chunk; **no new frontend error lines**. Checks: typecheck clean, **187 spec files / 2,088 tests pass** (incl. new delivery-summary spec), production build + theme-sync gate clean. Backend untouched.
+- **New listing buy-column order:** title → rating → compact badges → moderation → price → **buy box** → one-line trust note → **one-box delivery summary** → `Rather make an offer?` → Q&A (composer behind an `Ask the seller a question` disclosure) → province·distance on one line → dealer-stock row → seller card → live stat → reference/listed date → report. Description/specs stay in the reading column (left pane at lg, after the buy column on phones).
+- **Delivery:** two prose cards + two estimate sentences replaced by one compact `Delivery & handover` box (one row per offered route, shortest honest hint, no descriptions, "Chosen at checkout."). Firearm dealer/private, collection-only and dangerous-goods transcporter rules preserved; spec covers them.
+- **Own listing:** the disabled grey "Your Marketplace listing" buy slot (read as a broken Buy button) is now **Edit listing (primary) + Cancel listing** via `SellerControls inline`; the duplicate bottom controls are gone; the sticky mobile bar shows **Edit listing** instead of a disabled "Your listing".
+- **Also:** reference number and "listed N days ago" moved to the foot; dealer explanatory subline removed; location two paragraphs → one line; seller-card edge raised to `--border-visible`; success badge literals normalised. [page.tsx](frontend/app/listings/[id]/page.tsx) net **-99 lines**.
+- **Phases 2–4 (specified, not built):** cart (collapse delivery to a summary row, sticky total/Continue, drop summary prose), checkout (order summary → one delivery block → payment → Pay, collapse saved address), sell flow (sticky footer CTA, collapsed optional fields, error summary), offers/auction polish. Full details in the audit doc §4.
+
 ## 2026-11-24 — ACTION HIERARCHY SHIPPED: DEEP PRIMARY / TONAL / OUTLINED OPTIONS / DANGER
 
 Operator: *"…buttons and options same colour as the background. Some buttons are blue in dark mode and some are grey. Bring in variation: really important function that could lead to a sale → dark blue; less important → lighter blue; option to change something → transparent with a solid edge."* → chose **Option A** (keep one accent per theme: deep/lighter ochre in light, deep/lighter blue in dark) and said **"option A, build and deploy"**.
