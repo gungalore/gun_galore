@@ -1,6 +1,6 @@
 'use client';
 
-// Appearance control for the phone / installed PWA.
+// Theme control for the phone / installed PWA.
 //
 // ⚠️ WHY THIS EXISTS AT ALL: the desktop nav's icon-only toggle
 // (components/nav.tsx) is `hidden md:flex`, and it is hidden for a measured
@@ -68,22 +68,13 @@ export function ThemeChoice() {
             color: 'var(--text-primary)',
           }}
         >
-          Appearance
-        </p>
-        <p
-          style={{
-            margin: '4px 0 0',
-            fontSize: 12.5,
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          Follows your device unless you pick one.
+          Theme
         </p>
       </div>
 
       <div
         role="radiogroup"
-        aria-label="Appearance"
+        aria-label="Theme"
         style={{
           display: 'inline-flex',
           padding: 3,

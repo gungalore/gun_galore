@@ -13,24 +13,14 @@
 //
 // Five tabs — Sell sits dead-centre (position 3) so the raised FAB
 // styling reads symmetric:
-//   1. Shop     → opens a CATEGORY-FIRST bottom sheet: the real
-//                 top-level category tree (Camping, Optics, Fishing,
-//                 Firearms…) up top, with the selling-mode surfaces
-//                 (All listings / Marketplace / Auctions / Take a Shot /
-//                 Swop / Daily Deals / Prize Draw) demoted below it.
-//                 A buyer opening "Shop" is looking for a THING, not a
-//                 transaction format; only someone who already knows how
-//                 the site sells thinks in modes.
-//   2. Saved    → /wishlist. Heart icon with a saved-count badge.
+//   1. Home     → / (the storefront).
+//   2. Messages → /messages. Chat bubble; the Report tab used to live here,
+//                 but the floating Report a bug control covers every page now.
 //   3. Sell     → /listings/new (centred, raised red FAB — the
 //                 prominent primary action).
-//   4. Alerts   → routes to /notifications. Bell icon. When there are
-//                 unresolved notifications, shows a red active-count
-//                 badge in the top-right corner of the bell.
-//   5. Account  → bottom sheet headed by the user's avatar + username,
-//                 followed by My account / Shop / Legal sections.
-//                 All `/my/*` destinations + /dashboard + /profile
-//                 live in here.
+//   4. Orders   → /my/orders. The unread-alert badge rides on Account.
+//   5. Account  → /account, including the theme control and every
+//                 `/my/*` destination.
 //
 // ⚠️ NO PAID-ASSISTANT TAB HERE. It once held slot 4, which pushed the
 // wishlist up into the top bar and left the primary navigation with no CART —
@@ -54,7 +44,7 @@ import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { isTabRoute } from '@/lib/shell-routes';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
-import { useBugReport } from '@/components/bug-report/bug-report-context';
+
 import type { CategoryWithCount } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -120,9 +110,6 @@ interface Tab {
   // Centred-prominent tabs (currently just Sell) get the raised
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
-  // 'shop' / 'more' open sheets instead of navigating; 'bug-report' opens
-  // the global report-a-bug sheet.
-  action?: 'shop' | 'more' | 'search' | 'bug-report';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -141,24 +128,20 @@ function IconHome() {
   );
 }
 
-function IconBug() {
-  // Report a bug — a beetle, the universal "something is broken here" glyph.
+function IconMessage() {
+  // Messages — a speech bubble, matching the tab bar's 21px stroke-only set.
   return (
     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M9 8a3 3 0 0 1 6 0" stroke="currentColor" strokeWidth={1.6} />
-      <rect
-        x="8"
-        y="8"
-        width="8"
-        height="9"
-        rx="4"
+      <path
+        d="M4 5.5h16v10H9l-4 3v-3H4Z"
         stroke="currentColor"
-        strokeWidth={1.6}
+        strokeWidth={1.8}
+        strokeLinejoin="round"
       />
       <path
-        d="M12 8v9M8 11H4M8 15l-3 2M16 11h4M16 15l3 2M8 11l-3-2M16 11l3-2"
+        d="M8 9.5h8M8 12.5h5"
         stroke="currentColor"
-        strokeWidth={1.6}
+        strokeWidth={1.8}
         strokeLinecap="round"
       />
     </svg>
@@ -330,7 +313,7 @@ export function BottomTabBar() {
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
-  const bugReport = useBugReport();
+
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
@@ -572,18 +555,13 @@ export function BottomTabBar() {
         (p === '/' && !sp?.get('q')) || p.startsWith('/category/'),
     },
     {
-      // ⚠️ THIS SLOT WAS "SEARCH" (and, before that, "Saved"), then "Value".
-      // Operator, 2026-10-13: replace both the Search and Value tabs with a
-      // "Report a bug" entry. Search duplicated the storefront's own search
-      // field, and Value My Item is reachable from the shop tiles and the
-      // account menu — neither earned a permanent slot. This is a button, not
-      // a Link: it opens the global report sheet, which screenshots the page
-      // the member is on and records its URL.
-      key: 'report',
-      label: 'Report',
-      href: '/report-a-bug',
-      isActive: (p) => p.startsWith('/report-a-bug'),
-      action: 'bug-report',
+      // ⚠️ THIS SLOT WAS "REPORT" UNTIL 2026-11-24. The floating Report a bug
+      // control now covers every page for members and visitors, so the tab
+      // becomes Messages — a real destination that had no permanent slot.
+      key: 'messages',
+      label: 'Messages',
+      href: '/messages',
+      isActive: (p) => p === '/messages' || p.startsWith('/messages/'),
     },
     {
       key: 'sell',
@@ -606,7 +584,6 @@ export function BottomTabBar() {
       label: 'Orders',
       href: '/my/orders',
       isActive: (p) => p.startsWith('/my/orders') || p.startsWith('/orders/'),
-      // No `action` — this is a real Link, not a sheet.
     },
     {
       // ⚠️ "Account", NOT "More" — and a route, not a sheet. "More" is a name
@@ -625,8 +602,8 @@ export function BottomTabBar() {
     switch (key) {
       case 'home':
         return <IconHome />;
-      case 'report':
-        return <IconBug />;
+      case 'messages':
+        return <IconMessage />;
       case 'orders':
         return <IconBox />;
       case 'account':
@@ -820,37 +797,17 @@ export function BottomTabBar() {
 
             return (
               <li key={tab.key} style={{ flex: 1, height: '100%' }}>
-                {tab.action ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (tab.action === 'bug-report') bugReport.open();
-                    }}
-                    aria-label={tab.label}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      background: 'transparent',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {inner}
-                  </button>
-                ) : (
-                  <Link
-                    href={tab.href}
-                    aria-label={tab.label}
-                    style={{
-                      display: 'block',
-                      height: '100%',
-                      textDecoration: 'none',
-                    }}
-                  >
-                    {inner}
-                  </Link>
-                )}
+                <Link
+                  href={tab.href}
+                  aria-label={tab.label}
+                  style={{
+                    display: 'block',
+                    height: '100%',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {inner}
+                </Link>
               </li>
             );
           })}

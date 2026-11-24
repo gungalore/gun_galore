@@ -24,7 +24,14 @@ beforeEach(() => {
   delete document.documentElement.dataset.theme;
 });
 
-describe('ThemeChoice — the phone/PWA appearance control', () => {
+describe('ThemeChoice — the phone/PWA theme control', () => {
+  it('is labelled Theme, with no helper sentence underneath', () => {
+    render(<ThemeChoice />);
+    expect(screen.getByText('Theme')).toBeInTheDocument();
+    expect(screen.queryByText(/Follows your device/i)).toBeNull();
+    expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument();
+  });
+
   it('offers System, Light and Dark, with System selected by default', () => {
     render(<ThemeChoice />);
     const radios = screen.getAllByRole('radio');

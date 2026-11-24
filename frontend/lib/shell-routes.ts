@@ -30,6 +30,8 @@ const TAB_EXACT = new Set([
   // The feed is a main screen with the ROOT header; the bottom bar keeps
   // Account reachable there now that the top-right avatar is gone.
   '/community',
+  // Messages is a bottom-tab destination, so the bar stays visible there.
+  '/messages',
 ]);
 
 /** Prefixes whose subtree carries the tab bar. */

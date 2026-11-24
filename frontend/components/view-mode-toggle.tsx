@@ -51,7 +51,7 @@ function ToggleView({
     0,
     MODES.findIndex((mode) => mode.key === active),
   );
-  const pad = size === 'sm' && !full ? 2 : 3;
+  const pad = 3;
   const linkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   // Measured, not a fixed third. The labels are different lengths
   // ("Marketplace" is nearly twice "Auction"), and an equal-thirds indicator
@@ -131,12 +131,12 @@ function ToggleView({
               alignItems: 'center',
               justifyContent: 'center',
               padding:
-                size === 'sm' && !full ? '5px 4px' : '6px 12px',
+                size === 'sm' && !full ? '9px 3px' : '6px 12px',
               borderRadius: 999,
               color: selected
                 ? 'var(--text-primary)'
                 : 'var(--text-secondary)',
-              fontSize: size === 'sm' && !full ? 10 : 13,
+              fontSize: size === 'sm' && !full ? 11 : 13,
               fontWeight: 600,
               lineHeight: 1,
               textDecoration: 'none',

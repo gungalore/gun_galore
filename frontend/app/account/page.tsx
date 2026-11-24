@@ -521,7 +521,7 @@ export default async function AccountPage() {
         {/* The action queue, immediately under the identity card. */}
         <ActionRequiredCard items={actionItems} total={unread} />
 
-        {/* Appearance — the phone/PWA's ONLY theme control. The nav's icon
+        {/* Theme — the phone/PWA's ONLY theme control. The nav's icon
             toggle is desktop-only because the mobile header is full (see
             components/theme-choice.tsx); this row is what the PWA Account tab
             gets instead. Sits directly under the identity card so it reads as

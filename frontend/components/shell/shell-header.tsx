@@ -167,10 +167,12 @@ function RootHeader() {
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        gap: 4,
-        padding: '0 8px 0 16px',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '0 8px',
         height: '100%',
       }}
     >
@@ -189,19 +191,34 @@ function RootHeader() {
       >
         <Logo variant="emblem" height={30} priority />
       </Link>
-      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
-        {/* Marketplace/Auction/Community — the always-on view switch (PWA). */}
+
+      {/* ⚠️ ABSOLUTELY CENTRED, NOT PUSHED RIGHT BY margin-left:auto. The
+          selector is the main navigation on a phone; it belongs on the screen's
+          centre line, with the logo and cart flanking it (operator,
+          2026-11-24). At 360px the enlarged pill is ~204px, which leaves a
+          ~17px gap to the emblem and ~26px to the cart; at 402px (where the
+          wishlist reappears) it still clears the right-hand icons. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1,
+        }}
+      >
         <ViewModeToggle size="sm" />
+      </div>
+
+      <span style={{ display: 'flex', alignItems: 'center' }}>
         {/* ⚠️ THE WISHLIST HEART IS THE ONE CONTROL THAT GIVES WAY ON A NARROW
-            PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The row is emblem
-            (~53) + three-way switch (191) + heart + cart (44 each) + padding —
-            roughly 356px once the heart is in, 312px once it is dropped. A
-            360px Android phone still fits the heart-less row; the overflow the
-            400px rule prevents is the LAYOUT viewport expanding above the media
-            query, which used to push the fixed tab bar below the visible
-            screen. The heart is duplicated in the More sheet and the account
-            menu, so it is the cheapest thing to lose on a small screen. See the
-            .gg-header-wishlist rule in globals.css. */}
+            PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The pill is centred
+            independently; the heart and cart stay right. A 360px Android phone
+            still fits; the 400px rule prevents the LAYOUT viewport expanding
+            above the media query, which used to push the fixed tab bar below
+            the visible screen. The heart is duplicated in the More sheet and
+            the account menu, so it is the cheapest thing to lose on a small
+            screen. See the .gg-header-wishlist rule in globals.css. */}
         <span className="gg-header-wishlist" style={{ display: 'contents' }}>
           <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
             <IconHeart />
