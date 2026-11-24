@@ -6,7 +6,7 @@ import { SellerPromoHeadline } from './seller-promo-headline';
 // ────────────────────────────────────────────────────────────────────
 // THE WORD SPLIT MUST NOT CHANGE THE SENTENCE.
 //
-// The headline is broken into nine inline-block spans so each word can fly in.
+// The headline is broken into eight inline-block spans so each word can fly in.
 // That is exactly the kind of markup that quietly drops the spaces between
 // words or welds the two sentences together, so the assertions below compare
 // the normalised text, not a substring.
@@ -39,10 +39,10 @@ describe('SellerPromoHeadline', () => {
     expect(heading).toHaveAttribute('id', 'seller-promo-heading');
     expect(
       heading.textContent?.replace(/\s+/g, ' ').trim(),
-    ).toBe('Sellers list for free. 100% payout on Buy Now.');
+    ).toBe('Sellers list for free. 100% payout on Marketplace.');
 
     const words = container.querySelectorAll('.gg-word');
-    expect(words).toHaveLength(9);
+    expect(words).toHaveLength(8);
   });
 
   it('keeps "100% payout" in brand red and the qualifier in ink', () => {

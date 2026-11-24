@@ -78,7 +78,7 @@ describe('RemittanceService — seller payment voucher', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('renders a Buy Now sale with no deduction', async () => {
+  it('renders a Marketplace sale with no deduction', async () => {
     const prisma = prismaWith(
       tx({
         feeModel: FeeModel.BUYNOW_MARKUP,

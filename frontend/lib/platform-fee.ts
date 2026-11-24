@@ -133,7 +133,7 @@ export function platformFeePctOfItem(priceCents: number): number {
 }
 
 /**
- * What a seller receives on a Buy Now sale: their ask, in full. The fee is the
+ * What a seller receives on a Marketplace sale: their ask, in full. The fee is the
  * buyer's, charged last on (item + delivery). Kept here so the sell form's
  * "you receive" preview cannot drift from the contract either.
  */

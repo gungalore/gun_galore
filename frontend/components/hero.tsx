@@ -130,7 +130,7 @@ export function Hero() {
              A 260px band sat above the product feed on the one surface whose
              whole job is to sell — with the mode bar above it, the first
              product started around 800px down. The landing page now opens on
-             the Latest listings grid, whose real entry points (the Buy Now /
+             the Latest listings grid, whose real entry points (the Marketplace /
              Auctions tiles) are directly above it in the shell.
 
              Width-gated, not display-mode-gated: a phone PWA is already under
@@ -231,7 +231,7 @@ export function Hero() {
 
           /* ⚠️ NO CTA BUTTON ON PHONES. The board does not draw one, and there
              is no room for a 46px button inside a 260px band that already
-             carries three lines of copy. It is not a lost action: the Buy Now
+             carries three lines of copy. It is not a lost action: the Marketplace
              and Auctions tiles sit immediately below the hero and are the
              storefront's real entry points, which is exactly the arrangement
              the board shows. */
@@ -383,10 +383,10 @@ export function Hero() {
           </Link>
 
           {/* Seller proof, demoted to two inline trust badges under the CTA.
-              "on Buy Now" is load-bearing: the seller receives their full ask
-              on a Buy Now sale; an auction deducts 5% from the payout. */}
+              "on Marketplace" is load-bearing: the seller receives their full ask
+              on a Marketplace sale; an auction deducts 5% from the payout. */}
           <div className="hero-reveal hero-reveal-4 self-start flex flex-wrap items-center gap-2">
-            {['Sellers list for free.', '100% payout on Buy Now.'].map(
+            {['Sellers list for free.', '100% payout on Marketplace.'].map(
               (label) => (
                 <span
                   key={label}

@@ -179,7 +179,7 @@ export function Nav() {
 
   // Shopping surfaces — shared between desktop nav row and mobile drawer.
   // Cut to two on 2026-08-26. Take a Shot moved INTO the listing page as an
-  // offer on a Buy Now item, so it is no longer a browse surface; Swop, Daily
+  // offer on a Marketplace item, so it is no longer a browse surface; Swop, Daily
   // Deals and the Prize Draw were removed as modules.
   const SHOP_LINKS = [
     { href: '/?listingType=BUY_NOW', label: 'Marketplace' },
@@ -577,7 +577,7 @@ export function Nav() {
           </div>
         )}
 
-        {/* ⚠️ THE SECOND TIER IS GONE (2026-08-27). It carried the Buy Now /
+        {/* ⚠️ THE SECOND TIER IS GONE (2026-08-27). It carried the Marketplace /
             Auctions links on their own slim desktop strip, and existed only
             because the storefront had nowhere else to put the two modes. The
             design pack's header — identical across nine desktop boards, each

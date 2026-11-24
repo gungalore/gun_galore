@@ -134,7 +134,7 @@ export function CheckoutForm({
   }
 
   // ─── 15-minute reservation ────────────────────────────────────────
-  // Opening the checkout page reserves ONE unit of a plain Buy Now listing.
+  // Opening the checkout page reserves ONE unit of a plain Marketplace listing.
   // The clock below is the same 15-minute window the server enforces; Pay
   // claims the hold, and an unpaid one returns the unit to the marketplace.
   // Auction wins and offer checkouts keep their existing windows.

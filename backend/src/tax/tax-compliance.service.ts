@@ -112,7 +112,7 @@ export class TaxComplianceService {
         : DEFAULT_MICRO_BUSINESS_TURNOVER_LIMIT_CENTS;
 
     const notes: string[] = [
-      'Marketplace Buy Now and Auction sales are AGENT supplies: item price and delivery are collected for the seller/courier and are not ALL Outdoor revenue or VAT turnover.',
+      'Marketplace and Auction sales are AGENT supplies: item price and delivery are collected for the seller/courier and are not ALL Outdoor revenue or VAT turnover.',
       'Motivation is the only PRINCIPAL product, and only once its paygate exists.',
       'Turnover tax is an annual income-tax regime; it is never added to an invoice.',
       'This report does not register the business for VAT or file any return.',

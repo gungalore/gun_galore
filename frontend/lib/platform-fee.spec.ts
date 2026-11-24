@@ -91,7 +91,7 @@ describe('the schedule is the same at every price', () => {
 });
 
 describe('what each side receives', () => {
-  it('pays a Buy Now seller their full ask', () => {
+  it('pays a Marketplace seller their full ask', () => {
     expect(buyNowPayoutCents(10_000)).toBe(10_000);
   });
 

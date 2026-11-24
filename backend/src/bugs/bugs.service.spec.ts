@@ -116,7 +116,7 @@ describe('BugsService', () => {
 
     expect(notifications.bugReport).toHaveBeenCalledTimes(1);
     const arg = notifications.bugReport.mock.calls[0][0];
-    expect(arg.category).toBe('Buy Now');
+    expect(arg.category).toBe('Marketplace');
     expect(arg.reporterId).toBe('u1');
     expect(arg.url).toBe('https://alloutdoor.co.za/listings/abc');
     expect(arg.screenshot).toBeNull();

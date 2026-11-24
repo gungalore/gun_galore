@@ -62,7 +62,7 @@ const DEFAULT_SURFACE = {
 // everything chronologically rather than a curated landing.
 const ALL_LISTINGS_SURFACE = {
   title: 'All listings',
-  subtitle: 'Everything in stock — Buy Now, Auctions and Take a Shot combined',
+  subtitle: 'Everything in stock — Marketplace, Auctions and Take a Shot combined',
 };
 
 // Per-page metadata so the browser tab + Open Graph reflect the surface.

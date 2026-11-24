@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -392,7 +392,7 @@ export default function EditListingPage() {
       if (form.reservePrice.trim()) {
         body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
       }
-      // Auction Buy Now is retired; never send it.
+      // Auction fixed-price option is retired; never send it.
       if (form.autoAcceptThreshold.trim()) {
         body.autoAcceptThreshold = Math.round(
           parseFloat(form.autoAcceptThreshold) * 100,
@@ -1073,7 +1073,7 @@ export default function EditListingPage() {
         )}
 
         {/* Auction terms are fixed at publish: the update endpoint does not
-            accept reserve/duration changes, and auction Buy Now is retired.
+            accept reserve/duration changes, and auction Marketplace is retired.
             Rendering those fields here only invited edits that silently did
             nothing. Cancel and relist to change auction terms. */}
 

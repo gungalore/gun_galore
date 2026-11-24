@@ -37,8 +37,8 @@ const WORD_ROWS: { text: string; red?: boolean }[][] = [
     { text: '100%', red: true },
     { text: 'payout', red: true },
     { text: 'on' },
-    { text: 'Buy' },
-    { text: 'Now.' },
+    // One word now, not "Buy" + "Now." — the surface is Marketplace.
+    { text: 'Marketplace.' },
   ],
 ];
 

@@ -211,7 +211,7 @@ export class AuctionsService {
       id: listing.id,
       status: listing.status,
       startingBid: listing.price,
-      // Auction Buy Now is retired: the sell form no longer offers it, the
+      // Auction fixed-price option is retired: the sell form no longer offers it, the
       // API rejects it, and checkout's auction path is for winners only.
       // Keep it out of the payload so no client re-adds a dead CTA.
       currentBid: listing.currentBid,

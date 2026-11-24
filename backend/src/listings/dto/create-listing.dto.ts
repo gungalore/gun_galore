@@ -74,7 +74,7 @@ export class CreateListingDto {
   /**
    * Whether this listing accepts offers ("Take a Shot").
    *
-   * Not a listing type any more — any Buy Now or Auction listing can take
+   * Not a listing type any more — any Marketplace or Auction listing can take
    * offers, and the seller decides per listing. Omitted means the schema
    * default (true), so an older client that does not send it still behaves
    * the way the operator asked for.
@@ -138,7 +138,7 @@ export class CreateListingDto {
   @Min(100)
   reservePrice?: number;
 
-  // RETIRED. Buy Now on an auction had no buyer path and is rejected by
+  // RETIRED. A fixed price on an auction had no buyer path and is rejected by
   // ListingsService.create(). Kept in the DTO only so an old client sending
   // it gets a clear 400 instead of a silent field-strip.
   @IsOptional()

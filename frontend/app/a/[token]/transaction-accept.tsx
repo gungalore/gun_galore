@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Transaction-accept page — seller's one-tap "I'll handle this sale"
@@ -349,7 +349,7 @@ export function TransactionAcceptPage({
           {/* ⚠️ THE SELLER'S NUMBER, NOT THE BUYER'S. This headlined
               listing.listPrice — the marked-up price the BUYER pays — under
               the label "Sale price", with no payout anywhere on the screen.
-              On a Buy Now those differ by our entire margin, so the seller was
+              On a Marketplace those differ by our entire margin, so the seller was
               deciding whether to accept against a figure that was never
               theirs. payload.money comes from the shared server builder. */}
           <span

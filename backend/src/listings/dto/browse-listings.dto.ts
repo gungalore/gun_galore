@@ -4,7 +4,7 @@ import { ListingType, Condition, Province } from '@prisma/client';
 
 // Multi-select filters — listingType / condition / province. A query value
 // may be a single enum member ("BUY_NOW") or several comma-joined
-// ("BUY_NOW,AUCTION"), so a buyer can tick both Buy Now AND Auctions, two
+// ("BUY_NOW,AUCTION"), so a buyer can tick both Marketplace AND Auctions, two
 // provinces, or two conditions at once. This turns either shape (and the
 // array Nest hands us for a repeated `?listingType=A&listingType=B` query)
 // into a flat string[] BEFORE @IsEnum(..., { each: true }) validates every

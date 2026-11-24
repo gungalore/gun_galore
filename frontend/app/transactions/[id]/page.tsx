@@ -1,4 +1,4 @@
-﻿import { notFound, redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
@@ -1429,7 +1429,7 @@ export default async function TransactionPage({
           {/* ⚠️ LINES COME FROM THE SERVER, and they foot.
               This block used to do its own arithmetic off the raw columns and
               was wrong twice over: it added a processing fee on top of an item
-              price that already contained it (marked-up Buy Now), and it
+              price that already contained it (marked-up Marketplace), and it
               subtracted commission from the BUYER's price to reach a seller
               payout that number cannot produce. It also itemised our delivery
               margin as its own "Handling" line, which is never shown to a

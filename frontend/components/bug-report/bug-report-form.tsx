@@ -15,7 +15,7 @@ import { submitBugReport } from '@/lib/bug-reports-api';
 
 // Keys MUST match BUG_CATEGORIES in backend/src/bugs/bugs.service.ts.
 const CATEGORIES = [
-  { value: 'BUY_NOW', label: 'Buy Now' },
+  { value: 'BUY_NOW', label: 'Marketplace' },
   { value: 'AUCTION', label: 'Auctions' },
   { value: 'PAYMENT', label: 'Payments' },
   { value: 'OFFERS', label: 'Offers' },

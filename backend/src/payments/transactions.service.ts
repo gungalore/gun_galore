@@ -304,13 +304,13 @@ export class TransactionsService {
       }
       if (dto.offerId || listing.listingType !== 'BUY_NOW') {
         throw new BadRequestException(
-          'Checkout holds are only available for Buy Now listings.',
+          'Checkout holds are only available for Marketplace listings.',
         );
       }
       checkoutHold = { id: hold.id, quantity: hold.quantity };
     }
 
-    // ---- Offer-based checkout (Buy Now / Auction / legacy Take a Shot) ----
+    // ---- Offer-based checkout (Marketplace / Auction / legacy Take a Shot) ----
     // TAKE_A_SHOT is retired but accepted here as a LEGACY completion path:
     // offers already accepted on old rows must still be payable after the
     // listing-type retirement. New offers are made on BUY_NOW and AUCTION.
@@ -346,7 +346,7 @@ export class TransactionsService {
         listing.listingType !== 'TAKE_A_SHOT'
       ) {
         throw new BadRequestException(
-          'Offers are only available on Buy Now and Auction listings.',
+          'Offers are only available on Marketplace and Auction listings.',
         );
       }
       offerRecord = rawOffer;
@@ -479,7 +479,7 @@ export class TransactionsService {
 
     // The absolute deadline this payment attempt may be paid by. It is stored
     // on the transaction so the reconciler never has to infer a window from
-    // the listing type (which previously cut accepted Buy Now offers from
+    // the listing type (which previously cut accepted Marketplace offers from
     // 24h down to 15m).
     const now = new Date();
     const payByAt = offerRecord
@@ -496,9 +496,10 @@ export class TransactionsService {
 
     const isAuctionListing = listing.listingType === 'AUCTION';
 
-    // A straight marketplace purchase (Buy Now, or an offer accepted on a
-    // Buy Now listing): the seller receives the agreed price and the buyer
-    // pays the Platform Fee. Auctions use the flat 5% / 5% split instead.
+    // A straight Marketplace purchase (a fixed-price sale, or an offer
+    // accepted on a Marketplace listing): the seller receives the agreed price
+    // and the buyer pays the Platform Fee. Auctions use the flat 5% / 5% split
+    // instead.
     const isMarkedUpBuyNow = !isAuctionListing;
 
     // ─── The two facts every downstream document needs ────────────────
@@ -650,8 +651,8 @@ export class TransactionsService {
           handlingFeeCents,
           PAYMENT_MODE,
         )
-      : // MARKETPLACE (Buy Now, or an offer accepted on a Buy Now listing) —
-        // the seller receives the agreed price in full. The Platform Fee is
+      : // MARKETPLACE (a fixed-price sale, or an offer accepted on a Marketplace
+        // listing) — the seller receives the agreed price in full. The Platform Fee is
         // calculated LAST on (item + delivery) and paid by the buyer.
         this.fees.breakdownBuyNow(
           agreedPrice,
@@ -1176,7 +1177,7 @@ export class TransactionsService {
     }
 
     // An accepted offer has its own checkout. Reclaiming it through the
-    // generic Buy Now hold would either lose the agreed price or delete the
+    // generic Marketplace hold would either lose the agreed price or delete the
     // only transaction that carries it.
     const linkedOffer = await this.prisma.offer.findFirst({
       where: { transactionId: tx.id },
@@ -1288,7 +1289,7 @@ export class TransactionsService {
       throw new BadRequestException('Sellers cannot buy their own listings');
     }
     if (listing.listingType !== 'BUY_NOW') {
-      throw new BadRequestException('Only Buy Now checkouts can hold an item.');
+      throw new BadRequestException('Only Marketplace checkouts can hold an item.');
     }
 
     let holdReleased = false;
@@ -2178,7 +2179,7 @@ export class TransactionsService {
   // settling); reverting could double-sell a still-settling order.
   // Abandoned PAYMENT_PENDING listings are freed by the webhook and, failing
   // that, by reconcileStaleGatewayCheckouts() after the payment-link expiry
-  // (15 minutes for a plain Buy Now; 24h for auction/offer checkouts).
+  // (15 minutes for a plain Marketplace; 24h for auction/offer checkouts).
   async verifyResult(transactionId: string, _resourcePath?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -5603,7 +5604,7 @@ export class TransactionsService {
     //
     // The order page used to do its own arithmetic off the raw columns, and
     // got it wrong in both directions: it added the processing fee on top of
-    // an item price that already contained it (marked-up Buy Now), and it
+    // an item price that already contained it (marked-up Marketplace), and it
     // subtracted commission from the buyer's price to reach a seller payout
     // that number cannot produce. Sending the rendered lines means there is
     // exactly ONE implementation of this arithmetic, on the server, covered

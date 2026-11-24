@@ -638,7 +638,7 @@ export class ZohoBooksService {
    * a marketplace sale. Called from the verification-APPROVED hook.
    *
    * Idempotent: skips if zohoCommissionInvoiceId already set.
-   * Skips only when commissionZar is zero â€” i.e. a Buy Now sale, where the
+   * Skips only when commissionZar is zero â€” i.e. a Marketplace sale, where the
    * seller pays no fee and the platform's income is the buyer's Platform Fee
    * line on the buyer invoice. PRIVATE_ARRANGE and DEALER_TRANSFER are NOT
    * skipped: the fee calculator charges commission on them exactly as on a
@@ -690,7 +690,7 @@ export class ZohoBooksService {
     if (uncertain && opts.force) {
       await this.clearUncertain(transactionId, 'commission');
     }
-    // A Buy Now seller pays no fee, so there is no seller-side tax document
+    // A Marketplace seller pays no fee, so there is no seller-side tax document
     // to raise. Their paperwork is the platform remittance advice, issued to
     // them once the payout actually leaves the bank. (The zero-total
     // settlement advice this used to create is retired.)
@@ -1564,7 +1564,7 @@ export class ZohoBooksService {
       ] as const;
 
       // Seller commission invoice. `commissionZar > 0` mirrors the method's own
-      // guard â€” a Buy Now sale pays no seller fee, so there is no document to
+      // guard â€” a Marketplace sale pays no seller fee, so there is no document to
       // raise and retrying it would be a wasted query forever.
       const missingCommission = await this.prisma.transaction.findMany({
         where: {
@@ -2305,7 +2305,7 @@ export class ZohoBooksService {
     });
     if (!tx) return;
     if (!tx.zohoCommissionInvoiceId) return; // invoice must exist first
-    // A Buy Now sale has no seller fee: the invoice is a zero-total
+    // A Marketplace sale has no seller fee: the invoice is a zero-total
     // settlement advice with nothing to settle. Stamp a sentinel so the
     // payout batch stops re-reading it on every run.
     if (
@@ -2876,7 +2876,7 @@ export class ZohoBooksService {
   }
 
   /**
-   * Sends the seller their document â€” the auction fee invoice or the Buy Now
+   * Sends the seller their document â€” the auction fee invoice or the Marketplace
    * settlement advice â€” once.
    *
    * Idempotent via zohoSellerInvoiceEmailedAt. Never throws.

@@ -1,4 +1,4 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { BRAND_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 
@@ -65,7 +65,7 @@ const FAQS: { q: string; a: string }[] = [
     q: 'What does it cost to buy or sell?',
     // Operator decision 2026-10: one buyer-paid Platform Fee, calculated last
     // on item + delivery. Full detail (bands, worked example) on /fees.
-    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee on top at checkout, so nothing is deducted from you. On an auction the Platform Fee is a flat 10%, split 5% buyer / 5% seller. The buyer always pays delivery at checkout. Marketplace Platform Fees are banded (10% on the first R25,000, then 9%, 8% and 7% on higher portions, minimum R10). See the Fees page for a worked example.',
+    a: 'Listing is free, and browsing and bidding cost nothing. On a Marketplace listing your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee on top at checkout, so nothing is deducted from you. On an auction the Platform Fee is a flat 10%, split 5% buyer / 5% seller. The buyer always pays delivery at checkout. Marketplace Platform Fees are banded (10% on the first R25,000, then 9%, 8% and 7% on higher portions, minimum R10). See the Fees page for a worked example.',
   },
   {
     q: 'How can I pay?',

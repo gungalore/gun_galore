@@ -29,7 +29,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What Platform Fee does All Outdoor charge?',
     question: 'How much does All Outdoor take when I sell something?',
     answer:
-      'The Platform Fee is charged only on a completed sale and works like tax brackets — each rate applies only to the rand inside its slice: 10% on the first R25,000, 9% on R25,001–R50,000, 8% on R50,001–R75,000, and 7% above R75,000. On a marketplace (Buy Now) sale your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee at checkout. On an auction the fee is a flat 10%, split 5% buyer / 5% seller. The exact figures are shown before you list — see [How selling works](/how-selling-works).',
+      'The Platform Fee is charged only on a completed sale and works like tax brackets — each rate applies only to the rand inside its slice: 10% on the first R25,000, 9% on R25,001–R50,000, 8% on R50,001–R75,000, and 7% above R75,000. On a marketplace (fixed-price) sale your asking price is the listed price and you receive it in full — the buyer pays the Platform Fee at checkout. On an auction the fee is a flat 10%, split 5% buyer / 5% seller. The exact figures are shown before you list — see [How selling works](/how-selling-works).',
     tags: ['fees', 'platform fee', 'selling'],
   },
   {
@@ -79,16 +79,16 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What are the ways to sell on All Outdoor?',
     question: 'Which selling formats can I choose?',
     answer:
-      "Three: Marketplace (Buy Now) — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
+      "Three: Marketplace — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
     tags: ['selling', 'auction', 'marketplace', 'offers'],
   },
   {
     sourceKey: 'sell-marketplace-buy-now',
-    title: 'How does Marketplace (Buy Now) work?',
+    title: 'How does Marketplace work?',
     question: 'How does a fixed-price listing work?',
     answer:
       'You set one price; the buyer taps Buy and pays — no waiting, no negotiation. The payment is held by All Outdoor until the buyer confirms delivery, then released to you less commission. Selling several identical units? Set a quantity when you list and the listing stays live until every unit is sold.',
-    tags: ['selling', 'marketplace', 'buy now'],
+    tags: ['selling', 'marketplace', 'fixed price'],
   },
   {
     sourceKey: 'sell-auction-how',
@@ -127,7 +127,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'Can I sell more than one of the same item?',
     question: 'How do I list several identical units?',
     answer:
-      'Yes — on a Marketplace (Buy Now) listing, set a quantity when you list. The listing stays live until every unit is sold and stock counts down automatically with each order. Firearms are always one per listing, because each firearm carries its own serial number and licence details. Auctions and Take a Shot are single-item formats.',
+      'Yes — on a Marketplace listing, set a quantity when you list. The listing stays live until every unit is sold and stock counts down automatically with each order. Firearms are always one per listing, because each firearm carries its own serial number and licence details. Auctions and Take a Shot are single-item formats.',
     tags: ['selling', 'inventory', 'quantity'],
   },
 

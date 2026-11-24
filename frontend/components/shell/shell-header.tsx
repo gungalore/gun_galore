@@ -19,7 +19,6 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useUser } from '../../lib/auth';
 import { useEffect, useState } from 'react';
 import { LiveSearch } from '@/components/live-search';
 import { useCart } from '@/lib/cart-store';
@@ -31,11 +30,18 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { Logo } from '@/components/brand/Logo';
 
 // Routes that get the ROOT header. Everything else gets PUSH.
-const ROOT_PATHS = new Set(['/', '/account']);
+// `/community` is a main screen, not a pushed detail. It keeps the ROOT header
+// (logo, three-way switch, cart) and the search row so the member can still
+// search and switch surfaces from the feed (operator, 2026-11-24).
+const ROOT_PATHS = new Set(['/', '/account', '/community']);
 
 // Routes that carry the search row under the header.
 function hasSearchRow(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/category/');
+  return (
+    pathname === '/' ||
+    pathname === '/community' ||
+    pathname.startsWith('/category/')
+  );
 }
 
 const STROKE = {
@@ -139,52 +145,6 @@ function TapTarget({
   );
 }
 
-function Avatar() {
-  const { user, isSignedIn } = useUser();
-
-  // ⚠️ The design draws this circle in one state only — signed in, showing
-  // initials. It specifies nothing for signed-out or still-loading. Rather than
-  // invent a second visual, both fall back to the same circle with a neutral
-  // person glyph, and the destination does the work: /account bounces a
-  // signed-out visitor to sign-in, which is the only sign-in entry point on
-  // mobile now that the drawer is gone.
-  const initials =
-    (isSignedIn &&
-      (user?.username?.charAt(0) ??
-        user?.firstName?.charAt(0) ??
-        user?.primaryEmailAddress?.emailAddress?.charAt(0))) ||
-    null;
-
-  return (
-    <TapTarget href="/account" aria-label={isSignedIn ? 'Your account' : 'Sign in'}>
-      <span
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 999,
-          background: 'var(--bg-inset)',
-          border: '1px solid var(--border-hover)',
-          color: 'var(--text-tertiary)',
-          fontSize: 11,
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          textTransform: 'uppercase',
-        }}
-      >
-        {initials ?? (
-          <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" {...STROKE} aria-hidden>
-            <circle cx="12" cy="8.5" r="3.8" />
-            <path d="M4.5 20.5 C5.5 16.7 8.5 14.8 12 14.8 C15.5 14.8 18.5 16.7 19.5 20.5" />
-          </svg>
-        )}
-      </span>
-    </TapTarget>
-  );
-}
-
 /** Cart icon + badge, shared by both header archetypes — ROOT's own slot and
  *  PUSH's trailing slot (every push route now carries it; see PushHeader). */
 function CartLink() {
@@ -234,22 +194,23 @@ function RootHeader() {
         <ViewModeToggle size="sm" />
         {/* ⚠️ THE WISHLIST HEART IS THE ONE CONTROL THAT GIVES WAY ON A NARROW
             PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The row is emblem
-            (~53) + three-way switch (~186) + heart + cart + avatar (44 each) +
-            padding — roughly 395px once the heart is in. A 360-402px Android
-            phone is narrower than that, and the overflow is not cosmetic: it
-            widens the LAYOUT viewport to ~402x894 while the visual viewport
-            stays 360x800, so `position: fixed; bottom: 0` puts the tab bar
-            94px BELOW the visible screen — the "no navigation bar on Android"
-            report. The heart is duplicated in the More sheet and the account
-            menu, so it is the cheapest thing to lose on a small screen. See
-            the .gg-header-wishlist rule in globals.css. */}
+            (~53) + three-way switch (191) + heart + cart (44 each) + padding —
+            roughly 356px once the heart is in, 312px once it is dropped. A
+            360px Android phone still fits the heart-less row; the overflow the
+            400px rule prevents is the LAYOUT viewport expanding above the media
+            query, which used to push the fixed tab bar below the visible
+            screen. The heart is duplicated in the More sheet and the account
+            menu, so it is the cheapest thing to lose on a small screen. See the
+            .gg-header-wishlist rule in globals.css. */}
         <span className="gg-header-wishlist" style={{ display: 'contents' }}>
           <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
             <IconHeart />
           </TapTarget>
         </span>
         <CartLink />
-        <Avatar />
+        {/* ⚠️ NO AVATAR HERE (operator, 2026-11-24). The bottom tab bar owns
+            Account on every root screen, including /community, so a second
+            account target in the top-right was redundant. */}
       </span>
     </div>
   );

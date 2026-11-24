@@ -426,7 +426,7 @@ export interface ListingDecisionDetails {
 }
 
 export interface BugReportDetails {
-  /** Human-readable category label, e.g. "Buy Now". */
+  /** Human-readable category label, e.g. "Marketplace". */
   category: string;
   /** The member's free-text description (already length-checked upstream). */
   description: string;

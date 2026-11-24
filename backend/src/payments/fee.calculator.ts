@@ -174,7 +174,7 @@ export class FeeCalculator {
       listingPrice: item,
       shippingCost,
       shippingHandlingCents,
-      // The seller pays no commission on a Buy Now sale.
+      // The seller pays no commission on a Marketplace sale.
       commissionZar: 0,
       processingFee,
       buyerTotal: item + delivery + processingFee,

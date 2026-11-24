@@ -550,7 +550,7 @@ function adminActionHref(
 }
 
 function formatType(t: string): string {
-  if (t === 'BUY_NOW') return 'Buy Now';
+  if (t === 'BUY_NOW') return 'Marketplace';
   if (t === 'AUCTION') return 'Auction';
   if (t === 'TAKE_A_SHOT') return 'Take-a-Shot';
   return t;

@@ -179,7 +179,7 @@ export default async function ListingDetailPage({
   if (!listing) return notFound();
 
   // Detect "this is the seller viewing their own listing" so the
-  // Buy Now CTA can swap to a non-purchase state. The backend
+  // Marketplace CTA can swap to a non-purchase state. The backend
   // already rejects self-purchase, but the button shouldn't even
   // appear — it's confusing UX and was triggering a 400 round-trip.
   // PUBLIC_LISTING_SELECT exposes seller.id (the member id) but deliberately
@@ -323,7 +323,7 @@ export default async function ListingDetailPage({
         : LISTING_TYPE_LABELS[listing.listingType];
   const buyBarLabel =
     listing.listingType === 'BUY_NOW'
-      ? 'Buy Now'
+      ? 'Buy on Marketplace'
       : listing.listingType === 'TAKE_A_SHOT'
         ? 'Make an offer'
         : listing.listingType === 'AUCTION'
@@ -1003,11 +1003,11 @@ export default async function ListingDetailPage({
                   border: '0.5px solid var(--border)',
                 }}
               >
-                Buy Now — your own listing
+                Your Marketplace listing
               </div>
             ) : (
               trackedSellable !== null && trackedSellable <= 0 ? (
-                /* Sold out (tracked multi-unit) — no Buy Now / Add-to-cart
+                /* Sold out (tracked multi-unit) — no Marketplace / Add-to-cart
                    dead ends. Wishlist instead: the buyer gets alerted if the
                    seller restocks or relists. */
                 <>
@@ -1061,7 +1061,7 @@ export default async function ListingDetailPage({
                     textDecoration: 'none',
                   }}
                 >
-                  Buy Now — {formatPrice(listing.price!)}
+                  Buy on Marketplace — {formatPrice(listing.price!)}
                 </Link>
                 {/* Add to cart — firearm BUY_NOW listings are now
                     allowed too; they branch to a dealer-transfer /
@@ -1070,7 +1070,7 @@ export default async function ListingDetailPage({
                     rail only carries courier + firearm lines, so a
                     collection line can never check out from the cart
                     (M5/M8). Suppress Add-to-cart for them and point the
-                    buyer at Buy Now (checkout-form handles COLLECTION). */}
+                    buyer at Marketplace (checkout-form handles COLLECTION). */}
                 {listing.collectionOnly ||
                 listing.shippingMethods?.includes('COLLECTION') ? (
                   <div
@@ -1082,7 +1082,7 @@ export default async function ListingDetailPage({
                       lineHeight: 1.5,
                     }}
                   >
-                    Collection only — use Buy Now to arrange collection with
+                    Collection only — use the Marketplace checkout to arrange collection with
                     the seller.
                   </div>
                 ) : (
@@ -1175,7 +1175,7 @@ export default async function ListingDetailPage({
               Settings, which mutes the notification without closing the door.
 
               Rendered as a SECONDARY affordance below the primary action
-              (Buy Now / Place a bid) — `secondary` keeps the fresh-offer
+              (Marketplace / Place a bid) — `secondary` keeps the fresh-offer
               entry point collapsed behind a muted prompt so it never competes
               with the primary CTA. Still skipped for legacy TAKE_A_SHOT
               listings, which render OfferPanel as their one primary action in
@@ -1196,7 +1196,7 @@ export default async function ListingDetailPage({
               has given, and the private composer directly beneath them. The
               two used to be separate cards, which made the composer look
               unrelated to the answer above it and pushed the wishlist/share
-              pair to the bottom of the column. Works the same on Buy Now and
+              pair to the bottom of the column. Works the same on Marketplace and
               auctions — this page is shared by both. */}
           <ListingFaq entries={faq.entries} sellerReply={faq.sellerReply}>
             <QuestionsPanel

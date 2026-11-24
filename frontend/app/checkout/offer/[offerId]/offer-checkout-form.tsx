@@ -44,10 +44,10 @@ const inputStyle: React.CSSProperties = {
 };
 
 // ─── What the buyer pays on an accepted offer ────────────────────────────
-// Operator 2026-10: an offer on a Buy Now listing uses the marketplace
+// Operator 2026-10: an offer on a Marketplace listing uses the marketplace
 // Platform Fee (marginal 10/9/8/7 on item + delivery, buyer-paid). An offer
 // accepted on an auction uses the flat 5% buyer share. The seller keeps the
-// agreed price on a Buy Now listing, or pays 5% of it on an auction.
+// agreed price on a Marketplace listing, or pays 5% of it on an auction.
 //
 // Presentation only; the amount actually charged is recomputed server-side on
 // POST /transactions.
@@ -452,7 +452,7 @@ export function OfferCheckoutForm({
           )}
 
           {/* Door rate for this parcel + address. The buyer is never asked to
-              choose a carrier, and the same component serves the Buy Now
+              choose a carrier, and the same component serves the Marketplace
               checkout, so the two cannot drift. */}
           <div className="pt-1">
             <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>

@@ -1269,7 +1269,7 @@ export class OffersService {
       // The offer checkout page carries the offerId and the agreed amount; the
       // buyer signs in (or is already signed in) and pays there. An accepted
       // offer also reserves the listing, so the plain listing checkout would
-      // 404 for it - this is the one correct destination for BOTH Buy Now and
+      // 404 for it - this is the one correct destination for BOTH Marketplace and
       // auction offers.
       await this.notifications.offerPayReminderBuyer({
         buyerEmail: offer.buyer.email,

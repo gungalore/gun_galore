@@ -1661,7 +1661,7 @@ html[data-standalone='true'] [data-shell-tabs] {
 }
 
 /* ============ The #buy-panel fragment target ============
-   Every listing card's "Place bid" / "Buy now" links to
+   Every listing card's "Place bid" / "Marketplace" links to
    /listings/<id>#buy-panel, so this element is a real navigation target.
 
    Below lg it sits in normal page flow under a sticky header, so it needs the
@@ -1675,7 +1675,7 @@ html[data-standalone='true'] [data-shell-tabs] {
    one viewport tall the document scroll drags the entire shell upward and
    carries the buy panel off the top of the screen. Measured before this rule:
    the page landed at scrollY 486 with the target at viewport y -285 — arriving
-   from a card's Buy now button put the buy button out of sight.
+   from a card's Marketplace pill put the button out of sight.
 
    A scroll-margin taller than the viewport puts the start-alignment point above
    the top of both scrollports, so both clamp to zero and nothing moves at all,

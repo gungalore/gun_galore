@@ -2541,7 +2541,7 @@ export class AdminService {
       r(t.shippingHandlingCents),
       r(t.sellerPayout),
       r(t.refundedAmount),
-      t.feeModel === 'BUYNOW_MARKUP' ? 'Buy Now (fees in price)' : 'Deducted from seller',
+      t.feeModel === 'BUYNOW_MARKUP' ? 'Marketplace (fees in price)' : 'Deducted from seller',
     ]);
 
     await this.audit.record({

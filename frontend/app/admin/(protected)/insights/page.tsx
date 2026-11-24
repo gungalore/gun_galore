@@ -335,7 +335,7 @@ function MoneyTab({ period }: { period: Period }) {
         )}
       </NeonCard>
 
-      <NeonCard title="Buy Now vs Auctions">
+      <NeonCard title="Marketplace vs Auctions">
         {byType.loading && !byType.data ? (
           <SkeletonRows rows={2} />
         ) : byType.error ? (
@@ -348,7 +348,7 @@ function MoneyTab({ period }: { period: Period }) {
               <span className="adm-row-text">
                 <span className="adm-row-title">
                   {row.listingType === 'BUY_NOW'
-                    ? 'Buy Now'
+                    ? 'Marketplace'
                     : row.listingType === 'AUCTION'
                       ? 'Auctions'
                       : row.listingType}

@@ -126,7 +126,7 @@ export class SellerToolsService {
     // was added to the BUYER's price; the seller was never charged it and
     // receives their full ask. This statement billed commissionZar and
     // processingFee as seller deductions unconditionally — right for an
-    // auction, a fiction for every marked-up Buy Now, and the CSV's TOTAL row
+    // auction, a fiction for every marked-up Marketplace, and the CSV's TOTAL row
     // did not subtract to the payout it printed. sellerBreakdown() returns the
     // deductions that actually happened, and guarantees gross − deductions =
     // net for both models.

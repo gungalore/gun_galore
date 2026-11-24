@@ -81,7 +81,7 @@ export class CreateTransactionDto {
   })
   paymentProvider?: PaymentProvider;
 
-  // When checking out from an accepted offer on a Buy Now or Auction
+  // When checking out from an accepted offer on a Marketplace or Auction
   // listing. (TAKE_A_SHOT is accepted only for legacy rows.)
   @IsOptional()
   @IsString()

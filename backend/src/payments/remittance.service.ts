@@ -210,7 +210,7 @@ export class RemittanceService {
     };
     meta('Payout date', ymd(paid));
     meta('Order reference', ref);
-    meta('Sale type', tx.feeModel === FeeModel.SELLER_DEDUCT ? 'Auction' : 'Buy Now');
+    meta('Sale type', tx.feeModel === FeeModel.SELLER_DEDUCT ? 'Auction' : 'Marketplace');
     meta(
       'Paid to',
       tx.seller.username ? `@${tx.seller.username}` : 'ALL Outdoor seller',

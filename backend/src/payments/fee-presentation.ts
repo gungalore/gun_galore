@@ -1,4 +1,4 @@
-﻿import { FeeModel } from '@prisma/client';
+import { FeeModel } from '@prisma/client';
 
 // ────────────────────────────────────────────────────────────────────
 // ONE PLACE THAT DECIDES HOW A SALE'S MONEY IS SHOWN.
@@ -143,7 +143,7 @@ export function sellerBreakdown(f: FeeFacts): SellerBreakdown {
 
   // Operator 2026-10: the seller is shown an honest statement.
   //
-  // Buy Now: the buyer paid the Platform Fee, so there is NOTHING to deduct —
+  // Marketplace: the buyer paid the Platform Fee, so there is NOTHING to deduct —
   // showing a deduction would be a false statement about the seller's money.
   // They asked for a number and receive that number.
   //

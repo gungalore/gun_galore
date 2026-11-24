@@ -12,7 +12,7 @@ import { MotivationActivityService } from '../motivations/motivation-activity.se
 // description." A description alone ("it glitched when I pressed write") is not
 // actionable at 22:00; @name plus the activity tail is.
 //
-// The category list is deliberately small and product-shaped (Buy Now,
+// The category list is deliberately small and product-shaped (Marketplace,
 // Auctions, Payments, ...), not a free string, so the subject line is always
 // something the operator can triage at a glance. Keep it in step with the
 // frontend list in frontend/app/report-a-bug/page.tsx.
@@ -32,7 +32,7 @@ export const BUG_CATEGORIES = [
 export type BugCategory = (typeof BUG_CATEGORIES)[number];
 
 const CATEGORY_LABELS: Record<BugCategory, string> = {
-  BUY_NOW: 'Buy Now',
+  BUY_NOW: 'Marketplace',
   AUCTION: 'Auctions',
   PAYMENT: 'Payments',
   OFFERS: 'Offers',

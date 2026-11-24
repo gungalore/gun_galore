@@ -1,7 +1,7 @@
 // Regression guard for the retired TAKE_A_SHOT checkout gate: an accepted
-// offer on a Buy Now listing used to 400 at Pay, and an accepted offer on an
+// offer on a Marketplace listing used to 400 at Pay, and an accepted offer on an
 // auction had no settlement path at all. Both are payable now:
-//   - Buy Now: the listing was reserved when the seller accepted, so checkout
+//   - Marketplace: the listing was reserved when the seller accepted, so checkout
 //     must NOT reserve a second time;
 //   - Auction: the accept promoted the listing to the normal winner state, so
 //     checkout must claim the 24h window and use the auction fee split.
@@ -149,7 +149,7 @@ function dto(): CreateTransactionDto {
 }
 
 describe('accepted-offer checkout', () => {
-  it('pays a Buy Now offer without reserving the listing a second time', async () => {
+  it('pays a Marketplace offer without reserving the listing a second time', async () => {
     const { service, prisma } = makeService(
       listing({ listingType: 'BUY_NOW', status: 'PAYMENT_PENDING' }),
       offer(),

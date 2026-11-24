@@ -7,16 +7,16 @@ describe('ActionBox', () => {
   it('renders a static surface with a heading, description and one explicit action', () => {
     const { container } = render(
       <ActionBox
-        title="Buy Now"
+        title="Marketplace"
         description="Fixed prices."
         meta="3 live listings"
-        action={<a href="/buy">Shop Buy Now</a>}
+        action={<a href="/buy">Shop Marketplace</a>}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Buy Now' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Marketplace' })).toBeTruthy();
     expect(screen.getByText('Fixed prices.')).toBeTruthy();
     expect(screen.getByText('3 live listings')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Shop Buy Now' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Shop Marketplace' })).toBeTruthy();
     // The box itself is not an actionable surface.
     const box = container.firstElementChild as HTMLElement;
     expect(box.tagName).toBe('DIV');

@@ -1,4 +1,4 @@
-﻿import { notFound, redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
@@ -36,7 +36,7 @@ export default async function CheckoutPage({
 
   // Members-only stock (firearms, publicVisible=false) 404s for anonymous
   // callers, so the buyer's session token MUST be forwarded or every firearm
-  // Buy Now dead-ends on a 404 here. Mirrors the listing detail fetch.
+  // Marketplace dead-ends on a 404 here. Mirrors the listing detail fetch.
   const { userId, token } = await auth();
   const listing = await apiFetch<Listing>(`/listings/${listingId}`, {
     cache: 'no-store',

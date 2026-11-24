@@ -428,7 +428,7 @@ export default function TermsPage() {
       </p>
       <ul>
         <li>
-          <strong>Buy Now.</strong> The amount the Seller enters is the listed
+          <strong>Marketplace.</strong> The amount the Seller enters is the listed
           price and the amount the Seller is to receive. The Buyer pays the
           Platform Fee on top at checkout, calculated last on the item price
           plus delivery. Nothing is deducted from the Seller.
@@ -439,7 +439,7 @@ export default function TermsPage() {
           combined hammer price and delivery charge at checkout, and the Seller
           pays 5% of the hammer price, deducted from the Seller&apos;s proceeds.
           An offer accepted on an auction uses the auction fee split; an offer
-          accepted on a Buy Now listing uses the Buy Now fee.
+          accepted on a Marketplace listing uses the Marketplace fee.
         </li>
         <li>
           <strong>Private arrangement.</strong> There is no delivery charge, so
@@ -449,7 +449,7 @@ export default function TermsPage() {
         </li>
       </ul>
       <p>
-        The Buy Now Platform Fee is banded: 10% on the first R25,000, 9% from
+        The Marketplace Platform Fee is banded: 10% on the first R25,000, 9% from
         R25,001 to R50,000, 8% from R50,001 to R75,000 and 7% above R75,000,
         with a R10 minimum. Only the portion inside each band is charged at that
         band&apos;s rate. The fee is calculated on the whole line after
@@ -555,16 +555,16 @@ export default function TermsPage() {
         the account.
       </p>
 
-      <h2>10. Buy Now, offers and auctions</h2>
+      <h2>10. Marketplace, offers and auctions</h2>
       <p>
-        Listings are offered as <strong>Buy Now</strong> (fixed price) or{' '}
+        Listings are offered as <strong>Marketplace</strong> (fixed price) or{' '}
         <strong>Auction</strong> (timed bidding with an optional reserve and
-        snipe-protection extension). Eligible Buy Now and Auction listings may
+        snipe-protection extension). Eligible Marketplace and Auction listings may
         also accept <strong>offers</strong> from Buyers.
       </p>
       <ul>
         <li>
-          <strong>Buy Now.</strong> A completed purchase is binding at the listed
+          <strong>Marketplace.</strong> A completed purchase is binding at the listed
           price, subject to payment.
         </li>
         <li>

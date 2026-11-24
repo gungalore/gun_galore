@@ -38,7 +38,7 @@ const cases = [
     },
   },
   {
-    label: 'Buy Now',
+    label: 'Marketplace',
     expectedNet: 100_000,
     tx: {
       id: 'smoke-bn',

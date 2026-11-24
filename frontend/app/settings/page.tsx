@@ -470,7 +470,7 @@ export default function SettingsPage() {
             </div>
 
             {/* ⚠️ This mutes the ALERT only. Take a Shot is an option on every
-                Buy Now and Auction listing now, not a separate mode — so this
+                Marketplace and Auction listing now, not a separate mode — so this
                 switch is NOT "turn offers off": an offer submitted to your
                 listing is still written and still shows up in your Offers
                 list either way, on every channel above. Only the "you got an

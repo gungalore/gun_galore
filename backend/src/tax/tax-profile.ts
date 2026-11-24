@@ -1,7 +1,7 @@
 // ────────────────────────────────────────────────────────────────────
 // TAX PROFILE — pure constants and turnover arithmetic.
 //
-// ⚠️ THE MARKETPLACE IS AN AGENT. Every Buy Now and Auction sale collects
+// ⚠️ THE MARKETPLACE IS AN AGENT. Every Marketplace and Auction sale collects
 // the item price and delivery on behalf of the seller/courier; those amounts
 // are not ALL Outdoor revenue, turnover or VAT supplies. Only the platform
 // fee, commission and handling margin are the platform's own supplies.

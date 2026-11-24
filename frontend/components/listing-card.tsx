@@ -191,7 +191,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
           {/* Mode badge — top-left, AUCTIONS ONLY. The pack marks the MODE
               here, not the category: in a mixed feed "fixed price or bid?" is
               what a browser needs answered at a glance, and the category is
-              usually the filter they arrived through. Buy Now carries no badge
+              usually the filter they arrived through. Marketplace carries no badge
               at all, so the gold reads as the exception it is. */}
           {isAuction && (
             <span
@@ -312,7 +312,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
           )}
           <ModePill
             href={`/listings/${listing.id}#buy-panel`}
-            label={isAuction ? 'Auction' : 'Buy Now'}
+            label={isAuction ? 'Auction' : 'Marketplace'}
             title={listing.title}
           />
           {/* Phase E1 — GG+ pill (MEMBER/PRO) + verified-expert badge.
@@ -404,7 +404,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
           </span>
         </div>
 
-        {/* Auctions put their live state at the foot of the card. Buy Now has
+        {/* Auctions put their live state at the foot of the card. Marketplace has
             nothing to say here: the price-pill is the action and the card's
             photo/title are the links. */}
         {isAuction && (

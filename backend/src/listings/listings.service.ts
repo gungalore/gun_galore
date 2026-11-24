@@ -1143,7 +1143,7 @@ export class ListingsService {
     if (dto.compareAtPriceZarCents != null) {
       if (dto.listingType !== 'BUY_NOW') {
         throw new BadRequestException(
-          'A compare-at (original) price is only available on Buy Now listings.',
+          'A compare-at (original) price is only available on Marketplace listings.',
         );
       }
       // Validate against the price the BUYER WILL SEE. The listed price is
@@ -1459,7 +1459,7 @@ export class ListingsService {
     if (dto.compareAtPriceZarCents != null) {
       if (dto.listingType !== 'BUY_NOW') {
         throw new BadRequestException(
-          'A compare-at (original) price is only available on Buy Now listings.',
+          'A compare-at (original) price is only available on Marketplace listings.',
         );
       }
       // Validate against the price the BUYER WILL SEE. The listed price is
@@ -1647,7 +1647,7 @@ export class ListingsService {
     // Collection-only items settle through the standard checkout (COLLECTION +
     // papers gate). Take-a-Shot's offer-checkout carries no collection path,
     // so restrict collection-only items — category-flagged OR DG-forced — to
-    // Buy Now / Auction.
+    // Marketplace / Auction.
     if (
       effectiveCollectionOnly &&
       dto.listingType !== 'BUY_NOW' &&
@@ -1655,8 +1655,8 @@ export class ListingsService {
     ) {
       throw new BadRequestException(
         dgLithiumRestricted
-          ? 'Large lithium batteries ship collection-only, so they can be listed as Buy Now or Auction — not Take-a-Shot.'
-          : 'Collection-only items (e.g. trailers and caravans) can be listed as Buy Now or Auction — not Take-a-Shot.',
+          ? 'Large lithium batteries ship collection-only, so they can be listed as Marketplace or Auction — not Take-a-Shot.'
+          : 'Collection-only items (e.g. trailers and caravans) can be listed as Marketplace or Auction — not Take-a-Shot.',
       );
     }
     // Papers attestation — NaTIS-registered goods (trailers / caravans). The
@@ -1754,12 +1754,12 @@ export class ListingsService {
           'Set a starting bid (or set a reserve and we will derive it at 30% below).',
         );
       }
-      // Auction Buy Now is retired (operator decision): the sell form no
+      // Auction fixed-price option is retired (operator decision): the sell form no
       // longer offers it and there is no buyer path for it. Reject it rather
       // than store a price nobody can act on.
       if (dto.buyNowPrice != null) {
         throw new BadRequestException(
-          'Buy Now is not available on auctions. Use a Buy Now listing, or set a starting bid and let the auction run.',
+          'Marketplace is not available on auctions. Use a Marketplace listing, or set a starting bid and let the auction run.',
         );
       }
       startTime = new Date();
@@ -3549,7 +3549,7 @@ export class ListingsService {
       if (effectiveCompareAt != null) {
         if (listing.listingType !== 'BUY_NOW') {
           throw new BadRequestException(
-            'A compare-at (original) price is only available on Buy Now listings.',
+            'A compare-at (original) price is only available on Marketplace listings.',
           );
         }
         const effectivePrice =
@@ -3691,7 +3691,7 @@ export class ListingsService {
         listing.listingType !== 'AUCTION'
       ) {
         throw new BadRequestException(
-          'Large lithium batteries ship collection-only, which this listing type does not support. Cancel and relist it as Buy Now or Auction.',
+          'Large lithium batteries ship collection-only, which this listing type does not support. Cancel and relist it as Marketplace or Auction.',
         );
       }
     }
@@ -3811,7 +3811,7 @@ export class ListingsService {
       where: { id },
       data: {
         ...listingUpdate,
-        // The ask and the listed price are the same number on a Buy Now
+        // The ask and the listed price are the same number on a Marketplace
         // listing (operator 2026-10); keep the mirror in step on a price edit.
         ...(dto.price !== undefined && listing.listingType === 'BUY_NOW'
           ? { sellerAskCents: dto.price ?? null }
@@ -4828,7 +4828,7 @@ export class ListingsService {
     }
     // ⚠️ KEYED ON THE OFFER FLAG, NOT THE OLD LISTING TYPE. This lock exists
     // because editing a listing out from under a live offer changes what the
-    // buyer offered on. That is now possible on ANY listing, since Buy Now and
+    // buyer offered on. That is now possible on ANY listing, since Marketplace and
     // Auction listings take offers too — so checking the type would have left
     // every one of them editable mid-offer.
     if (listing.acceptsOffers) {

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -203,7 +203,7 @@ export default function CartPage() {
   };
 
   // Lines the seller has since run out of. Consistent with the PDP, where
-  // trackedSellable <= 0 hides Buy Now — here we can't hide the line, so we
+  // trackedSellable <= 0 hides Marketplace — here we can't hide the line, so we
   // name it and block Continue until it's removed (the backend would reject
   // the whole order with "This item is sold out." otherwise).
   const soldOutItems = items.filter((i) => {
@@ -776,7 +776,7 @@ export default function CartPage() {
       })}
 
       {/* Collection-only lines can't check out from the cart — name each one
-          and point the buyer at its own Buy Now checkout. Blocks Continue via
+          and point the buyer at its own Marketplace checkout. Blocks Continue via
           shippingReady above until they're removed. */}
       {collectionItems.map((i) => (
         <div

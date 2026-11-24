@@ -599,7 +599,7 @@ export class TasksService {
   // and an unpaid HELD tx, and no other sweep can see it (gateway txs are
   // excluded from orphan reclaim; the manual-EFT freeze sweep is gone; an
   // auction claim nulls expiresAt so sweepUnpaidWins can't fire). Runs after
-  // the link TTL: 15 minutes for a plain Buy Now, 24h for auction/offer
+  // the link TTL: 15 minutes for a plain Marketplace, 24h for auction/offer
   // checkouts. It re-fetches authoritative status (recover a lost webhook →
   // markPaid) or releases the reservation + delete the dead tx. An abandoned
   // auction win is handed back with a lapsed window so the every-minute

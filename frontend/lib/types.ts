@@ -475,7 +475,7 @@ export interface MoneyLine {
  * The money rows to SHOW, computed server-side by payments/fee-presentation.ts.
  *
  * ⚠️ RENDER THESE — do not re-derive a breakdown from the raw columns. We run
- * two opposite fee models that write identical columns: on a marked-up Buy Now
+ * two opposite fee models that write identical columns: on a marked-up Marketplace
  * the commission and gateway fee are already INSIDE listingPrice and nothing is
  * deducted from the seller, while on an auction or offer they sit outside it.
  * Every surface that did its own arithmetic got one of the two wrong.
@@ -718,7 +718,7 @@ export interface Offer {
   listing: {
     id: string;
     title: string;
-    // Drives the offer-checkout fee split: an offer on a Buy Now listing pays
+    // Drives the offer-checkout fee split: an offer on a Marketplace listing pays
     // the tiered buyer Platform Fee; an offer on an auction uses the flat 5/5
     // auction split.
     listingType?: ListingType;
@@ -734,7 +734,7 @@ export interface Offer {
     requiresPapers?: boolean;
     // Vicinity for the offer checkout's pre-payment acknowledgement — the
     // buyer must be told where the item is before paying, on this path as much
-    // as on a straight Buy Now.
+    // as on a straight Marketplace.
     province?: Province;
     publicLocality?: string | null;
     plannedDealerName?: string | null;

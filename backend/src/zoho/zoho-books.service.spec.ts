@@ -386,7 +386,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     );
   });
 
-  it('raises no seller document when there is no fee (Buy Now)', async () => {
+  it('raises no seller document when there is no fee (Marketplace)', async () => {
     const calls: FetchCall[] = [];
     const db = {
       transaction: {
@@ -420,7 +420,7 @@ describe('ZohoBooksService buyer paperwork', () => {
     const svc = new ZohoBooksService(db as never);
     await svc.createCommissionInvoice('tx-bn');
 
-    // A Buy Now seller pays no fee, so there is no seller-side tax document.
+    // A Marketplace seller pays no fee, so there is no seller-side tax document.
     // Their paperwork is the remittance advice issued at payout.
     expect(calls).toHaveLength(0);
     expect(db.transaction.update).not.toHaveBeenCalled();

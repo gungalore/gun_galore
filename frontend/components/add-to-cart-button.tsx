@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { addToCart, removeFromCart, useCart, type CartItem } from '@/lib/cart-store';
@@ -16,7 +16,7 @@ export function AddToCartButton({ item }: { item: CartItem }) {
       <div className="flex gap-2 mb-3">
         {/* Board review — Buy CTA typography (display face, 700, sized up
             from the body-font 500 this used to render at). Same treatment
-            as the Buy Now button on the listing page; appearance only. */}
+            as the Marketplace button on the listing page; appearance only. */}
         <Link
           href="/cart"
           className="flex-1 py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center"

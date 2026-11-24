@@ -1,4 +1,4 @@
-﻿// Fees & Charges — the public fee schedule. Every number here is sourced
+// Fees & Charges — the public fee schedule. Every number here is sourced
 // directly from the code so the page can never drift from what is actually
 // charged:
 //   - Platform Fee bands + R10 minimum:
@@ -72,7 +72,7 @@ export default function FeesPage() {
 
       <h2>1. The Platform Fee — marketplace</h2>
       <p>
-        On a Buy Now listing the seller&apos;s <strong>asking price is the
+        On a Marketplace listing the seller&apos;s <strong>asking price is the
         listed price</strong>. The buyer pays one <strong>Platform Fee</strong>,
         calculated last at checkout on the item price plus the delivery figure.
         It is charged in bands, so only the portion of the amount inside each

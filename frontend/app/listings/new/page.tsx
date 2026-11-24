@@ -780,7 +780,7 @@ export default function NewListingPage() {
     autoDeclineThreshold: '',
     durationDays: '7',
     reservePrice: '',
-    // Buy Now is opt-in. The checkbox below toggles whether the price
+    // Marketplace is opt-in. The checkbox below toggles whether the price
     // input is visible AND whether the value is submitted — turning it
     // off mid-form blanks the price so a stale value can't leak through.
     offerBuyNow: false,
@@ -1011,7 +1011,7 @@ export default function NewListingPage() {
           durationDays: relistDuration ?? f.durationDays,
           // Each mode's own required number, so seeding the mode doesn't drop
           // the seller into a step that's suddenly incomplete: Take a Shot
-          // carries the offer thresholds, and an auction's Buy Now stays
+          // carries the offer thresholds, and an auction's Marketplace stays
           // opted-in with its price.
           autoAcceptThreshold:
             l.autoAcceptThreshold != null
@@ -1021,7 +1021,7 @@ export default function NewListingPage() {
             l.autoDeclineThreshold != null
               ? String(l.autoDeclineThreshold / 100)
               : f.autoDeclineThreshold,
-          // Auction Buy Now is retired: never carry a legacy value into a
+          // Auction fixed-price option is retired: never carry a legacy value into a
           // relist, because create() now rejects it for auctions.
           offerBuyNow: false,
           buyNowPrice: '',
@@ -1102,7 +1102,7 @@ export default function NewListingPage() {
         // live site right after the picker change shipped.
         //
         // Their intent is carried over rather than discarded: the mode is
-        // cleared so they choose Buy Now or Auction. Nothing else is touched.
+        // cleared so they choose Marketplace or Auction. Nothing else is touched.
         // (This used to also set acceptsOffers: true. Unnecessary since
         // 2026-08-28 — every listing takes offers, and the form no longer
         // carries the field.)
@@ -1670,10 +1670,10 @@ export default function NewListingPage() {
   }, [effectiveCollectionOnly, shippingMethods]);
 
   // Collection-only items settle through the standard checkout, which only
-  // handles Buy Now / Auction — Take-a-Shot's offer-checkout has no
+  // handles Marketplace / Auction — Take-a-Shot's offer-checkout has no
   // collection path (the backend rejects it). If the seller switches into a
   // collection-only category (or trips the DG battery gate) with a
-  // Take-a-Shot pick still selected, snap the mode back to Buy Now so they
+  // Take-a-Shot pick still selected, snap the mode back to Marketplace so they
   // never hit an opaque publish error.
   useEffect(() => {
     if (
@@ -1740,7 +1740,7 @@ export default function NewListingPage() {
     // until the seller actively chooses.
     const step3: string[] = [];
     if (!form.listingType) {
-      step3.push('How you want to sell it — Buy Now or Auction');
+      step3.push('How you want to sell it — Marketplace or Auction');
     } else if (form.listingType === 'AUCTION') {
       // Either a starting bid or a reserve satisfies an auction; say so
       // rather than naming one field the seller may have deliberately left
@@ -2237,7 +2237,7 @@ export default function NewListingPage() {
         // hidden anyway when a reserve is set.
         body.price = Math.floor(reserveCents * 0.7);
       }
-      // Auction Buy Now is retired and create() rejects it. Nothing may send
+      // Auction fixed-price option is retired and create() rejects it. Nothing may send
       // buyNowPrice here, including a relist of a legacy auction.
     }
     return body;
@@ -3083,7 +3083,7 @@ export default function NewListingPage() {
           {relistPriceCleared
             ? ' your previous listing’s description, specifications, selling type and delivery options are already filled in, so every step is open for review. Check each one, then add fresh photos before you publish.'
             : ' your previous listing’s description, specifications, selling type, price and delivery options are already filled in, so every step is open for review. Check each one, adjust your price if it didn’t sell last time, then add fresh photos before you publish.'}
-          {/* The price is the one thing a Buy Now relist can't carry over: the
+          {/* The price is the one thing a Marketplace relist can't carry over: the
               old listing only exposes the buyer-facing figure, and that number
               already includes our fee. Re-using it would list the item higher
               every time it was relisted, so the seller states their take-home
@@ -3526,7 +3526,7 @@ export default function NewListingPage() {
                   know where to list and why. Selecting one sets listingType. */}
               <div className="flex flex-col gap-2">
                 {/* Collection-only categories (trailers / caravans) settle
-                    through the standard checkout — only Buy Now + Auction are
+                    through the standard checkout — only Marketplace + Auction are
                     offered; Take-a-Shot has no collection path. */}
                 {SELL_MODES.filter(
                   (m) =>
@@ -3601,7 +3601,7 @@ export default function NewListingPage() {
                            either typed (no-reserve) or derived from
                            the reserve at 70% (with-reserve).
                 TAKE_A_SHOT → handled separately under its own block. */}
-            {/* The Buy Now price field is the seller's asking price and the
+            {/* The Marketplace price field is the seller's asking price and the
                 listed price. The buyer pays the Platform Fee on top at
                 checkout, so the label is unambiguous and the breakdown below
                 shows exactly what the buyer will be charged. */}
@@ -3682,7 +3682,7 @@ export default function NewListingPage() {
                 When the seller sets a reserve, the starting bid is
                 hidden + derived as floor(reserve * 0.7). When they
                 leave reserve blank, they type the starting bid
-                directly. Buy Now removed per operator decision. */}
+                directly. Marketplace removed per operator decision. */}
             {form.listingType === 'AUCTION' && (
               <>
                 <Field label="Duration" required>
@@ -5041,7 +5041,7 @@ export default function NewListingPage() {
               title: form.title.trim(),
               description: form.description.trim(),
               // The preview modal renders this as the listing's price tag —
-              // it is a picture of what buyers will see, so on Buy Now it has
+              // it is a picture of what buyers will see, so on Marketplace it has
               // to be the marked-up figure, not the seller's ask. Handing the
               // raw ask over would show one price in the preview and another
               // on the published listing, which is exactly the surprise the
@@ -5163,7 +5163,7 @@ export default function NewListingPage() {
 // the rest. The buyer pays a separate 5% Platform Fee on (item + delivery) at
 // checkout, so it never touches this payout.
 //
-// Buy Now does NOT use this — see SellerAskBreakdown below.
+// Marketplace does NOT use this — see SellerAskBreakdown below.
 function PriceBreakdown({ priceCents }: { priceCents: number }) {
   if (priceCents <= 0) return null;
   const commission = Math.round(priceCents * AUCTION_SPLIT_RATE);

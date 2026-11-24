@@ -49,7 +49,7 @@ export const TIER_LABELS: Record<string, string> = {
 };
 
 export const LISTING_TYPE_LABELS: Record<string, string> = {
-  BUY_NOW: 'Buy Now',
+  BUY_NOW: 'Marketplace',
   TAKE_A_SHOT: 'Take a Shot',
   AUCTION: 'Auction',
 };

@@ -7,9 +7,9 @@
 // explainer — those were removed with the desktop band.
 //
 // ⚠️ "ON BUY NOW" IS LOAD-BEARING, NOT PADDING. The seller receives their full
-// asking price on a Buy Now sale (backend/src/payments/fee.calculator.ts: the
+// asking price on a Marketplace sale (backend/src/payments/fee.calculator.ts: the
 // buyer pays the Platform Fee, `sellerPayout: item`, "the seller pays no
-// commission on a Buy Now sale"). On an AUCTION the seller pays 5% of the hammer
+// commission on a Marketplace sale"). On an AUCTION the seller pays 5% of the hammer
 // out of the payout (AUCTION_SPLIT_RATE; /fees §3). Dropping the qualifier would
 // make this headline contradict the published fee schedule.
 //

@@ -148,7 +148,11 @@ export function ShopModeBar() {
   const hidden =
     isFinePrintRoute(pathname) ||
     path === '/checkout' ||
-    path.startsWith('/checkout/');
+    path.startsWith('/checkout/') ||
+    // The Community feed is a main screen, not a shop surface. Its ROOT header
+    // carries the three-way switch; the Sell/Motivation/Armory shortcuts would
+    // be a second navigation band over the feed.
+    path === '/community';
 
   // ── Drag-to-dismiss (phones only) ──────────────────────────────────
   // The handle at the top of the panel takes a downward drag; released past

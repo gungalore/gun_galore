@@ -6,20 +6,20 @@ import { SellerPromoBand } from './seller-promo-band';
 // ────────────────────────────────────────────────────────────────────
 // THE QUALIFIER IS THE ASSERTION THAT MATTERS.
 //
-// "100% payout" is true on a Buy Now sale: the seller receives their full ask
+// "100% payout" is true on a Marketplace sale: the seller receives their full ask
 // and the buyer pays the Platform Fee. It is NOT true on an auction, where the
 // seller pays 5% of the hammer out of the payout (AUCTION_SPLIT_RATE; /fees
-// §3). A future edit that drops "on Buy Now" turns the homepage into a claim
+// §3). A future edit that drops "on Marketplace" turns the homepage into a claim
 // the published fee schedule contradicts, so this spec asserts the whole
 // sentence rather than the number.
 // ────────────────────────────────────────────────────────────────────
 
 describe('SellerPromoBand', () => {
-  it('states the offer with the 100% claim scoped to Buy Now', () => {
+  it('states the offer with the 100% claim scoped to Marketplace', () => {
     render(<SellerPromoBand />);
     const heading = screen.getByRole('heading', { level: 2 });
     expect(heading).toHaveTextContent('Sellers list for free.');
-    expect(heading).toHaveTextContent('100% payout on Buy Now.');
+    expect(heading).toHaveTextContent('100% payout on Marketplace.');
   });
 
   it('labels its section with that heading', () => {

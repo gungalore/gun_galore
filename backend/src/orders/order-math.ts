@@ -15,7 +15,7 @@ import { BadRequestException } from '@nestjs/common';
  *
  * ⚠️ IT IS NOT ALWAYS breakdown(). This said "taken verbatim from
  * FeeCalculator.breakdown()", which stopped being true when the markup model
- * shipped: a Buy Now line is priced by breakdownBuyNow(), where the commission
+ * shipped: a Marketplace line is priced by breakdownBuyNow(), where the commission
  * and processing fee are already INSIDE listingPrice and the seller is not
  * deducted. Nothing here needs to care — this module only SUMS lines the
  * caller supplies — but anyone reading that sentence would have concluded the

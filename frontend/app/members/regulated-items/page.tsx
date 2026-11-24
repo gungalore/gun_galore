@@ -302,7 +302,7 @@ export default function RegulatedItemsAnnexPage() {
       <p>Before a listing in one of these categories goes live:</p>
       <ul>
         <li>
-          A firearm may be listed as <strong>Marketplace (Buy Now)</strong>{' '}
+          A firearm may be listed as <strong>Marketplace</strong>{' '}
           or <strong>Auction</strong> only. It cannot be couriered: it
           is transferred through a SAPS-licensed dealer and the buyer
           collects it there once the paperwork is done.
@@ -468,7 +468,7 @@ export default function RegulatedItemsAnnexPage() {
       <h2>14. Fees and charges on regulated transactions</h2>
       <ul>
         <li>
-          <strong>Buy Now — the seller receives the asking price in
+          <strong>Marketplace — the seller receives the asking price in
           full.</strong> On a fixed-price listing the amount the seller
           enters is both the listed price and what the seller receives; the
           buyer pays the Platform Fee on top at checkout, and nothing is

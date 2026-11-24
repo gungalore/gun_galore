@@ -73,7 +73,7 @@ export default function OfferPanel({
   listingPrice: number | null;
   sellerId: string;
   isAuction?: boolean;
-  // True when this panel sits ALONGSIDE a primary CTA (Buy Now / Place a
+  // True when this panel sits ALONGSIDE a primary CTA (Marketplace / Place a
   // bid) rather than being the page's only action — i.e. any BUY_NOW or
   // AUCTION listing with acceptsOffers on. Keeps the fresh, never-made-an-
   // offer entry point collapsed behind a muted prompt instead of the
@@ -442,7 +442,7 @@ export default function OfferPanel({
   }
 
   // Secondary placement, fresh visit, never made an offer: collapse behind
-  // a muted prompt instead of the full form, so the primary CTA (Buy Now /
+  // a muted prompt instead of the full form, so the primary CTA (Marketplace /
   // Place a bid) above stays the obvious first click. One click reveals the
   // exact same form rendered below.
   if (secondary && !expanded && mine === null) {

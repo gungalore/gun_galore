@@ -1,4 +1,4 @@
-﻿// Which mobile routes get which shell chrome.
+// Which mobile routes get which shell chrome.
 //
 // The design pack draws two mobile header archetypes and only ever puts the
 // five-tab bar on the shopping surfaces:
@@ -22,7 +22,15 @@
 import { isChromelessRoute } from '@/lib/chromeless-routes';
 
 /** Exact paths that carry the tab bar. */
-const TAB_EXACT = new Set(['/', '/wishlist', '/my/orders', '/account']);
+const TAB_EXACT = new Set([
+  '/',
+  '/wishlist',
+  '/my/orders',
+  '/account',
+  // The feed is a main screen with the ROOT header; the bottom bar keeps
+  // Account reachable there now that the top-right avatar is gone.
+  '/community',
+]);
 
 /** Prefixes whose subtree carries the tab bar. */
 const TAB_PREFIXES = ['/category/', '/orders/'];

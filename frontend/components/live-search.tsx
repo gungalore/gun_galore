@@ -85,7 +85,7 @@ function makeIdBase(rawId: string): string {
 }
 
 function typeLabel(t: SearchHit['listingType']): string {
-  if (t === 'BUY_NOW') return 'Buy Now';
+  if (t === 'BUY_NOW') return 'Marketplace';
   if (t === 'AUCTION') return 'Auction';
   return 'Take a Shot';
 }
