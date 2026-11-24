@@ -5,7 +5,7 @@
 // ⚠️ WHY THIS EXISTS AT ALL: the desktop nav's icon-only toggle
 // (components/nav.tsx) is `hidden md:flex`, and it is hidden for a measured
 // reason — the mobile ROOT header has 8px of slack at 390px once the
-// Shop/Community pill, wishlist, cart and avatar are in it. That left the PWA
+// Marketplace/Auction/Community switch, wishlist, cart and avatar are in it. That left the PWA
 // with NO theme control anywhere (operator, 2026-09-30: "on the pwa I can't
 // find the dark/light mode switcher"). A labelled row on /account is the one
 // surface every signed-in member can reach in the PWA, and it costs the

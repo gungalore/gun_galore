@@ -4,13 +4,12 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ShopModeBar } from './shop-mode-tiles';
 
 // ────────────────────────────────────────────────────────────────────
-// The bar is a set of static boxes with explicit actions, not clickable tiles.
+// The bar is now three label-only quick actions, not four described boxes.
 // The assertions that matter:
 //   * it still hides on fine-print/checkout routes;
-//   * the box surface is never a link or button;
-//   * the Armory disclosure is opened by its button and closes with the page;
-//   * the public licence-motivation entry is present and points at the neutral
-//     public page signed out, directly at the application signed in.
+//   * signed out, Armory is a link to the auth wall (no member panel);
+//   * signed in, Armory is a disclosure with three described child buttons;
+//   * there is exactly one Motivation Creator entry.
 // ────────────────────────────────────────────────────────────────────
 
 const nav = vi.hoisted(() => ({ path: '/' }));
@@ -24,16 +23,6 @@ vi.mock('@/lib/auth', () => ({
   useUser: () => auth,
 }));
 
-// The counts fetch is irrelevant to every assertion here and would otherwise
-// hit the network on mount. A resolved-null twin keeps the effect harmless.
-vi.mock('@/lib/use-viewer-fetch', () => ({
-  useViewerFetch: () => ({
-    viewerFetch: () => Promise.resolve({ ok: false, json: () => null }),
-    isSignedIn: auth.isSignedIn,
-  }),
-  viewerCacheKey: (signedIn: boolean) => (signedIn ? 'member' : 'anon'),
-}));
-
 beforeEach(() => {
   nav.path = '/';
   auth.isLoaded = true;
@@ -41,26 +30,33 @@ beforeEach(() => {
 });
 
 describe('ShopModeBar — where it hides itself', () => {
-  it('renders on the landing page with the public motivation entry', () => {
+  it('renders the three quick actions on the landing page', () => {
     render(<ShopModeBar />);
-    expect(screen.getByRole('navigation')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Buy Now' })).toBeInTheDocument();
+    const bar = screen.getByRole('navigation', { name: 'Quick actions' });
+
+    expect(within(bar).getByRole('link', { name: 'Sell your gear' }).getAttribute('href')).toBe(
+      '/listings/new',
+    );
     expect(
-      screen.getByRole('heading', { name: 'Licence motivation' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: /Start application/i }).getAttribute('href'),
+      within(bar).getByRole('link', { name: 'Motivation Creator' }).getAttribute('href'),
     ).toBe('/motivation');
+    expect(within(bar).getByRole('link', { name: 'Armory' }).getAttribute('href')).toBe(
+      '/account',
+    );
   });
 
-  // ⚠️ ONE POLICY PAGE STANDS FOR THE SET. Every entry in FINE_PRINT_PATHS is
-  // checked by fine-print-routes.ts; what this asserts is that the bar
-  // actually consults that predicate — the wiring, not the list.
+  it('carries no descriptions on the top-level buttons', () => {
+    render(<ShopModeBar />);
+    expect(screen.queryByText(/Fixed prices/i)).toBeNull();
+    expect(screen.queryByText(/Live bidding/i)).toBeNull();
+    expect(screen.queryByText(/Store all Motivation Documents/i)).toBeNull();
+  });
+
   it('is absent on a fine-print page', () => {
     nav.path = '/terms';
     const { container } = render(<ShopModeBar />);
     expect(container.querySelector('[data-shop-mode-bar]')).toBeNull();
-    expect(screen.queryByText('Buy Now')).toBeNull();
+    expect(screen.queryByText('Sell your gear')).toBeNull();
   });
 
   it('is absent on /privacy', () => {
@@ -78,7 +74,7 @@ describe('ShopModeBar — where it hides itself', () => {
   it('is not fooled by a route that merely starts with the same word', () => {
     nav.path = '/checkouts-of-the-world';
     render(<ShopModeBar />);
-    expect(screen.getByRole('navigation')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Quick actions' })).toBeInTheDocument();
   });
 });
 
@@ -100,44 +96,26 @@ describe('ShopModeBar — the mobile scope stamp', () => {
   });
 });
 
-describe('ShopModeBar — static boxes with explicit actions', () => {
-  it('signed out: three boxes, three explicit links, no whole-box action', () => {
-    const { container } = render(<ShopModeBar />);
-    const links = within(screen.getByRole('navigation')).getAllByRole('link');
-    expect(links.map((link) => link.textContent)).toEqual([
-      'Shop Buy Now',
-      'Browse Auctions',
-      'Start application',
-    ]);
-    // The box itself is a div; the heading is not inside a link/button.
-    const heading = screen.getByRole('heading', { name: 'Buy Now' });
-    expect(heading.closest('a, button')).toBeNull();
-    expect(container.querySelector('nav')?.className).toContain('sm:grid-cols-3');
-    // Descriptions are visible at every width — no mini tile hides them.
-    expect(screen.getByText(/Fixed prices/)).toBeInTheDocument();
-  });
-
-  it('signed in: four boxes including Armory, with a direct application link', () => {
-    auth.isSignedIn = true;
-    const { container } = render(<ShopModeBar />);
-    expect(screen.getByRole('heading', { name: 'Armory' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: /Continue/i }).getAttribute('href'),
-    ).toBe('/licence-centre/applications');
-    expect(container.querySelector('nav')?.className).toContain('lg:grid-cols-4');
-  });
-});
-
-describe('ShopModeBar — the Armory disclosure', () => {
-  it('offers no Armory box when signed out', () => {
+describe('ShopModeBar — the member Armory disclosure', () => {
+  it('signed out: no disclosure, no member child labels', () => {
     render(<ShopModeBar />);
     expect(screen.queryByRole('button', { name: /armory/i })).toBeNull();
+    expect(screen.queryByText(/Paper Work Vault/i)).toBeNull();
+    expect(screen.queryByText(/Reloading Tool/i)).toBeNull();
   });
 
-  it('opens three tool boxes from its own button, without repeating Motivation', () => {
+  it('signed in: Motivation Creator goes straight to the application', () => {
     auth.isSignedIn = true;
     render(<ShopModeBar />);
-    const armory = screen.getByRole('button', { name: /Open Armory/i });
+    expect(
+      screen.getByRole('link', { name: 'Motivation Creator' }).getAttribute('href'),
+    ).toBe('/licence-centre/applications');
+  });
+
+  it('opens three child buttons with their descriptions inside the button', () => {
+    auth.isSignedIn = true;
+    render(<ShopModeBar />);
+    const armory = screen.getByRole('button', { name: /Armory/i });
     expect(armory.getAttribute('aria-expanded')).toBe('false');
     expect(armory.getAttribute('aria-controls')).toBe('armory-panel');
     expect(document.querySelector('#armory-panel')).toBeNull();
@@ -146,10 +124,21 @@ describe('ShopModeBar — the Armory disclosure', () => {
     expect(armory.getAttribute('aria-expanded')).toBe('true');
     const panel = document.querySelector('#armory-panel') as HTMLElement;
     expect(panel).not.toBeNull();
-    expect(within(panel).getAllByRole('link')).toHaveLength(3);
-    expect(within(panel).getByRole('heading', { name: 'Paper Work Vault' })).toBeInTheDocument();
-    // The dedicated Licence motivation box is the only motivation entry.
-    expect(within(panel).queryByRole('heading', { name: /Motivation Writer/i })).toBeNull();
+
+    const children = within(panel).getAllByRole('link');
+    expect(children).toHaveLength(3);
+    expect(
+      within(panel).getByRole('link', { name: /Paper Work Vault/i }),
+    ).toHaveTextContent('Store all Motivation Documents');
+    expect(
+      within(panel).getByRole('link', { name: /Reloading Tool/i }),
+    ).toHaveTextContent('Work up a load');
+    expect(
+      within(panel).getByRole('link', { name: /Application Tracker/i }),
+    ).toHaveTextContent('Track your Application');
+
+    // The dedicated Motivation Creator button is the only motivation entry.
+    expect(within(panel).queryByText(/Motivation Writer/i)).toBeNull();
   });
 });
 
@@ -157,7 +146,7 @@ describe('ShopModeBar — the Armory panel closes with the page', () => {
   function openArmory() {
     auth.isSignedIn = true;
     const view = render(<ShopModeBar />);
-    fireEvent.click(screen.getByRole('button', { name: /Open Armory/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Armory/i }));
     expect(document.querySelector('#armory-panel')).not.toBeNull();
     return view;
   }

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
@@ -62,8 +62,9 @@ function WishlistNavButton() {
             minWidth: 16,
             height: 16,
             borderRadius: 8,
-            background: 'var(--red)',
-            color: '#fff',
+            // Neutral count badge: the action accent belongs to Sell only.
+            background: 'var(--text-primary)',
+            color: 'var(--bg-deep)',
             fontSize: 10,
             fontWeight: 600,
             display: 'flex',
@@ -181,7 +182,7 @@ export function Nav() {
   // offer on a Buy Now item, so it is no longer a browse surface; Swop, Daily
   // Deals and the Prize Draw were removed as modules.
   const SHOP_LINKS = [
-    { href: '/?listingType=BUY_NOW', label: 'Buy Now' },
+    { href: '/?listingType=BUY_NOW', label: 'Marketplace' },
     { href: '/?listingType=AUCTION', label: 'Auctions' },
     { href: '/value', label: 'Value' },
   ];
@@ -200,21 +201,11 @@ export function Nav() {
         }}
       >
         <div className="max-w-[var(--page-max)] mx-auto px-4 h-[var(--nav-h)] flex items-center gap-3 sm:gap-6">
-          {/* Logo — the composed nav lockup, and the MARK ALONE on phones.
-
-              The nav constrains by HEIGHT, so shape decides width. The
-              lockup is 6:1: at sm's h-11 that is ~340px, comfortable beside
-              a flex-1 search box on a desktop row. At h-9 on a 375px phone it
-              would be ~280px, which leaves nothing for the fixed-size
-              Sell/bell/cart/hamburger cluster and pushes the row into
-              horizontal overflow — the exact failure the old comment here was
-              guarding against from the other direction.
-
-              So phones get the monogram (square, ~36px) and everything from sm
-              up gets the wordmark too. Both are the same artwork.
-
-              Uses brand pack Logo component with theme awareness:
-              light artwork on light theme, dark artwork on dark theme. */}
+          {/* ⚠️ EMBLEM ONLY (operator, 2026-11-23). The wordmark lockup was
+              259px wide at the old 44px height and it was eating the space the
+              three-way Marketplace/Auction/Community switch now needs. The
+              emblem is ~70px, the accessible name still says "ALL Outdoor",
+              and the home destination is unchanged. */}
           <Link
             href="/"
             className="shrink min-w-0 flex items-center"
@@ -222,24 +213,19 @@ export function Nav() {
           >
             <Logo
               variant="emblem"
-              height={36}
-              className="h-9 w-auto object-contain sm:hidden"
-            />
-            <Logo
-              variant="horizontal"
-              height={44}
-              className="hidden h-11 w-auto max-w-full object-contain sm:block"
+              height={40}
+              className="h-10 w-auto object-contain"
+              priority
             />
           </Link>
 
           {/* Category browse + live search, fused into one control
               (Takealot-style): a "Categories ▾" segment on the left of a
               wide search box. Desktop only + flex-1 so the search fills the
-              row; mobile keeps search in the hamburger drawer. The selling-
-              mode links moved to the slim second tier below so they no
-              longer crush the search. */}
+              available width; the cap drops to 520px to leave room for the
+              three-way switch. Mobile keeps search in the shell header. */}
           <div
-            className="hidden md:flex flex-1 max-w-[600px] items-stretch"
+            className="hidden md:flex flex-1 max-w-[520px] items-stretch"
             style={{
               border: '0.5px solid var(--border)',
               borderRadius: 6,
@@ -313,7 +299,7 @@ export function Nav() {
             </button>
           </div>
 
-          {/* Shop/Community — the always-on view switch (desktop). Navigates
+          {/* Marketplace/Auction/Community — the always-on view switch (desktop). Navigates
               between the storefront and the feed; hides itself only while a
               motivation is busy. See components/view-mode-toggle.tsx. */}
           <div className="hidden md:flex shrink-0">
@@ -353,7 +339,7 @@ export function Nav() {
                 {isSignedIn ? (
                   <>
                     {/* The Community entry point is the homepage
-                        Shop/Community toggle, NOT a nav pill (operator,
+                        Marketplace/Auction/Community switch, NOT a nav pill (operator,
                         2026-09-22). See
                         docs/design/community-feed/spec.md §11A.2. */}
                     {/* `relative` and the menuRef were positioning
@@ -361,12 +347,13 @@ export function Nav() {
                         this tile. The menu is gone; the wrapper stays
                         only to keep the flex row's spacing. */}
                     <div>
-                      {/* One consolidated account tile: avatar + name +
-                          chevron. Replaces the old separate name link,
-                          "Account ▾" button, and Clerk UserButton. The
-                          avatar is wrapped in AvatarCompletionRing, which
-                          draws a profile-completeness arc hugging it and
-                          vanishes at 100%. */}
+                      {/* One quiet account trigger: avatar + name + chevron,
+                          with no card border or fill. Replaces the old
+                          separate name link, "Account ▾" button and Clerk
+                          UserButton. The avatar is wrapped in
+                          AvatarCompletionRing, which draws a
+                          profile-completeness arc hugging it and vanishes at
+                          100%. */}
                       {/* ⚠️ A LINK, NOT A MENU TRIGGER (operator,
                           2026-08-27). This opened a 27-link dropdown; the
                           account tile page is the design's answer to the
@@ -374,20 +361,23 @@ export function Nav() {
                           aria-expanded / aria-haspopup went with the menu:
                           announcing a popup that no longer exists is worse
                           than announcing nothing. */}
+                      {/* ⚠️ NO BORDER, NO CARD FILL (operator, 2026-11-23).
+                          The old tile read as a third button beside Sell.
+                          The trigger is now just the avatar, the name and the
+                          chevron; the hover tint is a stylesheet rule
+                          (.gg-nav-account) so it can override cleanly. */}
                       <Link
                         href="/account"
                         aria-label="Your account"
-                        className="gg-press"
+                        className="gg-press gg-nav-account"
                         style={{
                           textDecoration: 'none',
                           color: 'var(--text-primary)',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 8,
-                          padding: '2px 8px 2px 2px',
-                          borderRadius: 999,
-                          border: '0.5px solid var(--border)',
-                          background: 'var(--bg-card)',
+                          gap: 7,
+                          padding: '4px 6px',
+                          borderRadius: 8,
                           cursor: 'pointer',
                         }}
                       >
@@ -399,8 +389,12 @@ export function Nav() {
                               borderRadius: '50%',
                               overflow: 'hidden',
                               flexShrink: 0,
-                              background: 'var(--red)',
-                              color: '#fff',
+                              // Neutral, not the action accent. The blue is
+                              // reserved for Sell; the completion ring around
+                              // this avatar remains the only progress colour.
+                              background: 'var(--bg-inset)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-primary)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
@@ -635,7 +629,7 @@ export function Nav() {
               className="flex items-center justify-between px-4 h-14"
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
-              <Logo height={36} />
+              <Logo variant="emblem" height={34} />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
@@ -660,7 +654,7 @@ export function Nav() {
               </button>
             </div>
 
-            {/* Shop/Community — the always-on view switch (mobile drawer). */}
+            {/* Marketplace/Auction/Community — the always-on view switch (drawer). */}
             <div className="px-4 pt-4">
               <ViewModeToggle full />
             </div>

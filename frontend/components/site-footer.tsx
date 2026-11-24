@@ -1,4 +1,4 @@
-﻿// Site-wide footer mounted in the root layout. Two roles:
+// Site-wide footer mounted in the root layout. Two roles:
 //
 //   1. ECT § 43 compliance — Section 43 of the Electronic
 //      Communications and Transactions Act 25 of 2002 requires every
@@ -79,7 +79,7 @@ export function SiteFooter() {
             Shop
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
-            <li><Link href="/?listingType=BUY_NOW" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Buy Now</Link></li>
+            <li><Link href="/?listingType=BUY_NOW" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Marketplace</Link></li>
             <li><Link href="/?listingType=AUCTION" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Auctions</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
@@ -128,6 +128,14 @@ export function SiteFooter() {
               >
                 {SUPPORT_EMAIL}
               </a>
+            </li>
+            <li>
+              <Link
+                href="/report-a-bug"
+                style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+              >
+                Report a bug
+              </Link>
             </li>
             <li style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>
               We aim to respond within 2 business days

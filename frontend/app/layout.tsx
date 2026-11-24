@@ -20,7 +20,6 @@ import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { ProfileCompleteNudge } from '@/components/profile-complete-nudge';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import { BugReportProvider } from '@/components/bug-report/bug-report-context';
-import { BugReportFab } from '@/components/bug-report/bug-report-fab';
 import { WelcomeBanner } from '@/components/welcome-banner';
 import './globals.css';
 
@@ -350,8 +349,8 @@ export default function RootLayout({
               session is live (POPIA record). No-op when signed out. */}
           <WishlistProvider>
           {/* Site-wide "Report a bug" — the sheet (opened from the bottom tray
-              tab or the desktop hovering button) captures the current page and
-              its URL. Wraps the shell so both entry points share one modal. */}
+              tab or the account menu) captures the current page and its URL.
+              Wraps the shell so both entry points share one modal. */}
           <BugReportProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
@@ -452,9 +451,10 @@ export default function RootLayout({
           {/* SMS-arrival welcome banner — self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
-          {/* Desktop-only hovering report button; hidden under 768px where the
-              bottom tray tab carries the same action. */}
-          <BugReportFab />
+          {/* The floating desktop "Report a bug" button lived here. It was
+              removed (operator, 2026-11-23): it sat in the bottom-right thumb
+              zone on every page. The action now lives in the footer and the
+              account menu; the mobile bottom-bar Report tab is unchanged. */}
           </BugReportProvider>
           </WishlistProvider>
         </body>

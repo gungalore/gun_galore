@@ -1,7 +1,7 @@
 // ────────────────────────────────────────────────────────────────────
 // PAGES THAT ARE DOCUMENTS, NOT SHOP SURFACES.
 //
-// The shop-mode bar (Buy Now / Auctions / Armory) is a fork for browsing.
+// The quick actions bar (Sell / Motivation Creator / Armory) is a shop tool.
 // On a policy or disclosure page the visitor is reading a document, not
 // shopping — dropping a storefront bar above the terms is the same mistake
 // lib/chromeless-routes.ts exists to prevent, one notch less severe: here

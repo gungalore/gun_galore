@@ -128,8 +128,10 @@ export function UrgentBell() {
               height: 16,
               padding: '0 4px',
               borderRadius: 999,
-              background: 'var(--red)',
-              color: '#fff',
+              // Neutral count badge; urgency is the bell + the number, not a
+              // second use of the Sell accent.
+              background: 'var(--text-primary)',
+              color: 'var(--bg-deep)',
               fontSize: 10,
               fontWeight: 600,
               lineHeight: '16px',

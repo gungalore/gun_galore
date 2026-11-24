@@ -1,4 +1,4 @@
-﻿// Homepage hero. Full-bleed outdoor montage with the store intro set on it.
+// Homepage hero. Full-bleed outdoor montage with the store intro set on it.
 // Server component, with one client island: HeroVideo (the motion plate).
 // Focus: outdoor, hunting & sport recreation (firearms stay in the catalogue
 // + nav, just not the landing headline).
@@ -333,43 +333,26 @@ export function Hero() {
           <h1
             className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl md:text-[44px] leading-[1.12] md:leading-[1.1]"
             style={{
-              color: 'var(--text-on-dark)',
+              // ⚠️ PURE WHITE, ONE COLOUR (operator, 2026-11-23). The second
+              // line used to be brand red; over the clip's bright river and
+              // daylight cuts that split read as two different headlines. The
+              // red stays where it still has contrast to carry: the CTA.
+              color: '#FFFFFF',
               fontWeight: 500,
               letterSpacing: '-0.02em',
               textShadow: '0 2px 8px rgba(0, 0, 0, 0.55)',
               textWrap: 'balance',
             }}
           >
-            New &amp; secondhand{' '}
-            <span style={{ color: 'var(--red)' }}>outdoor gear</span>
-            {' '}for the{' '}
+            New &amp; secondhand outdoor gear for the{' '}
             <span style={{ whiteSpace: 'nowrap' }}>whole trip.</span>
           </h1>
 
-          {/* The seller statement replaces the old "Camping, overlanding…"
-              subhead. It sits in the same third slot as that paragraph, so the
-              four-step hero reveal still lands as eyebrow -> buyer headline ->
-              seller line -> CTA. It is deliberately smaller than the 44px buyer
-              headline: the hero sells the store first and the seller offer
-              second. On phones the whole hero is hidden, so the same statement
-              is carried by the mobile-only band below it. */}
-          <h2
-            id="hero-seller-heading"
-            className="hero-reveal hero-reveal-3 text-2xl sm:text-[28px] md:text-[30px] leading-[1.12] m-0"
-            style={{
-              color: 'var(--text-on-dark)',
-              fontWeight: 800,
-              letterSpacing: '-0.02em',
-              textShadow: '0 1px 6px rgba(0, 0, 0, 0.55)',
-              textWrap: 'balance',
-            }}
-          >
-            Sellers list for free.{' '}
-            <span className="block">
-              <span style={{ color: 'var(--red)' }}>100% payout</span> on Buy
-              Now.
-            </span>
-          </h2>
+          {/* The seller statement is now two trust badges UNDER the CTA
+              (operator, 2026-11-23). It used to be a second, 30px headline
+              above the button, so the hero read as two competing headlines.
+              On phones the hero is hidden and the mobile-only band below still
+              carries the same claim. */}
 
           {/* ONE call to action. The hero briefly carried a second button
               and flipped its primary to "List your first item" while the
@@ -384,7 +367,7 @@ export function Hero() {
               flex items stretch on the cross axis by default. */}
           <Link
             href="/?listingType=BUY_NOW"
-            className="hero-cta gg-press hero-reveal hero-reveal-4 self-start inline-flex items-center justify-center text-sm"
+            className="hero-cta gg-press hero-reveal hero-reveal-3 self-start inline-flex items-center justify-center text-sm"
             style={{
               background: 'var(--red)',
               color: '#fff',
@@ -396,8 +379,50 @@ export function Hero() {
               letterSpacing: '0.01em',
             }}
           >
-            Browse the store
+            Explore Gear
           </Link>
+
+          {/* Seller proof, demoted to two inline trust badges under the CTA.
+              "on Buy Now" is load-bearing: the seller receives their full ask
+              on a Buy Now sale; an auction deducts 5% from the payout. */}
+          <div className="hero-reveal hero-reveal-4 self-start flex flex-wrap items-center gap-2">
+            {['Sellers list for free.', '100% payout on Buy Now.'].map(
+              (label) => (
+                <span
+                  key={label}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '5px 9px',
+                    borderRadius: 999,
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    color: 'rgba(255,250,245,0.88)',
+                    fontSize: 12,
+                    lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                    style={{ flexShrink: 0 }}
+                  >
+                    <path d="M4 12.5 8.5 17 20 5.5" />
+                  </svg>
+                  {label}
+                </span>
+              ),
+            )}
+          </div>
         </div>
       </div>
     </section>

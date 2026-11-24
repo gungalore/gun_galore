@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // Bottom tab bar — the primary nav for installed-PWA users.
 //
@@ -388,6 +388,16 @@ export function BottomTabBar() {
     else setMoreOpen(true);
   }, []);
 
+  // The PWA search row's categories icon asks for this sheet. It lives in the
+  // shell header (a sibling), so a DOM event is the smallest bridge: the sheet,
+  // its viewer-aware category cache and its history/drag behaviour all stay in
+  // this component.
+  useEffect(() => {
+    const openShop = () => openSheet('shop');
+    window.addEventListener('gg:open-shop-sheet', openShop);
+    return () => window.removeEventListener('gg:open-shop-sheet', openShop);
+  }, [openSheet]);
+
   // Dismiss (backdrop tap, Escape, swipe-down, handle tap). Consumes our
   // history entry so the stack is left exactly as we found it.
   const dismissSheet = useCallback(() => {
@@ -640,8 +650,9 @@ export function BottomTabBar() {
                   height: 16,
                   padding: '0 4px',
                   borderRadius: 8,
-                  background: 'var(--red)',
-                  color: '#fff',
+                  // Neutral count badge: the accent belongs to Sell only.
+                  background: 'var(--text-primary)',
+                  color: 'var(--bg-deep)',
                   fontSize: 10,
                   fontWeight: 700,
                   display: 'inline-flex',
@@ -676,8 +687,8 @@ export function BottomTabBar() {
                   height: 16,
                   padding: '0 4px',
                   borderRadius: 8,
-                  background: 'var(--red)',
-                  color: '#fff',
+                  background: 'var(--text-primary)',
+                  color: 'var(--bg-deep)',
                   fontSize: 10,
                   fontWeight: 700,
                   display: 'inline-flex',
@@ -751,13 +762,12 @@ export function BottomTabBar() {
         >
           {tabs.map((tab) => {
             const active = tab.isActive(pathname, searchParams);
-            // Three greys, not two. Active is red; Sell's label is
-            // --text-tertiary (#7A7267); every other inactive tab is one step
-            // lighter again at --text-faint (#9C948A). The old code used
-            // --text-primary for Sell, which made the one label under a red
-            // button the darkest text in the row.
+            // Active is INK, not the action accent (operator, 2026-11-23):
+            // blue is reserved for the one primary CTA, and the only primary
+            // CTA in this row is the raised Sell button. Sell's label is
+            // --text-tertiary; every other inactive tab is --text-faint.
             const color = active
-              ? 'var(--red)'
+              ? 'var(--text-primary)'
               : tab.prominent
                 ? 'var(--text-tertiary)'
                 : 'var(--text-faint)';
@@ -1106,7 +1116,7 @@ function ShopSheet({
     {
       key: 'marketplace',
       href: '/?listingType=BUY_NOW',
-      title: 'Buy Now',
+      title: 'Marketplace',
       // Was "Used firearms and gear — …": gun-first copy on a general
       // outdoor surface (the sheet also fronts camping, fishing, optics).
       // Describe the MECHANIC, which is what distinguishes this surface
@@ -1120,7 +1130,7 @@ function ShopSheet({
     {
       key: 'auctions',
       href: '/?listingType=AUCTION',
-      title: 'Auctions',
+      title: 'Auction',
       tagline: 'Timed bidding with proxy bids and snipe protection',
       icon: <IconGavel />,
       isActive:

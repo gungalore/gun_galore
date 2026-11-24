@@ -1,9 +1,9 @@
 'use client';
 
 // Direct-URL fallback for "Report a bug". The primary entry points (the bottom
-// tray tab and the desktop hovering button) open the global capture sheet; this
-// page exists so a link from anywhere still works. It captures its own URL and
-// page, then renders the same shared form.
+// tray tab and the account menu) open the global capture sheet; the footer link
+// lands here so a report is still possible without JS. It captures its own URL
+// and page, then renders the same shared form.
 
 import { useEffect, useState } from 'react';
 import {

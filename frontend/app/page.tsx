@@ -38,7 +38,7 @@ const SURFACE_TITLES: Record<string, { title: string; subtitle: string }> = {
   BUY_NOW: {
     // "Marketplace" is the user-facing label for the BUY_NOW surface — these
     // are used-gear listings priced and ready to ship.
-    title: 'Buy Now',
+    title: 'Marketplace',
     subtitle: 'Gear, optics & outdoor kit — pay the listed price and go',
   },
   AUCTION: {

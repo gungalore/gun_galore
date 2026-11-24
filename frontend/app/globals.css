@@ -1407,31 +1407,22 @@ html[data-standalone='true'] .gg-shell-chrome {
 /* ── Keep the shell header inside a narrow phone ─────────────────────
    ⚠️ THIS IS NOT A COSMETIC TRIM. THE TAB BAR'S DISAPPEARANCE IS THE SYMPTOM.
 
-   The ROOT header is wordmark (109px) + the Shop/Community switch (141px) +
-   wishlist + cart + avatar (44px each) + 16/8px padding ≈ 410px. On a 360px
-   Android phone (and a 390px iPhone, which is 20px short) that row overflows
-   HORIZONTALLY. Chrome then expands the LAYOUT viewport to ~402x894 while the
-   VISUAL viewport stays 360x800 — and `position: fixed; bottom: 0` resolves
-   against the layout viewport, so the bottom tab bar sits ~94px BELOW the
-   visible screen. That is the "installed PWA has no navigation bar on Android"
-   report, reproduced at 360px on 2026-11-08 and verified gone by these rules.
+   The ROOT header is now emblem (~53px) + the three-way Marketplace/Auction/
+   Community switch (~181px at size="sm") + wishlist + cart + avatar (44px
+   each) + 16/8px padding ≈ 390px. On a 360px Android phone the row still
+   overflows HORIZONTALLY, and Chrome then expands the LAYOUT viewport to
+   ~402x894 while the VISUAL viewport stays 360x800 — `position: fixed;
+   bottom: 0` resolves against the layout viewport, so the bottom tab bar sits
+   ~94px BELOW the visible screen. That is the "installed PWA has no
+   navigation bar on Android" report, reproduced at 360px on 2026-11-08.
 
    The heart is the control that gives way: it is the only entry in that row
-   that is duplicated in the More sheet AND the account menu. The wordmark drops
-   to 15px on every phone-sized header (≤430px), which buys ~13px of slack — at
-   412px the full-size row fits with only 2px to spare, and 1px of font rounding
-   is enough to spill it again. Both need !important because the values they
-   override are inline.
+   that is duplicated in the More sheet AND the account menu. The 400px
+   breakpoint is calibrated and must not be moved.
 
    ⚠️ WIDTH-GATED, NOT DISPLAY-MODE-GATED. The overflow breaks browser mode and
    the installed app identically; gating on display-mode would fix one and leave
    the other, and would make the server HTML depend on the mode. */
-@media (max-width: 430px) {
-  .gg-header-wordmark {
-    font-size: 15px !important;
-    letter-spacing: -0.4px !important;
-  }
-}
 @media (max-width: 400px) {
   .gg-header-wishlist {
     display: none !important;
@@ -1538,16 +1529,16 @@ html:has([data-desk]) {
   flex-shrink: 0;
 }
 
-/* ── The shop-mode bar (components/shop-mode-tiles.tsx) ─────────────────
-   The Buy Now / Auctions / Armory fork, mounted once in the shell so it sits
-   directly under the top nav on every shop surface. It scrolls away with the
-   page — it is deliberately NOT sticky, unlike the header above it — so the
-   band is a translucent veil over the page ground rather than a pinned row.
+/* ── The quick actions bar (components/shop-mode-tiles.tsx) ─────────────
+   Sell your gear / Motivation Creator / Armory, mounted once in the shell so
+   it sits directly under the top nav on every shop surface. It scrolls away
+   with the page — it is deliberately NOT sticky, unlike the header above it —
+   so the band is a translucent veil over the page ground rather than a pinned
+   row.
 
    ⚠️ NO GRADIENT. "Cloudy" here is a fill plus a filter, never a ramp: the
-   standing rule is no gradients. The tiles themselves are transparent so the
-   band reads *through* them, and the band is what the eye takes for the
-   surface underneath.
+   standing rule is no gradients. The buttons are opaque cards, and the band is
+   the blurred surface the eye reads around and behind them.
 
    ⚠️ backdrop-filter IS THE WHOLE EFFECT and it degrades to the veil alone
    on an engine without it — which is still a readable band, not a broken one,
@@ -2177,16 +2168,143 @@ canvas,
   background: var(--success);
 }
 
-/* Desktop-only "Report a bug" hovering button. On phones/installed app the
-   same action lives in the bottom tray tab, so this is hidden below 768px.
-   inline-flex (not block) so the icon and label sit on one line. */
-.gg-bug-fab {
-  display: none;
+/* ── Header account trigger ──────────────────────────────────────────
+   A quiet avatar + name + chevron. It used to be a bordered card pill, which
+   read as a third button beside Sell; the only border/fill it gets now is the
+   hover tint. */
+.gg-nav-account {
+  transition: background-color var(--dur-fast) var(--ease-standard);
 }
-@media (min-width: 768px) {
-  .gg-bug-fab {
-    display: inline-flex;
+@media (hover: hover) and (pointer: fine) {
+  .gg-nav-account:hover {
+    background: var(--bg-card);
   }
+}
+.gg-nav-account:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+/* ── Marketplace / Auction / Community switch ────────────────────────
+   The indicator is the only moving part. It is neutral ink-on-card, not the
+   action accent: blue belongs to Sell (and the hero's one primary CTA). */
+.gg-view-toggle-indicator {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    width var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast) linear;
+  box-shadow: var(--shadow-xs);
+}
+.gg-view-toggle-link {
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) {
+  .gg-view-toggle-link:hover {
+    color: var(--text-primary) !important;
+  }
+}
+.gg-view-toggle-link:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gg-view-toggle-indicator {
+    transition: none;
+  }
+}
+
+/* ── Quick actions bar ────────────────────────────────────────────────
+   Three label-only buttons. No descriptions, no counts, no icon chips, no
+   accent fills. They sit under the nav and scroll away with the page. */
+.gg-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gg-quick-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+@media (min-width: 640px) {
+  .gg-quick-action {
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 12.5px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .gg-quick-action:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-hover);
+  }
+}
+.gg-quick-action:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+.gg-quick-action[aria-expanded='true'] {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+/* The Armory children are buttons with the description inside the button, per
+   the operator's 2026-11-23 brief. Title first, short blurb under it. */
+.gg-armory-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  text-decoration: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.gg-armory-action-title {
+  font-family: var(--font-head);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+.gg-armory-action-desc {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-tertiary-on-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .gg-armory-action:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-hover);
+  }
+}
+.gg-armory-action:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
 }
 
 

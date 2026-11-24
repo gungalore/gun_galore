@@ -46,8 +46,9 @@ export function CartButton() {
             minWidth: 16,
             height: 16,
             borderRadius: 8,
-            background: 'var(--red)',
-            color: '#fff',
+            // Neutral count badge: the action accent belongs to Sell only.
+            background: 'var(--text-primary)',
+            color: 'var(--bg-deep)',
             fontSize: 10,
             fontWeight: 600,
             display: 'flex',

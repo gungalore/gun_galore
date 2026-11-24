@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
@@ -25,6 +25,44 @@ import { SavedCount } from './saved-count';
  * Import this instead.
  */
 export const CARD_PHOTO_ASPECT = '75%';
+
+/** A compact, neutral label for the listing's commercial mode. */
+function ModePill({
+  href,
+  label,
+  title,
+}: {
+  href: string;
+  label: string;
+  title: string;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={`${label}: ${title}`}
+      className="gg-press"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 26,
+        padding: '0 10px',
+        borderRadius: 999,
+        border: '1px solid var(--border)',
+        background: 'var(--bg-inset)',
+        color: 'var(--text-primary)',
+        fontFamily: 'var(--font-head)',
+        fontWeight: 700,
+        fontSize: 11,
+        letterSpacing: '0.01em',
+        textDecoration: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </Link>
+  );
+}
 
 export function ListingCard({ listing }: { listing: Listing }) {
   // See the fade note on the <Image> below.
@@ -61,12 +99,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
     listing.listingType === 'BUY_NOW'
       ? discountPercent(listing.price, listing.compareAtPriceZarCents)
       : null;
+  const isAuction = listing.listingType === 'AUCTION';
 
   return (
-    // ⚠️ NOT A LINK ANY MORE. The whole card used to be one <Link>; the
-    // action row below is itself a link, and an anchor inside an anchor is
-    // invalid HTML and a screen-reader trap. The card is a container now,
-    // the photo and text are the link, and the action is its sibling.
+    // ⚠️ NOT A LINK. The card is a container; the photo and title are their own
+    // links and the price-pill is an explicit sibling link. An anchor wrapping
+    // anchors is invalid HTML and a screen-reader trap.
     <div
       className="gg-tile gg-tile-lift rounded-[6px] overflow-hidden flex flex-col h-full"
       style={{
@@ -84,7 +122,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
     >
       <Link
         href={`/listings/${listing.id}`}
-        className="block group gg-press flex-1"
+        className="block group gg-press"
       >
         {/* Photo — 4:3.
             ⚠️ IT WAS 52.5%, AND THAT WAS TOO SHORT TO BUY FROM. The squeeze
@@ -123,6 +161,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
               style={{
                 opacity: imgLoaded ? 1 : 0,
                 transition: 'opacity var(--dur-fast) var(--ease-out)',
+                objectPosition: 'center center',
               }}
             />
           ) : (
@@ -133,12 +172,28 @@ export function ListingCard({ listing }: { listing: Listing }) {
               No photo
             </div>
           )}
+
+          {/* Inner keyline. The frame is the photo itself, so the line sits
+              INSIDE the image instead of adding a box around it. --hairline
+              is white/10 on the dark theme and ink/10 on the light one — a
+              literal white/10 would vanish on the light shop. */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              inset: 0,
+              border: '1px solid var(--hairline)',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          />
+
           {/* Mode badge — top-left, AUCTIONS ONLY. The pack marks the MODE
               here, not the category: in a mixed feed "fixed price or bid?" is
               what a browser needs answered at a glance, and the category is
               usually the filter they arrived through. Buy Now carries no badge
               at all, so the gold reads as the exception it is. */}
-          {listing.listingType === 'AUCTION' && (
+          {isAuction && (
             <span
               className="absolute top-2 left-2 px-[7px] py-[3px] rounded-[3px] leading-none"
               style={{
@@ -153,17 +208,18 @@ export function ListingCard({ listing }: { listing: Listing }) {
               AUCTION
             </span>
           )}
-          {/* Condition chip — moved to bottom-left of the image (was
-              top-right) to free the top-right corner for the heart
-              button. Keeps the at-a-glance "Used" / "Like new" info
-              on the photo without competing with the wishlist
-              affordance. */}
+          {/* Condition chip — bottom-left of the image, clear of the heart.
+              A crisp dark scrim rather than a theme-coloured chip: it must
+              read the same over a white studio shot and a dark outdoor one. */}
           <span
             className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
             style={{
               background: 'rgba(0,0,0,0.72)',
-              // On the photo scrim, not the card — see --text-on-dark.
-              color: 'var(--text-on-dark-muted)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.14)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              fontWeight: 600,
             }}
           >
             {CONDITION_LABELS[listing.condition]}
@@ -185,10 +241,9 @@ export function ListingCard({ listing }: { listing: Listing }) {
                 />
               ) : null;
             })()}
-          {/* Heart — save for later. Top-right with a subtle blurred
-              dark background so it reads against any photo. Tapping
-              the heart stops propagation so the parent <Link> doesn't
-              navigate to the listing detail. */}
+          {/* Heart — save for later. Top-right, frosted dark glass so it reads
+              against any photo. Tapping the heart stops propagation so the
+              parent <Link> doesn't navigate to the listing detail. */}
           <WishlistButton
             listingId={listing.id}
             onChange={(saved) =>
@@ -196,187 +251,165 @@ export function ListingCard({ listing }: { listing: Listing }) {
             }
           />
         </div>
+      </Link>
 
-        {/* Card body.
-            ⚠️ THE PRICE GETS ITS OWN LINE. It used to share a row with the
-            seller-tier chip and the badges, at the same 16px as the title
-            above it — so the two things a browser actually scans for, the
-            picture and the number, were the two things competing hardest with
-            their neighbours. Title drops to secondary; price sits alone in
-            League Spartan at 17px. */}
-        <div className="p-3">
-          <div className="flex flex-wrap items-center justify-between gap-y-1">
-            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap', flexShrink: 0 }}>
+      {/* Card body. Title first, then price + explicit mode pill, then seller
+          proof and the location. Every row is in the same order on every card,
+          so a row of cards reads as a table rather than a pile. */}
+      <div className="p-3 flex flex-col flex-1">
+        <Link
+          href={`/listings/${listing.id}`}
+          className="gg-press"
+          style={{ textDecoration: 'none', display: 'block' }}
+        >
+          <p
+            className="text-[13px] leading-[1.35] line-clamp-2"
+            style={{
+              color: 'var(--text-primary)',
+              fontWeight: 500,
+              minHeight: 35,
+              margin: 0,
+            }}
+          >
+            {listing.title}
+          </p>
+        </Link>
+
+        <div className="flex items-center gap-2 flex-wrap mt-1.5">
+          <span
+            style={{
+              color: 'var(--text-primary)',
+              fontWeight: 700,
+              fontFamily: 'var(--font-head)',
+              fontSize: 19,
+              letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+              // On a 2-column phone card the seller verification chips used
+              // to squeeze this span until the browser broke "R 10" across two
+              // lines. A price is one token; it may not wrap.
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {/* For auctions, show the current bid (or starting bid if no bids yet). */}
+            {isAuction
+              ? formatPrice(listing.currentBid ?? listing.price ?? 0)
+              : listing.price
+                ? formatPrice(listing.price)
+                : 'Make an offer'}
+          </span>
+          {/* UX-7 — "was" price + % off (BUY_NOW only). */}
+          {compareAtPct != null && (
+            <>
               <span
-                style={{
-                  // Gold on auctions, ink on Buy Now - the pack's own
-                  // split, and the only thing telling the two modes apart at a
-                  // glance in a mixed feed. Every price used to be red.
-                  color:
-                    listing.listingType === 'AUCTION'
-                      ? 'var(--gold)'
-                      : 'var(--text-primary)',
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-head)',
-                  fontSize: 19,
-                  letterSpacing: '-0.02em',
-                  fontVariantNumeric: 'tabular-nums',
-                  // On a 2-column phone card the seller verification chips
-                  // used to squeeze this span until the browser broke "R 10"
-                  // across two lines. A price is one token; it may not wrap.
-                  // The row wraps instead, dropping the chips to their own
-                  // line when they do not fit.
-                  whiteSpace: 'nowrap',
-                }}
+                style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}
               >
-                {/* For auctions, show the current bid (or starting bid if no bids yet). */}
-                {listing.listingType === 'AUCTION'
-                  ? formatPrice(listing.currentBid ?? listing.price ?? 0)
-                  : listing.price
-                    ? formatPrice(listing.price)
-                    : 'Make an offer'}
+                {formatPrice(listing.compareAtPriceZarCents!)}
               </span>
-              {/* UX-7 — "was" price + % off (BUY_NOW only). */}
-              {compareAtPct != null && (
-                <>
-                  <span
-                    style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}
-                  >
-                    {formatPrice(listing.compareAtPriceZarCents!)}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>
-                    −{compareAtPct}%
-                  </span>
-                </>
-              )}
-            </span>
-            {/* Phase E1 — GG+ pill (MEMBER/PRO) + verified-expert badge.
-                Renders nothing for FREE non-expert sellers so card density
-                doesn't regress. Kept on the price line because it is a
-                per-SELLER mark rather than seller reputation. */}
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                −{compareAtPct}%
+              </span>
+            </>
+          )}
+          <ModePill
+            href={`/listings/${listing.id}#buy-panel`}
+            label={isAuction ? 'Auction' : 'Buy Now'}
+            title={listing.title}
+          />
+          {/* Phase E1 — GG+ pill (MEMBER/PRO) + verified-expert badge.
+              Renders nothing for FREE non-expert sellers so card density
+              doesn't regress. Kept on the price line because it is a
+              per-SELLER mark rather than seller reputation. */}
+          <span
+            style={{
+              marginLeft: 'auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
             <UserBadges
               subscriptionTier={listing.seller.subscriptionTier}
               isVerifiedExpert={listing.seller.isVerifiedExpert}
             />
             <VerificationBadges verification={listing.seller.verification} />
-          </div>
-
-          {/* Title, now BELOW the price. min-height reserves two lines
-              whether the title needs them or not, so the meta and action rows
-              land on the same baseline right across a row of cards — without
-              it they jitter as titles wrap. */}
-          <p
-            className="text-[12.5px] leading-[1.35] line-clamp-2 mt-[5px]"
-            style={{ color: 'var(--text-secondary)', minHeight: 34 }}
-          >
-            {listing.title}
-          </p>
-
-          {/* ⚠️ ONE SELLER LINE, NOT TWO. The tier chip used to sit on the
-              price row and the rating on a row of its own beneath it — so
-              reputation was split across two lines while the price shared its
-              line with a chip. Both are the same claim ("who is selling this,
-              and are they any good"), so they read as one line: rating first,
-              because a number people understand outranks a tier name only we
-              use. */}
-          <div className="flex items-center gap-1.5 mt-1.5 min-w-0">
-            {listing.seller.averageRating != null &&
-              (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
-                <>
-                  <SellerRating
-                    rating={listing.seller.averageRating}
-                    count={listing.seller._count?.ratingsReceived}
-                    compact
-                  />
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 2,
-                      height: 2,
-                      borderRadius: 99,
-                      background: 'var(--text-tertiary)',
-                      flex: '0 0 auto',
-                    }}
-                  />
-                </>
-              )}
-            <span
-              className="text-[11px] truncate"
-              style={{ color: 'var(--text-tertiary-on-card)' }}
-            >
-              {TIER_LABELS[listing.seller.sellerTier]}
-            </span>
-          </div>
-
-          {/* Town, not province — matches listing detail, cart and checkout,
-              which all read this through the same vicinityLabel() helper.
-              It falls back to province (or "the seller's area") on its own,
-              so this line is never blank. The save count shares the line so
-              the card gains urgency without gaining another row. */}
-          <div className="flex items-center justify-between gap-2 mt-1.5">
-            <p
-              className="text-xs min-w-0 truncate"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              {vicinityLabel(listing)}
-            </p>
-            <SavedCount count={savedCount} />
-          </div>
+          </span>
         </div>
-      </Link>
 
-      {/* Action row — pinned to the foot of the card so every one across a
-          row lands on the same baseline (the title's min-height above does
-          the other half of that job).
+        {/* Town, not province — matches listing detail, cart and checkout,
+            which all read this through the same vicinityLabel() helper.
+            It falls back to province (or "the seller's area") on its own,
+            so this line is never blank. The save count shares the line so
+            the card gains urgency without gaining another row. */}
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <p
+            className="text-xs min-w-0 truncate"
+            style={{
+              color: 'var(--text-tertiary-on-card)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              style={{ flexShrink: 0 }}
+            >
+              <path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10Z" />
+              <circle cx="12" cy="11" r="2.2" />
+            </svg>
+            <span className="truncate">{vicinityLabel(listing)}</span>
+          </p>
+          <SavedCount count={savedCount} />
+        </div>
 
-          Both controls are LINKS to the listing's buy panel, not buttons: a
-          card has no price lock, no quantity and no auth context, so
-          anything that looked like it committed you from here would be
-          lying about what it does. */}
-      {/* ⚠️ WRAPS, BECAUSE ON A PHONE THESE DO NOT FIT ON ONE LINE. Two cards
-          across a 393px screen leaves each about 146px of content width.
-          "Place bid" is shrink-0 and takes ~100px of it; the countdown chip
-          needs ~80px before it will stop breaking. They cannot share a row, and
-          without wrapping the chip shattered into three stacked lines inside
-          its own border while the bid count truncated to "St…".
-
-          Wrapping puts the button on its own line and the auction's live state
-          under it, which is also the right reading order. Buy Now cards have no
-          second child here at all, so nothing about them changes. */}
-      <div className="px-3 pb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
-        <Link
-          href={`/listings/${listing.id}#buy-panel`}
-          className="gg-press inline-flex items-center shrink-0"
-          style={{
-            height: 28,
-            padding: '0 13px',
-            borderRadius: 5,
-            fontFamily: 'var(--font-head)',
-            fontWeight: 700,
-            fontSize: 12,
-            textDecoration: 'none',
-            ...(listing.listingType === 'AUCTION'
-              ? {
-                  border: '1px solid var(--gold)',
-                  color: 'var(--gold)',
-                }
-              : {
-                  background: 'var(--red)',
-                  color: '#fff',
-                }),
-          }}
-        >
-          {listing.listingType === 'AUCTION' ? 'Place bid' : 'Buy now'}
-        </Link>
-
-        {/* Auctions put their live state on this side — the pack's own
-            layout. Buy Now has nothing to say here: the pack shows a "Take
-            a shot" link, but that flow exists only on TAKE_A_SHOT
-            listings, so offering it on a Buy Now card would be a promise
-            the listing page cannot keep. */}
-        {listing.listingType === 'AUCTION' && (
+        {/* ⚠️ ONE SELLER LINE, NOT TWO, AND IT SITS UNDER THE LOCATION. The
+            required reading order is title → price + mode pill → location;
+            reputation is supporting detail, so it comes after. Rating first,
+            because a number people understand outranks a tier name only we
+            use. */}
+        <div className="flex items-center gap-1.5 mt-1 min-w-0">
+          {listing.seller.averageRating != null &&
+            (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
+              <>
+                <SellerRating
+                  rating={listing.seller.averageRating}
+                  count={listing.seller._count?.ratingsReceived}
+                  compact
+                />
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 2,
+                    height: 2,
+                    borderRadius: 99,
+                    background: 'var(--text-tertiary)',
+                    flex: '0 0 auto',
+                  }}
+                />
+              </>
+            )}
           <span
-            className="flex items-center gap-1.5 text-[11px] min-w-0"
+            className="text-[11px] truncate"
+            style={{ color: 'var(--text-tertiary-on-card)' }}
+          >
+            {TIER_LABELS[listing.seller.sellerTier]}
+          </span>
+        </div>
+
+        {/* Auctions put their live state at the foot of the card. Buy Now has
+            nothing to say here: the price-pill is the action and the card's
+            photo/title are the links. */}
+        {isAuction && (
+          <span
+            className="flex items-center gap-1.5 text-[11px] min-w-0 mt-1.5"
             style={{ color: 'var(--text-tertiary)' }}
           >
             <span className="truncate">

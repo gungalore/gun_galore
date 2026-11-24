@@ -28,6 +28,7 @@ import { pushTitleFor } from '@/lib/shell-routes';
 import { ShellStepRow } from '@/components/shell/shell-step';
 import { ViewModeToggle } from '@/components/view-mode-toggle';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/brand/Logo';
 
 // Routes that get the ROOT header. Everything else gets PUSH.
 const ROOT_PATHS = new Set(['/', '/account']);
@@ -119,8 +120,9 @@ function TapTarget({
             height: 16,
             padding: '0 4px',
             borderRadius: 999,
-            background: 'var(--red)',
-            color: '#fff',
+            // Neutral count badge: the action accent belongs to Sell only.
+            background: 'var(--text-primary)',
+            color: 'var(--bg-deep)',
             fontSize: 10,
             fontWeight: 700,
             fontFamily: 'var(--font-display)',
@@ -212,34 +214,35 @@ function RootHeader() {
         height: '100%',
       }}
     >
+      {/* ⚠️ EMBLEM ONLY (operator, 2026-11-23). Dropping the wordmark buys
+          the width the three-way Marketplace/Auction/Community switch needs in
+          the 54px root row. The accessible name is still "ALL Outdoor". */}
       <Link
         href="/"
-        className="gg-header-wordmark"
+        aria-label="ALL Outdoor"
         style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: 17,
-          letterSpacing: '-0.3px',
-          whiteSpace: 'nowrap',
-          color: 'var(--text-primary)',
+          display: 'inline-flex',
+          alignItems: 'center',
           textDecoration: 'none',
+          flexShrink: 0,
         }}
       >
-        ALL <span style={{ color: 'var(--red)' }}>OUTDOOR</span>
+        <Logo variant="emblem" height={30} priority />
       </Link>
       <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
-        {/* Shop/Community — the always-on view switch (installed PWA). */}
+        {/* Marketplace/Auction/Community — the always-on view switch (PWA). */}
         <ViewModeToggle size="sm" />
         {/* ⚠️ THE WISHLIST HEART IS THE ONE CONTROL THAT GIVES WAY ON A NARROW
-            PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The row wordmark (109) +
-            switch (141) + heart + cart + avatar (44 each) + padding is ~410px.
-            A 360-402px Android phone is narrower than that, and the overflow is
-            not cosmetic: it widens the LAYOUT viewport to ~402x894 while the
-            visual viewport stays 360x800, so `position: fixed; bottom: 0` puts
-            the tab bar 94px BELOW the visible screen — the "no navigation bar
-            on Android" report. The heart is duplicated in the More sheet and the
-            account menu, so it is the cheapest thing to lose on a small screen.
-            See the .gg-header-wishlist rule in globals.css. */}
+            PHONE, AND IT IS WRAPPED SO CSS CAN DROP IT. The row is emblem
+            (~53) + three-way switch (~186) + heart + cart + avatar (44 each) +
+            padding — roughly 395px once the heart is in. A 360-402px Android
+            phone is narrower than that, and the overflow is not cosmetic: it
+            widens the LAYOUT viewport to ~402x894 while the visual viewport
+            stays 360x800, so `position: fixed; bottom: 0` puts the tab bar
+            94px BELOW the visible screen — the "no navigation bar on Android"
+            report. The heart is duplicated in the More sheet and the account
+            menu, so it is the cheapest thing to lose on a small screen. See
+            the .gg-header-wishlist rule in globals.css. */}
         <span className="gg-header-wishlist" style={{ display: 'contents' }}>
           <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
             <IconHeart />
@@ -331,12 +334,14 @@ function PushHeader({ pathname }: { pathname: string }) {
       >
         {title}
       </span>
-      {/* Shop/Community — the always-on view switch (installed PWA). */}
-      <ViewModeToggle size="sm" />
-      {/* Theme — the ROOT header has no room for this (8px of slack at
-          390px once the pill, wishlist, cart and avatar are in), so on a
-          push screen it is the header that carries it and /account carries
-          the labelled three-way control. */}
+      {/* ⚠️ NO VIEW SWITCH ON A PUSH SCREEN. The three-way control needs ~186px
+          at size="sm"; with back + title + theme + cart there is nothing left
+          for the title on a 360px phone, even at a two-way 141px. A push screen
+          is a task with a back button, not a place to change section; the root
+          header and the desktop nav carry the switch. */}
+      {/* Theme — the ROOT header has no room for this (the switch, wishlist,
+          cart and avatar already fill it), so a push screen carries the icon
+          and /account carries the labelled three-way control. */}
       <ThemeToggle />
       {/* Trailing slot — cart on every push route now (board review,
           2026-08-27), reusing CartLink from the ROOT header so the icon,
@@ -365,6 +370,50 @@ function SearchRow() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <LiveSearch />
       </div>
+      {/* Categories are a shop destination, not a second search field. The
+          button asks the bottom tab bar's existing category-first sheet to
+          open; that sheet owns the fetch and the member/anon cache, so this
+          adds no request and no new route. The row is only rendered on "/"
+          and "/category/*", both of which carry the tab bar. */}
+      <button
+        type="button"
+        aria-label="Shop by category"
+        title="Shop by category"
+        onClick={() => {
+          window.dispatchEvent(new Event('gg:open-shop-sheet'));
+        }}
+        className="gg-press"
+        style={{
+          width: 44,
+          height: 44,
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 6,
+          background: 'var(--bg-inset)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+        }}
+      >
+        <svg
+          width="19"
+          height="19"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
+          <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
+          <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
+        </svg>
+      </button>
     </div>
   );
 }

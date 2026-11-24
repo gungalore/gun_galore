@@ -48,13 +48,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             HTML of every static route and pop in after hydration. */}
         <ShellHeader />
 
-        {/* The shop-mode bar — the Buy Now / Auctions / Armory fork, directly
-            under the nav. It slots in AFTER the header and BEFORE the pane so
-            the order is header → bar → content in both modes: on mobile the
-            shell is a real flex column and the bar is the second row; on
-            desktop the shell is `display: contents`, so the bar lands in
-            normal flow after the sticky <Nav> (components/nav.tsx) and is
-            simply the first thing on the page.
+        {/* The quick actions bar — Sell your gear / Motivation Creator /
+            Armory, directly under the nav. It slots in AFTER the header and
+            BEFORE the pane so the order is header → bar → content in both
+            modes: on mobile the shell is a real flex column and the bar is the
+            second row; on desktop the shell is `display: contents`, so the bar
+            lands in normal flow after the sticky <Nav> (components/nav.tsx)
+            and is simply the first thing on the page.
 
             ⚠️ THE BAR IS NOT STICKY, unlike the nav above it — an operator
             decision, and the reason it lives inside the flow rather than in a

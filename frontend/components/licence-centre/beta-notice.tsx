@@ -92,10 +92,10 @@ export default function BetaNotice({ motivationId }: { motivationId: string }) {
           not save, a document that reads wrong — please tell us immediately.
         </p>
         <p className="m-0 mt-2 text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
-          Tap <strong>Report a bug</strong> at the bottom right of the screen
-          (in the bottom bar on your phone) straight away. Your report reaches
-          support with your username and the exact steps you took, so it can be
-          fixed quickly.
+          Open <strong>Report a bug</strong> from your account menu (or the
+          Report tab in the bottom bar on your phone) straight away. Your report
+          reaches support with your username and the exact steps you took, so it
+          can be fixed quickly.
         </p>
         <button
           type="button"

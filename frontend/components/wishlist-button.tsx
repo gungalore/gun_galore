@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // Heart-shaped Save-for-later button.
 //
@@ -145,8 +145,11 @@ export function WishlistButton({
           width: 36,
           height: 36,
           borderRadius: '50%',
-          background: 'rgba(10, 10, 10, 0.55)',
-          border: '0.5px solid rgba(255,255,255,0.12)',
+          // Frosted dark glass, not a white disc: it has to read over a white
+          // studio shot and a dark outdoor one without becoming the loudest
+          // thing in the grid (operator, 2026-11-23).
+          background: 'rgba(0, 0, 0, 0.5)',
+          border: '1px solid rgba(255,255,255,0.15)',
           // No drop shadow per house style. The semi-transparent
           // dark background gives enough separation from the image
           // without needing a glow.
@@ -154,8 +157,8 @@ export function WishlistButton({
           alignItems: 'center',
           justifyContent: 'center',
           cursor: busy ? 'wait' : 'pointer',
-          backdropFilter: 'blur(6px)',
-          WebkitBackdropFilter: 'blur(6px)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
           transition: 'background 140ms, transform 140ms',
         }}
       >

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * A tiny global "a motivation is busy" signal.
  *
  * The motivation sheet's own `busy` state (saving / generating) is the only
- * thing that should hide the always-on Shop/Community toggle — switching views
+ * thing that should hide the always-on Marketplace/Auction/Community toggle — switching views
  * mid-save would yank the member out of an in-flight action. Reported as a
  * DOM attribute + window event so the toggle (a sibling in the nav) can react
  * without prop-drilling or context.
