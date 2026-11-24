@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PWA PILL, THEME LABEL, MESSAGES TAB (DEPLOYED)
+
+Operator: *"The three pill selector needs to be bigger and centered. in account, remove the description underneath the Appearance and also change the name to Theme. Remove the Report in the navigation tab with messages."*
+
+- **PWA selector:** the Marketplace/Auction/Community pill is now absolutely centred in the 54px root header and enlarged to ~204×37px (11px labels). It clears the emblem/cart at 360px and the returning wishlist at 402px. Desktop nav unchanged. Active segment stays the translucent theme accent.
+- **Account:** the control is titled **Theme**; the “Follows your device…” helper sentence is gone, and the radiogroup is labelled Theme.
+- **Bottom navigation:** the **Report** tab is replaced by **Messages** (chat icon, active state). `/messages` is now a tab route; the floating Report a bug control remains the report entry point. Quick actions are hidden on Messages.
+- **Deployed `9c59c08c` (frontend-only)**, rollback point `alloutdoor-20261124-085708.dump` (39,112,065 bytes). Frontend build clean, `pm2 reload`, frontend health ×2, public 200 ×2; backend (`887f32ea`) and warden untouched and online.
+- **Checks:** frontend **184 files / 2,080 passed** (1 skipped), typecheck/build clean. Live HTML has the Messages tab, no bottom Report tab, and the absolutely centred 11px pill markup.
+
 ## 2026-11-24 — HERO ACTIONS, PUBLIC BUG REPORTS, NO DRAFTS (DEPLOYED)
 
 Operator: *"Make the pill transparent blue/brown. Explore Gear should open all listing and not just Marketplace. Remove the draft keeping in the create a listing. Armory tab should not be displayed when logged out to avoid meta flagging. Remove sell your gear next to the motivation creator. Move Motivation Creator next to Explore Gear on the hero as a button. Bring back Report a Bug as a hovering unit at the right bottom corner (Always visible for logged in and out users) Add Simple spam and bot protection when logged out."*
