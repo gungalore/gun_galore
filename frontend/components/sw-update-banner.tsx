@@ -1,114 +1,37 @@
 'use client';
 
-// Service-worker update banner.
+// Service-worker update gate.
 //
 // Serwist runs in "prompt-to-update" mode (`skipWaiting: false` +
-// `clientsClaim: false`) — a freshly deployed SW installs but PARKS in
-// the `waiting` state instead of seizing the open page. That's
-// deliberate: an auto-activating SW breaks an already-open PWA when the
-// old page then requests a chunk the new build replaced. So the old SW
-// keeps serving this session cleanly until the user opts in here.
-// Tapping Reload posts SKIP_WAITING to the waiting worker, waits for it
-// to take control (`controllerchange`), then reloads into the new bundle.
+// `clientsClaim: false`) — a freshly deployed SW installs but PARKS in the
+// `waiting` state instead of seizing the open page. That is deliberate: an
+// auto-activating SW breaks an already-open PWA when the old page requests a
+// chunk the new build replaced. The old SW keeps serving this session until the
+// member explicitly refreshes here.
 //
-// Flow:
-//   1. On mount, ask `navigator.serviceWorker.getRegistration()`
-//      whether there's already a `waiting` SW (covers the case
-//      where the user opened a tab after a deploy but Before the
-//      new SW activated).
-//   2. Subscribe to `updatefound` on the registration — fires when
-//      a NEW SW is being installed (i.e. user is on an old page +
-//      the server now has fresher code).
-//   3. Once the new SW reaches the `installed` state AND there
-//      WAS a previous controller (i.e. this isn't a first-install
-//      situation), the update is READY.
-//   4. WHAT HAPPENS NEXT DEPENDS ON THE ROUTE:
-//      • safe route (browse, PDP, orders, dashboards) — applied
-//        automatically the moment the tab goes to the background,
-//        with no prompt. Reloading a page nobody is looking at costs
-//        nothing, and it is what stops the banner appearing after
-//        every deploy just because the app was left open.
-//      • unsafe route (checkout, the sell form, the scanner, auth,
-//        one-time action pages) — the banner stays, and only a tap
-//        activates the worker. A reload there destroys work.
-//        The list, and the reason for each entry, is in
-//        lib/sw-update-policy.ts and covered by its spec.
-//   5. Either path posts SKIP_WAITING to the waiting worker, waits for
-//      `controllerchange`, then reloads into the new bundle.
+// ⚠️ THIS IS A BLOCKING MODAL, NOT A BANNER (operator, 2026-11-24). The old
+// bottom banner sat under the floating Report a bug button on the PWA and could
+// be dismissed. It now covers the viewport on desktop and PWA, has no dismiss
+// control, and traps focus on the one Refresh button, so the stale bundle
+// cannot be used by accident.
 //
-// Mounted ONCE in app/layout.tsx. Hidden until a real update is
-// detected; persists until the user taps reload or dismisses (the
-// dismissal is per-session — they'll see it again next deploy).
+// Detection:
+//   1. On mount, a `waiting` worker means this page is already stale.
+//   2. `updatefound` + `installed` means a new worker has finished downloading.
+//   3. `controllerchange` catches a worker that activated late.
+// In every case, the gate appears. Tapping Refresh posts SKIP_WAITING to the
+// waiting worker, waits for it to take control, then reloads into the new
+// bundle.
+//
+// Mounted ONCE in app/layout.tsx.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
-import { isAutoApplySafePath, shouldAutoApplyOnHide } from '@/lib/sw-update-policy';
 
-// sessionStorage key — stamped when the user taps Reload (inside
-// applyUpdateAndReload). After the reload lands, the SW's
-// `controllerchange` fires again on the fresh page and, without this
-// gate, would immediately re-show the banner. We suppress it for 60s
-// after a tap so the reloaded view stays clean.
+// sessionStorage key — stamped when the user taps Refresh. After the reload
+// lands, the SW's `controllerchange` fires again on the fresh page and, without
+// this gate, would immediately re-show the gate. Suppress it for 60s.
 const RELOAD_FLAG_KEY = 'gg-sw-reload-at';
 const SUPPRESS_MS = 60_000;
-
-/**
- * Dismissal, persisted — and scoped to ONE update.
- *
- * 🚨 IT USED TO BE A BARE `useState(false)` THAT WAS NEVER RESET, which broke
- * in both directions at once:
- *
- *  · TOO STICKY. Tapping × on the first deploy's banner set `dismissed` for the
- *    life of the tab. Every later update still fired setWaiting(true)
- *    internally and never reached the screen — so an admin who dismissed once
- *    in the morning was never told again, and kept working against stale code
- *    with no way to know. On the Desk that is the surface where the answer to
- *    "why did that not save" is "you are on yesterday's bundle".
- *
- *  · TOO LEAKY. Being in-memory only, it also did not survive a remount — and
- *    the file's own header claimed the dismissal was "per-session". A mobile
- *    tab suspended by the OS and resumed comes back with dismissed=false and
- *    re-shows a notice the operator already waved away.
- *
- * The fix is one key holding WHICH update was dismissed. A fresh
- * updatefound → installed cycle is a genuinely different service worker, so it
- * clears the key and the banner returns; a remount inside the same update
- * reads the key and stays quiet.
- */
-const DISMISS_KEY = 'gg-sw-dismissed-generation';
-
-/** Bumped once per detected update, so a dismissal can name the one it meant. */
-let updateGeneration = 0;
-
-function readDismissedGeneration(): number | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.sessionStorage.getItem(DISMISS_KEY);
-    if (!raw) return null;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
-}
-
-function markDismissed(generation: number) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.setItem(DISMISS_KEY, String(generation));
-  } catch {
-    /* private mode / quota — falls back to in-memory only */
-  }
-}
-
-function clearDismissed() {
-  if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.removeItem(DISMISS_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 function isInRecentReloadWindow(): boolean {
   if (typeof window === 'undefined') return false;
@@ -133,51 +56,11 @@ function markReloading() {
 }
 
 export function SwUpdateBanner() {
-  // ⚠️ `waiting` IS "A PARKED WORKER EXISTS", NOT "SHOW THE BANNER". On a route
-  // that can be reloaded safely the banner never appears — the update is
-  // applied when the tab goes to the background (see the effect below). On a
-  // route holding unsaved work the banner is the old, deliberate behaviour.
   const [waiting, setWaiting] = useState(false);
   const [reloading, setReloading] = useState(false);
-  // The generation this banner is showing, and the one the operator waved
-  // away. Equal => stay hidden; a newer generation => show again.
-  const [generation, setGeneration] = useState(0);
-  const [dismissedGeneration, setDismissedGeneration] = useState<number | null>(
-    () => readDismissedGeneration(),
-  );
-  const dismissed = dismissedGeneration !== null && dismissedGeneration >= generation;
+  const refreshRef = useRef<HTMLButtonElement>(null);
 
-  const pathname = usePathname();
-  // A background reload is only allowed where it cannot destroy work. The
-  // policy (and the reason for every denied route) lives in
-  // lib/sw-update-policy.ts so it can be tested without booting a browser.
-  const safeToAutoApply = isAutoApplySafePath(pathname);
-
-  // Timestamp of the last `input` event anywhere on the page — the second net
-  // for "safe route, but the user is mid-sentence in the offer panel".
-  const lastInputAt = useRef(0);
-  // Latched once the update is being applied, so a second visibilitychange
-  // cannot post SKIP_WAITING twice or reload twice.
-  const applyingRef = useRef(false);
-
-  useEffect(() => {
-    function onInput() {
-      lastInputAt.current = Date.now();
-    }
-    // Capture phase: inputs inside portals (sheets, modals) bubble to document
-    // anyway, but capture also catches listeners that stopPropagation.
-    document.addEventListener('input', onInput, true);
-    return () => document.removeEventListener('input', onInput, true);
-  }, []);
-
-  // Activate the parked (waiting) service worker, then reload into the
-  // new bundle. Because the SW ships with `skipWaiting: false`, a plain
-  // reload would NOT pick up the new code (the old worker still controls
-  // the page). We message the waiting worker to skipWaiting and reload
-  // the moment it takes control. A short timeout is a safety net in case
-  // `controllerchange` doesn't fire (or there's no waiting worker).
   const applyUpdateAndReload = useCallback(async () => {
-    // Suppress the banner on the freshly-reloaded page (see RELOAD_FLAG_KEY).
     markReloading();
     try {
       const reg = await navigator.serviceWorker.getRegistration();
@@ -189,11 +72,9 @@ export function SwUpdateBanner() {
           done = true;
           window.location.reload();
         };
-        // Reload on whichever signal lands first. `controllerchange` is
-        // the normal path; the waiting worker's `statechange → activated`
-        // is a more reliable trigger on iOS standalone (where
-        // controllerchange sometimes doesn't fire). The 3s timeout is a
-        // last-resort fallback if neither arrives.
+        // Reload on whichever signal lands first. `controllerchange` is the
+        // normal path; the waiting worker's `statechange → activated` is more
+        // reliable on iOS standalone. The 3s timeout is the last resort.
         navigator.serviceWorker.addEventListener(
           'controllerchange',
           reloadOnce,
@@ -213,59 +94,22 @@ export function SwUpdateBanner() {
     window.location.reload();
   }, []);
 
-  // ── THE AUTOMATIC PATH ────────────────────────────────────────────────
-  // A parked update on a safe route is applied the moment the tab goes to the
-  // background: nobody is reading it, the reload lands behind the app switcher,
-  // and the member returns to the new build instead of a "Reload" button they
-  // have to tap after every deploy.
-  //
-  // It runs with NO prompt, so the two guards above are load-bearing: the path
-  // policy and the recent-input check. If either says no, we simply do nothing
-  // here — the banner still offers the manual option on unsafe routes.
   useEffect(() => {
-    if (!waiting || !safeToAutoApply) return;
-
-    function maybeApply() {
-      if (
-        !shouldAutoApplyOnHide({
-          pathname,
-          visibility: document.visibilityState,
-          lastInputAt: lastInputAt.current,
-          alreadyApplied: applyingRef.current,
-        })
-      ) {
-        return;
-      }
-      applyingRef.current = true;
-      setReloading(true);
-      void applyUpdateAndReload();
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return;
     }
-
-    // A tab can already be hidden when it is first hydrated (opened in the
-    // background, restored by the browser at startup).
-    maybeApply();
-    document.addEventListener('visibilitychange', maybeApply);
-    return () => document.removeEventListener('visibilitychange', maybeApply);
-  }, [waiting, safeToAutoApply, pathname, applyUpdateAndReload]);
-
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     let cancelled = false;
-    // True for the first 60s after the user clicked Reload — the
-    // initial `controllerchange` event after reload would otherwise
-    // re-show the banner. We still arm the listener; we just suppress
-    // setWaiting during the window.
+    // True for the first 60s after Refresh — the controllerchange that fires
+    // on the freshly-reloaded page is the SAME update already acknowledged.
     const inReloadWindow = isInRecentReloadWindow();
+    // ⚠️ A FIRST INSTALL ALSO FIRES controllerchange. Without this snapshot, a
+    // brand-new visitor would be told to refresh the page they just loaded.
+    // A stale page by definition already had a controller at mount.
+    const hadControllerAtMount = !!navigator.serviceWorker.controller;
 
     function trackInstallation(reg: ServiceWorkerRegistration) {
-      // Already a waiting worker? — user landed on a stale page.
-      if (
-        !inReloadWindow &&
-        reg.waiting &&
-        navigator.serviceWorker.controller
-      ) {
-        // Same update the stored dismissal (if any) refers to — do not
-        // clear it; a remount must not re-raise a waved-away notice.
+      // Already a waiting worker? — this page is stale.
+      if (!inReloadWindow && reg.waiting && navigator.serviceWorker.controller) {
         setWaiting(true);
       }
       reg.addEventListener('updatefound', () => {
@@ -274,21 +118,12 @@ export function SwUpdateBanner() {
         installing.addEventListener('statechange', () => {
           if (
             installing.state === 'installed' &&
-            // controller exists → there was a previous SW (this is
-            // an update, not a fresh install).
-            navigator.serviceWorker.controller
+            // A controller exists only for an update, not a first install.
+            navigator.serviceWorker.controller &&
+            !cancelled &&
+            !isInRecentReloadWindow()
           ) {
-            if (!cancelled && !isInRecentReloadWindow()) {
-              // 🚨 A NEW WORKER FINISHED INSTALLING — a different update
-              // from any the operator has already dismissed. Bump past the
-              // stored generation and clear it, or a single × in the
-              // morning silences every deploy for the rest of the day.
-              updateGeneration += 1;
-              clearDismissed();
-              setDismissedGeneration(null);
-              setGeneration(updateGeneration);
-              setWaiting(true);
-            }
+            setWaiting(true);
           }
         });
       });
@@ -304,15 +139,14 @@ export function SwUpdateBanner() {
         /* no SW registered (kill switch or unsupported) */
       });
 
-    // ALSO listen for controllerchange — if Serwist activates a new
-    // SW after the user has been browsing for a while, this fires
-    // and we'd want to nudge them to reload.
     function onControllerChange() {
-      // Suppress if the user just clicked Reload — the controllerchange
-      // that fires on the freshly-reloaded page is the SAME update they
-      // already acknowledged.
-      if (cancelled) return;
-      if (isInRecentReloadWindow()) return;
+      if (
+        cancelled ||
+        !hadControllerAtMount ||
+        isInRecentReloadWindow()
+      ) {
+        return;
+      }
       setWaiting(true);
     }
     navigator.serviceWorker.addEventListener(
@@ -329,110 +163,120 @@ export function SwUpdateBanner() {
     };
   }, []);
 
-  // The banner is only for the case the automatic path declines: a safe reload
-  // is impossible here (form/checkout/scanner/auth), so the member chooses.
-  if (!waiting || safeToAutoApply || dismissed) return null;
+  // The gate owns the screen: stop the page behind it from scrolling. In the
+  // installed app the document itself does not scroll — the shell pane does —
+  // so lock both, or a touch drag can still move the board under the overlay.
+  useEffect(() => {
+    if (!waiting) return;
+    const previousBody = document.body.style.overflow;
+    const pane = document.querySelector<HTMLElement>('[data-shell-pane]');
+    const previousPane = pane?.style.overflow;
+    document.body.style.overflow = 'hidden';
+    if (pane) pane.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBody;
+      if (pane && previousPane !== undefined) pane.style.overflow = previousPane;
+    };
+  }, [waiting]);
+
+  // Put the one action in reach immediately; there is no other control.
+  useEffect(() => {
+    if (waiting) refreshRef.current?.focus();
+  }, [waiting]);
+
+  if (!waiting) return null;
 
   return (
     <div
-      role="status"
-      aria-live="polite"
-      className="gg-sw-banner"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sw-update-title"
+      aria-describedby="sw-update-description"
+      onKeyDown={(event) => {
+        // No Escape dismissal, and keep Tab on the single action.
+        if (event.key === 'Escape' || event.key === 'Tab') {
+          event.preventDefault();
+          refreshRef.current?.focus();
+        }
+      }}
       style={{
         position: 'fixed',
-        // Sit just above the bottom tab bar. The shop's bar is
-        // --shell-tab-h (62px), so 72 clears it with a 10px gap.
-        //
-        // ⚠️ THE DESK'S BAR IS 78px, NOT 62. This banner renders on EVERY
-        // route — it is mounted in the root layout with no path check — so on
-        // the Desk the hard-coded 72 put it 6px INSIDE the bottom tab bar.
-        // The lift is a variable now, and globals.css raises it for the Desk.
-        // ⚠️ CLAMPED TO 34px, LIKE EVERYTHING ELSE THAT SITS OVER THE DESK'S
-        // BOTTOM BAR. Chrome for iOS over-reports safe-area-inset-bottom, and
-        // this banner's whole job is to sit a known distance ABOVE the bar —
-        // 88px on the Desk, retuned by --sw-banner-lift in globals.css. An
-        // inflated inset lifts it off the bar it is measured against and it
-        // floats mid-screen over the board. 34px is the real home-indicator
-        // maximum and the same cap tabs.tsx uses, so the two cannot disagree
-        // about where the bottom of the screen is.
-        bottom:
-          'calc(var(--sw-banner-lift, 72px) + min(env(safe-area-inset-bottom, 0px), 34px))',
-        left: 12,
-        right: 12,
-        // ⚠️ 58, NOT 70. The house rule (globals.css) is that modals and
-        // sheets live at z >= 60 and must be able to cover the chrome, and the
-        // shop's tab bar sits at 55 as the number that rule is measured
-        // against. At 70 this ambient notice was IN modal territory: on the
-        // Desk it painted over an open drawer (z 61), so a Reload button
-        // floated on top of a half-finished money decision — and pressing it
-        // discards that work. 58 is above the chrome, below every modal.
-        zIndex: 58,
-        padding: '12px 14px',
-        borderRadius: 12,
-        // Shop skin by default; the Desk overrides these three in globals.css.
-        // They were flat shop tokens, which resolve on the Desk too — to
-        // #FFFFFF on a #101312 ground, with the brand red on a surface whose
-        // rule is that colour is ONLY ever state.
-        background: 'var(--sw-banner-bg, var(--bg-card))',
-        border: '0.5px solid var(--sw-banner-line, var(--red))',
-        color: 'var(--sw-banner-ink, var(--text-primary))',
+        inset: 0,
+        // Above every sheet, the bug-report FAB (60) and the tab bar (55).
+        zIndex: 200,
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        fontSize: 13,
-        fontWeight: 500,
+        justifyContent: 'center',
+        padding: 16,
+        background: 'rgba(0, 0, 0, 0.72)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        touchAction: 'none',
+        overscrollBehavior: 'contain',
       }}
     >
-      <span style={{ flex: 1 }}>
-        An update is available. Reload to get the latest version.
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          if (reloading) return;
-          setReloading(true);
-          // Hide the banner immediately so the user gets visual
-          // feedback even before the reload completes (network can
-          // take a second on flaky mobile). applyUpdateAndReload stamps
-          // the sessionStorage flag so the freshly-reloaded page also
-          // suppresses the banner for 60s — otherwise the
-          // controllerchange that fires post-reload would re-show it.
-          markDismissed(generation);
-          setDismissedGeneration(generation);
-          void applyUpdateAndReload();
-        }}
+      <div
         style={{
-          padding: '6px 12px',
-          borderRadius: 6,
-          background: 'var(--sw-banner-accent, var(--red))',
-          color: '#fff',
-          border: 'none',
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: 'pointer',
+          width: '100%',
+          maxWidth: 420,
+          borderRadius: 12,
+          padding: '22px 20px 20px',
+          background: 'var(--sw-banner-bg, var(--bg-card))',
+          border: '1px solid var(--sw-banner-line, var(--border))',
+          color: 'var(--sw-banner-ink, var(--text-primary))',
+          boxShadow: 'var(--shadow-lg)',
         }}
       >
-        {reloading ? 'Reloading…' : 'Reload'}
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          markDismissed(generation);
-          setDismissedGeneration(generation);
-        }}
-        aria-label="Dismiss update notice"
-        style={{
-          padding: '4px 8px',
-          background: 'transparent',
-          color: 'var(--sw-banner-ink-dim, var(--text-tertiary))',
-          border: 'none',
-          fontSize: 16,
-          lineHeight: 1,
-          cursor: 'pointer',
-        }}
-      >
-        ×
-      </button>
+        <h2
+          id="sw-update-title"
+          style={{
+            margin: 0,
+            fontFamily: 'var(--font-head)',
+            fontSize: 19,
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Update available
+        </h2>
+        <p
+          id="sw-update-description"
+          style={{
+            margin: '8px 0 18px',
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            color: 'var(--sw-banner-ink-dim, var(--text-secondary))',
+          }}
+        >
+          A new version of ALL Outdoor is ready. Refresh now to load the latest
+          version — this only takes a moment.
+        </p>
+        <button
+          ref={refreshRef}
+          type="button"
+          onClick={() => {
+            if (reloading) return;
+            setReloading(true);
+            void applyUpdateAndReload();
+          }}
+          disabled={reloading}
+          style={{
+            width: '100%',
+            minHeight: 46,
+            borderRadius: 8,
+            border: 'none',
+            background: 'var(--sw-banner-accent, var(--red))',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: reloading ? 'wait' : 'pointer',
+            opacity: reloading ? 0.75 : 1,
+          }}
+        >
+          {reloading ? 'Refreshing…' : 'Refresh now'}
+        </button>
+      </div>
     </div>
   );
 }
