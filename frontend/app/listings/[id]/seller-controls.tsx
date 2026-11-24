@@ -18,10 +18,18 @@ export default function SellerControls({
   listingId,
   sellerId,
   status,
+  inline = false,
 }: {
   listingId: string;
   sellerId: string;
   status: string;
+  /**
+   * 2026-11-24 sales-layout audit: on your OWN listing these controls now sit
+   * in the buy-box slot (Edit is the primary action when you cannot buy your
+   * own item), so the divider and top margin that made sense at the foot of
+   * the page are wrong there. `inline` drops both, nothing else changes.
+   */
+  inline?: boolean;
 }) {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -83,8 +91,8 @@ export default function SellerControls({
 
   return (
     <div
-      className="mt-4 pt-4 flex flex-col gap-2"
-      style={{ borderTop: '0.5px solid var(--border-divider)' }}
+      className={inline ? 'flex flex-col gap-2 mb-3' : 'mt-4 pt-4 flex flex-col gap-2'}
+      style={{ borderTop: inline ? undefined : '0.5px solid var(--border-divider)' }}
     >
       {locked && lock && (
         <p
@@ -112,11 +120,19 @@ export default function SellerControls({
           <Link
             href={`/listings/${listingId}/edit`}
             className="flex-1 py-2 rounded-[6px] text-sm text-center font-medium"
-            style={{
-              border: '0.5px solid var(--border)',
-              color: 'var(--text-secondary)',
-              textDecoration: 'none',
-            }}
+            style={
+              inline
+                ? {
+                    background: 'var(--action-primary-bg)',
+                    color: '#fff',
+                    textDecoration: 'none',
+                  }
+                : {
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    textDecoration: 'none',
+                  }
+            }
           >
             Edit listing
           </Link>

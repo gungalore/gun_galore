@@ -193,15 +193,22 @@ export function ListingFaq({
 
       {/* The private ask-the-seller composer. One section, not two cards: the
           answer the buyer just read and the box that asks the next question are
-          directly correlated. */}
+          directly correlated.
+          2026-11-24 sales-layout audit: the composer is behind a disclosure.
+          It stays inside this card (the answers and the ask belong together)
+          but the textarea no longer occupies the space before the seller card
+          on a phone. Collapsed content is still in the DOM, so the "Already
+          answered in the Q&A" anchor keeps working. */}
       {children ? (
-        <>
-          <div
-            className="mt-3 pt-3"
-            style={{ borderTop: '0.5px solid var(--border-divider)' }}
-          />
-          {children}
-        </>
+        <details className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border-divider)' }}>
+          <summary
+            className="text-xs cursor-pointer"
+            style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+          >
+            Ask the seller a question
+          </summary>
+          <div className="mt-3">{children}</div>
+        </details>
       ) : null}
     </section>
   );

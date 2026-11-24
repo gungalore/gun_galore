@@ -84,9 +84,13 @@ export default function ListingDistance({ listingId }: { listingId: string }) {
 
   if (km == null) return null;
 
+  // Inline by design: the listing page renders this inside one meta line with
+  // the province ("Kraaifontein, Western Cape · within ~5 km"). It used to be
+  // its own paragraph with a bottom margin, which stacked two sparse lines
+  // between the Q&A and the seller card.
   return (
-    <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
       {km <= 5 ? 'Within ~5 km of you' : `Approximately ${km} km from you`}
-    </p>
+    </span>
   );
 }

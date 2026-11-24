@@ -27,12 +27,12 @@ import AuctionPanel from './auction-panel';
 import ModerationBanner from './moderation-banner';
 import { QuestionsPanel } from './questions-panel';
 import { ListingFaq } from '@/components/listing-faq';
+import { ListingDeliverySummary } from '@/components/listing-delivery-summary';
 import { ImageGallery } from './image-gallery';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { SellerVerificationRing } from '@/components/seller-verification-ring';
-import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
 import { VerificationBadges } from '@/components/verification-badges';
@@ -627,34 +627,26 @@ export default async function ListingDetailPage({
             its own at lg so the gallery can be read without losing the
             controls off the top of the screen. */}
         <div className="gg-twopane-side">
-          {/* Reference number — shown above all other detail so the
-              seller / buyer always knows the trackable code (UM000123,
-              AU000045, TS000007). Monospace so it's easy to copy-paste
-              into support emails. Falls back to a short cuid for legacy
-              listings that haven't been back-filled yet. */}
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <p
-              className="text-xs inline-block"
-              style={{
-                fontFamily: 'ui-monospace, monospace',
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-                borderRadius: 4,
-                padding: '3px 8px',
-                letterSpacing: '0.04em',
-              }}
-            >
-              {listing.referenceNumber ?? `#${listing.id.slice(-8)}`}
-            </p>
-            {/* Board review — "listed N days ago" was previously nowhere on
-                the page despite createdAt already being on the payload. */}
-            {listedLabel && (
-              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {listedLabel}
-              </span>
+          <h1
+            className="text-xl mb-3 leading-snug"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            {listing.title}
+          </h1>
+
+          {/* UX-1b — seller rating near the title, linked to the seller
+              profile. Seller-level (not item-level) — the copy says so.
+              Self-hides when the seller has no ratings yet. */}
+          {listing.seller.averageRating != null &&
+            (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
+              <div className="mb-3">
+                <SellerRating
+                  rating={listing.seller.averageRating}
+                  count={listing.seller._count?.ratingsReceived}
+                  href={`/sellers/${sellerUserId}`}
+                />
+              </div>
             )}
-          </div>
 
           {/* Badges */}
           <div className="flex flex-wrap gap-1.5 mb-3">
@@ -751,9 +743,9 @@ export default async function ListingDetailPage({
                 title="This is the seller's own statement, not a ALL Outdoor test or guarantee."
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
-                  background: 'rgba(0,160,60,0.10)',
+                  background: 'var(--success-wash)',
                   color: 'var(--success)',
-                  border: '0.5px solid rgba(0,160,60,0.45)',
+                  border: '0.5px solid var(--success-line)',
                 }}
               >
                 Seller attests: tested &amp; working
@@ -780,27 +772,6 @@ export default async function ListingDetailPage({
             </span>
           </div>
 
-          <h1
-            className="text-xl mb-3 leading-snug"
-            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-          >
-            {listing.title}
-          </h1>
-
-          {/* UX-1b — seller rating near the title, linked to the seller
-              profile. Seller-level (not item-level) — the copy says so.
-              Self-hides when the seller has no ratings yet. */}
-          {listing.seller.averageRating != null &&
-            (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
-              <div className="mb-3">
-                <SellerRating
-                  rating={listing.seller.averageRating}
-                  count={listing.seller._count?.ratingsReceived}
-                  href={`/sellers/${sellerUserId}`}
-                />
-              </div>
-            )}
-
           {/* Seller-only moderation banner — shows above the CTA. */}
           <ModerationBanner
             listingId={listing.id}
@@ -817,11 +788,7 @@ export default async function ListingDetailPage({
           {/* For AUCTIONS, the AuctionPanel renders current bid + countdown,
               so we suppress the static price block. */}
           {listing.price && listing.listingType !== 'AUCTION' && (
-            <div
-              className={`flex items-center gap-2 flex-wrap ${
-                deliveryEstimate ? 'mb-2' : 'mb-5'
-              }`}
-            >
+            <div className="flex items-center gap-2 flex-wrap mb-3">
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                 {/* UX-7 — strikethrough "was" price (BUY_NOW only). */}
                 {compareAtPct != null && (
@@ -870,141 +837,20 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* UX-1c — pre-purchase delivery estimate. A range/method line,
-              never a hard promise. Null (hidden) for experiences and any
-              listing with no platform-estimable shipping. */}
-          {deliveryEstimate?.kind === 'FIREARM' && (
-            <div
-              className="text-sm mb-5"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Transfer via licensed dealer —{' '}
-              <Link
-                href="/members/regulated-items"
-                style={{
-                  color: 'var(--text-secondary)',
-                  textDecoration: 'underline',
-                }}
-              >
-                see how it works
-              </Link>
-            </div>
-          )}
-          {deliveryEstimate?.kind === 'COLLECTION' && (
-            <div
-              className="text-sm mb-5"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Collection from the seller in {vicinityLabel(listing)}
-              {/* Big-4 copy interim — the half-sentence that stops an
-                  out-of-province buyer bouncing off "collection only".
-                  Suppressed for the dangerous-goods battery case, where
-                  no transporter is a legitimate option. */}
-              {collectionMode === 'FREIGHT_OK' &&
-                ' — collect yourself or send your own transporter'}
-            </div>
-          )}
-
-          {/* The seller's offered handover routes, shown before the CTA so a
-              buyer knows what choices exist before entering checkout. */}
-          {handoverMethods.length > 0 && (
-            <div className="mb-5">
-              <p
-                className="text-xs uppercase mb-2"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.1em',
-                  fontWeight: 500,
-                }}
-              >
-                {listing.isFirearm ? 'Handover options' : 'Delivery options'}
-              </p>
-              <ul
-                style={{
-                  listStyle: 'none',
-                  margin: 0,
-                  padding: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                }}
-              >
-                {handoverMethods.map((method) => {
-                  const label =
-                    method === 'DEALER_TRANSFER'
-                      ? 'Dealer transfer'
-                      : method === 'PRIVATE_ARRANGE'
-                        ? listing.isFirearm
-                          ? 'Arrange privately'
-                          : 'Meet in person'
-                        : 'Courier delivery';
-                  const detail =
-                    method === 'DEALER_TRANSFER'
-                      ? 'Licensed dealer to licensed dealer. Payment stays held until the firearm is stocked in.'
-                      : method === 'PRIVATE_ARRANGE'
-                        ? listing.isFirearm
-                          ? 'Meet the seller at a licensed dealer to complete the transfer in person.'
-                          : 'Arrange an in-person handover with the seller. No courier — payment is held until you confirm.'
-                        : 'Door-to-door, tracked. The live courier rate is shown at checkout.';
-                  return (
-                    <li
-                      key={method}
-                      className="rounded-[6px] px-3 py-2"
-                      style={{
-                        background: 'var(--bg-card)',
-                        border: '0.5px solid var(--border)',
-                      }}
-                    >
-                      <span
-                        className="text-sm block"
-                        style={{
-                          color: 'var(--text-primary)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {label}
-                      </span>
-                      <span
-                        className="text-xs block mt-0.5"
-                        style={{
-                          color: 'var(--text-tertiary)',
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {detail}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p
-                className="text-xs mt-2"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                Choose one of these at checkout.
-              </p>
-            </div>
-          )}
-
           {/* CTA — wrapped so the sticky mobile buy bar (UX-28) has a stable
               in-page anchor to scroll to for the non-checkout listing types.
               scrollMarginTop clears the sticky top nav on landing. */}
           <div id="buy-panel" className="gg-anchor-buy">
           {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
-              // Keep the purchase affordance visible but clearly disabled
-              // for the seller; backend rejects self-purchase as well.
-              <div
-                aria-disabled="true"
-                className="block w-full py-3 rounded-[6px] text-sm text-center mb-5 opacity-60 cursor-not-allowed"
-                style={{
-                  background: 'var(--bg-inset)',
-                  color: 'var(--text-tertiary)',
-                  border: '0.5px solid var(--border)',
-                }}
-              >
-                Your Marketplace listing
-              </div>
+              // Own listing: the buy slot becomes the owner's control panel —
+              // Edit listing is the primary action, Cancel sits beside it.
+              <SellerControls
+                listingId={listing.id}
+                sellerId={sellerUserId}
+                status={listing.status}
+                inline
+              />
             ) : (
               trackedSellable !== null && trackedSellable <= 0 ? (
                 /* Sold out (tracked multi-unit) — no Marketplace / Add-to-cart
@@ -1022,11 +868,14 @@ export default async function ListingDetailPage({
                   >
                     Sold out
                   </div>
-                  <div className="mb-5">
-                    <HelpText>
+                  <div className="mb-3">
+                    <p
+                      className="text-xs"
+                      style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
+                    >
                       Every unit has sold. Add it to your wishlist and
                       we&apos;ll alert you if it comes back.
-                    </HelpText>
+                    </p>
                   </div>
                 </>
               ) : (
@@ -1073,18 +922,13 @@ export default async function ListingDetailPage({
                     buyer at Marketplace (checkout-form handles COLLECTION). */}
                 {listing.collectionOnly ||
                 listing.shippingMethods?.includes('COLLECTION') ? (
-                  <div
-                    className="block w-full py-3 rounded-[6px] text-xs text-center mb-3"
-                    style={{
-                      background: 'var(--bg-inset)',
-                      color: 'var(--text-secondary)',
-                      border: '0.5px solid var(--border)',
-                      lineHeight: 1.5,
-                    }}
+                  <p
+                    className="text-xs mb-3"
+                    style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                   >
-                    Collection only — use the Marketplace checkout to arrange collection with
-                    the seller.
-                  </div>
+                    Collection only — arrange collection with the seller at
+                    checkout.
+                  </p>
                 ) : (
                   <AddToCartButton
                     item={{
@@ -1101,12 +945,12 @@ export default async function ListingDetailPage({
                     }}
                   />
                 )}
-                <div className="mb-5">
-                  <HelpText>
-                    Takes you to secure checkout. The seller is only paid
-                    once the sale completes.
-                  </HelpText>
-                </div>
+                <p
+                  className="text-[11px] mb-3"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
+                >
+                  Secure checkout — payment is held until you confirm receipt.
+                </p>
               </>
               )
             )
@@ -1167,6 +1011,17 @@ export default async function ListingDetailPage({
             </div>
           ) : null}
 
+          </div>
+
+          {handoverMethods.length > 0 && (
+            <ListingDeliverySummary
+              methods={handoverMethods}
+              isFirearm={listing.isFirearm}
+              vicinity={vicinityLabel(listing)}
+              estimate={deliveryEstimate}
+              collectionMode={collectionMode}
+            />
+          )}
           {/* Take a Shot — on EVERY active listing, unconditionally.
               Operator, 2026-08-28: "Take a shot is always on by default and
               visible on the listing. The seller only has the option to
@@ -1190,8 +1045,6 @@ export default async function ListingDetailPage({
                 secondary
               />
             )}
-          </div>
-
           {/* One Questions & answers section: the public answers this seller
               has given, and the private composer directly beneath them. The
               two used to be separate cards, which made the composer look
@@ -1205,40 +1058,25 @@ export default async function ListingDetailPage({
             />
           </ListingFaq>
 
-          {/* Report — hidden on your own listing. */}
-          {!isOwnListing && (
-            <div className="mb-3">
-              <ReportButton kind="listing" targetId={listing.id} />
-            </div>
-          )}
-
-          {/* Live social-proof. The count is the real Wishlist total, moves
-              immediately when this viewer saves, and reconciles on a 15s
-              poll; a status change (sold / payment pending) refreshes the
-              page so the CTAs and banners are not left stale. Zero saves
-              still renders nothing. */}
-          {listing.status === 'ACTIVE' && (
-            <div className="mb-5">
-              <LiveListingStats
-                listingId={listing.id}
-                initialCount={listing._count?.wishlistedBy ?? 0}
-              />
-            </div>
-          )}
-
-          {/* Province */}
-          <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-            {vicinityLabel(listing)}
-          </p>
-
-          {/* Coarse distance from the viewer (device location, saved-address
-              fallback). 5 km-snapped; seller coordinates never reach the
-              browser. */}
-          <ListingDistance listingId={listing.id} />
-
+          {/* Location, one line: province · coarse distance (the old page
+              stacked two separate paragraphs with a gap each). */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-4">
+            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {vicinityLabel(listing)}
+            </span>
+            <span
+              aria-hidden
+              className="text-xs"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              ·
+            </span>
+            <ListingDistance listingId={listing.id} />
+          </div>
           {/* Seller-nominated stock-in gunshop. Distance is viewer-specific,
               calculated server-side from the signed-in buyer's saved address;
-              neither party's coordinates are sent to the browser. */}
+              neither party's coordinates are sent to the browser. The old
+              explanatory subline is gone — the label already says it. */}
           {listing.isFirearm && listing.plannedDealerLocation && (
             <div
               className="mb-4 rounded-[6px] px-3 py-2 text-xs"
@@ -1269,12 +1107,6 @@ export default async function ListingDetailPage({
                   ≈{dealerDistanceKm} km from you
                 </span>
               )}
-              <p
-                className="mt-1"
-                style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.4 }}
-              >
-                The seller plans to dealer-stock the item at this gunshop.
-              </p>
             </div>
           )}
 
@@ -1298,7 +1130,7 @@ export default async function ListingDetailPage({
           <Link
             href={`/sellers/${sellerUserId}`}
             className="block flex-1 min-w-0 rounded-[6px] p-3 text-sm"
-            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', textDecoration: 'none' }}
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-visible)', textDecoration: 'none' }}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -1350,16 +1182,56 @@ export default async function ListingDetailPage({
           </Link>
           </div>
 
-          {/* Seller controls live OUTSIDE the seller Link — these are
-              only rendered for the listing's owner anyway (the component
-              gates on userId match), and they need their own click
-              targets (Edit / Cancel) that don't navigate to the seller
-              profile page. */}
-          <SellerControls
-            listingId={listing.id}
-            sellerId={sellerUserId}
-            status={listing.status}
-          />
+          {/* Live social-proof. The count is the real Wishlist total, moves
+              immediately when this viewer saves, and reconciles on a 15s
+              poll; a status change (sold / payment pending) refreshes the
+              page so the CTAs and banners are not left stale. Zero saves
+              still renders nothing. */}
+          {listing.status === 'ACTIVE' && (
+            <div className="mb-5">
+              <LiveListingStats
+                listingId={listing.id}
+                initialCount={listing._count?.wishlistedBy ?? 0}
+              />
+            </div>
+          )}
+
+          {/* Reference number — support/paperwork metadata, so it sits at the
+              FOOT of the buy column, not above the title (2026-11-24
+              sales-layout audit). Monospace so it is easy to copy-paste into
+              support emails. Falls back to a short cuid for legacy listings
+              that haven't been back-filled yet. */}
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <p
+              className="text-xs inline-block"
+              style={{
+                fontFamily: 'ui-monospace, monospace',
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                borderRadius: 4,
+                padding: '3px 8px',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {listing.referenceNumber ?? `#${listing.id.slice(-8)}`}
+            </p>
+            {/* Board review — "listed N days ago" was previously nowhere on
+                the page despite createdAt already being on the payload. */}
+            {listedLabel && (
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {listedLabel}
+              </span>
+            )}
+          </div>
+
+          {/* Report — hidden on your own listing. */}
+          {!isOwnListing && (
+            <div className="mb-3">
+              <ReportButton kind="listing" targetId={listing.id} />
+            </div>
+          )}
+
         </div>
       </div>
       </PageReveal>
@@ -1451,20 +1323,21 @@ export default async function ListingDetailPage({
               </p>
             </div>
             {isOwnListing ? (
-              <button
-                type="button"
-                disabled
-                aria-label="This is your own listing and cannot be purchased by you"
-                className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0 opacity-60 cursor-not-allowed"
+              /* Own listing: the buy bar's job is the owner's next action,
+                 not a disabled purchase button ("Your listing" read as a
+                 broken Buy button; sales-layout audit 2026-11-24). */
+              <Link
+                href={`/listings/${listing.id}/edit`}
+                className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
                 style={{
-                  background: 'var(--bg-inset)',
-                  color: 'var(--text-tertiary)',
-                  border: '0.5px solid var(--border)',
+                  background: 'var(--action-primary-bg)',
+                  color: '#fff',
                   fontWeight: 500,
+                  textDecoration: 'none',
                 }}
               >
-                Your listing
-              </button>
+                Edit listing
+              </Link>
             ) : listing.listingType === 'BUY_NOW' ? (
               <Link
                 href={`/checkout/${listing.id}`}
