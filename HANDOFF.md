@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — HANDOVER CONFIRM FIXED, DISPUTES ANNOUNCED, COPY SHORTENED; PEACH PAYOUTS ENABLED
+
+Operator: *"fix it yes. Also add a confirmation to serious buttons like disputes for accidental presses. There is also a lot of clutter in the communication. Make messages short and simple so that the users don't have to scroll to get to a confirm button or whatever else is like that."*
+
+First, an audit of the one live Peach sale (buyer `turbosnail`, seller `ruanda`, listing **UM000017 "Scope covers"**, ref **KCW9RPBW**, R10 item + R10 minimum Platform Fee = R20 paid by VISA ••••3146, Peach result `000.000.000`, seller accepted, PRIVATE_ARRANGE) found the payment and channels correct but two real gaps:
+
+- **The buyer could not confirm receipt unless the seller first tapped "Item delivered".** The handover happened, the seller never opened the order page, so the only button left was "report the handover did not happen" — which froze the sale as DISPUTED and hid the panel entirely. `confirmPrivateArrangeReceived` now accepts the buyer's confirmation without `privateArrangeDeliveredAt` (it stamps the delivered time itself) and **from `DISPUTED` as well**, so a buyer who reported by mistake can withdraw it by confirming receipt. `releasePrivateArrange(..., { allowDisputed: true })` is only ever used for the buyer's own confirmation — the cron and every other path still never release a disputed order. The panel stays visible while DISPUTED and carries a short status line.
+- **A handover dispute notified nobody.** It now writes a `PRIVATE_ARRANGE_DISPUTED` tracking event and sends BOTH parties a short in-app + email + SMS (`privateArrangeDisputed`) — the seller finally learns her payout is frozen.
+- **One accept no longer produces two seller emails.** `privateArrangeContactReveal` sends only the buyer the seller's details; the seller's single accept-time message (email + SMS + WhatsApp + in-app, with the buyer's contact details and the one-tap handover link) is `privateArrangeSellerHandover`.
+- **Copy shortened everywhere on this flow** (payment, contact reveal, handover, delivered nudge, 24h reminder, both dispute mails): one or two sentences, action verb bold, reference row removed where it added nothing. `prettyShippingMethod('PRIVATE_ARRANGE')` is now **"Meet in person"**, not "Arrange privately at a dealer" (a R10 scope-covers email said "dealer").
+- **Serious taps now confirm first.** The handover panel's "I received it" (releases money) and "handover did not happen" (freezes money) both open a confirmation dialog; the courier dispute flow already required a written reason. Transaction-page paragraphs around the confirm/dispute buttons were cut to one line each.
+- **Checks:** backend targeted specs updated (`private-arrange.service.spec.ts` — confirm without delivered, withdraw a dispute, dispute notifications/tracking; `notifications-action-parity.spec.ts` — both parties told), typechecks clean.
+
+**Also done this session: `peach_payouts_enabled = true` (17:41:30 SAST, DB `Setting` upsert).** `auto_payouts_enabled` stays OFF (no row → default false), so nothing pays out automatically. ⚠️ Consequences: the **BANV hold now applies to BOTH rails** — sellers with `bankVerifiedAt IS NULL` are skipped, and **no seller has ever been BANV-verified** (including Ruanda: KYC VERIFIED, Investec ••••0758 on file, but `bankVerifiedAt`/`bankAvsResult` NULL and no BANV request ever made). Platform-wide released-but-unpaid rows: **0**, so enabling moved no money. To test a payout: resolve a sale to RELEASED, re-run BANV from the admin user dossier (result arrives on `/payments/webhook/peach-banv`), fund the Peach float, then run a payout batch (`PeachPayoutAttempt` is still 0 platform-wide).
+
 ## 2026-11-24 — PHOTO UPLOAD HANG HARDENED (CLOUDINARY TIMEOUT + DOWNSCALE)
 
 Operator: *"harden it, we can't have issues on launch."*

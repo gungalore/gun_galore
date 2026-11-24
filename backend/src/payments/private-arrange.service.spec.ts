@@ -24,6 +24,8 @@ function makeService(opts: {
     privateArrangeDeliveredNotify: jest.fn().mockResolvedValue(undefined),
     privateArrangeBuyerReminder: jest.fn().mockResolvedValue(undefined),
     privateArrangeContactReveal: jest.fn().mockResolvedValue(undefined),
+    privateArrangeSellerHandover: jest.fn().mockResolvedValue(undefined),
+    privateArrangeDisputed: jest.fn().mockResolvedValue(undefined),
     resolveByEntity: jest.fn().mockResolvedValue(undefined),
   };
   const zoho = {
@@ -70,13 +72,14 @@ const baseTx = {
 };
 
 describe('TransactionsService — Private Arrangement handover', () => {
-  it('buyer "received" releases the payout only after delivery', async () => {
+  it('buyer "received" releases the payout', async () => {
     const { service, prisma, notifications, zoho } = makeService({
       tx: { ...baseTx, privateArrangeDeliveredAt: new Date() },
     });
     const r = await service.confirmPrivateArrangeReceived('TX1', 'B');
     expect(r).toEqual({ released: true });
-    const claim = prisma.transaction.updateMany.mock.calls[0][0];
+    // calls[0] stamps receipt; calls[1] is the HELD/RELEASED claim.
+    const claim = prisma.transaction.updateMany.mock.calls[1][0];
     expect(claim.data.paymentStatus).toBe('RELEASED');
     expect(notifications.paymentReleasedSeller).toHaveBeenCalled();
     expect(zoho.createCommissionInvoice).toHaveBeenCalledWith('TX1');
@@ -91,11 +94,38 @@ describe('TransactionsService — Private Arrangement handover', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('refuses buyer receipt before the seller marks it delivered', async () => {
-    const { service } = makeService({ tx: { ...baseTx } });
-    await expect(
-      service.confirmPrivateArrangeReceived('TX1', 'B'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+  it('buyer can confirm receipt WITHOUT the seller marking it delivered', async () => {
+    const { service, prisma, notifications } = makeService({ tx: { ...baseTx } });
+
+    const r = await service.confirmPrivateArrangeReceived('TX1', 'B');
+
+    expect(r).toEqual({ released: true });
+    // The delivered time is stamped from the buyer's confirmation, so the
+    // order timeline is complete even though the seller never tapped it.
+    const stamp = prisma.transaction.updateMany.mock.calls[0][0];
+    expect(stamp.data.privateArrangeDeliveredAt).toEqual(expect.any(Date));
+    const claim = prisma.transaction.updateMany.mock.calls[1][0];
+    expect(claim.data.paymentStatus).toBe('RELEASED');
+    expect(notifications.paymentReleasedSeller).toHaveBeenCalled();
+  });
+
+  it('buyer confirming receipt withdraws their own handover dispute', async () => {
+    const { service, prisma, notifications } = makeService({
+      tx: { ...baseTx, paymentStatus: 'DISPUTED' },
+    });
+
+    const r = await service.confirmPrivateArrangeReceived('TX1', 'B');
+
+    expect(r).toEqual({ released: true });
+    // The stamp is allowed from DISPUTED, and the release claim itself carries
+    // the disputed state — so an accidental report can be undone by the buyer.
+    expect(prisma.transaction.updateMany.mock.calls[0][0].where.paymentStatus).toEqual({
+      in: ['HELD', 'DISPUTED'],
+    });
+    expect(prisma.transaction.updateMany.mock.calls[1][0].where.paymentStatus).toEqual({
+      in: ['HELD', 'DISPUTED'],
+    });
+    expect(notifications.paymentReleasedSeller).toHaveBeenCalled();
   });
 
   it('refuses seller delivery before accepting the sale', async () => {
@@ -123,8 +153,8 @@ describe('TransactionsService — Private Arrangement handover', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('dispute from either party freezes to DISPUTED + alerts admin', async () => {
-    const { service, prisma } = makeService({ tx: { ...baseTx } });
+  it('dispute from either party freezes to DISPUTED, alerts admin and notifies both', async () => {
+    const { service, prisma, notifications, tracking } = makeService({ tx: { ...baseTx } });
     await service.disputePrivateArrange('TX1', 'B', 'not as described');
     const claim = prisma.transaction.updateMany.mock.calls[0][0];
     expect(claim.data.paymentStatus).toBe('DISPUTED');
@@ -132,6 +162,16 @@ describe('TransactionsService — Private Arrangement handover', () => {
       expect.objectContaining({
         data: expect.objectContaining({ type: 'PRIVATE_ARRANGE_DISPUTED' }),
       }),
+    );
+    // A dispute is a money event for BOTH sides: on 2026-11-24 the seller was
+    // never told her payout had been frozen.
+    expect(notifications.privateArrangeDisputed).toHaveBeenCalledWith(
+      expect.objectContaining({ raisedByBuyer: true, transactionId: 'TX1' }),
+    );
+    expect(tracking.recordInternal).toHaveBeenCalledWith(
+      'TX1',
+      'PRIVATE_ARRANGE_DISPUTED',
+      expect.anything(),
     );
   });
 

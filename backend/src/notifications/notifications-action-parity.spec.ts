@@ -119,6 +119,9 @@ describe('action parity — signed links and labels', () => {
       sellerPhone: '0820000000',
       listingTitle: LISTING.listingTitle,
       transactionId: 'ctx1234567890',
+      buyerName: 'Buyer',
+      buyerPhone: '0830000000',
+      buyerEmail: 'b@x.co',
       actionUrl: ACTION,
     });
 
@@ -159,7 +162,27 @@ describe('action parity — signed links and labels', () => {
     expect(sent.inbox[0].url).toBe(ACTION);
     expect(sent.sms[0]).toContain(ACTION);
     expect(sent.emails[0]).toContain(ACTION);
-    expect(sent.emails[0]).toContain('Confirm receipt or dispute');
+    expect(sent.emails[0]).toContain('Confirm receipt');
+  });
+
+  it('handover dispute tells BOTH parties, with no action link needed', async () => {
+    const { svc, sent } = makeService();
+    await svc.privateArrangeDisputed({
+      listingTitle: LISTING.listingTitle,
+      transactionId: 'ctx1234567890',
+      raisedByBuyer: true,
+      buyer: { email: 'b@x.co', firstName: 'Buyer', phone: '0820000000' },
+      seller: { email: 's@x.co', firstName: 'Seller', phone: '0830000000' },
+    });
+
+    // Buyer + seller each get an inbox row, an email and an SMS.
+    expect(sent.inbox).toHaveLength(2);
+    expect(sent.emails).toHaveLength(2);
+    expect(sent.sms).toHaveLength(2);
+    // The buyer is told how to undo a mistaken report; the seller is told the
+    // payout is frozen (the gap that froze Ruanda's sale silently).
+    expect(sent.inbox[0].body).toContain('I received it');
+    expect(sent.inbox[1].body).toContain('frozen');
   });
 
   it('auction won: Pay now / Pay within 24h, with the action link', async () => {

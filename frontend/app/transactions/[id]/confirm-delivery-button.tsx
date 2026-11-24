@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../../lib/auth';
 import { useRouter } from 'next/navigation';
-import { BRAND_NAME } from '../../../lib/brand';
 import { RaiseDisputeModal } from './raise-dispute-button';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -123,14 +122,9 @@ export function ConfirmDeliveryButton({
               className="text-sm mb-4"
               style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
             >
-              Confirming releases the payment to the seller and is final.
-              Once you confirm, {BRAND_NAME} will not refund the item for a
-              condition, description or change-of-mind concern — those are
-              between you and the seller, so message the seller from this
-              order or lodge a complaint. Take 30 seconds to inspect the item
-              before you tick the boxes below. If the item has not{' '}
-              {isCollection ? 'been handed over' : 'arrived'}, don&apos;t
-              confirm — report non-delivery instead.
+              This releases payment to the seller and is final. Inspect the item first.
+              If it has not {isCollection ? 'been handed over' : 'arrived'}, do not
+              confirm — report it instead.
             </p>
 
             <div

@@ -6653,9 +6653,14 @@ export class TransactionsService {
 
   // Release a HELD PRIVATE_ARRANGE payout. Atomic HELD→RELEASED + totalSales,
   // then invoices/timeline/notification. Returns whether it released.
+  //
+  // `allowDisputed` is only for the BUYER's own "I received it": confirming
+  // receipt is how a buyer withdraws a handover dispute they raised. The cron
+  // and every other path must never release a DISPUTED order.
   private async releasePrivateArrange(
     txId: string,
     reason: 'buyer_received' | 'auto_5d' | 'admin',
+    opts: { allowDisputed?: boolean } = {},
   ): Promise<boolean> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
@@ -6668,11 +6673,10 @@ export class TransactionsService {
     const claim = await this.prisma.transaction.updateMany({
       where: {
         id: txId,
-        paymentStatus: 'HELD',
+        paymentStatus: opts.allowDisputed ? { in: ['HELD', 'DISPUTED'] } : 'HELD',
         paidAt: { not: null },
         // A cancellation request freezes the order while support reviews it.
         cancellationRequestedAt: null,
-        // A dispute (DISPUTED) blocks release; the HELD guard already excludes it.
       },
       data: { paymentStatus: 'RELEASED', releasedAt: now },
     });
@@ -6754,6 +6758,15 @@ export class TransactionsService {
   }
 
   // Buyer taps "Item received" → releases the payout to the seller.
+  //
+  // ⚠️ THE BUYER IS NOT BLOCKED ON THE SELLER'S "ITEM DELIVERED" TAP. Live on
+  // 2026-11-24 a handover happened, the seller never opened the order page, and
+  // the buyer therefore had NO confirm button — only "report the handover did
+  // not happen", which froze the sale. The buyer's own "I received it" is the
+  // strongest evidence that exists, so it is accepted:
+  //   • without `privateArrangeDeliveredAt` (it is stamped here when missing),
+  //   • from DISPUTED as well as HELD — a buyer who disputed by mistake can
+  //     withdraw it by confirming receipt, without waiting for support.
   async confirmPrivateArrangeReceived(transactionId: string, buyerId: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -6776,14 +6789,16 @@ export class TransactionsService {
         'The seller has not accepted this sale yet. Wait for the seller to accept before confirming receipt.',
       );
     }
-    if (!tx.privateArrangeDeliveredAt) {
-      throw new BadRequestException(
-        'The seller has not marked this item delivered yet.',
-      );
-    }
-    if (tx.paymentStatus !== 'HELD') {
+    if (tx.paymentStatus !== 'HELD' && tx.paymentStatus !== 'DISPUTED') {
       throw new BadRequestException(
         `This order cannot be confirmed right now (status: ${tx.paymentStatus}).`,
+      );
+    }
+    if (tx.paymentStatus === 'DISPUTED' && !tx.privateArrangeReceivedAt) {
+      // Buyer confirming receipt while a handover dispute is open withdraws
+      // the dispute: the item WAS handed over. Log it for the admin dossier.
+      this.logger.log(
+        `Transaction ${transactionId} PRIVATE_ARRANGE buyer confirmed receipt — clearing open handover dispute`,
       );
     }
     if (tx.cancellationRequestedAt) {
@@ -6791,16 +6806,35 @@ export class TransactionsService {
         'A cancellation request is under review — payment cannot be released until it is resolved.',
       );
     }
-    await this.prisma.transaction.update({
-      where: { id: transactionId },
-      data: { privateArrangeReceivedAt: new Date() },
+    const now = new Date();
+    // Stamp receipt (and delivery when the seller never did) atomically, so a
+    // concurrent dispute/auto-release cannot slip between the read and release.
+    await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        privateArrangeReceivedAt: null,
+        paymentStatus: { in: ['HELD', 'DISPUTED'] },
+      },
+      data: {
+        privateArrangeReceivedAt: now,
+        privateArrangeDeliveredAt: tx.privateArrangeDeliveredAt ?? now,
+      },
     });
-    const released = await this.releasePrivateArrange(transactionId, 'buyer_received');
+    const released = await this.releasePrivateArrange(
+      transactionId,
+      'buyer_received',
+      { allowDisputed: true },
+    );
     return { released };
   }
 
   // Either party can dispute a private-arrange handover (from WhatsApp or the
   // order page) → freeze as DISPUTED + alert an admin. No money moves.
+  //
+  // ⚠️ BOTH PARTIES ARE TOLD. Live 2026-11-24 the buyer disputed and the seller
+  // was never informed — the payment simply vanished from her view. The dispute
+  // is a money event for the seller, so she gets the same short notice the
+  // buyer does, and the order timeline records it.
   async disputePrivateArrange(
     transactionId: string,
     userId: string,
@@ -6808,6 +6842,7 @@ export class TransactionsService {
   ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
+      include: { buyer: true, seller: true, listing: { select: { title: true } } },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
     if (tx.buyerId !== userId && tx.sellerId !== userId) {
@@ -6821,6 +6856,7 @@ export class TransactionsService {
         'This order has not been paid yet, so there is nothing to dispute.',
       );
     }
+    const raisedByBuyer = userId === tx.buyerId;
     const claim = await this.prisma.transaction.updateMany({
       where: { id: transactionId, paymentStatus: 'HELD', paidAt: { not: null } },
       data: { paymentStatus: 'DISPUTED' },
@@ -6836,11 +6872,31 @@ export class TransactionsService {
           type: 'PRIVATE_ARRANGE_DISPUTED',
           referenceId: transactionId,
           urgent: true,
-          context: `Private Arrangement ${transactionId} disputed by ${userId === tx.buyerId ? 'buyer' : 'seller'}. Funds held. Reason: ${(reason ?? '').slice(0, 200)}`,
+          context: `Private Arrangement ${transactionId} disputed by ${raisedByBuyer ? 'buyer' : 'seller'}. Funds held. Reason: ${(reason ?? '').slice(0, 200)}`,
         },
       })
       .catch(() => undefined);
     void this.notifications.resolveByEntity('transaction', transactionId);
+    void this.tracking.recordInternal(transactionId, 'PRIVATE_ARRANGE_DISPUTED', {
+      message: raisedByBuyer
+        ? 'Buyer reported the handover did not happen. Payment is frozen while support reviews it.'
+        : 'Seller reported the handover did not happen. Payment is frozen while support reviews it.',
+    });
+    void this.notifications.privateArrangeDisputed({
+      listingTitle: tx.listing?.title ?? 'your item',
+      transactionId,
+      raisedByBuyer,
+      buyer: {
+        email: tx.buyer.email,
+        firstName: tx.buyer.firstName,
+        phone: tx.buyer.phone,
+      },
+      seller: {
+        email: tx.seller.email,
+        firstName: tx.seller.firstName,
+        phone: tx.seller.phone,
+      },
+    });
     this.logger.warn(`Transaction ${transactionId} PRIVATE_ARRANGE → DISPUTED`);
     return this.prisma.transaction.findUnique({ where: { id: transactionId } });
   }
@@ -6957,7 +7013,7 @@ export class TransactionsService {
     try {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
-        include: { seller: true, listing: { select: { title: true } } },
+        include: { seller: true, buyer: true, listing: { select: { title: true } } },
       });
       if (!tx) return;
       const action = await this.mintPrivateArrangeAction(
@@ -6971,6 +7027,12 @@ export class TransactionsService {
         sellerPhone: tx.seller.phone,
         listingTitle: tx.listing.title,
         transactionId: txId,
+        buyerName:
+          [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
+          tx.buyer.username ||
+          'the buyer',
+        buyerPhone: tx.buyer.phone,
+        buyerEmail: tx.buyer.email,
         actionUrl: action.actionUrl,
       });
     } catch (err) {

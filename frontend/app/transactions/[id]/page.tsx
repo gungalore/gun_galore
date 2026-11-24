@@ -741,7 +741,7 @@ export default async function TransactionPage({
                   Have you received the item?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Confirming delivery releases payment to the seller and is final. If the item has not arrived, raise a dispute instead — payment stays held while we review the tracking. If you have a condition or description concern about an item you did receive, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund.
+                  Confirming releases payment to the seller and is final. If it has not arrived, raise a dispute instead — payment stays held while we review the tracking.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} />
               </div>
@@ -764,7 +764,7 @@ export default async function TransactionPage({
                   Have you collected the item?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Confirming collection releases payment to the seller and is final. If the seller is unreachable or the item was never handed over, raise a dispute instead — payment stays held while we review. If you received the item but it is not as expected, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund.
+                  Confirming releases payment to the seller and is final. If the handover never happened, raise a dispute instead.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} variant="collection" />
               </div>
@@ -806,12 +806,7 @@ export default async function TransactionPage({
                   This item has shipped
                 </p>
                 <p className="text-xs text-[var(--text-tertiary)]">
-                  Cancellation is no longer available after dispatch. If the
-                  item never arrives, raise a dispute — payment stays held
-                  while we review the tracking. If the item arrives but has a
-                  condition or description problem, message the seller from
-                  this order or lodge a complaint; that is between you and the
-                  seller, not a platform refund.
+                  Cancellation is closed after dispatch. If it never arrives, raise a dispute — payment stays held while we review.
                 </p>
               </div>
             )}
@@ -820,16 +815,21 @@ export default async function TransactionPage({
               (Phase 4 rework). Freezes the order; support resolves it. */}
           {canRequestCancel && <BuyerCancelPanel txId={tx.id} />}
 
-          {/* Private Arrangement (Phase 4 W2) — held-funds handover. */}
-          {isPrivateArrange && tx.paymentStatus === 'HELD' && !!tx.acceptedAt && (
-            <PrivateArrangePanel
-              txId={tx.id}
-              isBuyer={isBuyer}
-              isSeller={isSeller}
-              delivered={tx.privateArrangeDeliveredAt}
-              received={tx.privateArrangeReceivedAt}
-            />
-          )}
+          {/* Private Arrangement (Phase 4 W2) — held-funds handover. Shown
+              while the money can still move: HELD, or DISPUTED (the buyer's
+              "I received it" withdraws their own report). */}
+          {isPrivateArrange &&
+            (tx.paymentStatus === 'HELD' || tx.paymentStatus === 'DISPUTED') &&
+            !!tx.acceptedAt && (
+              <PrivateArrangePanel
+                txId={tx.id}
+                isBuyer={isBuyer}
+                isSeller={isSeller}
+                delivered={tx.privateArrangeDeliveredAt}
+                received={tx.privateArrangeReceivedAt}
+                disputed={tx.paymentStatus === 'DISPUTED'}
+              />
+            )}
 
           {/* Buyer ↔ seller messages (Jev-moderated). Once the order is paid. */}
           {(isBuyer || isSeller) && !!tx.paidAt && (
@@ -869,11 +869,7 @@ export default async function TransactionPage({
                   Has the item not arrived?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  {tx.shippingMethod === 'DEALER_TRANSFER'
-                    ? "Use this only if the dealer transfer has stalled — the seller is unreachable or the firearm was never handed over. Payment stays held while we review the tracking. A condition or description concern is between you and the seller: message the seller or lodge a complaint."
-                    : isCollection
-                    ? "Use this only if the seller is unreachable or the item was never handed over. Payment stays held while we review. If you received the item but it is not as expected, that is between you and the seller — message the seller from this order or lodge a complaint; it is not a dispute or a platform refund."
-                    : "Use this only if the item has not arrived. Payment stays held while we review the tracking. If the item arrived but has a condition or description problem, message the seller from this order or lodge a complaint — that is between you and the seller, not a platform refund."}
+                  Use this only if it was never handed over or delivered — payment stays held while we review. Condition concerns are between you and the seller.
                 </p>
                 <RaiseDisputeButton transactionId={tx.id} />
               </div>
@@ -882,7 +878,9 @@ export default async function TransactionPage({
           {/* DISPUTED banner — shown to both parties once a non-delivery
               dispute is raised. Replaces the action buttons (those gate on
               HELD). Buyer copy is deliberately tracking/non-delivery only:
-              a dispute is not a condition or description remedy. */}
+              a dispute is not a condition or description remedy. On a
+              Private Arrangement the handover panel above stays live so the
+              buyer's "I received it" can withdraw a mis-tap. */}
           {tx.paymentStatus === 'DISPUTED' && (
             <div
               className="rounded-[8px] p-4"
@@ -892,12 +890,16 @@ export default async function TransactionPage({
               }}
             >
               <p className="text-sm font-medium mb-1" style={{ color: 'var(--red)' }}>
-                Dispute raised — admin is reviewing
+                Dispute raised — under review
               </p>
               <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                 {isBuyer
-                  ? "We're checking the delivery and the tracking. Your payment stays held while we review — we'll contact you within 48 hours with next steps. If the item does arrive in the meantime, don't confirm delivery until the dispute is resolved. You do not need to do anything else."
-                  : 'The buyer has reported that the item has not arrived. Payment is paused while we review the delivery and tracking. You will be contacted with the outcome.'}
+                  ? isPrivateArrange
+                    ? "We're reviewing the handover report. Payment is frozen. If you did get the item, tap \"I received it\" above to release it."
+                    : "We're checking the delivery and tracking. Payment stays held — we'll contact you within 48 hours. If it does arrive, don't confirm until we've resolved the dispute."
+                  : isPrivateArrange
+                    ? 'The buyer reported the handover did not happen. Payment is frozen while support reviews it.'
+                    : 'The buyer reported that the item has not arrived. Payment is paused while we review the delivery and tracking. You will be contacted with the outcome.'}
               </p>
             </div>
           )}

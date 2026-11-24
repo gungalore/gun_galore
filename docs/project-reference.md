@@ -798,9 +798,30 @@ picks the rail at checkout; Ozow is the default.
   enabled it in the Sell form: it books no courier and the checkout
   hard-consent screen spells out the terms. Funds stay HELD until the buyer
   confirms the handover (or auto-release 5 days after payment); both parties
-  get WhatsApp/SMS/email/in-app confirmation links. A **non-delivery** refund
-  is full — item, delivery and Platform Fee (2026-11-23 policy). A condition
-  or change-of-mind issue after the handover is not a platform refund at all.
+  get the contact details of the other side on WhatsApp/SMS/email/in-app.
+  ⚠️ **The buyer's "I received it" does NOT depend on the seller tapping "Item
+  delivered".** The seller's tap is optional — the buyer's confirmation stamps
+  the delivered time itself, and it is also accepted while the sale is
+  `DISPUTED` (confirming receipt is how a buyer withdraws a handover report
+  they raised by mistake). The seller's "Item delivered" stays available while
+  HELD. Both money-moving taps sit behind a confirmation dialog in
+  `frontend/app/transactions/[id]/private-arrange-panel.tsx`.
+  ⚠️ **A handover dispute notifies BOTH parties** (short in-app + email + SMS:
+  the buyer is told how to confirm if they did get the item, the seller is told
+  the payout is frozen) and writes a `PRIVATE_ARRANGE_DISPUTED` tracking event;
+  before 2026-11-24 it produced only an admin alert and the seller was never
+  told. A **non-delivery** refund is full — item, delivery and Platform Fee
+  (2026-11-23 policy). A condition or change-of-mind issue after the handover
+  is not a platform refund at all.
+  ⚠️ **One accept = one seller message.** `privateArrangeContactReveal` sends
+  only the BUYER the seller's details; the seller's single accept-time message
+  (email + SMS + WhatsApp + in-app, carrying the buyer's details and the
+  one-tap handover link) is `privateArrangeSellerHandover`. Do not re-add a
+  second seller email to the reveal — that duplicate shipped on 2026-11-24 and
+  is exactly the clutter that buries the action button.
+  ⚠️ **Keep sale/handover copy short.** The emails/in-app/SMS for a sale are
+  read on a phone next to an action button; one or two short sentences, the
+  action verb in bold, and the reference row. No paragraphs before the CTA.
 - **Seller pickup scheduling:** on accept the seller picks a collection day
   (soonest business day, or the following business day) and an optional window
   (`08:00-11:00` / `11:00-14:00` / `14:00-17:00`). Stored on

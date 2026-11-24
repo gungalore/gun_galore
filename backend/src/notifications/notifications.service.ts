@@ -868,10 +868,9 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Payment received' },
       headline: 'Payment received',
-      body: `Hi ${b(d.buyerName)}, your payment of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} is safely held by ALL Outdoor. The seller has 48 hours to accept the sale. Once they accept, we'll send you their name, phone number and email address so you can arrange the in-person handover. You'll then confirm receipt after the handover to release their payment.`,
+      body: `Hi ${b(d.buyerName)}, we're holding your ${b(formatRand(d.buyerTotal))} payment for ${b(d.listingTitle)}. The seller has 48 hours to accept; once they do we'll send their contact details so you can arrange the handover.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        { label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) },
       ],
       cta: { label: 'View order', url: txUrl },
       preheader: `Payment received - waiting for the seller to accept`,
@@ -1279,7 +1278,7 @@ export class NotificationsService {
     // the paperwork in parallel).
     const acceptLede = hasAcceptToken
       ? isPrivateArrange
-        ? `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. Accepting releases the buyer's contact details so you can arrange the in-person handover.</p>`
+        ? `<p style="margin: 0 0 14px;"><b>First — accept or decline within 48 hours.</b> Accepting sends you the buyer's contact details.</p>`
         : isCollection
           ? `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. This item is collected in person - the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
           : `<p style="margin: 0 0 14px;"><b>First - confirm you can fulfil this sale within 48 hours.</b> Tap the button below to accept or decline. After accepting you have 5 days to dispatch.</p>`
@@ -1293,7 +1292,7 @@ export class NotificationsService {
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
       : isPrivateArrange
-        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. This is an <b>in-person handover</b> - accept to receive the buyer's contact details, arrange the meet, then tap <b>Item delivered</b>. Your payment releases when the buyer confirms receipt.`
+        ? `${acceptLede}Hi ${b(d.sellerName)}, ${b(d.listingTitle)} sold and the payment is held by us. Meet the buyer, then tap <b>Item delivered</b> — your payout releases when they confirm receipt.`
         : isCollection
         ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
         : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by ALL Outdoor — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
@@ -4411,24 +4410,38 @@ export class NotificationsService {
     );
   }
 
-  // Seller: a Private Arrangement sale is paid — arrange the handover and tap
-  // "Item delivered" when done. Funds are held until the buyer confirms.
+  // Seller: a Private Arrangement sale is paid — meet the buyer, tap "Item
+  // delivered" after the handover. Funds are held until the buyer confirms.
+  //
+  // ⚠️ THIS IS THE SELLER'S ONLY ACCEPT-TIME MESSAGE (email + SMS + WhatsApp +
+  // in-app) and it carries the buyer's contact details: privateArrangeContactReveal
+  // deliberately no longer duplicates it.
   async privateArrangeSellerHandover(d: {
     sellerEmail: string;
     sellerName: string;
     sellerPhone: string | null;
     listingTitle: string;
     transactionId: string;
+    /** The other party's contact details, so the seller can arrange the meet. */
+    buyerName: string;
+    buyerPhone: string | null;
+    buyerEmail: string;
     /** One-use, seller-scoped /a/<token> handover link. */
     actionUrl?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     const url = d.actionUrl ?? txUrl;
+    const rows: { label: string; value: string }[] = [
+      { label: 'Buyer', value: d.buyerName },
+    ];
+    if (d.buyerPhone) rows.push({ label: 'Buyer phone', value: d.buyerPhone });
+    rows.push({ label: 'Buyer email', value: d.buyerEmail });
+    rows.push({ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() });
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'private_arrange_handover',
       title: 'Arrange the handover',
-      body: `${d.listingTitle} is paid - arrange the handover and mark it delivered. Your payment releases when the buyer confirms receipt.`,
+      body: `Meet ${d.buyerName}${d.buyerPhone ? ' (' + d.buyerPhone + ')' : ''} for ${d.listingTitle}. Tap "Item delivered" after the handover — payout releases when they confirm.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4441,15 +4454,15 @@ export class NotificationsService {
       this.email({
         status: { tone: 'pending', label: 'Action needed' },
         headline: 'Arrange the handover',
-        body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} is paid for. Arrange the handover with the buyer and mark it delivered when done. Your payment releases when the buyer confirms receipt, or 5 days after payment.`,
-        rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
+        body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} is paid. Meet the buyer and tap <b>Item delivered</b> — your payout releases when they confirm receipt.`,
+        rows,
         cta: { label: 'Open handover', url },
         preheader: `Arrange the handover for ${d.listingTitle}`,
       }),
     );
     await this.sendSms(
       d.sellerPhone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} is paid. Arrange the handover and mark it delivered. Payment releases when the buyer confirms.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
+      `ALL Outdoor: ${truncate(d.listingTitle, 24)} sold to ${truncate(d.buyerName, 18)}${d.buyerPhone ? ' ' + d.buyerPhone : ''}. Meet, then tap Item delivered.${d.actionUrl ? ` ${d.actionUrl}` : ''}`,
       `pa-handover-${d.transactionId}`,
       {
         whatsapp: {
@@ -4480,7 +4493,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'private_arrange_delivered',
       title: 'Confirm you received your item',
-      body: `${d.listingTitle} - the seller marked it delivered. Confirm receipt to release the seller's payment.`,
+      body: `The seller marked ${d.listingTitle} delivered. Tap "I received it" to release payment.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4490,7 +4503,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Did you receive your item?',
-      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} as delivered. If you've received it, please confirm on the handover page — that releases the seller's payment. If it never reached you, raise a dispute instead and we'll hold the funds while we look into it. For condition or description issues, message the seller from the order page.`,
+      body: `Hi ${b(d.buyerName)}, the seller marked ${b(d.listingTitle)} delivered. If you have it, tap <b>I received it</b> — that releases payment. If it never arrived, report it from the order; we'll hold the funds.`,
       rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
       cta: { label: 'Confirm receipt or dispute', url },
       preheader: `Confirm receipt of ${d.listingTitle}`,
@@ -4525,7 +4538,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'private_arrange_reminder',
       title: 'Still need to confirm receipt',
-      body: `${d.listingTitle} - please confirm you received it. If it never arrived, raise a dispute. Funds auto-release to the seller 5 days after payment.`,
+      body: `Please confirm you received ${d.listingTitle}. If it never arrived, report it. Payment auto-releases 5 days after payment.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4538,15 +4551,15 @@ export class NotificationsService {
       this.email({
         status: { tone: 'pending', label: 'Reminder' },
         headline: 'Please confirm you received your item',
-        body: `Hi ${b(d.buyerName)}, we haven't heard from you about ${b(d.listingTitle)}. Please confirm receipt — the payment auto-releases to the seller 5 days after you paid. If it never arrived, raise a dispute instead; for condition or description issues, message the seller from the order page.`,
+        body: `Hi ${b(d.buyerName)}, please confirm you received ${b(d.listingTitle)}. Payment auto-releases in 5 days — if it never arrived, report it instead.`,
         rows: [{ label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() }],
-        cta: { label: 'Confirm receipt or dispute', url },
+        cta: { label: 'Confirm receipt', url },
         preheader: `Reminder: confirm receipt of ${d.listingTitle}`,
       }),
     );
     await this.sendSms(
       d.buyerPhone,
-      `ALL Outdoor: please confirm you received ${truncate(d.listingTitle, 30)} (or dispute if it never arrived). Payment auto-releases to the seller 5 days after payment.${d.actionUrl ? ` Open: ${d.actionUrl}` : ''}`,
+      `ALL Outdoor: confirm you received ${truncate(d.listingTitle, 30)} — payment auto-releases in 5 days.${d.actionUrl ? ` ${d.actionUrl}` : ''}`,
       `pa-reminder-${d.transactionId}`,
       {
         whatsapp: {
@@ -4558,11 +4571,94 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // A handover dispute was reported. BOTH parties are told, in one short
+  // message each: the seller must know her money is frozen, and the buyer must
+  // know confirming receipt is how to withdraw a mistake. Until 2026-11-24 this
+  // event was silent (admin alert only) and the seller found out by surprise.
+  // ---------------------------------------------------------------
+  async privateArrangeDisputed(d: {
+    listingTitle: string;
+    transactionId: string;
+    raisedByBuyer: boolean;
+    buyer: { email: string; firstName: string | null; phone: string | null };
+    seller: { email: string; firstName: string | null; phone: string | null };
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const ref = d.transactionId.slice(-8).toUpperCase();
+    const buyerName = d.buyer.firstName ?? 'there';
+    const sellerName = d.seller.firstName ?? 'there';
+    const buyerBody = d.raisedByBuyer
+      ? `We've frozen the payment for ${d.listingTitle} while we review your report. If you did get the item, tap "I received it" to release it.`
+      : `The seller reported that ${d.listingTitle} was not handed over. Payment is frozen while we review. If you did get the item, tap "I received it".`;
+    const sellerBody = d.raisedByBuyer
+      ? `The buyer reported that ${d.listingTitle} was not handed over. Payment is frozen until support finishes reviewing.`
+      : `You reported that ${d.listingTitle} was not handed over. Payment stays frozen while support reviews it.`;
+
+    await this.persistByEmail(d.buyer.email, {
+      category: 'BUYER',
+      type: 'private_arrange_disputed',
+      title: 'Handover under review',
+      body: buyerBody,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    await this.send(
+      d.buyer.email,
+      'Handover dispute — ' + d.listingTitle,
+      this.email({
+        status: { tone: 'pending', label: 'Under review' },
+        headline: d.raisedByBuyer ? 'Report received' : 'Handover under review',
+        body: `Hi ${b(buyerName)}, ${buyerBody}`,
+        rows: [{ label: 'Reference', value: ref }],
+        cta: { label: 'View order', url: txUrl },
+        preheader: `Handover dispute — ${d.listingTitle}`,
+      }),
+    );
+    await this.sendSms(
+      d.buyer.phone,
+      `ALL Outdoor: payment for ${truncate(d.listingTitle, 28)} is frozen while we review the handover report. Got the item? Tap "I received it": ${txUrl}`,
+      `pa-dispute-buyer-${d.transactionId}`,
+    );
+
+    await this.persistByEmail(d.seller.email, {
+      category: 'SELLER',
+      type: 'private_arrange_disputed',
+      title: 'Handover under review',
+      body: sellerBody,
+      url: txUrl,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    await this.send(
+      d.seller.email,
+      'Handover dispute — ' + d.listingTitle,
+      this.email({
+        status: { tone: 'pending', label: 'Payout frozen' },
+        headline: 'Handover under review',
+        body: `Hi ${b(sellerName)}, ${sellerBody}`,
+        rows: [{ label: 'Reference', value: ref }],
+        cta: { label: 'View sale', url: txUrl },
+        preheader: `Handover dispute — ${d.listingTitle}`,
+      }),
+    );
+    await this.sendSms(
+      d.seller.phone,
+      `ALL Outdoor: ${truncate(d.listingTitle, 28)} — a handover report was raised, so the payout is frozen while support reviews it. ${txUrl}`,
+      `pa-dispute-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // PRIVATE_ARRANGE — buyer waived payment protection + opted into a peer
-  // arrangement. Two emails go out (one to each party) with the
-  // OTHER party's contact details so they can coordinate the SAPS
-  // dealer meet. Buyer also gets an SMS with the seller's name +
-  // phone since that's the bit they'll act on first.
+  // arrangement. The seller gets their own handover mail from
+  // privateArrangeSellerHandover (which carries the action link), so this
+  // method sends only the BUYER the seller's contact details — one accept must
+  // not produce two emails to the same person.
   // ---------------------------------------------------------------
   async privateArrangeContactReveal(d: {
     listingTitle: string;
@@ -4616,7 +4712,7 @@ export class NotificationsService {
     const buyerHtml = this.email({
       status: { tone: 'pending', label: 'Awaiting handover' },
       headline: 'Arrange the handover',
-      body: `Hi ${b(buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. Your payment is held by ALL Outdoor until you confirm the handover (or 5 days after payment if there is no dispute). Contact the seller and arrange to meet ${where}. After the handover, the seller marks it delivered and you confirm receipt to release payment. If the seller never hands the item over, raise a dispute from the order page and you are refunded in full. Condition or description issues are between you and the seller.`,
+      body: `Hi ${b(buyerName)}, ${b(sellerName)} accepted ${b(d.listingTitle)}. Meet ${where}, then tap <b>I received it</b> on the order to release the payment. If it was never handed over, report it instead — you are refunded in full.`,
       rows: buyerRows,
       cta: { label: 'View order', url },
       preheader: `Seller contact details for ${d.listingTitle}`,
@@ -4628,7 +4724,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyer.phone,
-      `ALL Outdoor: Seller ${sellerName}${d.seller.phone ? ' - ' + d.seller.phone : ''}${d.seller.email ? ' - ' + d.seller.email : ''}. Arrange the handover for ${truncate(d.listingTitle, 28)}. Confirm after delivery: ${txUrl}`,
+      `ALL Outdoor: ${sellerName}${d.seller.phone ? ' - ' + d.seller.phone : ''}${d.seller.email ? ' - ' + d.seller.email : ''}. Meet for ${truncate(d.listingTitle, 26)}; confirm after: ${txUrl}`,
       `pa-buyer-${d.transactionId}`,
       {
         whatsapp: {
@@ -4647,7 +4743,7 @@ export class NotificationsService {
       category: 'BUYER',
       type: 'private_arrange_handover',
       title: 'Seller accepted - arrange the handover',
-      body: `${d.listingTitle}: seller ${sellerName}${d.seller.phone ? ', ' + d.seller.phone : ''}, ${d.seller.email}. Arrange the meet; confirm receipt after delivery.`,
+      body: `Meet ${sellerName}${d.seller.phone ? ' (' + d.seller.phone + ')' : ''} for ${d.listingTitle}. Tap "I received it" after the handover.`,
       url,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -4655,35 +4751,10 @@ export class NotificationsService {
       dismissible: false,
     });
 
-    // Email to the SELLER — reveals BUYER details + the held-payout note.
-    const sellerRows: { label: string; value: string }[] = [
-      { label: 'Buyer name', value: buyerName },
-    ];
-    if (d.buyer.phone) {
-      sellerRows.push({ label: 'Buyer phone', value: d.buyer.phone });
-    }
-    sellerRows.push({ label: 'Buyer email', value: d.buyer.email });
-    sellerRows.push({ label: 'Payout on handover', value: formatRand(d.sellerPayout) });
-    const sellerHtml = this.email({
-      status: { tone: 'pending', label: 'Awaiting handover' },
-      headline: 'Arrange the handover',
-      body: `Hi ${b(sellerName)}, ${b(buyerName)} has bought your listing ${b(d.listingTitle)}. Payment of ${b(formatRand(d.sellerPayout))} is held by ALL Outdoor until the buyer confirms the handover (or 5 days after payment if there is no dispute). Contact the buyer and arrange to meet ${where}. Tap the handover link when you have handed the item over.`,
-      rows: sellerRows,
-      cta: { label: 'View sale', url: txUrl },
-      preheader: `${buyerName} bought ${d.listingTitle} — payment held until handover`,
-    });
-    await this.send(
-      d.seller.email,
-      'New sale (in-person handover) — ' + d.listingTitle,
-      sellerHtml,
-    );
-    await this.sendSms(
-      d.seller.phone,
-      `ALL Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment is held until the buyer confirms the handover. Arrange the meet.`,
-      `pa-seller-${d.transactionId}`,
-    );
-
-
+    // The SELLER's copy of this event is privateArrangeSellerHandover() — it
+    // carries the buyer's contact details AND the one-tap handover link. Do not
+    // add a second seller email/SMS here: on 2026-11-24 one accept produced two
+    // seller emails, which is exactly the clutter that buries the action.
   }
 
   // ---------------------------------------------------------------
@@ -6426,7 +6497,10 @@ function prettyShippingMethod(method: string | null | undefined): string {
     case 'DEALER_TRANSFER':
       return 'Dealer stock transfer';
     case 'PRIVATE_ARRANGE':
-      return 'Arrange privately at a dealer';
+      // Not "at a dealer": the same rail is used for accessories handed over at
+      // a coffee shop. The shape is an in-person handover either way. (2026-11-24
+      // a R10 scope-covers sale told the buyer "Arrange privately at a dealer".)
+      return 'Meet in person';
     default:
       return method.replace(/_/g, ' ').toLowerCase();
   }
