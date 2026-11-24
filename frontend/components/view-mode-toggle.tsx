@@ -102,11 +102,12 @@ function ToggleView({
           left: 0,
           width: indicator.width,
           borderRadius: 999,
-          // bg-card-hover, not bg-card: on the dark theme the card colour is
-          // only two shades off the track and the pill disappeared. This is
-          // still neutral ink, not the Sell accent.
-          background: 'var(--bg-card-hover)',
-          border: '1px solid var(--border-hover)',
+          // The selected segment is the theme action accent, diluted so it
+          // stays a pill rather than a second solid CTA: electric blue on the
+          // dark theme, veld ochre/brown on the light one. Keeping it
+          // translucent lets the track show through (operator, 2026-11-24).
+          background: 'color-mix(in srgb, var(--red) 22%, transparent)',
+          border: '1px solid var(--red-line)',
           transform: `translateX(${indicator.left}px)`,
           opacity: indicator.width > 0 ? 1 : 0,
         }}

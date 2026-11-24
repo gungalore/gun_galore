@@ -7,10 +7,8 @@
 // only previewed and can be removed or replaced with a manual upload. The page
 // URL is shown so the member can see exactly what we'll send.
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@/lib/auth';
-import { SUPPORT_EMAIL } from '@/lib/brand';
 import { submitBugReport } from '@/lib/bug-reports-api';
 
 // Keys MUST match BUG_CATEGORIES in backend/src/bugs/bugs.service.ts.
@@ -59,6 +57,11 @@ export function BugReportForm({
     /\/licence-centre\//.test(url) ? 'MOTIVATIONS' : 'BUY_NOW',
   );
   const [description, setDescription] = useState('');
+  // Public-reporter contact + bot trap. The email is optional; the honeypot
+  // must stay empty and the elapsed time must clear the server's floor.
+  const [email, setEmail] = useState('');
+  const [honeypot, setHoneypot] = useState('');
+  const [startedAt] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -101,7 +104,17 @@ export function BugReportForm({
     try {
       const token = await getToken();
       await submitBugReport(
-        { category, description: description.trim(), url, screenshot },
+        {
+          category,
+          description: description.trim(),
+          url,
+          screenshot,
+          // Signed-in reports carry the account email server-side; the public
+          // form offers an optional reply address instead.
+          email: isSignedIn ? undefined : email.trim() || undefined,
+          honeypot,
+          elapsedMs: Date.now() - startedAt,
+        },
         token,
       );
       setDone(true);
@@ -114,22 +127,6 @@ export function BugReportForm({
 
   const labelClass =
     'block text-xs font-semibold mb-1 text-[var(--text-secondary)]';
-
-  if (isLoaded && !isSignedIn) {
-    return (
-      <p className="text-sm text-[var(--text-secondary)] m-0">
-        Please{' '}
-        <Link href="/sign-in" className="text-[var(--red)]">
-          sign in
-        </Link>{' '}
-        to report a bug, so we can tie it to your account. You can also email{' '}
-        <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[var(--red)]">
-          {SUPPORT_EMAIL}
-        </a>
-        .
-      </p>
-    );
-  }
 
   if (done) {
     return (
@@ -169,6 +166,46 @@ export function BugReportForm({
             </option>
           ))}
         </select>
+      </div>
+
+      {isLoaded && !isSignedIn && (
+        <div>
+          <label className={labelClass}>Email (optional — for a reply)</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            maxLength={254}
+            autoComplete="email"
+            placeholder="you@example.com"
+            className="w-full px-3 py-2 rounded-md text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)]"
+          />
+        </div>
+      )}
+
+      {/* Bot trap. Off-screen and tab-skipped; a human never sees or fills it.
+          The server treats a non-empty value as a silent discard. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: '-10000px',
+          width: 1,
+          height: 1,
+          overflow: 'hidden',
+        }}
+      >
+        <label>
+          Leave this field empty
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            value={honeypot}
+            onChange={(e) => setHoneypot(e.target.value)}
+          />
+        </label>
       </div>
 
       <div>

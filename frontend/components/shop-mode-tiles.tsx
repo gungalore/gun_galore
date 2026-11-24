@@ -203,19 +203,25 @@ export function ShopModeBar() {
       ref={barRef}
       data-shop-mode-bar
       data-shop-scope={isTabRoute(pathname) ? 'tabs' : 'tabs-only'}
+      data-signed-out={canOpenArmory ? undefined : 'true'}
     >
       <nav
         aria-label="Quick actions"
         className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px]"
       >
         <div className="gg-quick-actions">
-          <Link href="/listings/new" className="gg-quick-action gg-press">
-            Sell your gear
-          </Link>
-          <Link href={motivationHref} className="gg-quick-action gg-press">
+          {/* PWA only. On desktop/tablet this lives beside Explore Gear in the
+              hero; repeating it under the nav would be the duplicate the
+              move was meant to remove. */}
+          <Link
+            href={motivationHref}
+            className="gg-quick-action gg-quick-action-mobile gg-press"
+          >
             Motivation Creator
           </Link>
-          {canOpenArmory ? (
+          {/* Armory is member-only; it is deliberately absent signed out so
+              no restricted member-tool vocabulary reaches a public crawler. */}
+          {canOpenArmory && (
             <button
               type="button"
               aria-expanded={open}
@@ -226,10 +232,6 @@ export function ShopModeBar() {
               Armory
               <Caret open={open} />
             </button>
-          ) : (
-            <Link href="/account" className="gg-quick-action gg-press">
-              Armory
-            </Link>
           )}
         </div>
       </nav>

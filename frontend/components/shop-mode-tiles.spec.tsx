@@ -4,11 +4,12 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ShopModeBar } from './shop-mode-tiles';
 
 // ────────────────────────────────────────────────────────────────────
-// The bar is now three label-only quick actions, not four described boxes.
+// The bar is now label-only quick actions, not described boxes.
 // The assertions that matter:
 //   * it still hides on fine-print/checkout routes;
-//   * signed out, Armory is a link to the auth wall (no member panel);
-//   * signed in, Armory is a disclosure with three described child buttons;
+//   * signed out, it offers Motivation Creator only — no Sell, no Armory;
+//   * signed in, Motivation Creator sits beside the Armory disclosure;
+//   * Armory opens three described child buttons;
 //   * there is exactly one Motivation Creator entry.
 // ────────────────────────────────────────────────────────────────────
 
@@ -30,19 +31,23 @@ beforeEach(() => {
 });
 
 describe('ShopModeBar — where it hides itself', () => {
-  it('renders the three quick actions on the landing page', () => {
+  it('signed out: only Motivation Creator, with no Sell and no Armory', () => {
     render(<ShopModeBar />);
     const bar = screen.getByRole('navigation', { name: 'Quick actions' });
 
-    expect(within(bar).getByRole('link', { name: 'Sell your gear' }).getAttribute('href')).toBe(
-      '/listings/new',
-    );
+    const motivation = within(bar).getByRole('link', {
+      name: 'Motivation Creator',
+    });
+    expect(motivation.getAttribute('href')).toBe('/motivation');
+    // This is the PWA fallback; desktop gets the button beside Explore Gear.
+    expect(motivation.className).toContain('gg-quick-action-mobile');
+    expect(within(bar).queryByRole('link', { name: 'Sell your gear' })).toBeNull();
+    expect(within(bar).queryByRole('link', { name: 'Armory' })).toBeNull();
+    expect(within(bar).queryByRole('button', { name: /Armory/i })).toBeNull();
+    // The desktop-only empty band is hidden by CSS on data-signed-out.
     expect(
-      within(bar).getByRole('link', { name: 'Motivation Creator' }).getAttribute('href'),
-    ).toBe('/motivation');
-    expect(within(bar).getByRole('link', { name: 'Armory' }).getAttribute('href')).toBe(
-      '/account',
-    );
+      bar.closest('[data-shop-mode-bar]')?.getAttribute('data-signed-out'),
+    ).toBe('true');
   });
 
   it('carries no descriptions on the top-level buttons', () => {
@@ -56,7 +61,7 @@ describe('ShopModeBar — where it hides itself', () => {
     nav.path = '/terms';
     const { container } = render(<ShopModeBar />);
     expect(container.querySelector('[data-shop-mode-bar]')).toBeNull();
-    expect(screen.queryByText('Sell your gear')).toBeNull();
+    expect(screen.queryByText('Motivation Creator')).toBeNull();
   });
 
   it('is absent on /privacy', () => {
@@ -104,12 +109,20 @@ describe('ShopModeBar — the member Armory disclosure', () => {
     expect(screen.queryByText(/Reloading Tool/i)).toBeNull();
   });
 
-  it('signed in: Motivation Creator goes straight to the application', () => {
+  it('signed in: Motivation Creator goes straight to the application, beside Armory', () => {
     auth.isSignedIn = true;
     render(<ShopModeBar />);
+    const bar = screen.getByRole('navigation', { name: 'Quick actions' });
     expect(
-      screen.getByRole('link', { name: 'Motivation Creator' }).getAttribute('href'),
+      within(bar)
+        .getByRole('link', { name: 'Motivation Creator' })
+        .getAttribute('href'),
     ).toBe('/licence-centre/applications');
+    expect(within(bar).getByRole('button', { name: /Armory/i })).toBeInTheDocument();
+    expect(within(bar).queryByRole('link', { name: 'Sell your gear' })).toBeNull();
+    expect(
+      bar.closest('[data-shop-mode-bar]')?.getAttribute('data-signed-out'),
+    ).toBeNull();
   });
 
   it('opens three child buttons with their descriptions inside the button', () => {

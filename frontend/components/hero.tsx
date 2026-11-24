@@ -6,6 +6,7 @@
 import Link from 'next/link';
 import { av } from '@/lib/asset-version';
 import { HeroVideo } from './hero-video';
+import { HeroMotivationButton } from './hero-motivation-button';
 
 export function Hero() {
   return (
@@ -273,6 +274,10 @@ export function Hero() {
             transition: background-color var(--dur-fast) var(--ease-standard);
           }
           .hero-cta:hover { background: var(--red-hover) !important; }
+          .hero-motivation {
+            transition: background-color var(--dur-fast) var(--ease-standard);
+          }
+          .hero-motivation:hover { background: rgba(255,255,255,0.12) !important; }
         }
 
         .hero-reveal { opacity: 1; transform: translateX(0); }
@@ -354,33 +359,29 @@ export function Hero() {
               On phones the hero is hidden and the mobile-only band below still
               carries the same claim. */}
 
-          {/* ONE call to action. The hero briefly carried a second button
-              and flipped its primary to "List your first item" while the
-              catalogue was empty; that put the selling flow in the loudest
-              position on the site and made the landing page read as a
-              recruitment pitch (operator, 2026-08-16). Selling now lives in
-              the nav and in the disclosure panel further down. One button,
-              buyer-facing, is also simply the cleaner composition. */}
-          {/* self-start matters: the parent is now a flex COLUMN, so a child
-              would stretch to full width and the button would run the length
-              of the copy block. inline-flex alone does not prevent that —
-              flex items stretch on the cross axis by default. */}
-          <Link
-            href="/?listingType=BUY_NOW"
-            className="hero-cta gg-press hero-reveal hero-reveal-3 self-start inline-flex items-center justify-center text-sm"
-            style={{
-              background: 'var(--red)',
-              color: '#fff',
-              fontWeight: 600,
-              textDecoration: 'none',
-              height: 46,
-              padding: '0 32px',
-              borderRadius: 'var(--r-sm)',
-              letterSpacing: '0.01em',
-            }}
-          >
-            Explore Gear
-          </Link>
+          {/* Two actions, one primary. Explore Gear opens the ALL-listing feed,
+              not the fixed-price surface; Motivation Creator sits beside it
+              (operator, 2026-11-24). The pair is one flex row so they share a
+              baseline and wrap together on a narrow desktop/tablet. */}
+          <div className="hero-reveal hero-reveal-3 self-start flex flex-wrap items-center gap-2">
+            <Link
+              href="/?sort=newest"
+              className="hero-cta gg-press inline-flex items-center justify-center text-sm"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 600,
+                textDecoration: 'none',
+                height: 46,
+                padding: '0 32px',
+                borderRadius: 'var(--r-sm)',
+                letterSpacing: '0.01em',
+              }}
+            >
+              Explore Gear
+            </Link>
+            <HeroMotivationButton />
+          </div>
 
           {/* Seller proof, demoted to two inline trust badges under the CTA.
               "on Marketplace" is load-bearing: the seller receives their full ask

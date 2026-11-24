@@ -430,8 +430,8 @@ export interface BugReportDetails {
   category: string;
   /** The member's free-text description (already length-checked upstream). */
   description: string;
-  /** User id of the reporter — never a real name. */
-  reporterId: string;
+  /** User id of the reporter — never a real name. Null for a signed-out report. */
+  reporterId: string | null;
   /**
    * The member's public handle (@name), so support can find them in the logs
    * without holding a cuid. Optional so older callers still compile.
@@ -5017,13 +5017,15 @@ export class NotificationsService {
   // error is logged and swallowed, never thrown back at the member.
   // ---------------------------------------------------------------
   async bugReport(d: BugReportDetails): Promise<void> {
-    const who = d.reporterUsername ? `@${d.reporterUsername}` : d.reporterId;
+    const who = d.reporterUsername
+      ? `@${d.reporterUsername}`
+      : (d.reporterId ?? 'Guest (signed out)');
     const activity = (d.activity ?? '').trim();
     const html = this.email({
       status: { tone: 'pending', label: 'Bug report' },
       headline: 'New bug report',
       body:
-        `A member reported a problem under ${b(d.category)}.<br><br><strong>What they said:</strong><br>${escapeHtml(
+        `${d.reporterId ? 'A member' : 'A signed-out visitor'} reported a problem under ${b(d.category)}.<br><br><strong>What they said:</strong><br>${escapeHtml(
           d.description,
         ).replace(/\n/g, '<br>')}` +
         (activity
@@ -5037,7 +5039,7 @@ export class NotificationsService {
         // it is what the member knows, what the admin people search takes, and
         // what the activity log is indexed by.
         { label: 'Member', value: who },
-        { label: 'User id', value: d.reporterId },
+        { label: 'User id', value: d.reporterId ?? '—' },
         { label: 'Email', value: d.reporterEmail ?? '—' },
         { label: 'Motivation', value: d.motivationRef ?? '—' },
         // The operator's own way into the log. Sign-in required; the page takes

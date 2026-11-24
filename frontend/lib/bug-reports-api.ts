@@ -11,6 +11,12 @@ export interface BugReportInput {
   /** The page the member was on when they reported it. */
   url?: string;
   screenshot?: File | null;
+  /** Optional reply address when the reporter is signed out. */
+  email?: string;
+  /** Bot trap: must stay empty. */
+  honeypot?: string;
+  /** Milliseconds between the form mounting and Send; server enforces a floor. */
+  elapsedMs?: number;
 }
 
 export interface BugReportResult {
@@ -26,6 +32,11 @@ export async function submitBugReport(
   form.append('description', input.description);
   if (input.url) form.append('url', input.url);
   if (input.screenshot) form.append('screenshot', input.screenshot);
+  if (input.email) form.append('email', input.email);
+  if (input.honeypot !== undefined) form.append('honeypot', input.honeypot);
+  if (input.elapsedMs !== undefined) {
+    form.append('elapsedMs', String(input.elapsedMs));
+  }
 
   const res = await fetch(`${API_URL}/bugs/report`, {
     method: 'POST',

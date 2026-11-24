@@ -55,6 +55,7 @@ describe('BugsService', () => {
 
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'MOTIVATIONS',
       description: 'The write button did nothing at all.',
       url: MOTIVATION_URL,
@@ -78,6 +79,7 @@ describe('BugsService', () => {
     });
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'MOTIVATIONS',
       description: 'The write button did nothing at all.',
       url: MOTIVATION_URL,
@@ -97,6 +99,7 @@ describe('BugsService', () => {
     });
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'MOTIVATIONS',
       description: 'The write button did nothing at all.',
       url: MOTIVATION_URL,
@@ -109,6 +112,7 @@ describe('BugsService', () => {
     const { service, notifications } = makeService();
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'buy_now',
       description: 'The checkout button does nothing at all.',
       url: 'https://alloutdoor.co.za/listings/abc',
@@ -126,6 +130,7 @@ describe('BugsService', () => {
     const { service, notifications } = makeService();
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'OTHER',
       description: 'Something is broken here.',
       url: 'javascript:alert(1)',
@@ -137,6 +142,7 @@ describe('BugsService', () => {
     const { service, notifications } = makeService();
     await service.report({
       userId: 'u1',
+      elapsedMs: 5000,
       category: 'PAYMENT',
       description: 'Payment failed but I was charged twice.',
       screenshot: { buffer: Buffer.from('x'), mimetype: 'image/png' },
@@ -152,6 +158,7 @@ describe('BugsService', () => {
     await expect(
       service.report({
         userId: 'u1',
+        elapsedMs: 5000,
         category: 'NOPE',
         description: 'Something is broken here.',
       }),
@@ -162,8 +169,72 @@ describe('BugsService', () => {
   it('rejects a too-short description', async () => {
     const { service } = makeService();
     await expect(
-      service.report({ userId: 'u1', category: 'OTHER', description: 'oops' }),
+      service.report({
+        userId: 'u1',
+        elapsedMs: 5000,
+        category: 'OTHER',
+        description: 'oops',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('silently discards a filled honeypot', async () => {
+    const { service, notifications } = makeService();
+    await expect(
+      service.report({
+        userId: 'u1',
+        elapsedMs: 5000,
+        honeypot: 'https://spam.example',
+        category: 'OTHER',
+        description: 'Something is broken here.',
+      }),
+    ).resolves.toEqual({ received: true });
+    expect(notifications.bugReport).not.toHaveBeenCalled();
+  });
+
+  it('rejects a form submitted too fast', async () => {
+    const { service, notifications } = makeService();
+    await expect(
+      service.report({
+        userId: 'u1',
+        elapsedMs: 100,
+        category: 'OTHER',
+        description: 'Something is broken here.',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(notifications.bugReport).not.toHaveBeenCalled();
+  });
+
+  it('accepts a signed-out report with an optional email and no account lookup', async () => {
+    const { service, notifications, prisma, activity } = makeService();
+    await service.report({
+      elapsedMs: 5000,
+      email: 'visitor@example.co.za',
+      category: 'OTHER',
+      description: 'Something is broken here.',
+      url: 'https://alloutdoor.co.za/',
+    });
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(activity.forUser).not.toHaveBeenCalled();
+    const arg = notifications.bugReport.mock.calls[0][0];
+    expect(arg.reporterId).toBeNull();
+    expect(arg.reporterUsername).toBeNull();
+    expect(arg.reporterEmail).toBe('visitor@example.co.za');
+    expect(arg.activity).toBeNull();
+  });
+
+  it('rejects an invalid signed-out email', async () => {
+    const { service, notifications } = makeService();
+    await expect(
+      service.report({
+        elapsedMs: 5000,
+        email: 'not-an-email',
+        category: 'OTHER',
+        description: 'Something is broken here.',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(notifications.bugReport).not.toHaveBeenCalled();
   });
 });
 

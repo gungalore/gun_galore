@@ -10,17 +10,18 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { memoryStorage } from 'multer';
-import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { BugsService } from './bugs.service';
 
-// Member-initiated bug reports. Signed-in only (ties a report to an account
-// and cuts spam — same stance as ReportsController) and tightly throttled;
-// reporting is rare per member. The screenshot is held in memory and streamed
-// straight into the operator email, never written to disk.
+// Bug reports are accepted from members AND from signed-out visitors
+// (operator, 2026-11-24). Optional auth attaches the member when a session is
+// present; the public path is defended by a per-IP throttle, a hidden
+// honeypot and a minimum form-fill time. The screenshot is held in memory and
+// streamed straight into the operator email, never written to disk.
 @Controller('bugs')
-@UseGuards(AuthGuard)
-@Throttle({ default: { limit: 5, ttl: 60_000 } })
+@UseGuards(OptionalAuthGuard)
+@Throttle({ default: { limit: 5, ttl: 600_000 } })
 export class BugsController {
   constructor(private readonly bugs: BugsService) {}
 
@@ -32,8 +33,16 @@ export class BugsController {
     }),
   )
   report(
-    @CurrentUser() userId: string,
-    @Body() body: { category?: string; description?: string; url?: string },
+    @CurrentUser() userId: string | undefined,
+    @Body()
+    body: {
+      category?: string;
+      description?: string;
+      url?: string;
+      email?: string;
+      honeypot?: string;
+      elapsedMs?: string;
+    },
     @UploadedFile()
     file?: { buffer: Buffer; mimetype: string; size: number },
   ) {
@@ -47,6 +56,10 @@ export class BugsController {
       category: body?.category,
       description: body?.description,
       url: body?.url,
+      email: body?.email,
+      honeypot: body?.honeypot,
+      elapsedMs:
+        body?.elapsedMs === undefined ? undefined : Number(body.elapsedMs),
       screenshot: file ?? null,
     });
   }

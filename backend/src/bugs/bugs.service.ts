@@ -47,6 +47,10 @@ const CATEGORY_LABELS: Record<BugCategory, string> = {
 const MIN_DESCRIPTION = 10;
 const MAX_DESCRIPTION = 2000;
 const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
+/** A human cannot read the page, type 10+ chars and send in under this. */
+const MIN_FORM_MS = 1500;
+const MAX_EMAIL_LENGTH = 254;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function extensionFor(mimetype: string): string {
   if (mimetype === 'image/png') return 'png';
@@ -55,10 +59,17 @@ function extensionFor(mimetype: string): string {
 }
 
 export interface ReportBugInput {
-  userId: string;
+  /** Present only when a valid session was supplied; signed-out reports are allowed. */
+  userId?: string | null;
   category?: string;
   description?: string;
   url?: string;
+  /** Optional reply address for a signed-out reporter. */
+  email?: string;
+  /** Bot trap — must be empty. */
+  honeypot?: string;
+  /** Milliseconds from form mount to submit. */
+  elapsedMs?: number;
   screenshot?: { buffer: Buffer; mimetype: string } | null;
 }
 
@@ -100,6 +111,22 @@ export class BugsService {
   ) {}
 
   async report(input: ReportBugInput): Promise<{ received: true }> {
+    // ── Public-form anti-bot floor ────────────────────────────────────
+    // A filled honeypot is a silent discard: telling the bot which field gave
+    // it away only teaches the next one. The time gate and per-IP throttle are
+    // in the controller/decorator; this is the cheap first line.
+    if ((input.honeypot ?? '').trim().length > 0) {
+      return { received: true };
+    }
+    if (
+      !Number.isFinite(input.elapsedMs) ||
+      (input.elapsedMs as number) < MIN_FORM_MS
+    ) {
+      throw new BadRequestException(
+        'Please take a moment to check the report and try again.',
+      );
+    }
+
     const category = (input.category ?? '').trim().toUpperCase();
     if (!(BUG_CATEGORIES as readonly string[]).includes(category)) {
       throw new BadRequestException('Choose a valid category.');
@@ -124,51 +151,71 @@ export class BugsService {
 
     const url = cleanUrl(input.url);
 
+    // Signed-out reports may leave an email; members are identified by their
+    // account, so their form value is ignored. An invalid public email is a
+    // typo the visitor can fix, not a reason to lose the report.
+    const publicEmail = (input.email ?? '').trim();
+    if (
+      !input.userId &&
+      publicEmail &&
+      (publicEmail.length > MAX_EMAIL_LENGTH || !EMAIL_RE.test(publicEmail))
+    ) {
+      throw new BadRequestException(
+        'Enter a valid email address, or leave it blank.',
+      );
+    }
+
     // ⚠️ THE HANDLE IS THE SUPPORT KEY. Username is public and searchable; the
     // cuid is not something a member can give a human on the phone.
-    const user = await this.prisma.user.findUnique({
-      where: { id: input.userId },
-      select: { username: true, email: true },
-    });
+    const user = input.userId
+      ? await this.prisma.user.findUnique({
+          where: { id: input.userId },
+          select: { username: true, email: true },
+        })
+      : null;
 
-    // Find the application the report is about, and prove it is theirs before
-    // a single activity row is read.
-    const motivationId = motivationIdFromUrl(url);
+    // Signed-out reports have no account timeline to attach. Member reports
+    // still get the motivation steps that make a 22:00 bug actionable.
     let motivationRef: string | null = null;
     let timeline = '';
-    if (motivationId) {
-      const motivation = await this.prisma.motivation.findFirst({
-        where: { id: motivationId, userId: input.userId },
-        select: { referenceNumber: true },
-      });
-      if (motivation) {
-        motivationRef = motivation.referenceNumber;
-        const rows = await this.activity.forMotivation(motivationId, 60);
-        timeline = MotivationActivityService.formatTimeline(rows);
-        // The report itself is part of the trail: support sees "member filed a
-        // bug" at the end of the very timeline it describes.
-        void this.activity.record({
-          motivationId,
-          motivationRef,
-          userId: input.userId,
-          action: 'bug_reported',
-          detail: { category },
+    if (input.userId) {
+      const motivationId = motivationIdFromUrl(url);
+      if (motivationId) {
+        const motivation = await this.prisma.motivation.findFirst({
+          where: { id: motivationId, userId: input.userId },
+          select: { referenceNumber: true },
         });
+        if (motivation) {
+          motivationRef = motivation.referenceNumber;
+          const rows = await this.activity.forMotivation(motivationId, 60);
+          timeline = MotivationActivityService.formatTimeline(rows);
+          // The report itself is part of the trail: support sees "member filed
+          // a bug" at the end of the very timeline it describes.
+          void this.activity.record({
+            motivationId,
+            motivationRef,
+            userId: input.userId,
+            action: 'bug_reported',
+            detail: { category },
+          });
+        }
       }
-    }
-    if (!timeline) {
-      // Not on a motivation page (or not theirs): a member-level tail still
-      // beats nothing.
-      const rows = await this.activity.forUser(input.userId, 25);
-      timeline = rows.length ? MotivationActivityService.formatTimeline(rows) : '';
+      if (!timeline) {
+        // Not on a motivation page (or not theirs): a member-level tail still
+        // beats nothing.
+        const rows = await this.activity.forUser(input.userId, 25);
+        timeline = rows.length
+          ? MotivationActivityService.formatTimeline(rows)
+          : '';
+      }
     }
 
     await this.notifications.bugReport({
       category: CATEGORY_LABELS[category as BugCategory],
       description,
-      reporterId: input.userId,
+      reporterId: input.userId ?? null,
       reporterUsername: user?.username ?? null,
-      reporterEmail: user?.email ?? null,
+      reporterEmail: input.userId ? (user?.email ?? null) : publicEmail || null,
       motivationRef,
       url,
       activity: timeline || null,

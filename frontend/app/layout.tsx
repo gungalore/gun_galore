@@ -9,6 +9,7 @@ import { SiteFooter } from '@/components/site-footer';
 import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
 import { InstallPrompt } from '@/components/install-prompt';
 import { AvatarLightbox } from '@/components/avatar-lightbox';
+import { BugReportFab } from '@/components/bug-report/bug-report-fab';
 import { ImageProtection } from '@/components/image-protection';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { AppShell } from '@/components/shell/app-shell';
@@ -451,10 +452,10 @@ export default function RootLayout({
           {/* SMS-arrival welcome banner — self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
-          {/* The floating desktop "Report a bug" button lived here. It was
-              removed (operator, 2026-11-23): it sat in the bottom-right thumb
-              zone on every page. The action now lives in the footer and the
-              account menu; the mobile bottom-bar Report tab is unchanged. */}
+          {/* Floating "Report a bug" — visible signed in and signed out. On
+              phones/PWA it clears the tab bar and home indicator; the server
+              rejects bot-shaped public submissions. */}
+          <BugReportFab />
           </BugReportProvider>
           </WishlistProvider>
         </body>

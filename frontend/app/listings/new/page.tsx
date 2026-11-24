@@ -149,7 +149,7 @@ function formatRand(cents: number): string {
 }
 
 // Coerce a stored attribute map — from a relisted listing's `attributes`
-// JSON or from a restored localStorage draft — back into the string/boolean
+// JSON — back into the string/boolean
 // shape the AttributeField inputs actually render. NUMBER attributes come
 // back as real numbers, and the text/select branches only render when
 // `typeof value === 'string'`, so without this a relisted item's numeric
@@ -530,7 +530,7 @@ export default function NewListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // True when form.categoryId holds an id that isn't in the loaded tree —
-  // a draft or relist pointing at a category that has since been deactivated.
+  // a relist pointing at a category that has since been deactivated.
   // Step 2 already refuses to complete in that state; this drives the banner
   // that tells the seller WHY, instead of leaving them staring at a picker
   // with nothing selected and a Continue button that won't respond.
@@ -682,8 +682,7 @@ export default function NewListingPage() {
   // isFirearm. The backend runs Claude vision on these and BLOCKs the
   // create (HTTP 400 with a message) on serial/holder mismatch, an
   // unreadable photo, or a licence within 30 days of expiry. The two
-  // File objects are deliberately NOT persisted to the localStorage
-  // draft (same reasoning as the listing photos — File can't serialise).
+  // File objects are deliberately never persisted (File can't serialise).
   const [serialNumber, setSerialNumber] = useState('');
   const [serialPhoto, setSerialPhoto] = useState<File | null>(null);
   const [licencePhoto, setLicencePhoto] = useState<File | null>(null);
@@ -731,21 +730,21 @@ export default function NewListingPage() {
     {},
   );
   // Attribute values waiting to be re-applied once the category they belong
-  // to is selected. Both restore paths (localStorage draft + Relist prefill)
-  // set the categoryId and the attribute values in the same tick, but the
-  // category effect below reacts to that categoryId change by clearing
-  // attrValues and refetching the defs — so a plain setAttrValues() is wiped
-  // milliseconds later. Instead both paths PARK their values here, keyed by
-  // the category the values were captured under, and the category effect
-  // claims them. Keyed (not a bare map) so a seller who restores a draft and
-  // then switches category doesn't drag the old category's answers along.
+  // to is selected. Relist prefill sets the categoryId and the attribute
+  // values in the same tick, but the category effect below reacts to that
+  // categoryId change by clearing attrValues and refetching the defs — so a
+  // plain setAttrValues() is wiped milliseconds later. Relist PARKS its
+  // values here, keyed by the category the values were captured under, and
+  // the category effect claims them. Keyed (not a bare map) so a seller who
+  // relists and then switches category doesn't drag the old category's
+  // answers along.
   const pendingAttrValuesRef = useRef<{
     categoryId: string;
     values: Record<string, string | boolean>;
   } | null>(null);
   // Delivery picks waiting for their category to land — the same problem
-  // pendingAttrValuesRef solves, one section further down the form. A restore
-  // (draft or Relist) sets shippingMethods and the categoryId in one tick, but
+  // pendingAttrValuesRef solves, one section further down the form. A relist
+  // sets shippingMethods and the categoryId in one tick, but
   // the isFirearm reset effect below fires on that category transition and
   // stamps the DEFAULT pick over the restored one: a relisted firearm silently
   // lost the PRIVATE_ARRANGE option the seller had offered last time. Keyed by
@@ -795,16 +794,10 @@ export default function NewListingPage() {
   // beyond it could be drawn dim and refuse to open. There is nothing left to
   // unlock: the whole form is on screen, so it went with the accordion.)
 
-  // ─── Draft persistence ──────────────────────────────────────────
-  // Multi-step accordion + photo upload + Claude moderation = the
-  // form is a long-haul commitment for sellers. Without this an
-  // accidental refresh wipes everything (which actually happens —
-  // photo-upload failures auto-delete the listing, the seller is
-  // then stuck retyping the description). Save everything except
-  // photos (File objects don't serialize) to localStorage on every
-  // change; restore on mount; clear on successful publish.
-  const draftKey = 'gg-listing-new-draft';
-  const [draftRestored, setDraftRestored] = useState(false);
+  // ⚠️ NO DRAFT PERSISTENCE (operator, 2026-11-24). The form used to mirror
+  // itself into localStorage and restore on mount. That is deliberately gone:
+  // a reload starts a clean listing, and the old "Draft restored" banner and
+  // Discard control went with it. Relist prefill is separate and still works.
 
   // Relist prefill — one-shot. The 'Relist' CTA on /my/listings routes here
   // with ?relistFrom=<sourceListingId>. Fetch that listing (public detail
@@ -812,25 +805,14 @@ export default function NewListingPage() {
   // description, category + attributes. Photos are File objects and can't be
   // carried over — the seller re-uploads them (the form already requires
   // that). Price/reserve are seeded from the source; the seller can lower
-  // them (the NO_BIDS/NO_RESERVE copy tells them to). We gate on an empty
-  // draft so a live draft-restore always wins and a relist never clobbers a
-  // half-finished listing.
+  // them (the NO_BIDS/NO_RESERVE copy tells them to).
   const searchParams = useSearchParams();
   const relistFromId = searchParams.get('relistFrom');
   const relistDoneRef = useRef(false);
-  // Whether a saved draft already existed when the page mounted. MUST be
-  // captured on the relist effect's first pass: that effect now waits for
-  // Clerk (see below), and by the time Clerk resolves the save effect further
-  // down has already written this session's own — empty — form to the same
-  // localStorage key. Re-reading the key at that point would always look like
-  // a live draft and the relist would silently seed nothing at all. Effects
-  // run in declaration order, and this one is declared above the save effect,
-  // so the first read is the honest one.
-  const draftAtMountRef = useRef<boolean | null>(null);
   // True once a relist actually seeded the form. Drives the "details carried
-  // over" notice AND the step-lock exception below — without a visible cue,
-  // a seller who lands on a form where Steps 2-4 are already open and filled
-  // has no idea where the answers came from or what still needs their eyes.
+  // over" notice — without a visible cue, a seller who lands on a form where
+  // Steps 2-4 are already open and filled has no idea where the answers came
+  // from or what still needs their eyes.
   const [relistPrefilled, setRelistPrefilled] = useState(false);
   // Set when a BUY_NOW relist couldn't carry its price across because the
   // source listing only exposes the buyer-facing (marked-up) figure. The
@@ -841,7 +823,7 @@ export default function NewListingPage() {
   // ?type=<mode> seed. A surface that sends a seller here for a SPECIFIC
   // selling mode can pre-pick it, so the seller lands on a form already set
   // to what they clicked instead of having to rediscover the mode they just
-  // asked for. One-shot, and a saved draft or a relist prefill always wins.
+  // asked for. One-shot, and a relist prefill always wins.
   // Unknown values are ignored — the Step-3 gate still requires a deliberate
   // choice.
   const typeParam = searchParams.get('type');
@@ -855,15 +837,10 @@ export default function NewListingPage() {
     const match = allowed.find((t) => t === typeParam.toUpperCase());
     if (!match) return;
     typeSeedRef.current = true;
-    if (typeof window !== 'undefined' && localStorage.getItem(draftKey)) return;
     setForm((f) => (f.listingType ? f : { ...f, listingType: match }));
-  }, [typeParam, relistFromId, draftKey]);
+  }, [typeParam, relistFromId]);
   useEffect(() => {
     if (relistDoneRef.current || !relistFromId) return;
-    // Snapshot the draft key before anything else — see draftAtMountRef.
-    if (draftAtMountRef.current === null && typeof window !== 'undefined') {
-      draftAtMountRef.current = !!localStorage.getItem(draftKey);
-    }
     // Hold until Clerk resolves. The detail fetch below now carries the
     // seller's token: reservePrice / autoAcceptThreshold / autoDeclineThreshold
     // are OWNER-gated on GET /listings/:id, so the old anonymous call quietly
@@ -872,10 +849,6 @@ export default function NewListingPage() {
     // moment isLoaded flips, so this costs the seller a tick, not a step.
     if (!isLoaded || !isSignedIn) return;
     relistDoneRef.current = true;
-    if (draftAtMountRef.current) {
-      // A saved draft takes precedence — never overwrite in-progress work.
-      return;
-    }
     (async () => {
       try {
         const token = await getToken().catch(() => null);
@@ -1038,206 +1011,11 @@ export default function NewListingPage() {
         // Source gone / network — fall through to a blank form.
       }
     })();
-  }, [relistFromId, isLoaded, isSignedIn, getToken, draftKey]);
+  }, [relistFromId, isLoaded, isSignedIn, getToken]);
 
-  // Restore on mount (one-shot ref so a re-render doesn't loop).
-  const restoredRef = useRef(false);
-  useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (!raw) return;
-      const d = JSON.parse(raw) as {
-        form?: typeof form;
-        parcel?: typeof parcel;
-        pickupAddress?: ManualAddressValue;
-        pickupLat?: number | null;
-        pickupLng?: number | null;
-        // Phase M dealer-lock — persist shipping picks + the planned-dealer
-        // parts so a PWA reload doesn't make the seller re-do them.
-        shippingMethods?: ShippingMethod[];
-        plannedDealerName?: string;
-        plannedDealerProvince?: string;
-        plannedDealerArea?: string;
-        plannedDealerAddress?: string;
-        plannedDealerPlaceId?: string;
-        plannedDealerLat?: number | null;
-        plannedDealerLng?: number | null;
-        plannedDealerPhone?: string;
-        plannedDealerWebsite?: string;
-        plannedDealerEmail?: string;
-        dealerManual?: boolean;
-        // Everything below used to be left out of the draft, which meant a
-        // PWA reload silently reset it: required specifications came back
-        // blank, a multi-unit seller's quantity fell back to 1 (they could
-        // publish single-stock without noticing), and a firearm seller had
-        // to retype the serial. All of it is plain serialisable data — only
-        // File objects (photos, licence/serial/supplier docs) can't survive.
-        attrValues?: Record<string, unknown>;
-        stock?: string;
-        serialNumber?: string;
-        paConsent?: boolean;
-        papersAttested?: boolean;
-        // Written by builds before 2026-08-28, when steps could be locked.
-        // Still parsed so an old draft doesn't trip the type, never read.
-        furthestStep?: number;
-      };
-      // Park the specs BEFORE setForm — see pendingAttrValuesRef. setForm
-      // changes categoryId, which makes the category effect wipe attrValues,
-      // so restoring them directly here would lose them again.
-      if (d.attrValues && d.form?.categoryId) {
-        pendingAttrValuesRef.current = {
-          categoryId: d.form.categoryId,
-          values: normaliseAttrValues(d.attrValues),
-        };
-      }
-      if (d.form) {
-        // ⚠️ A DRAFT SAVED BEFORE TAKE A SHOT STOPPED BEING A LISTING TYPE
-        // STILL HOLDS IT. Removing it from the picker was not enough on its
-        // own — a seller who started a listing days ago and came back would
-        // restore straight onto a mode that no longer exists, see it in the
-        // collapsed step-3 summary, and be able to publish it. Observed on the
-        // live site right after the picker change shipped.
-        //
-        // Their intent is carried over rather than discarded: the mode is
-        // cleared so they choose Marketplace or Auction. Nothing else is touched.
-        // (This used to also set acceptsOffers: true. Unnecessary since
-        // 2026-08-28 — every listing takes offers, and the form no longer
-        // carries the field.)
-        const restored =
-          d.form.listingType === 'TAKE_A_SHOT'
-            ? { ...d.form, listingType: '' }
-            : d.form;
-        setForm(restored);
-      }
-      if (d.parcel) setParcel(d.parcel);
-      if (d.pickupAddress) setPickupAddress(d.pickupAddress);
-      if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
-      if (d.pickupLng !== undefined) setPickupLng(d.pickupLng);
-      // Park the delivery picks as well as setting them — see
-      // pendingShippingRef. The restored categoryId makes isFirearm flip a
-      // commit or two later (once /categories resolves), and that reset effect
-      // would otherwise stamp the default pick over what's restored here.
-      if (d.shippingMethods?.length && d.form?.categoryId) {
-        pendingShippingRef.current = {
-          categoryId: d.form.categoryId,
-          methods: d.shippingMethods,
-        };
-      }
-      if (d.shippingMethods) setShippingMethods(d.shippingMethods);
-      if (d.plannedDealerName !== undefined) {
-        setPlannedDealerName(d.plannedDealerName);
-      }
-      if (d.plannedDealerProvince !== undefined) {
-        setPlannedDealerProvince(d.plannedDealerProvince);
-      }
-      if (d.plannedDealerArea !== undefined) {
-        setPlannedDealerArea(d.plannedDealerArea);
-      }
-      if (d.plannedDealerAddress !== undefined) setPlannedDealerAddress(d.plannedDealerAddress);
-      if (d.plannedDealerPlaceId !== undefined) setPlannedDealerPlaceId(d.plannedDealerPlaceId);
-      if (d.plannedDealerLat !== undefined) setPlannedDealerLat(d.plannedDealerLat);
-      if (d.plannedDealerLng !== undefined) setPlannedDealerLng(d.plannedDealerLng);
-      if (typeof d.plannedDealerPhone === 'string') setPlannedDealerPhone(d.plannedDealerPhone);
-      if (typeof d.plannedDealerWebsite === 'string') setPlannedDealerWebsite(d.plannedDealerWebsite);
-      if (typeof d.plannedDealerEmail === 'string') setPlannedDealerEmail(d.plannedDealerEmail);
-      if (typeof d.dealerManual === 'boolean') setDealerManual(d.dealerManual);
-      if (typeof d.stock === 'string') setStock(d.stock);
-      if (typeof d.serialNumber === 'string') setSerialNumber(d.serialNumber);
-      // Consents restore as the seller left them — same device, same seller,
-      // and both are still visibly ticked next to their wording, with the
-      // publish-time guards unchanged.
-      if (typeof d.paConsent === 'boolean') setPaConsent(d.paConsent);
-      if (typeof d.papersAttested === 'boolean') {
-        setPapersAttested(d.papersAttested);
-      }
-      // Nothing to re-open — a restored draft comes back as the whole form,
-      // the same as a fresh one. `d.furthestStep` from an older draft is
-      // ignored on purpose rather than deleted, so a seller mid-listing when
-      // this shipped doesn't lose the rest of their draft to a parse change.
-      setDraftRestored(true);
-    } catch {
-      // Bad JSON / quota — ignore, start fresh.
-    }
-  }, []);
-
-  // Save on every change. Excludes photos (File[]) — those can't be
-  // serialised; the seller has to re-select on resume. The "draft
-  // restored" notice tells them this.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(
-        draftKey,
-        JSON.stringify({
-          form,
-          parcel,
-          pickupAddress,
-          pickupLat,
-          pickupLng,
-          shippingMethods,
-          plannedDealerName,
-          plannedDealerProvince,
-          plannedDealerArea,
-          plannedDealerAddress,
-          plannedDealerPlaceId,
-          plannedDealerLat,
-          plannedDealerLng,
-          plannedDealerPhone,
-          plannedDealerWebsite,
-          plannedDealerEmail,
-          dealerManual,
-          // Specifications / quantity / serial / consents — all plain data,
-          // all previously lost on a reload. attrValues is saved as-is
-          // (strings + booleans) and re-applied via pendingAttrValuesRef on
-          // restore, since the category effect clears it on the way in.
-          attrValues,
-          stock,
-          serialNumber,
-          paConsent,
-          papersAttested,
-        }),
-      );
-    } catch {
-      // Quota / private mode — silent.
-    }
-  }, [
-    form,
-    parcel,
-    pickupAddress,
-    pickupLat,
-    pickupLng,
-    shippingMethods,
-    plannedDealerName,
-    plannedDealerProvince,
-    plannedDealerArea,
-    plannedDealerAddress,
-    plannedDealerPlaceId,
-    plannedDealerLat,
-    plannedDealerLng,
-    plannedDealerPhone,
-    plannedDealerWebsite,
-    plannedDealerEmail,
-    dealerManual,
-    attrValues,
-    stock,
-    serialNumber,
-    paConsent,
-    papersAttested,
-  ]);
-
-  // Discard the draft (lets the seller force a clean slate).
-  function discardDraft() {
-    try {
-      localStorage.removeItem(draftKey);
-    } catch {
-      // ignore
-    }
-    setDraftRestored(false);
-    window.location.reload();
-  }
+  // ── Draft restore/save removed 2026-11-24 ─────────────────────────
+  // The seller's form is no longer mirrored to localStorage and no draft is
+  // restored. Relist prefill (?relistFrom=…) is the only seed path.
 
   // The category tree is VIEWER-VARYING and must carry the Clerk token.
   //
@@ -1278,8 +1056,7 @@ export default function NewListingPage() {
   // Detect a categoryId that doesn't resolve against the loaded tree.
   //
   // Deliberately does NOT clear form.categoryId. Clearing would destroy the
-  // relist's intent and, worse, race the draft autosave — the cleared value
-  // gets persisted and a refresh can't bring it back. Step 2 is already
+  // relist's intent. Step 2 is already
   // blocked by the `!!selectedCategory` gate, so the seller cannot proceed on
   // a category we can't resolve; all this has to do is say so.
   useEffect(() => {
@@ -1340,7 +1117,7 @@ export default function NewListingPage() {
         if (cancelled) return;
         setCurrentMe(me);
         // Phase 6 P6.3 — pre-fill parcel dims from the seller's saved
-        // defaults, but only fields the seller (or a restored draft) hasn't
+        // defaults, but only fields the seller (or a relist prefill) hasn't
         // already filled, so we never clobber their input.
         setParcel((p) => ({
           weightKg: p.weightKg || (me.defaultWeightGrams ? String(me.defaultWeightGrams / 1000) : ''),
@@ -1488,8 +1265,8 @@ export default function NewListingPage() {
       return;
     }
     let cancelled = false;
-    // Claim any values parked for THIS category by the draft restore or the
-    // Relist prefill (see pendingAttrValuesRef). We deliberately do NOT clear
+    // Claim any values parked for THIS category by the Relist prefill (see
+    // pendingAttrValuesRef). We deliberately do NOT clear
     // the ref on a match: React 19 strict mode (and fast refresh) re-runs this
     // effect, and a one-shot claim would blank the seller's restored specs on
     // the second pass. Values parked for a category the seller has since
@@ -1591,7 +1368,7 @@ export default function NewListingPage() {
 
   // Non-firearm listings always offer the Bob Go door-to-door rail; the
   // seller may also opt into a private handover. Keep COURIER present, drop
-  // any firearm-only method a stale draft carried, and never invent a third.
+  // any firearm-only method a stale form carried, and never invent a third.
   useEffect(() => {
     if (isFirearm || effectiveCollectionOnly) return;
     const next = shippingMethods.filter(
@@ -1620,10 +1397,10 @@ export default function NewListingPage() {
   useEffect(() => {
     if (lastIsFirearm.current !== isFirearm) {
       lastIsFirearm.current = isFirearm;
-      // A restore (draft or Relist) parked the seller's real picks for THIS
-      // category — honour them instead of stamping the default over the top.
-      // This transition always fires on a firearm restore (isFirearm can only
-      // become true once /categories resolves, which is after the restore),
+      // A relist prefill parked the seller's real picks for THIS category —
+      // honour them instead of stamping the default over the top. This
+      // transition always fires on a firearm relist (isFirearm can only
+      // become true once /categories resolves, which is after the prefill),
       // which is how a relisted firearm used to lose its PRIVATE_ARRANGE
       // offer. Claimed once and cleared: the transition can't repeat for the
       // same category, so nothing resurrects a pick the seller later drops.
@@ -1712,8 +1489,8 @@ export default function NewListingPage() {
       step2.push('Title — at least 5 characters');
     }
     // RESOLVED category, not merely a truthy id. `form.categoryId` is a plain
-    // string that can outlive the row it points at — restored from a draft,
-    // seeded by relist, or left behind when a category is deactivated. When it
+    // string that can outlive the row it points at — seeded by relist, or
+    // left behind when a category is deactivated. When it
     // doesn't resolve, `selectedCategory` is undefined and isFirearm /
     // collectionOnly / requiresPapers all collapse to false via `?? false`,
     // silently switching OFF the compliance UI those flags exist to switch ON.
@@ -2207,9 +1984,9 @@ export default function NewListingPage() {
     // UX-7 — optional compare-at ("was") price, BUY_NOW only. Display-only;
     // the backend validates it (> price, ≤ 4× price) and never uses it in fees.
     // Nothing sets this on a new listing any more (the field is gone), but
-    // the branch stays: a restored draft written before 2026-08-28 can still
-    // carry a value, and silently dropping it would change a listing the
-    // seller had already priced.
+    // the branch stays: a relisted or legacy form value can still carry one,
+    // and silently dropping it would change a listing the seller had already
+    // priced.
     if (form.listingType === 'BUY_NOW' && form.compareAtPriceZarCents) {
       body.compareAtPriceZarCents = Math.round(
         parseFloat(form.compareAtPriceZarCents) * 100,
@@ -2721,14 +2498,6 @@ export default function NewListingPage() {
         }
       }
 
-      // Successful publish — clear the localStorage draft so the
-      // form starts fresh on the seller's next listing.
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {
-        // ignore
-      }
-
       // If this listing came from a Value My Item valuation, record the
       // outcome for the data moat (best-effort; never blocks the redirect).
       try {
@@ -2831,12 +2600,12 @@ export default function NewListingPage() {
       const baseMsg =
         err instanceof Error ? err.message : 'Publish failed — try again';
       // Explicit rollback notice so the seller knows the half-built
-      // listing was binned (vs. silently existing). Reassurance that
-      // their typed form data is preserved courtesy of the draft
-      // persistence above.
+      // listing was binned (vs. silently existing). The form itself is still
+      // on screen — there is no draft restore any more, so say that rather
+      // than promising a saved copy.
       setPublishError(
         wasRolledBack
-          ? `${baseMsg} The half-built listing was rolled back so it doesn't sit photo-less. Your typed details are saved on this device — re-select your photos and click Publish again.`
+          ? `${baseMsg} The half-built listing was rolled back so it doesn't sit photo-less. Your typed details are still on screen — re-select your photos and click Publish again.`
           : baseMsg,
       );
       setSubmitting(false);
@@ -3014,62 +2783,11 @@ export default function NewListingPage() {
         )}
       </header>
 
-      {/* Draft restored notice — appears when a previous session's
-          form data was loaded from localStorage. The draft now also carries
-          the specifications, quantity, serial number and consents, so the
-          only things genuinely lost are the File uploads (photos, and for a
-          firearm the licence and serial documents) — say exactly that
-          rather than "photos", which used to leave sellers hunting for what
-          else had quietly reset. Dismiss discards the draft. */}
-      {draftRestored && (
-        <div
-          className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
-          style={{
-            background: 'rgba(47,158,107,0.10)',
-            border: '0.5px solid rgba(47,158,107,0.45)',
-            color: 'var(--text-primary)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-            lineHeight: 1.5,
-          }}
-        >
-          <span>
-            <strong style={{ color: 'var(--success)' }}>Draft restored</strong> —
-            your typed details are back, including specifications, quantity
-            and anything you&apos;d ticked, and every step is where you
-            left it. Uploads can&apos;t be saved on
-            this device, so re-select your photos
-            {isFirearm ? ' and your serial and licence photos' : ''} (and any
-            video you added) before you publish.
-          </span>
-          <button
-            type="button"
-            onClick={discardDraft}
-            style={{
-              background: 'transparent',
-              color: 'var(--text-tertiary)',
-              border: 'none',
-              fontSize: 12,
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              flexShrink: 0,
-              padding: '2px 6px',
-            }}
-          >
-            Discard draft
-          </button>
-        </div>
-      )}
-
       {/* Relist notice — the seller came from the Relist CTA, so the form
           arrived pre-filled from their previous listing and Steps 2-4 are
           already unlocked. Without saying so, a form that mysteriously knows
-          your parcel dimensions reads as a bug. Suppressed when a draft
-          restore also fired: that notice already explains the same thing, and
-          a live draft wins over the relist seed anyway. */}
-      {relistPrefilled && !draftRestored && (
+          your parcel dimensions reads as a bug. */}
+      {relistPrefilled && (
         <div
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
