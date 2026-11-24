@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PEACH PAYOUT FAILED ON A SHORT FLOAT; FLOAT SHORTAGES ARE NOW RETRIABLE
+
+Operator: *"payment failed because there was not enough funds. Did change the setting to auto reload so the float gets topped up from the payments side. will try again tomorrow"*
+
+- **What the batch did:** the retry created `PeachPayoutAttempt` `cmwuypw6n0000zuvn9x15q0tg` for the R100 (seller `turbosnail`, sale UM000009, public payout id `c38768ec-…`). Peach accepted the request and **failed it 3 s later**: result code **`2900.002.000` "Load more funds and try again or try a lower amount"** — the Peach float was short. Alerts raised: `PEACH_PAYOUT_PARTIAL` (create response), `PEACH_PAYOUT_FAILED`, and `WEBHOOK_SIGNATURE_INVALID` for `peach-payout` (the status webhook, processed as an unverified hint).
+- **The problem that would have bitten tomorrow:** a failed Peach payout **held the row** (`payoutHeldAt` + `payoutHoldReason`), and held rows are excluded from the due queue — so even after the float topped up, the next batch would have paid nothing. The row's `payoutRequestedAt`/`gatewayPayoutId` were cleared and seller-charge reservations released, so nothing was dangling.
+- **Fix deployed `5ef89f76` (full)** at 19:39 SAST, rollback `alloutdoor-20261124-193930.dump`; health ×2, site 200 ×2, PM2 online. Checks: backend **443 suites / 6,533 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); typechecks + foreground build clean.
+  - **A `2900.002.*` (float/funds) failure is now transient, never held**: attempt terminal failed, row left DUE (paidOutAt/payoutRequestedAt/gatewayPayoutId/payoutHeldAt all cleared), charges released, non-urgent `PEACH_PAYOUT_FLOAT_SHORTAGE` alert. Genuine rejections (bad account, reversal, unknown outcome) still hold for review.
+  - **Float preflight:** `PeachService.getAvailableBalanceCents()` reads `GET /api/merchants/{id}/balance`; `runPeachPayouts` sums what is due and, when the float cannot cover it, **skips with "float has R X available but R Y is due — top up (auto-reload) and run the batch again; nothing was requested"** instead of creating a payout Peach will fail. A failed balance read never blocks a run.
+  - Removed the stale in-code "Peach R10 payout minimum" skip (Peach removed that minimum on 2026-10-28 — [Payouts changelog](https://developer.peachpayments.com/changelog/payouts-r10-minimum-removed-2026-10-28)).
+  - `WEBHOOK_SIGNATURE_INVALID` copy no longer claims payout/BANV deliveries were "dropped" (they are processed as unverified hints) and points at `PEACH_PAYOUT_WEBHOOK_SECRET`.
+- **State after deploy:** Peach float reads **R0.00** right now (auto-reload not yet credited), the failed attempt stays as audit, and the R100 row was **manually released from hold** → **1 due row, R100**, ready for tomorrow's batch. Specs added for balance parsing, the float-shortage code family, float-shortage leaving a row due, and genuine rejections still holding.
+- **Tomorrow:** once the float shows a balance, run the batch — expect `attempted: 1, accepted: 1` and a Peach payout id. If the run still reports a float skip, the message names the exact shortfall; if Peach rejects for a non-float reason the row holds for review.
+
 ## 2026-11-24 — FIRST ADMIN PAYOUT BATCH RUN: 0 PAID (BANV GATE), THEN BANV PASSED LIVE
 
 Operator: *"Did the batch payouts from admin, see what happened."*
