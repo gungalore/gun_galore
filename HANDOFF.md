@@ -7,6 +7,15 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — DOCUMENT CENTRE COPY + HERO PRICE (DEPLOYED)
+
+Operator: *"In the Document Centre, remove this '. Some of it — an ID copy, photographs of your safe — carries no expiry date at all, and we simply keep it.', ' and nobody at All Outdoor can read it.' Tell the users that the information is automatically used when they create a new Motivation. Ad the Price to the motivation Creator on the hero 'Motivation Creator - R295'".*
+
+- **Document Centre intro:** removed the no-expiry/ID/safe sentence and the “nobody at All Outdoor can read it” clause. It now says saved documents and details are used automatically when creating a new Motivation, and that the vault is encrypted on our own server.
+- **Hero:** the secondary action reads **Motivation Creator - R295**. R295 is the published flat price; the applications page still shows the live paygate price from the quota endpoint. The label is a constant in `hero-motivation-button.tsx` and must move with `motivation_price_cents`.
+- **Deployed `15094358` (frontend-only)**, rollback point `alloutdoor-20261124-093219.dump` (39,113,646 bytes). Frontend build clean, `pm2 reload`, frontend health ×2, public 200 ×2; backend and warden untouched and online.
+- **Checks:** frontend **185 files / 2,082 passed** (1 skipped), typecheck/build clean. Hero verified at 1440px; the Document Centre route remains auth-gated (307 to sign-in), so its copy is source-verified.
+
 ## 2026-11-24 — PWA PILL, THEME LABEL, MESSAGES TAB (DEPLOYED)
 
 Operator: *"The three pill selector needs to be bigger and centered. in account, remove the description underneath the Appearance and also change the name to Theme. Remove the Report in the navigation tab with messages."*
