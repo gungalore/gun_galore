@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — BLOCKING UPDATE GATE (DEPLOYED)
+
+Operator: *"the update button sits underneath the report a bug button on the pwa. Move the refresh as a pop up window on the desktop and PWA to force users to click it"*
+
+- **Service-worker update prompt** is now a centred, blocking modal on desktop and PWA. It sits at z-index 200 — above the Report a bug FAB (60) and bottom tab bar (55) — with no dismiss, close or outside-click escape. The only control is **Refresh now**; focus is trapped on it, Escape/Tab are intercepted, and page + shell-pane scrolling are locked.
+- The old safe-route background auto-apply and the bottom banner are gone: every waiting update now forces an explicit click. A first-install guard (`controller` present at mount) stops a new visitor being told to refresh the page they just loaded.
+- **⚠️ Consequence:** the gate also blocks checkout and the sell form; refreshing there discards unsaved input (create-listing drafts are already removed).
+- **Deployed `9e2190d9` (frontend-only)**, rollback point `alloutdoor-20261124-100524.dump` (39,114,401 bytes). Frontend build clean, `pm2 reload`, frontend health ×2, public 200 ×2; backend and warden untouched and online.
+- **Checks:** frontend **186 files / 2,084 passed** (1 skipped), typecheck/build clean. New spec covers the single-action modal, focus, no dismiss and the first-install guard.
+
 ## 2026-11-24 — DOCUMENT CENTRE COPY + HERO PRICE (DEPLOYED)
 
 Operator: *"In the Document Centre, remove this '. Some of it — an ID copy, photographs of your safe — carries no expiry date at all, and we simply keep it.', ' and nobody at All Outdoor can read it.' Tell the users that the information is automatically used when they create a new Motivation. Ad the Price to the motivation Creator on the hero 'Motivation Creator - R295'".*
