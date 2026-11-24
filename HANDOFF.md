@@ -7,6 +7,19 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — FIRST ADMIN PAYOUT BATCH RUN: 0 PAID (BANV GATE), THEN BANV PASSED LIVE
+
+Operator: *"Did the batch payouts from admin, see what happened."*
+
+- **The batch ran twice** (`POST /api/admin/manual-payments/run-payouts`, 18:53:13 and 18:53:32 SAST), both **HTTP 200**, both `attempted: 0, accepted: 0, failed: 0, totalCents: 0`. Nothing was disbursed, no `PeachPayoutAttempt` row, no transaction touched, no alerts.
+- **Why:** the only due row was sale **UM000009 "Turret Tags"** (buyer `julian`, seller **`turbosnail`**, PEACH, paid 18:09, released 18:23, payout **R100**), and its seller had `bankVerifiedAt` NULL. Exact skip reason: `Seller turbosnail: bank account not yet verified (BANV) — re-save banking details or re-run verification from the dossier`. That is the BANV gate we switched on with `peach_payouts_enabled`, working as designed.
+- **The R20 Ruanda sale was not in the batch at all** — it is still `DISPUTED`, so not in the due queue.
+- **The seller re-saved banking on the profile at 19:00:55**, which reset + requested BANV: `bankAvsResult REQUESTED:2902.000.001`, verification id `0f7c5f4e-…`. The Peach BANV webhooks that followed (19:00:56/59, 19:01:00) arrived signature-invalid (handled as hints by `31881161`) **and were unparseable — every one logged "no bankVerificationId"**, because the live Payouts body is form-encoded and/or wrapped rather than the flat JSON the parser assumed. Webhook resolution was therefore dead; the **`reconcilePeachBanv` sweep** polled at **19:10:04** and stamped **`PASS:2002.000.000:acct+ id+ open+ cred+ name+`**, `bankVerifiedAt 19:10:04`. The payout gate is now open for `turbosnail`; 1 due row (R100) remains, `PeachPayoutAttempt` still 0.
+- **Deployed `46fc6819` (full)** at 19:16 SAST, rollback `alloutdoor-20261124-191616.dump`; health ×2, site 200 ×2, PM2 online. Checks: backend **443 suites / 6,527 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); typechecks + foreground build clean.
+  - `parseBanvWebhook` now accepts the documented flat object, a JSON payload delivered as ONE form-urlencoded field, and `payload`/`data`/`body`/`result` wrappers; an unrecognised body logs its **keys only** (never values — they carry account/ID data) and resolution stays on the sweep.
+  - The existing `POST /admin/users/:id/verify-bank` is now surfaced in the user dossier as a confirmed **"Re-run bank verification"** button (the route existed but no admin UI exposed it — the operator had to re-save banking to trigger BANV).
+- **Next:** `turbosnail` is BANV-verified, so re-running the batch should create the first Peach payout (the R100). Fund the Peach float first. For Ruanda's R10: buyer confirms receipt on the disputed R20 sale (new handover flow) → BANV her via the new dossier button → next batch.
+
 ## 2026-11-24 — BANV WEBHOOK DROP FIXED (PAYOUT GATE UNBLOCKED)
 
 Found while checking the first Peach sale: a **Peach BANV webhook failed signature verification at 18:15 SAST and was dropped** (`WEBHOOK_SIGNATURE_INVALID`, ref `peach-banv`). Payouts/BANV deliveries are signed with the Payouts product's key, which env does not carry (`PEACH_PAYOUT_WEBHOOK_SECRET` unset; fallbacks `PEACH_WEBHOOK_SECRET`/`PEACH_SECRET` are Checkout keys), so **every** BANV result would be dropped — `bankVerifiedAt` never stamped, and with `peach_payouts_enabled` now ON that silently holds every seller payout. `julian` sits at `REQUESTED:2902.000.001` (pending) with `bankVerifiedAt` NULL, which is exactly that trap.
