@@ -866,9 +866,17 @@ export class PaymentsWebhookController {
       this.webhookUrl(req),
     );
     if (verdict === 'invalid') {
-      this.logger.warn('Peach payout webhook signature invalid — dropping');
+      // ⚠️ LOG + ALERT, BUT STILL PROCESS. Payouts/BANV deliveries are signed
+      // with the Payouts product's own key, which we may not have in env (a
+      // live BANV webhook failed verification on 2026-11-24 and was dropped,
+      // stalling bank verification). Both handlers ignore the body's claims and
+      // re-read the authoritative payout / BANV status from the Peach API, so
+      // an unverified delivery can only name WHICH record to look at — it can
+      // never move money or stamp a verification by itself.
+      this.logger.warn(
+        'Peach payout/BANV webhook signature invalid — processing as an unverified hint (result re-read from Peach)',
+      );
       void this.txService.alertWebhookSignatureFailure('peach-payout');
-      return { received: true };
     }
     if (verdict === 'unsigned') {
       // Payouts has no signing control; the handler re-queries the API before
@@ -904,9 +912,14 @@ export class PaymentsWebhookController {
       this.webhookUrl(req),
     );
     if (verdict === 'invalid') {
-      this.logger.warn('Peach BANV webhook signature invalid — dropping');
+      // Same rule as the payout webhook: the BANV handler looks the result up
+      // by bankVerificationId against the Payouts API, so a delivery whose
+      // signature does not verify (a Payouts-key mismatch) is a hint we may
+      // still use. Dropping it stalled bank verification silently.
+      this.logger.warn(
+        'Peach BANV webhook signature invalid — processing as an unverified hint (result re-read from Peach)',
+      );
       void this.txService.alertWebhookSignatureFailure('peach-banv');
-      return { received: true };
     }
     if (verdict === 'unsigned') {
       // Same as the payout handler: re-queried against the Payouts API below.

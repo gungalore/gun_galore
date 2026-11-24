@@ -7,6 +7,15 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — BANV WEBHOOK DROP FIXED (PAYOUT GATE UNBLOCKED)
+
+Found while checking the first Peach sale: a **Peach BANV webhook failed signature verification at 18:15 SAST and was dropped** (`WEBHOOK_SIGNATURE_INVALID`, ref `peach-banv`). Payouts/BANV deliveries are signed with the Payouts product's key, which env does not carry (`PEACH_PAYOUT_WEBHOOK_SECRET` unset; fallbacks `PEACH_WEBHOOK_SECRET`/`PEACH_SECRET` are Checkout keys), so **every** BANV result would be dropped — `bankVerifiedAt` never stamped, and with `peach_payouts_enabled` now ON that silently holds every seller payout. `julian` sits at `REQUESTED:2902.000.001` (pending) with `bankVerifiedAt` NULL, which is exactly that trap.
+
+- The BANV/payout handlers **already ignore the body** and re-read the authoritative result from the Payouts API by `bankVerificationId` / `payoutId`. The controller therefore now **logs + alerts but still processes** a signature-invalid payout/BANV delivery as an unverified hint (a forged delivery can only name a record to look up, never move money). The `peach-dispute` handler keeps dropping unverifiable deliveries.
+- New `@Cron` **`reconcilePeachBanv` (every 10 min)** polls every user with `bankAvsResult LIKE 'REQUESTED:%'` and no `bankVerifiedAt`, so a missed or dropped webhook still resolves. Spec: `peach-banv-reconcile.spec.ts`.
+- Env: set `PEACH_PAYOUT_WEBHOOK_SECRET` to the Payouts webhook signing key from the Peach dashboard when available (removes the alert noise), but verification is no longer load-bearing for payouts.
+- Still required before a payout test: a sale resolved to RELEASED (see the handover fix above — the buyer's "I received it" now works on the disputed R20 sale), BANV PASS for the seller (the new cron/endpoint settles it), and a funded Peach float.
+
 ## 2026-11-24 — HANDOVER CONFIRM FIXED, DISPUTES ANNOUNCED, COPY SHORTENED; PEACH PAYOUTS ENABLED
 
 Operator: *"fix it yes. Also add a confirmation to serious buttons like disputes for accidental presses. There is also a lot of clutter in the communication. Make messages short and simple so that the users don't have to scroll to get to a confirm button or whatever else is like that."*

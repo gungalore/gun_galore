@@ -612,7 +612,7 @@ when they differ from Checkout.
 | `PEACH_SECRET` | For refunds | Classic Hosted Checkout secret token used to sign refunds. |
 | `PEACH_WEBHOOK_SECRET` | **FAILS CLOSED** | Checkout V2 webhook signing secret from Dashboard -> Checkout -> Enable webhook signing. |
 | `PEACH_PAYOUT_CLIENT_ID` / `PEACH_PAYOUT_CLIENT_SECRET` / `PEACH_PAYOUT_MERCHANT_ID` | For Peach payouts | Payouts product credentials; fall back to the checkout pair when blank. |
-| `PEACH_PAYOUT_WEBHOOK_SECRET` | Optional | Payout/BANV signing secret; falls back to `PEACH_SECRET`. Payout/BANV deliveries without a signature are accepted as a HINT and re-confirmed against the Payouts API; a delivery that carries a bad signature is rejected and alerted. |
+| `PEACH_PAYOUT_WEBHOOK_SECRET` | Optional | Payout/BANV signing secret; falls back to `PEACH_WEBHOOK_SECRET` then `PEACH_SECRET`. Payout/BANV deliveries without a signature are accepted as a HINT and re-confirmed against the Payouts API; a delivery whose signature does not verify is alerted AND still processed as a hint, because the handlers always re-read the authoritative payout/BANV result from Peach (a separate 10-min BANV reconcile cron covers a missed webhook entirely). |
 
 ⚠️ **Refunds do not use the V2/Bearer API.** `POST /v1/checkout/refund` takes
 form-urlencoded flat fields (`authentication.entityId=…&amount=…&id=…

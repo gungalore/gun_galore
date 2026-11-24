@@ -3581,6 +3581,56 @@ export class TransactionsService {
     return { checked: attempts.length, settled };
   }
 
+  /**
+   * Poll Peach for BANV results whose webhook never arrived, was dropped, or
+   * carried a signature we could not verify.
+   *
+   * ⚠️ THE WEBHOOK IS ONLY A WAKE-UP. Everything this does is read back from
+   * the Payouts API by bankVerificationId, so it is identical to a delivery and
+   * cannot be forged into a pass. Without this sweep a BANV result that never
+   * reaches us leaves `bankVerifiedAt` NULL forever, which silently holds the
+   * seller's payout once Peach payouts are enabled (live 2026-11-24).
+   *
+   * Peach runs BANV 03:00–23:00 SAST; outside that window each poll is a cheap
+   * status read that still returns pending.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async reconcilePeachBanv(): Promise<{ checked: number; resolved: number }> {
+    if (!this.peach?.isPayoutsConfigured()) return { checked: 0, resolved: 0 };
+    const pending = await this.prisma.user.findMany({
+      where: {
+        bankVerificationId: { not: null },
+        bankVerifiedAt: null,
+        bankAvsResult: { startsWith: 'REQUESTED' },
+      },
+      select: { id: true, bankVerificationId: true },
+      take: 25,
+    });
+    let resolved = 0;
+    for (const user of pending) {
+      try {
+        await this.handlePeachBanvWebhook({
+          bankVerificationId: user.bankVerificationId,
+        });
+        const after = await this.prisma.user.findUnique({
+          where: { id: user.id },
+          select: { bankVerifiedAt: true },
+        });
+        if (after?.bankVerifiedAt) resolved += 1;
+      } catch (err) {
+        this.logger.warn(
+          `Peach BANV reconcile failed for user ${user.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (pending.length > 0) {
+      this.logger.log(
+        `Peach BANV reconcile: checked ${pending.length}, resolved ${resolved}`,
+      );
+    }
+    return { checked: pending.length, resolved };
+  }
+
   private async reconcileOzowPayoutByReference(attempt: {
     id: string;
     transactionId: string;

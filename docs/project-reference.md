@@ -660,6 +660,17 @@ picks the rail at checkout; Ozow is the default.
   not gated. Users without an SA ID (buyer-only banking) are skipped until
   their profile supplies one. `POST /admin/users/:id/verify-bank` re-runs the
   check from the dossier.
+  ⚠️ **The webhook is only a WAKE-UP.** `handlePeachBanvWebhook` reads the
+  result (and every per-field match flag) back from the Payouts API by
+  `bankVerificationId`; it never trusts the body. So a Payouts/BANV delivery
+  whose signature does not verify (`PEACH_PAYOUT_WEBHOOK_SECRET` differs from
+  the Checkout secret — live on 2026-11-24 one such delivery was dropped and
+  bank verification stalled) is **logged, alerted, and still processed as an
+  unverified hint**; the result still comes from Peach. A `@Cron` sweep
+  (`reconcilePeachBanv`, every 10 min) polls every user with
+  `bankAvsResult LIKE 'REQUESTED:%'` and no `bankVerifiedAt`, so a missed or
+  dropped webhook resolves anyway. Without that pair a seller stays unverified
+  forever and the payout gate silences the payout rather than paying it.
 - **Peach wire formats (do not "simplify" these):** Checkout V2 is Bearer +
   JSON with the FLAT DOTTED key `authentication.entityId` (a nested
   `authentication:{entityId}` object is not parsed and surfaces as
