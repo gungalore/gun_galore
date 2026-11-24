@@ -146,7 +146,7 @@ Findings:
   on top…") repeats what the figure shows.
 - No mobile sticky total/CTA; the Continue button is below a long picker stack.
 
-**Phase 2 plan:** collapse delivery into a summary row — `Deliver to: {address}
+**Phase 2 in progress (2026-11-24):** the checkout-side compaction shipped with the interrupted-payment recovery (compact one-line reservation clock, one-line fee explainer, delivery method card padding, redundant copy removed); the cart collapse is still to do. **Phase 2 plan (cart):** collapse delivery into a summary row — `Deliver to: {address}
 · Change` — that opens the pickers only on demand; show the chosen rate per
 parcel as a single line; keep the total + Continue visible (sticky on phones);
 delete the summary prose. Target: cart above-the-fold = items + total + Continue;

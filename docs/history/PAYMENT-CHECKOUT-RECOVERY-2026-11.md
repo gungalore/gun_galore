@@ -1,7 +1,7 @@
 # Buyer report: card payment came back to a disabled Pay button, then the bug report failed
 
 **Date:** 2026-11-24 (23:02–23:10 SAST). **Reported by:** operator, on behalf of buyer `ruanda`.
-**Shipped:** checkout recovery + bug-report hardening, deployed with the sales-side phase 2 pass.
+**Shipped:** checkout recovery + bug-report hardening, deployed 5aaaa52c (full deploy: backend + frontend, 23:51 SAST). Rollback dump lloutdoor-20261124-235105.dump. Post-deploy: health OK ×2, public 200 ×2, GET /transactions/unpaid and POST /transactions/:id/abandon correctly 401 unauthenticated, new copy present in the deployed bundles, no new error lines.
 
 ## What the buyer experienced
 
