@@ -18,6 +18,11 @@ import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
+import {
+  adminAlertGroup,
+  categorizeAdminAlert,
+  type AdminAlertCategory,
+} from './admin-alert-category';
 import { removeSellerStrike } from '../common/seller-reject-policy';
 import {
   raiseSellerCharge,
@@ -158,7 +163,7 @@ export class AdminService {
     // skip:1 steps past the cursor row itself — it is already on screen.
     const page: Pick<Prisma.AdminAlertFindManyArgs, 'cursor' | 'skip'> =
       filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {};
-    return this.prisma.adminAlert.findMany({
+    const rows = await this.prisma.adminAlert.findMany({
       where,
       // id is the tie-break that makes the cursor deterministic — a cron
       // sweep inserts a batch of alerts inside the same millisecond, so
@@ -167,13 +172,21 @@ export class AdminService {
       take: Math.min(Math.max(limit, 1), 200),
       ...page,
     });
+    // The category rides on every row so the inbox can put money/account work
+    // in its own tab instead of mixing it with cron noise (2026-11-24).
+    return rows.map((row) => ({
+      ...row,
+      category: categorizeAdminAlert(row.type),
+    }));
   }
 
   // Distinct alert types + unresolved counts, for the inbox filter chips.
   // Served separately from the list so the chips stay complete while a
   // filter is applied (deriving them from the filtered page would leave the
   // operator with a single chip and no way back to the other families).
-  async alertTypeFacets(): Promise<{ type: string; unresolved: number }[]> {
+  async alertTypeFacets(): Promise<
+    { type: string; unresolved: number; category: AdminAlertCategory }[]
+  > {
     const rows = await this.prisma.adminAlert.groupBy({
       by: ['type'],
       where: { resolved: false },
@@ -182,7 +195,11 @@ export class AdminService {
     // Sorted in JS (not via groupBy orderBy) — the set is tiny (~45 known
     // types) and this keeps the busiest family at the front of the chip row.
     return rows
-      .map((r) => ({ type: r.type, unresolved: r._count._all }))
+      .map((r) => ({
+        type: r.type,
+        unresolved: r._count._all,
+        category: categorizeAdminAlert(r.type),
+      }))
       .sort(
         (a, b) => b.unresolved - a.unresolved || a.type.localeCompare(b.type),
       );
@@ -258,12 +275,50 @@ export class AdminService {
   // pulling 100 alert rows every 60s just to length them. An operator working
   // in Listings or Transactions for an hour otherwise never learns that a new
   // urgent alert (chargeback, stuck funds, complaint) arrived.
-  async alertCounts(): Promise<{ unresolved: number; urgent: number }> {
-    const [unresolved, urgent] = await Promise.all([
-      this.prisma.adminAlert.count({ where: { resolved: false } }),
-      this.prisma.adminAlert.count({ where: { resolved: false, urgent: true } }),
+  //
+  // ⚠️ THE BADGE COUNTS MONEY + ACCOUNT, NOT CRON NOISE. The tab badge is what
+  // drags the operator to Operate; a stale-cron row must not do that (it has its
+  // own System tab and the Warden board). `core` is the badge number; the split
+  // is returned so the UI can show the noise separately.
+  async alertCounts(): Promise<{
+    unresolved: number;
+    urgent: number;
+    core: number;
+    marketplace: number;
+    system: number;
+  }> {
+    const [grouped, urgentGrouped] = await Promise.all([
+      this.prisma.adminAlert.groupBy({
+        by: ['type'],
+        where: { resolved: false },
+        _count: { _all: true },
+      }),
+      this.prisma.adminAlert.groupBy({
+        by: ['type'],
+        where: { resolved: false, urgent: true },
+        _count: { _all: true },
+      }),
     ]);
-    return { unresolved, urgent };
+    let unresolved = 0;
+    let core = 0;
+    let marketplace = 0;
+    let system = 0;
+    for (const row of grouped) {
+      const n = row._count._all;
+      unresolved += n;
+      switch (adminAlertGroup(categorizeAdminAlert(row.type))) {
+        case 'CORE':
+          core += n;
+          break;
+        case 'MARKETPLACE':
+          marketplace += n;
+          break;
+        default:
+          system += n;
+      }
+    }
+    const urgent = urgentGrouped.reduce((sum, row) => sum + row._count._all, 0);
+    return { unresolved, urgent, core, marketplace, system };
   }
 
   async resolveAlert(adminId: string, alertId: string, reason?: string) {

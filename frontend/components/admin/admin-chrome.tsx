@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -84,10 +84,16 @@ export function AdminTabBar() {
       );
     }
     if (tab.badge === 'operate') {
-      // ⚠️ UNRESOLVED, NOT URGENT. The inbox lists every unresolved alert, so a
-      // badge counting only the urgent ones pointed at a screen showing more
-      // rows than the badge — and the rest could never be cleared.
-      return (data?.pendingListings ?? 0) + (alerts?.unresolved ?? 0);
+      // ⚠️ UNRESOLVED, NOT URGENT — and MONEY + ACCOUNT only. The inbox lists
+      // every unresolved alert, so a badge counting only the urgent ones
+      // pointed at a screen showing more rows than the badge. Counting cron /
+      // webhook noise here (2026-11-24) dragged the operator to Operate for a
+      // stale job; system noise now lives in the Operate → System tab and the
+      // Warden board, and the badge is the money/account work.
+      return (
+        (data?.pendingListings ?? 0) +
+        (alerts?.core ?? alerts?.unresolved ?? 0)
+      );
     }
     return 0;
   }

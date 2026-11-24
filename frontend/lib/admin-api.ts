@@ -632,6 +632,10 @@ export function formatDuration(seconds: number | null | undefined): string {
 export interface AlertCount {
   unresolved: number;
   urgent: number;
+  /** Money + account alerts — the number the Operate tab badges. */
+  core?: number;
+  marketplace?: number;
+  system?: number;
 }
 
 export interface PayoutsDue {
@@ -1101,12 +1105,15 @@ export interface AdminAlertRow {
   resolved: boolean;
   createdAt: string;
   resolvedAt?: string | null;
+  /** Server-classified family: MONEY / ACCOUNT / MARKETPLACE / SYSTEM / OTHER. */
+  category?: 'MONEY' | 'ACCOUNT' | 'MARKETPLACE' | 'SYSTEM' | 'OTHER';
   [key: string]: unknown;
 }
 
 export interface AlertTypeFacet {
   type: string;
   unresolved: number;
+  category?: AdminAlertRow['category'];
 }
 
 export async function adminAlerts(

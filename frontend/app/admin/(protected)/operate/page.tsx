@@ -461,28 +461,89 @@ function alertHref(alert: AdminAlertRow): string | undefined {
   return undefined;
 }
 
+/**
+ * THE INBOX IS SPLIT BY CATEGORY, ON PURPOSE (2026-11-24). Money/account work,
+ * listing/member work and system noise (crons, webhooks, channels) each have
+ * their own tab: an operator opening Operate to deal with a chargeback must not
+ * have to scroll past a stale-cron row, and the Operate tab badge counts only
+ * money + account alerts for the same reason.
+ */
+type AlertGroupKey = 'CORE' | 'MARKETPLACE' | 'SYSTEM' | 'ALL';
+
+const ALERT_GROUPS: { key: AlertGroupKey; label: string }[] = [
+  { key: 'CORE', label: 'Money & accounts' },
+  { key: 'MARKETPLACE', label: 'Listings & members' },
+  { key: 'SYSTEM', label: 'System & crons' },
+  { key: 'ALL', label: 'All' },
+];
+
+/** Which tab an alert belongs in. The server sends `category`; the prefix
+ *  fallback keeps an older/uncategorised row out of the noise tab when it is
+ *  plainly money or account work. */
+function alertGroup(alert: { category?: string; type: string }): AlertGroupKey {
+  switch (alert.category) {
+    case 'MONEY':
+    case 'ACCOUNT':
+      return 'CORE';
+    case 'MARKETPLACE':
+      return 'MARKETPLACE';
+    case 'SYSTEM':
+    case 'OTHER':
+      return 'SYSTEM';
+  }
+  const t = alert.type.toUpperCase();
+  if (
+    /^(PAYMENT|PEACH_|OZOW_|YOCO_|PAYOUT|REFUND|CHARGEBACK|DISPUTE|TRANSACTION|PRIVATE_ARRANGE|STUCK_HELD|SELLER_CHARGE|SHIPPING_CHARGE|SALE_|BUYER_|CANCELLATION|ZOHO|INVOICE|KYC|BANK_|BANV|DEALER_|COMPLAINT|SUPPORT|USER_|MOTIVATION_)/.test(
+      t,
+    )
+  ) {
+    return 'CORE';
+  }
+  return 'SYSTEM';
+}
+
 function AlertsInbox({ isGod }: { isGod: boolean }) {
   const { toast } = useAdminToast();
+  const [group, setGroup] = useState<AlertGroupKey>('CORE');
   const [type, setType] = useState<string | null>(null);
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
 
+  // One unfiltered poll; tab/type/urgent are applied locally so switching tabs
+  // never loses the rows a filtered refetch would have to re-fetch.
   const alerts = useAdminPoll<AdminAlertRow[]>(
-    () =>
-      adminAlerts({
-        resolved: false,
-        limit: 100,
-        ...(type ? { type } : {}),
-        ...(urgentOnly ? { urgent: true } : {}),
-      }),
+    () => adminAlerts({ resolved: false, limit: 200 }),
     20_000,
-    [type, urgentOnly],
   );
   const facets = useAdminPoll<AlertTypeFacet[]>(() => adminAlertTypes(), 60_000);
 
-  const rows = alerts.data ?? [];
+  const allRows = alerts.data ?? [];
+  const groupRows = allRows.filter(
+    (alert) => group === 'ALL' || alertGroup(alert) === group,
+  );
+  const rows = groupRows
+    .filter((alert) => (type ? alert.type === type : true))
+    .filter((alert) => (urgentOnly ? alert.urgent : true));
   const urgentCount = rows.filter((r) => r.urgent).length;
+  const facetList = (facets.data ?? []).filter(
+    (f) => f.unresolved > 0 && (group === 'ALL' || alertGroup(f) === group),
+  );
+  // Tab counts come from the facet poll (complete), not the capped row list.
+  const groupCounts = useMemo(() => {
+    const counts: Record<AlertGroupKey, number> = {
+      CORE: 0,
+      MARKETPLACE: 0,
+      SYSTEM: 0,
+      ALL: 0,
+    };
+    for (const facet of facets.data ?? []) {
+      const g = alertGroup(facet);
+      counts[g] += facet.unresolved;
+      counts.ALL += facet.unresolved;
+    }
+    return counts;
+  }, [facets.data]);
 
   async function resolveOne(alert: AdminAlertRow) {
     if (!isGod || busyId) return;
@@ -519,8 +580,6 @@ function AlertsInbox({ isGod }: { isGod: boolean }) {
     }
   }
 
-  const facetList = (facets.data ?? []).filter((f) => f.unresolved > 0);
-
   return (
     <NeonCard
       tone={urgentCount > 0 ? 'red' : rows.length > 0 ? 'amber' : undefined}
@@ -553,9 +612,28 @@ function AlertsInbox({ isGod }: { isGod: boolean }) {
       }
     >
       <p className="adm-sub" style={{ margin: 0 }}>
-        Raised by crons, webhooks, payments and members. One press clears a row; a
-        cron sweep can raise thirty, so Clear all resolves exactly what is shown.
+        Money and account work has its own tab; cron, webhook and channel noise
+        has its own, so a stale job can never bury a payment problem. One press
+        clears a row — Clear all resolves exactly what is shown.
       </p>
+
+      <div className="adm-scroll-x" style={{ marginBottom: 8 }}>
+        {ALERT_GROUPS.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            className="adm-chip"
+            data-active={group === g.key}
+            onClick={() => {
+              setGroup(g.key);
+              setType(null);
+            }}
+          >
+            {g.label}
+            {groupCounts[g.key] > 0 ? ` · ${groupCounts[g.key]}` : ''}
+          </button>
+        ))}
+      </div>
 
       <div className="adm-scroll-x">
         <button
@@ -596,11 +674,25 @@ function AlertsInbox({ isGod }: { isGod: boolean }) {
         <EmptyState icon="alert" title="Alerts unavailable" caption={alerts.error} />
       ) : rows.length === 0 ? (
         <EmptyState
-          title={type || urgentOnly ? 'Nothing matches this filter' : 'Inbox is clear'}
+          title={
+            type || urgentOnly
+              ? 'Nothing matches this filter'
+              : group === 'SYSTEM'
+                ? 'No system or cron alerts'
+                : group === 'MARKETPLACE'
+                  ? 'Nothing waiting in listings & members'
+                  : group === 'ALL'
+                    ? 'Inbox is clear'
+                    : 'No money or account alerts'
+          }
           caption={
             type || urgentOnly
-              ? 'Clear the filter to see every open alert.'
-              : 'New alerts appear the moment a job, payment or member raises one.'
+              ? 'Clear the filter to see every open alert in this tab.'
+              : group === 'SYSTEM'
+                ? 'Cron, webhook and channel noise lands here — it never mixes with money and account work.'
+                : group === 'CORE'
+                  ? 'New payment, payout, dispute, KYC and banking alerts appear here — with the Operate badge and nothing else.'
+                  : 'New alerts appear the moment a job, payment or member raises one.'
           }
         />
       ) : (
@@ -620,6 +712,14 @@ function AlertsInbox({ isGod }: { isGod: boolean }) {
                   <span className="adm-row-caption" style={{ whiteSpace: 'normal' }}>
                     {alert.context ?? 'No context recorded.'}
                   </span>
+                  {alert.category ? (
+                    <span
+                      className="adm-mono"
+                      style={{ fontSize: 10, color: 'var(--adm-ink-2)', letterSpacing: '0.04em' }}
+                    >
+                      {alert.category.replace(/_/g, ' ').toLowerCase()}
+                    </span>
+                  ) : null}
                 </span>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

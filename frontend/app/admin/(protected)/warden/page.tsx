@@ -131,7 +131,10 @@ export default function WardenPage() {
       },
       {
         label: 'Unresolved alerts',
-        caption: 'Ops alerts raised by crons, webhooks and payments',
+        caption:
+          alerts.data && (alerts.data.core !== undefined || alerts.data.system !== undefined)
+            ? `Money & accounts: ${alerts.data.core ?? 0} · System & crons: ${alerts.data.system ?? 0} (separate tabs in Operate)`
+            : 'Money/account work is separated from cron and system noise in Operate',
         count: q.unresolvedAlerts,
         href: '/admin/operate#alerts',
         tone: alerts.data?.urgent ? 'red' : 'amber',
