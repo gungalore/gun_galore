@@ -115,6 +115,28 @@ describe('BANV evaluation + parsing', () => {
     expect(evt.bankVerificationId).toBe('6e029f3f-21bf-425d-8f65-4eef2b5d8bb2');
     expect(evaluateBanvMatches(evt.matches)).toBe('passed');
   });
+  it('finds the id when Peach delivers the JSON as one form-urlencoded field', () => {
+    // Real Payouts deliveries are form-encoded; a JSON payload arrives as a
+    // single `{...}` key with an empty value. Live 2026-11-24 this shape made
+    // every BANV webhook log "no bankVerificationId".
+    const evt = svc.parseBanvWebhook({
+      '{"bankVerificationId":"banv-1","status":"successful","accountNumber":"positive"}': '',
+    });
+    expect(evt.bankVerificationId).toBe('banv-1');
+    expect(evt.status).toBe('successful');
+    expect(evt.matches.accountNumber).toBe('positive');
+  });
+  it('finds the id inside a payload wrapper', () => {
+    const evt = svc.parseBanvWebhook({
+      payload: { bankVerificationId: 'banv-2', status: 'failed' },
+    });
+    expect(evt.bankVerificationId).toBe('banv-2');
+    expect(evt.status).toBe('failed');
+  });
+  it('returns no id for an unrecognised body, leaving it to the sweep', () => {
+    const evt = svc.parseBanvWebhook({ something: 'else' });
+    expect(evt.bankVerificationId).toBeUndefined();
+  });
   it('MISMATCHES when the ID does not match the account holder', () => {
     expect(
       evaluateBanvMatches({

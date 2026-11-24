@@ -38,6 +38,7 @@ export function UserActions({
   const { toast } = useAdminToast();
   const [action, setAction] = useState<UserActionKind | null>(null);
   const [clearStrikesOpen, setClearStrikesOpen] = useState(false);
+  const [verifyBankOpen, setVerifyBankOpen] = useState(false);
 
   const handle = user.username
     ? `@${user.username}`
@@ -191,6 +192,17 @@ export function UserActions({
         >
           Erase data
         </button>
+        {user.bankName ? (
+          <button
+            type="button"
+            className="adm-btn"
+            data-tone="ghost"
+            disabled={!isGod}
+            onClick={() => setVerifyBankOpen(true)}
+          >
+            Re-run bank verification
+          </button>
+        ) : null}
       </div>
 
       {user.kycStatus === 'UNDER_REVIEW' ? (
@@ -240,6 +252,26 @@ export function UserActions({
             method: 'POST',
           });
           toast('Reject strikes cleared.');
+          onChanged?.();
+        }}
+      />
+
+      {/* Peach BANV renewal. The backend route existed but no admin surface
+          exposed it, so an operator whose seller needed a re-check had to ask
+          the seller to re-save banking details. Safe to repeat: it only asks
+          Peach to re-verify the account (existence + ID ownership) — no money
+          moves, and the result lands by webhook or the 10-minute sweep. */}
+      <ConfirmDialog
+        open={verifyBankOpen}
+        title={`Re-run bank verification for ${handle}?`}
+        body="Asks Peach to verify the bank account on file again (account exists and belongs to this member’s ID). No money moves. The result arrives by webhook or the 10-minute sweep and marks the account verified on a pass. Use after a mismatch, an updated banking detail, or when a payout is held on 'bank account not yet verified'."
+        confirmLabel="Re-run verification"
+        onClose={() => setVerifyBankOpen(false)}
+        onConfirm={async () => {
+          await adminFetch(`/admin/users/${user.id}/verify-bank`, {
+            method: 'POST',
+          });
+          toast('Bank verification re-requested.');
           onChanged?.();
         }}
       />

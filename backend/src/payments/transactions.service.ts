@@ -2952,7 +2952,10 @@ export class TransactionsService {
     if (!this.peach) return;
     const evt = this.peach.parseBanvWebhook(body);
     if (!evt.bankVerificationId) {
-      this.logger.warn('Peach BANV webhook: no bankVerificationId');
+      // Keys only — values can carry account/ID data and must never be logged.
+      this.logger.warn(
+        `Peach BANV webhook: no bankVerificationId (top-level keys: ${Object.keys(body ?? {}).join(',') || 'none'})`,
+      );
       return;
     }
     const user = await this.prisma.user.findUnique({

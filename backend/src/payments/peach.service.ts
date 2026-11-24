@@ -725,26 +725,82 @@ export class PeachService {
     };
   }
 
-  /** Normalise the BANV webhook body (same shape as the status query). */
+  /**
+   * Normalise the BANV webhook body.
+   *
+   * ⚠️ DO NOT ASSUME THE DOCUMENTED SHAPE ARRIVES. The Payouts docs document a
+   * flat JSON body (`bankVerificationId`, `status`, per-field match flags), but
+   * on 2026-11-24 every live delivery landed in a shape where a top-level read
+   * found no `bankVerificationId` — the webhook could never resolve a
+   * verification and only the 10-minute `reconcilePeachBanv` sweep saved it.
+   * Accept, in order:
+   *   • the documented flat object,
+   *   • a whole JSON payload delivered as ONE form-urlencoded field (real
+   *     Payouts webhooks are form-encoded, so a JSON body parsed as urlencoded
+   *     lands as a single `{...}` key),
+   *   • `payload` / `data` / `body` / `result` wrappers, one level per recursion.
+   * An unrecognised shape returns no id; the caller then falls back to the sweep.
+   */
   parseBanvWebhook(body: Record<string, unknown>): {
     bankVerificationId?: string;
     status: string;
     resultCode?: string;
     matches: BanvMatches;
   } {
+    const flat = this.unwrapBanvBody(body);
     return {
-      bankVerificationId: body.bankVerificationId as string | undefined,
-      status: this.asString(body.status) ?? 'pending',
-      resultCode: body.resultCode as string | undefined,
+      bankVerificationId: flat.bankVerificationId as string | undefined,
+      status: this.asString(flat.status) ?? 'pending',
+      resultCode: flat.resultCode as string | undefined,
       matches: {
-        accountNumber: body.accountNumber as BanvFlag,
-        idNumber: body.idNumber as BanvFlag,
-        initials: body.initials as BanvFlag,
-        lastName: body.lastName as BanvFlag,
-        accountOpen: body.accountOpen as BanvFlag,
-        accountAcceptsCredits: body.accountAcceptsCredits as BanvFlag,
+        accountNumber: flat.accountNumber as BanvFlag,
+        idNumber: flat.idNumber as BanvFlag,
+        initials: flat.initials as BanvFlag,
+        lastName: flat.lastName as BanvFlag,
+        accountOpen: flat.accountOpen as BanvFlag,
+        accountAcceptsCredits: flat.accountAcceptsCredits as BanvFlag,
       },
     };
+  }
+
+  /** Find the BANV object inside whatever wrapper Peach actually delivered. */
+  private unwrapBanvBody(
+    body: Record<string, unknown>,
+    depth = 0,
+  ): Record<string, unknown> {
+    if (!body || typeof body !== 'object' || depth > 3) return {};
+    const id = body.bankVerificationId;
+    if (typeof id === 'string' && id.length > 0) return body;
+    // JSON payload parsed as form-urlencoded: one key IS the JSON document.
+    for (const key of Object.keys(body)) {
+      if (!key.trim().startsWith('{')) continue;
+      try {
+        const parsed = JSON.parse(key) as Record<string, unknown>;
+        const inner = this.unwrapBanvBody(parsed, depth + 1);
+        if (Object.keys(inner).length > 0) return inner;
+      } catch {
+        // not JSON — keep looking
+      }
+    }
+    for (const wrapper of ['payload', 'data', 'body', 'result']) {
+      const value = body[wrapper];
+      if (value && typeof value === 'object') {
+        const inner = this.unwrapBanvBody(
+          value as Record<string, unknown>,
+          depth + 1,
+        );
+        if (Object.keys(inner).length > 0) return inner;
+      } else if (typeof value === 'string' && value.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(value) as Record<string, unknown>;
+          const inner = this.unwrapBanvBody(parsed, depth + 1);
+          if (Object.keys(inner).length > 0) return inner;
+        } catch {
+          // not JSON
+        }
+      }
+    }
+    return {};
   }
 
   // ─── Webhook verification ─────────────────────────────────────────
