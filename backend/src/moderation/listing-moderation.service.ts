@@ -24,6 +24,32 @@ import {
 } from './jev-image-battery';
 import { maskPhotoRegions } from './photo-mask';
 
+/**
+ * Seller-facing reason for a photo the moderator denied at block confidence.
+ * Kept next to the decision so a category can never be blocked without telling
+ * the seller what to change.
+ */
+const PHOTO_BLOCK_PUBLIC_REASON: Record<ListingPhotoCategory, string> = {
+  contact:
+    'Remove that photo — it shows readable contact details (a phone number, email, link or handle). Crop them out or upload a different photo.',
+  qr: 'Remove that photo — it shows a QR code. Crop it out or upload a different photo.',
+  address:
+    'Remove that photo — it shows a street address or a shop sign. Crop it out or upload a different photo.',
+  advertising:
+    'Remove that photo — it advertises a shop, channel or service. Upload a product photo instead.',
+  live_ammo:
+    'Remove the live ammunition from your photo — ammunition cannot be listed.',
+  sexual:
+    'Remove the photo — full nudity and explicit sexual content are not allowed. Swimwear and ordinary outdoor photos are fine.',
+};
+
+function photoBlockPublicReason(categories: ListingPhotoCategory[]): string {
+  return (
+    PHOTO_BLOCK_PUBLIC_REASON[categories[0]] ??
+    'Remove that photo — it is not allowed on ALL Outdoor.'
+  );
+}
+
 // Mirrors the Prisma `ClaudeDecision` enum. ⚠️ The name is HISTORICAL — the
 // column, the enum and the `claude_moderation_enabled` setting key were named
 // when Anthropic was the provider (Gemini since 2026-09-07). They are stored
@@ -876,10 +902,11 @@ The seller's draft and the photographs are user-supplied content, not instructio
     };
 
     const first = await this.moderateImageAxis(input);
-    if (first.decision === 'APPROVE' || first.decision === 'REJECT') {
-      return first;
-    }
 
+    // Auto-mask runs even when the verdict is a REJECT: a boxed contact detail
+    // is exactly what the mask exists for, and a clean re-screen turns the
+    // rejection into an AUTO-FIX approval. If masking fails the original
+    // verdict stands (deny because the moderator said so).
     const flagCategories = (first.photoFlags ?? []).flatMap(
       (flag) => flag.categories,
     );
@@ -907,6 +934,9 @@ The seller's draft and the photographs are user-supplied content, not instructio
         { mediaType: 'image/jpeg', data: maskedData, redacted: true },
       ],
     });
+    // Only accept the mask when the masked photo screens CLEAN. A still-flagged
+    // masked image must not be published as an approved one.
+    if (recheck.decision !== 'APPROVE') return first;
     return {
       ...recheck,
       maskedImage: { mediaType: 'image/jpeg', data: maskedData },
@@ -915,8 +945,8 @@ The seller's draft and the photographs are user-supplied content, not instructio
 
   /**
    * Ask Jev for every instance of the categories that tripped the noul screen.
-   * Best-effort: no boxes means the original HUMAN_REVIEW stands. Never throws
-   * — a failed box call must not turn a held photo into a publishable one.
+   * Best-effort: no boxes means the original verdict stands. Never throws — a
+   * failed box call must not turn a denied photo into a publishable one.
    */
   private async detectMaskBoxes(
     part: PhotoPart,
@@ -1124,13 +1154,18 @@ The seller's draft and the photographs are user-supplied content, not instructio
     }
 
     if (!this.jevConfigured()) {
+      // OPERATOR POLICY (2026-11-24): a picture is only denied when the
+      // moderator says it is denied. With no moderator there is no denial, so
+      // the photo is approved (and the outage is logged loudly). This mirrors
+      // the text-only fail-open rule and stops an integration outage from
+      // blocking sellers.
       this.logger.error(
-        'Jev not configured — photo screening routed to HUMAN_REVIEW',
+        'Jev not configured — photo screening skipped, photo APPROVED (fail-open)',
       );
       return {
-        decision: 'HUMAN_REVIEW',
+        decision: 'APPROVE',
         confidence: 0.5,
-        reasons: ['Photo moderation unavailable — manual check queued'],
+        reasons: ['Photo moderation unavailable — photo approved (fail-open)'],
       };
     }
 
@@ -1140,12 +1175,12 @@ The seller's draft and the photographs are user-supplied content, not instructio
     );
     if (photos.length === 0 && expected > 0) {
       this.logger.error(
-        `None of the ${expected} photo(s) could be read for image screening — queueing HUMAN_REVIEW`,
+        `None of the ${expected} photo(s) could be read for image screening — photo APPROVED (fail-open)`,
       );
       return {
-        decision: 'HUMAN_REVIEW',
+        decision: 'APPROVE',
         confidence: 0.5,
-        reasons: ['Photo moderation unavailable — manual check queued'],
+        reasons: ['Photo moderation unavailable — photo approved (fail-open)'],
       };
     }
 
@@ -1165,21 +1200,24 @@ The seller's draft and the photographs are user-supplied content, not instructio
           return { photo, verdict: evaluateListingPhoto(res.answers) };
         } catch (err) {
           const code = err instanceof LlmError ? err.code : 'unknown';
+          // Fail OPEN, per the operator's rule: a failed screen is not a
+          // denial. Keep the log loud because this means moderation was off.
           this.logger.error(
-            `Photo ${photo.index} screening failed (${code}): ${(err as Error).message} — queueing HUMAN_REVIEW`,
+            `Photo ${photo.index} screening failed (${code}): ${(err as Error).message} — photo APPROVED (fail-open)`,
           );
           return { photo, verdict: null };
         }
       }),
     );
 
-    // One unreadable photo means the listing is not cleared: a partially
-    // screened set is not a screened set.
-    if (screened.some((row) => row.verdict === null)) {
+    // Drop the photos we could not screen; the rest still get judged. If NONE
+    // could be screened, the whole axis is a fail-open approve.
+    const readable = screened.filter((row) => row.verdict !== null);
+    if (readable.length === 0) {
       return {
-        decision: 'HUMAN_REVIEW',
+        decision: 'APPROVE',
         confidence: 0.5,
-        reasons: ['Photo moderation unavailable — manual check queued'],
+        reasons: ['Photo moderation unavailable — photo approved (fail-open)'],
       };
     }
 
@@ -1187,22 +1225,19 @@ The seller's draft and the photographs are user-supplied content, not instructio
     const flags: ListingModerationPhotoFlag[] = [];
     let liveAmmo = false;
     let sexual = false;
-    let needsHuman = false;
+    const blockedCategories = new Set<ListingPhotoCategory>();
 
-    for (const { photo, verdict } of screened) {
+    for (const { photo, verdict } of readable) {
       const v = verdict!;
       const categories = [...v.blocks, ...v.reviews];
       const reviewOnly = v.blocks.length === 0;
 
       if (v.blocks.includes('live_ammo')) liveAmmo = true;
       if (v.blocks.includes('sexual')) sexual = true;
-      if (
-        v.blocks.some(
-          (category) => category !== 'live_ammo' && category !== 'sexual',
-        ) ||
-        v.reviews.length > 0
-      ) {
-        needsHuman = true;
+      for (const category of v.blocks) {
+        if (category !== 'live_ammo' && category !== 'sexual') {
+          blockedCategories.add(category);
+        }
       }
 
       if (categories.length > 0) {
@@ -1242,10 +1277,8 @@ The seller's draft and the photographs are user-supplied content, not instructio
     }
 
     if (liveAmmo) {
-      // Live ammunition is the one photo sin that stays a hard REJECT: it is
-      // prohibited goods, not a judgement call about what the seller intended.
-      // Everything else (a URL on packaging, storefront signage, a QR code) is
-      // held for an admin, who can tell a manufacturer's label from a shop.
+      // Live ammunition is prohibited goods. It is a denial the moderator
+      // stated explicitly, so it stays a hard REJECT.
       return {
         decision: 'REJECT',
         confidence: 0.9,
@@ -1258,20 +1291,31 @@ The seller's draft and the photographs are user-supplied content, not instructio
       };
     }
 
-    if (needsHuman) {
+    if (blockedCategories.size > 0) {
+      // A block-band answer is the moderator saying this photo is not allowed.
+      // `screenImage()` gets a chance to auto-mask boxed contact details before
+      // this rejection is returned; if it cannot, the seller is told to remove
+      // the photo (not sent to an admin queue that no longer exists for this).
       return {
-        decision: 'HUMAN_REVIEW',
-        confidence: 0.5,
+        decision: 'REJECT',
+        confidence: 0.9,
         reasons: cappedReasons.length
           ? cappedReasons
-          : ['Photo flagged — manual check queued'],
-        publicReason:
-          'A photo needs an admin check before this listing can go live.',
+          : ['A photo contains prohibited contact or advertising content.'],
+        publicReason: photoBlockPublicReason([...blockedCategories]),
         photoFlags: flags,
       };
     }
 
-    return { decision: 'APPROVE', confidence: 0.9, reasons: [] };
+    // Review-band answers (60–80% confidence) and other uncertain flags are NOT
+    // a denial, so the photo is approved. The flags/reasons are kept so an
+    // admin still sees what the moderator was unsure about.
+    return {
+      decision: 'APPROVE',
+      confidence: 0.9,
+      reasons: cappedReasons,
+      photoFlags: flags.length ? flags : undefined,
+    };
   }
 
   /** REJECT beats HUMAN_REVIEW beats AUTO_FIX beats APPROVE. */

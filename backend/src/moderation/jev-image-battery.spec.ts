@@ -12,6 +12,8 @@ import {
   PHOTO_SCREEN_MAX_SIDES,
 } from './jev-image-battery';
 import sharp from 'sharp';
+import { randomFillSync } from 'crypto';
+import { toJevImage } from '../common/llm/jev-image';
 
 function noul(value: number): JevAnswer {
   return { type: 'noul', noul: value };
@@ -321,7 +323,55 @@ describe('askPhotoQuestions — JEV token-budget fallback', () => {
     expect(isJevMaxTokensError(new Error('max_tokens_exceeded'))).toBe(false);
   });
 
-  it('tries 1280 first, then 1152 and 1024', () => {
-    expect([...PHOTO_SCREEN_MAX_SIDES]).toEqual([1280, 1152, 1024]);
+  it('tries the largest side first, down to the 640 floor if needed', () => {
+    expect([...PHOTO_SCREEN_MAX_SIDES]).toEqual([
+      1280, 1152, 1024, 896, 768, 640,
+    ]);
+  });
+
+  it('pre-shrinks a high-detail photo BEFORE spending a request, instead of relying on a 400', async () => {
+    // Random noise is the worst case for JPEG size, so the 1280 version is far
+    // over the 27k-token target and must be skipped without a provider call.
+    const width = 2000;
+    const height = 1500;
+    const raw = Buffer.alloc(width * height * 3);
+    randomFillSync(raw);
+    const buf = await sharp(raw, { raw: { width, height, channels: 3 } })
+      .jpeg({ quality: 84 })
+      .toBuffer();
+    const part = {
+      type: 'image' as const,
+      mimeType: 'image/jpeg',
+      data: buf.toString('base64'),
+    };
+    const questions = { contact: listingPhotoQuestions(false).contact };
+    const at1280 = await toJevImage(buf, 'image/jpeg', 1280);
+    // Sanity: the 1280 version really is over target (else the test proves little).
+    expect(at1280.data_base64.length).toBeGreaterThan(27_000 * 9.5);
+
+    const sent: number[] = [];
+    const decide = jest.fn(async (req: any) => {
+      sent.push(String(req.assets.photo.data_base64).length);
+      return {
+        model: 'jev-1.14.0',
+        answers: {},
+        usage: { inputTokens: 1, outputTokens: 0 },
+        provider: 'typesafe' as const,
+      };
+    });
+
+    await askPhotoQuestions(
+      { decide },
+      {
+        part,
+        state: { photo: 'photo' },
+        questions,
+        purpose: 'moderation.listing.images',
+      },
+    );
+
+    expect(decide).toHaveBeenCalledTimes(1);
+    // It must NOT have sent the over-budget 1280 payload.
+    expect(sent[0]).toBeLessThan(at1280.data_base64.length);
   });
 });

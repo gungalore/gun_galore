@@ -214,20 +214,19 @@ describe('feed split — Jev text + Jev photos', () => {
     expect(v2.graphicTier).toBe(GraphicTier.FIELD);
   });
 
-  it('holds the 60–80 % band instead of publishing', async () => {
+  it('publishes the 60–80 % photo band (not a denial, per operator policy)', async () => {
     const { svc } = build({ imageReplies: [imageReply({ promotional: 0.7 })] });
     const v = await svc.moderate(post);
-    expect(v.decision).toBe('PENDING_MODERATION');
+    expect(v.decision).toBe('PUBLISH');
   });
 
-  it('holds when a photo call fails', async () => {
+  it('publishes when a photo call fails (failed screen is not a denial)', async () => {
     const { svc } = build({ imageError: true });
     const v = await svc.moderate(post);
-    expect(v.decision).toBe('PENDING_MODERATION');
-    expect(v.reasons).toContain('images_unreadable');
+    expect(v.decision).toBe('PUBLISH');
   });
 
-  it('holds when an image answer is missing', async () => {
+  it('publishes when an image answer is missing (fail-open)', async () => {
     const { svc } = build({
       imageReplies: [
         {
@@ -239,7 +238,7 @@ describe('feed split — Jev text + Jev photos', () => {
       ],
     });
     const v = await svc.moderate(post);
-    expect(v.decision).toBe('PENDING_MODERATION');
+    expect(v.decision).toBe('PUBLISH');
   });
 
   it('takes the worst result across several photos', async () => {
@@ -265,7 +264,7 @@ describe('feed split — Jev text + Jev photos', () => {
     expect(decide).not.toHaveBeenCalled();
   });
 
-  it('holds a media post whose image cannot be fetched', async () => {
+  it('publishes a media post whose image cannot be fetched (fail-open)', async () => {
     (global as unknown as { fetch: unknown }).fetch = jest
       .fn()
       .mockResolvedValue({
@@ -275,8 +274,7 @@ describe('feed split — Jev text + Jev photos', () => {
       });
     const { svc } = build();
     const v = await svc.moderate(post);
-    expect(v.decision).toBe('PENDING_MODERATION');
-    expect(v.reasons).toContain('images_unreadable');
+    expect(v.decision).toBe('PUBLISH');
   });
 });
 

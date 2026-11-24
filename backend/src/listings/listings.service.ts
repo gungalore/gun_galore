@@ -4114,22 +4114,14 @@ export class ListingsService {
       file.mimetype as ListingModerationImage['mediaType'],
       file.buffer.toString('base64'),
     );
-    if (
-      verdict.decision !== 'APPROVE' &&
-      verdict.decision !== 'AUTO_FIX_AND_APPROVE'
-    ) {
-      // Distinguish "the screen could not run" (transient provider/token
-      // failure) from "the screen looked at it and held it". The seller can do
-      // nothing about a provider hiccup except try again, and telling them the
-      // photo "needs an admin check" sends them to support instead.
-      const unavailable = (verdict.reasons ?? []).some((reason) =>
-        /moderation unavailable/i.test(reason),
-      );
+    // OPERATOR POLICY (2026-11-24): a photo is DENIED only when the moderator
+    // says it is denied. A failed/unavailable screen comes back APPROVE (the
+    // screening layer fails open and logs it), and review-band uncertainty is
+    // approved with flags for the admin. So REJECT is the only refusal here.
+    if (verdict.decision === 'REJECT') {
       throw new BadRequestException(
         verdict.publicReason ??
-          (unavailable
-            ? 'We couldn’t check that photo just now — please try uploading it again.'
-            : 'This photo still needs an admin check. Choose another photo.'),
+          'That photo is not allowed. Remove it or upload a different one.',
       );
     }
     return verdict.maskedImage

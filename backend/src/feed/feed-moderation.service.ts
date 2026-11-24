@@ -252,7 +252,16 @@ export class FeedModerationService {
     // media. Hold it rather than screening the text alone and publishing.
     const mediaExpected = input.imageUrls.length > 0 || !!input.video;
     if (mediaExpected && imageParts.length === 0 && !videoPart) {
-      return this.pendingVerdict(['images_unreadable']);
+      if (!input.video) {
+        // OPERATOR POLICY (2026-11-24): photos are denied only when the
+        // moderator says so. A photo we could not fetch/read is not a denial,
+        // so the post proceeds to the text axis and publishes (logged loudly).
+        this.logger.warn(
+          'every feed photo could not be read — post approved without photo moderation (fail-open)',
+        );
+      } else {
+        return this.pendingVerdict(['images_unreadable']);
+      }
     }
 
     // ⚠️ A FAILED CLIP DOES NOT BECOME A PUBLISHED POST JUST BECAUSE THE POST
@@ -265,10 +274,9 @@ export class FeedModerationService {
     // A photo-only post has no text to screen — don't spend a Jev call on an
     // empty string (operator decision 2026-10-09: media-only posts are valid).
     const textHasContent = (input.text ?? '').trim().length > 0;
-    // A clip-only post has nothing for Jev to judge, so it must not be held
-    // just because the Jev key is absent: Gemini alone can clear the clip.
-    const needsJev = textHasContent || imageParts.length > 0;
-    if (needsJev && !process.env.JEV_API_KEY) {
+    // OPERATOR POLICY (2026-11-24): only the TEXT axis is held when Jev is not
+    // configured. Photos fail OPEN — a missing moderator is not a denial.
+    if (textHasContent && !process.env.JEV_API_KEY) {
       return this.pendingVerdict(['moderation_unavailable']);
     }
 
@@ -296,14 +304,18 @@ export class FeedModerationService {
       0,
       10,
     );
-    const uncertain = text.uncertain || images.uncertain || video.uncertain;
+    // OPERATOR POLICY (2026-11-24): photo uncertainty is not a denial, so it
+    // does not hold a post. Text and video uncertainty still do (those axes are
+    // unchanged); a photo the moderator actually flags still REJECTs via the
+    // flags above.
+    const uncertain = text.uncertain || video.uncertain;
 
     const verdict = this.decide(
       { promoDetected, illegalDetected, otherViolation, graphicTier, reasons },
       input.authorIsOfficial,
     );
-    // A confident REJECT stands. Otherwise, any uncertainty on any axis holds
-    // for a human rather than publishing.
+    // A confident REJECT stands. Otherwise, any uncertainty on the TEXT/VIDEO
+    // axes holds for a human rather than publishing.
     if (verdict.decision !== 'REJECT' && uncertain) {
       return this.pendingVerdict([...reasons, 'moderation_unsure']);
     }
@@ -480,20 +492,28 @@ export class FeedModerationService {
           return evaluateFeedPhoto(res.answers);
         } catch (err) {
           const code = err instanceof LlmError ? err.code : 'unknown';
+          // Fail OPEN, per the operator's rule: a failed screen is not a
+          // denial. Loud log because it means moderation was off for this photo.
           this.logger.warn(
-            `feed photo ${index + 1} screening failed (${code}): ${(err as Error).message} — holding for review`,
+            `feed photo ${index + 1} screening failed (${code}): ${(err as Error).message} — approved (fail-open)`,
           );
           return null;
         }
       }),
     );
 
-    if (results.some((result) => result === null)) {
-      return {
-        ...this.cleanAxis(),
-        uncertain: true,
-        reasons: ['images_unreadable'],
-      };
+    const screened = results.filter(
+      (r): r is NonNullable<typeof r> => r !== null,
+    );
+
+    if (screened.length === 0) {
+      // OPERATOR POLICY (2026-11-24): photos are denied only when the moderator
+      // says so. A failed screen is not a denial — approve (and log loudly,
+      // because it means moderation was off for this post).
+      this.logger.warn(
+        'every feed photo screen failed — post approved without photo moderation (fail-open)',
+      );
+      return this.cleanAxis();
     }
 
     let promoDetected = false;
@@ -503,8 +523,7 @@ export class FeedModerationService {
     let uncertain = false;
     const reasons: string[] = [];
 
-    for (const result of results) {
-      const r = result!;
+    for (const r of screened) {
       promoDetected ||= r.promoDetected;
       illegalDetected ||= r.illegalDetected;
       otherViolation ||= r.otherViolation || r.sexualExplicit;

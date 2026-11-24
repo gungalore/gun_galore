@@ -2,10 +2,11 @@ import { ListingModerationService } from './listing-moderation.service';
 import type { ListingModerationResult } from './listing-moderation.service';
 import type { ListingPhotoCategory } from './jev-image-battery';
 
-// Photo screening is a triage step, not the final judge. JEV cannot reliably
-// tell a manufacturer's packaging URL from the seller's own shop, so the only
-// image sin that stays a hard REJECT is prohibited goods (live ammunition).
-// Everything else reaches the admin queue with HUMAN_REVIEW.
+// OPERATOR POLICY (2026-11-24): a picture is DENIED only when the moderator
+// says it is denied. A failed/unavailable screen is a fail-open APPROVE; the
+// 60–80% review band is not a denial either, so it approves with flags kept for
+// the admin. Block-band answers are the moderator saying no, so they reject
+// (unless the auto-mask turns a contact detail into a clean photo).
 
 jest.mock('../common/llm/jev-image', () => ({
   toJevImage: jest.fn(async () => ({
@@ -112,20 +113,20 @@ function screenMany(svc: ListingModerationService, count: number) {
   });
 }
 
-describe('image moderation — Jev, admin review instead of auto-reject', () => {
+describe('image moderation — deny only when the moderator denies', () => {
   beforeEach(() => {
     mockPhotoFetch();
   });
 
-  it('sends readable contact details to HUMAN_REVIEW with a photo flag', async () => {
+  it('rejects readable contact details with a photo flag and a public reason', async () => {
     const { svc, decide, complete } = makeService([
       photoAnswers({ contact: 0.92 }),
     ]);
     const r = await screen(svc);
 
-    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.decision).toBe('REJECT');
     expect(r.reasons[0]).toMatch(/contact details/i);
-    expect(r.publicReason).toMatch(/admin check/i);
+    expect(r.publicReason).toMatch(/contact details/i);
     expect(r.photoFlags?.[0]).toMatchObject({
       index: 1,
       categories: ['photo-contact-info'],
@@ -169,7 +170,31 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     ]);
   });
 
-  it('flags a QR code, a storefront address and third-party advertising', async () => {
+  it('does not approve a masked photo that still screens dirty', async () => {
+    const { svc } = makeService([
+      photoAnswers({ contact: 0.92 }),
+      {
+        model: 'jev-1.14.0',
+        provider: 'typesafe',
+        usage: { inputTokens: 1, outputTokens: 0 },
+        answers: {
+          mask_contact_1: {
+            type: 'box',
+            box: { top: 0.2, bottom: 0.28, left: 0.1, right: 0.5 },
+            confidence: 0.9,
+          },
+        },
+      },
+      photoAnswers({ contact: 0.93 }),
+    ]);
+
+    const r = await svc.screenImage('image/jpeg', 'abc');
+
+    expect(r.decision).toBe('REJECT');
+    expect(r.maskedImage).toBeUndefined();
+  });
+
+  it('rejects a QR code, a storefront address and third-party advertising', async () => {
     for (const [category, flag] of [
       ['qr', 'qr-code'],
       ['address', 'photo-address'],
@@ -177,7 +202,8 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     ] as const) {
       const { svc } = makeService([photoAnswers({ [category]: 0.91 })]);
       const r = await screen(svc);
-      expect(r.decision).toBe('HUMAN_REVIEW');
+      expect(r.decision).toBe('REJECT');
+      expect(r.publicReason).toBeTruthy();
       expect(r.photoFlags?.[0]?.categories).toContain(flag);
     }
   });
@@ -198,10 +224,10 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     expect(r.publicReason).toMatch(/swimwear/i);
   });
 
-  it('holds the 60–80 % band for a human', async () => {
+  it('APPROVES the 60–80 % review band (not a denial) but keeps the flag', async () => {
     const { svc } = makeService([photoAnswers({ contact: 0.7 })]);
     const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.decision).toBe('APPROVE');
     expect(r.photoFlags?.[0]?.reason).toMatch(/may show/i);
   });
 
@@ -211,7 +237,7 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     expect(r.decision).toBe('APPROVE');
   });
 
-  it('holds when an answer is missing instead of reading it as clean', async () => {
+  it('APPROVES when an answer is missing instead of reading it as clean (fail-open)', async () => {
     const { svc } = makeService([
       {
         model: 'jev-1.13.0',
@@ -221,15 +247,25 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
       },
     ]);
     const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.decision).toBe('APPROVE');
+    expect(r.reasons[0]).toMatch(/unavailable|fail-open/i);
   });
 
-  it('holds when Jev errors', async () => {
+  it('APPROVES when Jev errors (a failed screen is not a denial)', async () => {
     const { svc, decide } = makeService([]);
     decide.mockRejectedValueOnce(new Error('down'));
     const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
-    expect(r.reasons[0]).toMatch(/unavailable/i);
+    expect(r.decision).toBe('APPROVE');
+    expect(r.reasons[0]).toMatch(/unavailable|fail-open/i);
+  });
+
+  it('still judges the readable photos when one photo screen fails', async () => {
+    const { svc, decide } = makeService([]);
+    decide
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce(photoAnswers());
+    const r = await screenMany(svc, 2);
+    expect(r.decision).toBe('APPROVE');
   });
 
   it('flags the photo by its real index in a multi-photo listing', async () => {
@@ -261,11 +297,11 @@ describe('image moderation — Jev, admin review instead of auto-reject', () => 
     expect(all).toMatch(/treat that area as removed/i);
   });
 
-  it('fails closed when Jev is not configured', async () => {
+  it('APPROVES when Jev is not configured (fail-open, no model call)', async () => {
     delete process.env.JEV_API_KEY;
     const { svc, decide } = makeService([]);
     const r = await screen(svc);
-    expect(r.decision).toBe('HUMAN_REVIEW');
+    expect(r.decision).toBe('APPROVE');
     expect(decide).not.toHaveBeenCalled();
   });
 

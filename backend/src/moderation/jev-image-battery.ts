@@ -72,20 +72,36 @@ export async function toJevPhotoAsset(part: PhotoPart, maxSide?: number) {
 }
 
 /**
- * Longest-side ladder for screening a listing/feed PHOTO.
+ * JEV won't accept an arbitrary-size photo. Its `state` (image + questions)
+ * budget is 32k tokens, and it tokenises the base64 image payload as TEXT —
+ * measured live 2026-11-24 at ~9.5 base64 chars per token. A 1280px photo plus
+ * the six-question battery lands at ~29.8k; the same photo at the 1568px
+ * document default is ~42k and is rejected with
+ * `400 {"detail":{"error_type":"max_tokens_exceeded"}}`.
  *
- * ⚠️ JEV's `state` budget is 32k tokens and it tokenises the base64 image
- * payload as text — measured live 2026-11-24: a 1280px photo plus the
- * six-question battery is ~29.8k tokens, while the same photo at the document
- * default (1568px) plus the battery is ~42k and is rejected with
- * `400 {"detail":{"error_type":"max_tokens_exceeded"}}`. That rejection is
- * what broke every listing photo upload (the sell form previews at 1280 and
- * passed, then the final upload screened the original at 1568 and failed).
- *
- * 1280 is tried first to keep the most detail for contact-detail/QR detection;
- * the smaller steps exist so a high-entropy photo cannot dead-end the seller.
+ * ⚠️ NEVER send a listing/feed photo at the document default again. The sizing
+ * is budget-aware: `askPhotoQuestions()` estimates the tokens BEFORE each call
+ * and skips straight to a smaller side when the estimate is over
+ * `SCREEN_TOKEN_TARGET`, then falls back through the ladder only if the
+ * provider still reports the over-budget error.
  */
-export const PHOTO_SCREEN_MAX_SIDES = [1280, 1152, 1024] as const;
+export const JEV_STATE_TOKEN_BUDGET = 32_000;
+
+/** Keep a 5k margin under the hard limit for provider-side accounting drift. */
+const SCREEN_TOKEN_TARGET = JEV_STATE_TOKEN_BUDGET - 5_000;
+
+/** Measured: JEV counts the base64 image at ~9.5 chars per token. */
+const BASE64_CHARS_PER_TOKEN = 9.5;
+
+/**
+ * Longest-side candidates, largest first. 1280 keeps the most detail for
+ * contact-detail/QR detection; 640 is a last-resort floor for pathologically
+ * high-entropy photos so a seller is never blocked by the size of their JPEG.
+ * The estimate usually picks the first one that fits and only one call is made.
+ */
+export const PHOTO_SCREEN_MAX_SIDES = [
+  1280, 1152, 1024, 896, 768, 640,
+] as const;
 
 /** JEV's over-budget answer — the only error worth retrying smaller. */
 export function isJevMaxTokensError(err: unknown): boolean {
@@ -97,10 +113,23 @@ export function isJevMaxTokensError(err: unknown): boolean {
   );
 }
 
+/** Rough, deliberately conservative token estimate for the text part. */
+function estimateTextTokens(
+  state: JevState,
+  questions: Record<string, JevQuestion>,
+): number {
+  return Math.ceil(JSON.stringify({ state, questions }).length / 4) + 200;
+}
+
 /**
- * Ask a photo's questions, shrinking the image if JEV reports the state
- * exceeded its token budget. Every other error is rethrown unchanged so the
- * caller's fail-closed handling stays in charge.
+ * Ask a photo's questions inside JEV's token budget.
+ *
+ * The image is resized per candidate side and its token cost ESTIMATED before
+ * sending; a candidate that is over target is skipped without spending a
+ * request. If the provider nevertheless reports `max_tokens_exceeded`, the
+ * next smaller side is tried. Every other error is rethrown unchanged so the
+ * caller decides (listing/feed photo screens now fail OPEN by operator policy:
+ * a failed screen is not a denial).
  */
 export async function askPhotoQuestions(
   llm: { decide: (req: JevDecideRequest) => Promise<JevDecideResponse> },
@@ -113,9 +142,18 @@ export async function askPhotoQuestions(
     maxSides?: readonly number[];
   },
 ): Promise<JevDecideResponse> {
+  const sides = args.maxSides ?? PHOTO_SCREEN_MAX_SIDES;
+  const textTokens = estimateTextTokens(args.state, args.questions);
   let lastErr: unknown;
-  for (const maxSide of args.maxSides ?? PHOTO_SCREEN_MAX_SIDES) {
-    const asset = await toJevPhotoAsset(args.part, maxSide);
+  for (let i = 0; i < sides.length; i++) {
+    const asset = await toJevPhotoAsset(args.part, sides[i]);
+    const isLast = i === sides.length - 1;
+    const estimated =
+      Math.ceil(asset.data_base64.length / BASE64_CHARS_PER_TOKEN) +
+      textTokens;
+    // Over target: a request this size would be refused. Skip it, unless it is
+    // our last candidate (then send it and let the provider have the final say).
+    if (estimated > SCREEN_TOKEN_TARGET && !isLast) continue;
     try {
       return await llm.decide({
         state: args.state,
@@ -129,7 +167,7 @@ export async function askPhotoQuestions(
       if (!isJevMaxTokensError(err)) throw err;
     }
   }
-  throw lastErr;
+  throw lastErr ?? new Error('No photo size candidate fitted the JEV budget');
 }
 
 const REDACTION_NOTE =

@@ -918,12 +918,26 @@ tokenised as text** (~1 token per 9.5 chars, measured 2026-11-24). A 1568px phot
 plus the six-question listing/feed battery is ~42k and is rejected with
 `400 {"detail":{"error_type":"max_tokens_exceeded"}}`; 1280px is ~29.8k. Photo
 screening therefore goes through `askPhotoQuestions()`
-(`moderation/jev-image-battery.ts`), which tries **1280 → 1152 → 1024** and only
-steps down on that specific error — documents keep the 1568 default. Do NOT put
-`toJevImage` back to the document default for listing/feed photos: doing so
-silently blocks every photo upload (the listing is created, the photo fails, and
-the sell form deletes the listing). Verified live: a 1568-screened photo returned
-400, the same photo screened at 1280 returns 200 at ~29.8k input tokens.
+(`moderation/jev-image-battery.ts`), which **estimates the tokens before each
+call** and picks the largest side from **1280 → 1152 → 1024 → 896 → 768 → 640**
+that fits the 27k-token target (it only falls back further if the provider still
+says over-budget). Documents keep the 1568 default. Do NOT put `toJevImage` back
+to the document default for listing/feed photos: doing so silently blocks every
+photo upload (the listing is created, the photo fails, and the sell form deletes
+the listing). Verified live: a 1568-screened photo returned 400, the same photo
+screened at 1280 returns 200 at ~29.8k input tokens.
+
+⚠️ **Operator photo policy (2026-11-24): a picture is denied ONLY when the
+moderator says it is denied.** A failed/unavailable screen (provider error, no
+key, unreadable photo, exhausted token ladder) is a fail-open APPROVE — the
+seller is never blocked by our moderation outage — logged loudly via
+`logger.error` and the `AiUsage` failure row. The 60–80 % review band is not a
+denial either: the photo approves with `photoFlags` kept for the admin. Only
+block-band answers (sexual, live ammunition, or readable contact/QR/address/
+advertising details) reject, and a boxed contact detail still gets the
+server-side auto-mask first so a clean re-screen turns it into an approval.
+`screenImage` is the per-photo seam; `screenedImageBytes` refuses ONLY a
+`REJECT`.
 
 ---
 
