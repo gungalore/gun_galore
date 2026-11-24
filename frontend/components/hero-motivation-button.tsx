@@ -3,6 +3,11 @@
 import Link from 'next/link';
 import { useUser } from '@/lib/auth';
 
+// The paygate's live price is served by /motivations/quota on the applications
+// page; R295 is the published flat price. If motivation_price_cents changes,
+// update this label with it.
+const MOTIVATION_PRICE_LABEL = 'R295';
+
 /**
  * The hero's second action — Motivation Creator.
  *
@@ -34,7 +39,7 @@ export function HeroMotivationButton() {
         whiteSpace: 'nowrap',
       }}
     >
-      Motivation Creator
+      Motivation Creator - {MOTIVATION_PRICE_LABEL}
     </Link>
   );
 }

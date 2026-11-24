@@ -691,10 +691,10 @@ function DocumentCentre() {
       <h1 className="text-2xl font-semibold">Document Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         Keep your licences, certificates and supporting paperwork in one place,
-        and we will tell you when a renewal is coming up. Some of it — an ID
-        copy, photographs of your safe — carries no expiry date at all, and we
-        simply keep it. It is all encrypted on our own server and nobody at All
-        Outdoor can read it.
+        and we will tell you when a renewal is coming up. Your saved documents
+        and details are used automatically when you create a new Motivation —
+        you do not have to upload them again. It is all encrypted on our own
+        server.
       </p>
 
       {/*
