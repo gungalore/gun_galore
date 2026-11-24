@@ -5,7 +5,18 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-24**.
+Last updated: **2026-11-25**.
+
+## 2026-11-25 — SALES-SIDE PHASES 2–4 FINISHED (cart, sell wizard, auctions, quiet buttons)
+
+Operator: **"finish everything"** (after the checkout-recovery deploy). This closes every remaining item from [docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md](docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md).
+
+- **Deployed `bf320287` (frontend-only)** at 00:13 SAST; rollback `alloutdoor-20261125-001307.dump`; frontend 200 ×2, public 200 ×2, `/listings/new` 200, `/cart` + `/my/listings` correct 307, new copy in the deployed chunks, **no new error lines**. Backend kept its uptime (untouched). Checks: **187 frontend spec files / 2,088 tests pass**, typecheck + production build + theme-sync gate clean.
+- **Cart:** delivery is now a compact block — `Delivery · Deliver to {address} · Hide/Change` header, collapsed as one line per parcel (`seller · Cheapest Door Delivery — R…`) and auto-collapsing once a saved address has priced every parcel (re-opens on any address change). Removed the totals "Delivery is one figure…" prose and the old "Where should we deliver?" line. Added a **mobile sticky total + Continue bar** (`/cart` is a push route, so it sits flush with safe-area padding); the CTA label/disabled state is shared with the unchanged desktop sidebar. Address/quote/checkout logic untouched.
+- **Sell wizard:** the step action area — missing-fields summary + Back/Continue, and the final step's Preview/Publish block — is now a **sticky footer** at the bottom of the form column (solid page bg, hairline top border, z-20 under modals, no tab-bar offset because `/listings/new` is a push route). Compacted page/step spacing and trimmed five verbose helper paragraphs; all required warnings/validation copy kept verbatim.
+- **Auctions:** bid help trimmed to one line (Place Bid = exact amount; Auto Bid = private maximum, kept in front). My-listings already the compact 2-column card grid — no change.
+- **Quiet-button finish:** 52 remaining controls across 42 files whose only edge was a 0.5px `--border` hairline now use the visible `--border-visible` control edge (share, questions, load-more, remove/renew, dispatch secondaries, sheets, nav rows, feed controls). Dismiss/close/cancel controls stay deliberately quiet, per the contrast audit.
+- **Remaining optional (not blocking):** a visual pass on a physical phone for the PWA chrome, and a per-screen tune of the new tier colours once the operator has looked at the live pages.
 
 ## 2026-11-24 — INTERRUPTED CARD PAYMENTS + BUG REPORT FIXED (buyer ruanda)
 
