@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PHOTOS FAIL OPEN; SCREEN FITS THE JEV BUDGET (DEPLOYED `5a5df537`)
+
+Operator: *"if the moderator is down the pictures should be approved. Pictures only denied if the moderator says they are denied. Also make sure the token cap is enough so we don't sit with the same issue again."*
+
+- **Policy change — photo moderation fails OPEN.** Listing photos and the feed photo axis now APPROVE when the screen could not run: provider error/timeout, no JEV key, unreadable/failed-to-fetch photo, or the size ladder exhausted. The failure is logged at error/warn and recorded as an `AiUsage` failure row, but the seller/post is not blocked. Only a **block-band moderator answer** denies a photo: full nudity, live ammunition, or readable contact details / QR code / street address / advertising. The server-side auto-mask still runs first, so a boxed contact detail becomes an AUTO-FIX approval when the masked re-screen is clean. The 60–80 % review band is not a denial either — it approves with `photoFlags` kept for the admin. `screenedImageBytes` refuses **only** `REJECT`; the old "needs an admin check" 400 for an unavailable screen is gone.
+- **Token cap — budget-aware, measured.** JEV's `state` budget is 32k tokens and it counts the base64 image as text (~9.5 chars/token, measured). `askPhotoQuestions()` now **estimates the tokens before each request** against a 27k target and picks the largest side from **1280 → 1152 → 1024 → 896 → 768 → 640** that fits; a high-entropy photo is pre-shrunk instead of spending a rejected call, and a real `max_tokens_exceeded` still falls back. Documents keep the 1568 default. This makes the 1568px/42k mistake that blocked Ruanda impossible to repeat silently.
+- **Live verification after deploy:** a real production photo screens in **1 attempt at 1152 → 24,149 estimated / 24,255 actual input tokens** (previously 29.8k at 1280, 42k at 1568). A simulated provider outage → `APPROVE (fail-open)`; a simulated explicit sexual answer → `REJECT` with the public reason intact.
+- **Deployed `5a5df537` (full)**, rollback `alloutdoor-20261124-161954.dump` (39,127,385 bytes). No migrations; both builds, PM2 reload, health ×2, warden online, public 200 ×2.
+- **Checks:** backend **440 suites / 6,512 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); typechecks and production build clean.
+- **Note:** a `REJECT` still deletes the just-created listing in the sell form (pre-existing UX). Only explicit denials can now reach that path; if you want the listing kept so the seller can swap the photo instead, that is a frontend follow-up.
+
 ## 2026-11-24 — PHOTO UPLOADS BLOCKED BY JEV TOKEN LIMIT (FIXED, DEPLOYED `e5f7abb2`)
 
 Operator: *"why did it stop ruanda from making a listing?"*
