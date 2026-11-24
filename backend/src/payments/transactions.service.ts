@@ -1533,6 +1533,11 @@ export class TransactionsService {
         'That payment method is not available for marketplace checkout.',
       );
     }
+    // A buyer who backs out of the hosted payment page can leave an unpaid
+    // HELD transaction behind. Creating a second one would reserve a second
+    // unit and risk a double charge, so block with a resumable error while the
+    // attempt's window is live; if the window lapsed, release it first.
+    await this.assertNoLiveUnpaidAttempt(buyerId, dto.listingId);
     const {
       tx,
       listing,
@@ -2391,6 +2396,289 @@ export class TransactionsService {
       redirectUrl: checkout.redirectUrl,
       provider: (tx.paymentProvider ?? PaymentProvider.OZOW).toLowerCase(),
     };
+  }
+
+  // ------------------------------------------------------------------
+  // Abandoned hosted checkouts (2026-11-24 buyer report)
+  //
+  // A buyer who backs out of the Ozow/Peach page leaves an unpaid HELD row and
+  // a reserved unit. The old behaviour was: the resumé surface only existed for
+  // PAYMENT_PENDING listings, so on a tracked listing the checkout simply showed
+  // a disabled Pay button with no explanation, and clicking Pay again could
+  // mint a SECOND payable session. These helpers make that state explicit and
+  // recoverable:
+  //   - a live window is never discarded: the buyer is told to resume;
+  //   - a lapsed window is released ONLY after the gateway confirms it never
+  //     captured, the reservation is handed back, and an AdminAlert records it.
+  // ------------------------------------------------------------------
+
+  private unpaidAttemptDeadline(tx: {
+    createdAt: Date;
+    manualPayByAt: Date | null;
+    listing: { listingType: string };
+  }): Date {
+    return (
+      tx.manualPayByAt ??
+      new Date(
+        tx.createdAt.getTime() +
+          (tx.listing.listingType === 'AUCTION'
+            ? 24 * 60 * 60 * 1000
+            : CHECKOUT_HOLD_MS),
+      )
+    );
+  }
+
+  private findOwnUnpaidAttempt(buyerId: string, listingId: string) {
+    return this.prisma.transaction.findFirst({
+      where: {
+        buyerId,
+        listingId,
+        paidAt: null,
+        paymentStatus: 'HELD',
+        gatewayCheckoutId: { not: null },
+        orderId: null,
+        swapId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        buyerId: true,
+        listingId: true,
+        paymentProvider: true,
+        gatewayCheckoutId: true,
+        quantity: true,
+        createdAt: true,
+        manualPayByAt: true,
+        listing: {
+          select: {
+            id: true,
+            listingType: true,
+            trackInventory: true,
+            status: true,
+            sellerId: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Called at the top of create(). A lapsed attempt is released so the buyer can
+   * start again; a live one blocks with a resumable 409 so we never charge
+   * twice. Returns normally when there is nothing to resume/block.
+   */
+  private async assertNoLiveUnpaidAttempt(
+    buyerId: string,
+    listingId: string,
+  ): Promise<void> {
+    const tx = await this.findOwnUnpaidAttempt(buyerId, listingId);
+    if (!tx) return;
+    const deadline = this.unpaidAttemptDeadline(tx);
+    if (deadline.getTime() > Date.now()) {
+      throw new ConflictException({
+        code: 'UNPAID_CHECKOUT_EXISTS',
+        transactionId: tx.id,
+        message:
+          'You have an unfinished payment for this item. Resume it instead of paying twice.',
+      });
+    }
+    if (await this.releaseLapsedUnpaidAttempt(tx)) return;
+    throw new ConflictException({
+      code: 'UNPAID_CHECKOUT_EXISTS',
+      transactionId: tx.id,
+      message:
+        'You have an unfinished payment that we could not release yet. Resume it or try again in a few minutes.',
+    });
+  }
+
+  /**
+   * Buyer-initiated abandon, used by the checkout page's "Start again" button.
+   * Deliberately refuses while the window is live (resume instead) and refuses
+   * whenever the gateway may still capture. See the class comment above.
+   */
+  async abandonUnpaidCheckout(transactionId: string, buyerId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        buyerId: true,
+        listingId: true,
+        paymentProvider: true,
+        gatewayCheckoutId: true,
+        quantity: true,
+        createdAt: true,
+        manualPayByAt: true,
+        paidAt: true,
+        paymentStatus: true,
+        listing: {
+          select: {
+            id: true,
+            listingType: true,
+            trackInventory: true,
+            status: true,
+            sellerId: true,
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyerId !== buyerId) throw new ForbiddenException('Not authorised');
+    if (tx.paidAt || tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'This order is no longer an unpaid checkout.',
+      );
+    }
+    if (!tx.gatewayCheckoutId) {
+      throw new BadRequestException(
+        'This checkout has no payment session to abandon.',
+      );
+    }
+    const deadline = this.unpaidAttemptDeadline(tx);
+    if (deadline.getTime() > Date.now()) {
+      throw new ConflictException(
+        'The payment window is still open — use Resume payment instead of starting a second attempt.',
+      );
+    }
+    const released = await this.releaseLapsedUnpaidAttempt(tx);
+    if (!released) {
+      throw new ConflictException(
+        'We could not safely release this payment yet. Try again in a few minutes or check My Orders.',
+      );
+    }
+    return { released: true as const, transactionId: tx.id };
+  }
+
+  /**
+   * Release one lapsed unpaid gateway attempt and hand its reservation back.
+   * Returns false when the gateway cannot (yet) prove no capture happened.
+   *
+   * Peach "pending" is normally never terminal (its checkout can settle), which
+   * is why the generic stale sweep keeps it. For a LAPSED window we allow the
+   * release only after a 5-minute grace past the deadline; the checkout was
+   * created with an absolute expirySeconds, so a session past its window plus
+   * grace cannot capture. Anything unknown keeps the row.
+   */
+  private async releaseLapsedUnpaidAttempt(tx: {
+    id: string;
+    listingId: string;
+    paymentProvider: PaymentProvider | null;
+    gatewayCheckoutId: string | null;
+    quantity: number;
+    createdAt: Date;
+    manualPayByAt: Date | null;
+    listing: {
+      id: string;
+      listingType: string;
+      trackInventory: boolean;
+      status: string;
+      sellerId: string;
+    };
+  }): Promise<boolean> {
+    if (!tx.gatewayCheckoutId) return false;
+    const provider = tx.paymentProvider ?? PaymentProvider.OZOW;
+    const deadline = this.unpaidAttemptDeadline(tx);
+
+    const linkedOffer = await this.prisma.offer.findFirst({
+      where: { transactionId: tx.id },
+      select: { id: true },
+    });
+    if (linkedOffer) {
+      throw new ConflictException(
+        'This payment belongs to an accepted offer. Resume it from My Offers.',
+      );
+    }
+
+    let status: Awaited<ReturnType<TransactionsService['getGatewayStatus']>>;
+    try {
+      status = await this.getGatewayStatus(provider, tx.gatewayCheckoutId);
+    } catch (err) {
+      this.logger.warn(
+        `releaseLapsedUnpaidAttempt: status fetch failed for ${tx.id}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+    if (status?.isSuccess) {
+      // The money is in — never delete. The webhook/status path owns the sale.
+      throw new ConflictException(
+        'Your payment was received. Open My Orders to continue.',
+      );
+    }
+    if (!status && provider === PaymentProvider.PEACH) return false;
+
+    const terminal = this.gatewayFailureIsTerminal(provider, status, true);
+    const lapsedGracePassed =
+      Date.now() >= deadline.getTime() + 5 * 60_000;
+    if (!terminal && !(provider === PaymentProvider.PEACH && lapsedGracePassed)) {
+      return false;
+    }
+
+    let released = false;
+    try {
+      released = await this.prisma.$transaction(async (txc) => {
+        const deleted = await txc.transaction.deleteMany({
+          where: { id: tx.id, paidAt: null, paymentStatus: 'HELD' },
+        });
+        if (deleted.count === 0) return false;
+
+        // A CONVERTED offer must not point at a deleted row. (An accepted
+        // offer is refused above, so this is defensive only.)
+        await txc.offer.updateMany({
+          where: { transactionId: tx.id, status: 'CONVERTED' },
+          data: { status: 'EXPIRED', transactionId: null },
+        });
+
+        if (tx.listing.trackInventory) {
+          await txc.listing.updateMany({
+            where: {
+              id: tx.listingId,
+              quantityReserved: { gte: tx.quantity },
+            },
+            data: {
+              quantityAvailable: { increment: tx.quantity },
+              quantityReserved: { decrement: tx.quantity },
+            },
+          });
+        }
+        // Only un-hide the listing when no OTHER live hold is using the
+        // PAYMENT_PENDING state. Reactivating over another buyer's hold would
+        // put a reserved item back on sale.
+        const otherHold = await txc.checkoutHold.findFirst({
+          where: {
+            listingId: tx.listingId,
+            claimedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        });
+        if (!otherHold) {
+          await txc.listing.updateMany({
+            where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
+            data: { status: 'ACTIVE' },
+          });
+        }
+        return true;
+      });
+    } catch (err) {
+      this.logger.warn(
+        `releaseLapsedUnpaidAttempt failed for ${tx.id}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+    if (!released) return false;
+
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'STALE_UNPAID_CHECKOUT_RELEASED',
+          referenceId: tx.id,
+          context: `A lapsed ${provider} checkout (${tx.listing.listingType === 'AUCTION' ? 'auction' : 'marketplace'} attempt) was released so the buyer could start again. The gateway reported no successful capture. Listing ${tx.listingId} reservation handed back.`,
+        },
+      })
+      .catch(() => undefined);
+    this.logger.warn(
+      `releaseLapsedUnpaidAttempt: released ${tx.id} (${provider}) after its window lapsed`,
+    );
+    return true;
   }
 
   // ------------------------------------------------------------------

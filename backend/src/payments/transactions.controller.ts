@@ -237,6 +237,19 @@ export class TransactionsController {
     return this.txService.resumeCheckout(id, userId, frontendUrl);
   }
 
+  // Abandon an unpaid hosted checkout whose payment window has LAPSED, so the
+  // buyer can start a fresh attempt instead of being stuck on a grey Pay button
+  // (2026-11-24: a buyer backed out of the Peach page, the 15-minute window
+  // expired, and the checkout page had no way forward). Money-safety: buyer-only,
+  // unpaid only, deadline must have passed, and the gateway must never report a
+  // successful capture. A live window is refused with the resume path instead.
+  @Post(':id/abandon')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  abandon(@Param('id') id: string, @CurrentUser() userId: string) {
+    return this.txService.abandonUnpaidCheckout(id, userId);
+  }
+
   // ---------------------------------------------------------------
   // Fetch all transactions (buyer or seller view)
   // ---------------------------------------------------------------

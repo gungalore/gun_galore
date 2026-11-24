@@ -84,6 +84,7 @@ function makeService(listingRow: Record<string, unknown>, offerRow: Record<strin
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     transaction: {
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
         .mockImplementation((args: { data: Record<string, unknown> }) =>

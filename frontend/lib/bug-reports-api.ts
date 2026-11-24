@@ -38,11 +38,32 @@ export async function submitBugReport(
     form.append('elapsedMs', String(input.elapsedMs));
   }
 
-  const res = await fetch(`${API_URL}/bugs/report`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: form,
-  });
+  const controller = new AbortController();
+  // A report may include a screenshot; without a bound the browser can hang on
+  // a dead mobile connection until it eventually reports Safari's opaque
+  // "Load failed". 30s is long enough for a slow upload, short enough to tell
+  // the member what happened while their text is still on screen.
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/bugs/report`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        'The report took too long to send. Your text is still here — check your connection and try again.',
+      );
+    }
+    throw new Error(
+      'Could not reach our server. Check your connection and try again — your text is still here.',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 
   const data = (await res.json().catch(() => ({}))) as {
     message?: string;

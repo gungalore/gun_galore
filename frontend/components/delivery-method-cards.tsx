@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // UX-8 — transfer method as option cards (icon + title + one-liner) instead of
 // button pills. Presentation only: the card's onClick still calls the SAME
@@ -93,7 +93,7 @@ export function DeliveryMethodCards({
               type="button"
               onClick={() => onSelect(m)}
               aria-pressed={active}
-              className="flex gap-3 items-start text-left rounded-[8px] p-4"
+              className="flex gap-3 items-start text-left rounded-[8px] p-3"
               style={{
                 background: active ? 'var(--red-wash)' : 'var(--bg-card)',
                 border: `${active ? '1.5px' : '0.5px'} solid ${active ? 'var(--red)' : 'var(--border)'}`,

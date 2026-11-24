@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MotivationActivityService } from '../motivations/motivation-activity.service';
@@ -104,6 +104,8 @@ export function motivationIdFromUrl(url: string | null): string | null {
 
 @Injectable()
 export class BugsService {
+  private readonly logger = new Logger(BugsService.name);
+
   constructor(
     private readonly notifications: NotificationsService,
     private readonly prisma: PrismaService,
@@ -210,22 +212,45 @@ export class BugsService {
       }
     }
 
-    await this.notifications.bugReport({
-      category: CATEGORY_LABELS[category as BugCategory],
-      description,
-      reporterId: input.userId ?? null,
-      reporterUsername: user?.username ?? null,
-      reporterEmail: input.userId ? (user?.email ?? null) : publicEmail || null,
-      motivationRef,
-      url,
-      activity: timeline || null,
-      screenshot: shot
-        ? {
-            buffer: shot.buffer,
-            filename: `bug-${Date.now()}.${extensionFor(shot.mimetype)}`,
-          }
-        : null,
-    });
+    // ⚠️ DO NOT AWAIT THE EMAIL. The report used to wait on the Resend API —
+    // including a multi-megabyte screenshot attachment - inside this HTTP
+    // request. On a phone that can exceed nginx's 95s read timeout, so the
+    // request is cut and Safari reports the bare "Load failed" (2026-11-24: a
+    // buyer stuck on a grey Pay button could not send the report that would
+    // have told us why). The report is validated first; delivery is
+    // fire-and-forget, and a failed send raises an admin alert instead of
+    // blocking the form.
+    void this.notifications
+      .bugReport({
+        category: CATEGORY_LABELS[category as BugCategory],
+        description,
+        reporterId: input.userId ?? null,
+        reporterUsername: user?.username ?? null,
+        reporterEmail: input.userId ? (user?.email ?? null) : publicEmail || null,
+        motivationRef,
+        url,
+        activity: timeline || null,
+        screenshot: shot
+          ? {
+              buffer: shot.buffer,
+              filename: `bug-${Date.now()}.${extensionFor(shot.mimetype)}`,
+            }
+          : null,
+      })
+      .catch((err: unknown) => {
+        this.logger.error(
+          `bug report email failed (${category}, reporter ${input.userId ?? 'signed-out'}): ${(err as Error).message}`,
+        );
+        void this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'BUG_REPORT_EMAIL_FAILED',
+              referenceId: input.userId ?? null,
+              context: `A ${CATEGORY_LABELS[category as BugCategory]} bug report was accepted but the support email failed to send (${(err as Error).message}). Description: ${description.slice(0, 500)}`,
+            },
+          })
+          .catch(() => undefined);
+      });
 
     return { received: true };
   }

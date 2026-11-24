@@ -83,10 +83,18 @@ export function CheckoutForm({
   listing,
   initialHold = null,
   holdIncludedInListing = false,
+  unpaidTransactionId = null,
 }: {
   listing: Listing;
   initialHold?: CheckoutHold | null;
   holdIncludedInListing?: boolean;
+  /**
+   * 2026-11-24 buyer report: a buyer backed out of the Peach card page and
+   * the checkout came back with a disabled Pay button and no way to finish
+   * or restart. The server passes the buyer's own unfinished checkout here so
+   * this form can offer Resume payment / Start again up front.
+   */
+  unpaidTransactionId?: string | null;
 }) {
   const { getToken } = useAuth();
   const {
@@ -144,6 +152,14 @@ export function CheckoutForm({
   );
   const [holding, setHolding] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
+  // The buyer's own interrupted gateway attempt for this listing (see prop).
+  const [unpaidAttempt, setUnpaidAttempt] = useState<string | null>(
+    unpaidTransactionId,
+  );
+  const [abandoningAttempt, setAbandoningAttempt] = useState(false);
+  const [attemptActionError, setAttemptActionError] = useState<string | null>(
+    null,
+  );
   const holdRequestedRef = useRef(false);
   const holdMs = useCountdown(hold?.expiresAt ?? null);
   const holdExpired = hold != null && holdMs <= 0;
@@ -180,6 +196,40 @@ export function CheckoutForm({
       );
     } finally {
       setHolding(false);
+    }
+  }
+
+  /**
+   * Release a LAPSED interrupted payment so the buyer can start a clean run.
+   * The server refuses while the payment window is still live (resume instead)
+   * and never releases anything the gateway might still capture.
+   */
+  async function abandonUnpaidAttempt() {
+    if (!unpaidAttempt) return;
+    setAbandoningAttempt(true);
+    setAttemptActionError(null);
+    try {
+      const { url, headers } = await authedRequest(
+        `/transactions/${encodeURIComponent(unpaidAttempt)}/abandon`,
+      );
+      const res = await fetch(url, { method: 'POST', headers });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string | string[];
+        released?: boolean;
+      };
+      if (!res.ok) {
+        const msg = Array.isArray(data.message)
+          ? data.message.join(', ')
+          : (data.message ?? `Could not restart checkout (${res.status}).`);
+        throw new Error(msg);
+      }
+      // Clean slate: a fresh hold + empty form, with the old invoice behind us.
+      window.location.reload();
+    } catch (e) {
+      setAttemptActionError(
+        e instanceof Error ? e.message : 'Could not restart this checkout.',
+      );
+      setAbandoningAttempt(false);
     }
   }
 
@@ -786,6 +836,42 @@ export function CheckoutForm({
     return false;
   }
 
+  /**
+   * Plain-language reason the Pay button is not ready. A silent grey button is
+   * what the 2026-11-24 buyer report hit: after returning from the payment
+   * page the delivery selection was gone and nothing on screen said why Pay
+   * had stopped working.
+   */
+  function payBlockedReason(): string | null {
+    if (submitting) return null;
+    if (meLoaded && me && (!me.phone || !me.phoneVerified)) {
+      return 'Verify your phone number to continue.';
+    }
+    if (meLoaded && me && me.emailVerifiedAt === null) {
+      return 'Verify your email address to continue.';
+    }
+    if (listing.requiresPapers && !collectionPapersAck) {
+      return 'Acknowledge the collection papers above to continue.';
+    }
+    if (holdEligible && holding) return 'Reserving this item…';
+    if (holdEligible && holdExpired) {
+      return 'Your reservation expired — hold the item again to pay.';
+    }
+    if (holdEligible && !hold) return 'Reserving this item…';
+    if (method === 'COURIER') {
+      const hasCoords = usingCaptureAddr
+        ? captureLat != null && captureLng != null
+        : me?.addrLat != null && me?.addrLng != null;
+      if (!hasCoords) return 'Add a delivery address to see delivery options.';
+      if (quoteState.kind === 'loading') return 'Pricing delivery…';
+      if (quoteState.kind === 'error') return quoteState.message;
+      if (!deliveryOption) {
+        return 'Choose a delivery option above to continue.';
+      }
+    }
+    return null;
+  }
+
   // ─── Fee preview ──────────────────────────────────────────────────
   // Operator 2026-10: the listing price is the seller's raw ask. The buyer
   // pays ONE Platform Fee, calculated LAST on (item + delivery). Marketplace
@@ -850,6 +936,20 @@ export function CheckoutForm({
           setSubmitting(false);
           return;
         }
+        // The server refuses a second payable session while an unfinished one
+        // exists — surface the resume panel instead of a wall of error text.
+        const conflict = err as {
+          code?: string;
+          transactionId?: string;
+        };
+        if (
+          conflict.code === 'UNPAID_CHECKOUT_EXISTS' &&
+          typeof conflict.transactionId === 'string'
+        ) {
+          setUnpaidAttempt(conflict.transactionId);
+          setSubmitting(false);
+          return;
+        }
         throw new Error(msg);
       }
 
@@ -903,66 +1003,108 @@ export function CheckoutForm({
         </div>
       )}
 
-      {/* 15-minute reservation clock. The digits stay on screen while the
-          buyer fills in checkout (sticky), and Pay is disabled the moment the
-          clock reaches zero until a fresh hold is taken. */}
-      {holdEligible && (
+      {/* Interrupted payment recovery (2026-11-24). Shown above everything:
+          the buyer abandoned the hosted payment page and this checkout has an
+          unpaid gateway attempt on it. Resume is primary; Start again is only
+          accepted once the payment window has lapsed. */}
+      {unpaidAttempt && (
         <div
-          role="timer"
-          aria-live="polite"
-          className="px-4 py-3 rounded-[8px]"
+          className="rounded-[8px] p-4"
           style={{
-            position: 'sticky',
-            top: 8,
-            zIndex: 20,
             background: 'var(--bg-card)',
-            border: `1px solid ${
-              holdExpired || holdError ? 'var(--red)' : 'var(--border)'
-            }`,
-            boxShadow: holdExpired
-              ? 'none'
-              : '0 2px 10px rgba(0,0,0,0.06)',
+            border: '1.5px solid var(--action-option-edge)',
           }}
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p
-                className="text-xs uppercase"
-                style={{
-                  color:
-                    holdExpired || holdError
-                      ? 'var(--red)'
-                      : 'var(--text-tertiary)',
-                  letterSpacing: '0.06em',
-                  fontWeight: 600,
-                }}
-              >
-                {holding || !hold
-                  ? 'Reserving this item'
-                  : holdExpired
-                    ? 'Reservation expired'
-                    : 'Item reserved for you'}
-              </p>
-              <p
-                className="text-xs mt-1"
-                style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
-              >
-                {holding || !hold
-                  ? 'Holding one unit while you complete checkout…'
-                  : holdExpired
-                    ? 'The item may be back on the marketplace.'
-                    : 'Complete payment before the clock runs out or the item goes back on the marketplace.'}
-              </p>
-            </div>
-            <div
+          <p
+            className="text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+          >
+            You have an unfinished payment for this item
+          </p>
+          <p
+            className="text-xs mt-1"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+          >
+            It wasn&apos;t completed. Resume it to avoid paying twice — or start
+            again if the payment window has closed.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <a
+              href={`/checkout/resume/${unpaidAttempt}`}
+              className="px-4 py-2 rounded-[6px] text-sm font-medium"
+              style={{
+                background: 'var(--action-primary-bg)',
+                color: '#fff',
+                textDecoration: 'none',
+              }}
+            >
+              Resume payment
+            </a>
+            <button
+              type="button"
+              onClick={() => void abandonUnpaidAttempt()}
+              disabled={abandoningAttempt}
+              className="px-4 py-2 rounded-[6px] text-sm"
+              style={{
+                background: 'transparent',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-visible)',
+                cursor: abandoningAttempt ? 'not-allowed' : 'pointer',
+                opacity: abandoningAttempt ? 0.6 : 1,
+              }}
+            >
+              {abandoningAttempt ? 'Releasing…' : 'Start again'}
+            </button>
+          </div>
+          {attemptActionError && (
+            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
+              {attemptActionError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Reservation clock, compact: one line + timer. The old block was a
+          tall sticky card that pushed the actual form down the screen; only the
+          expired state needs words. */}
+      {holdEligible && (
+        <div>
+          <div
+            role="timer"
+            aria-live="polite"
+            className="flex items-center gap-3 rounded-[6px] px-3 py-2"
+            style={{
+              background:
+                holdExpired || holdError ? 'var(--red-wash)' : 'var(--bg-card)',
+              border: `1px solid ${
+                holdExpired || holdError
+                  ? 'var(--red)'
+                  : 'var(--border-visible)'
+              }`,
+            }}
+          >
+            <span
+              className="text-xs"
+              style={{
+                color:
+                  holdExpired || holdError
+                    ? 'var(--red)'
+                    : 'var(--text-secondary)',
+                fontWeight: 500,
+              }}
+            >
+              {holding || !hold
+                ? 'Reserving this item…'
+                : holdExpired
+                  ? 'Reservation expired'
+                  : 'Item reserved for you'}
+            </span>
+            <span
+              className="ml-auto text-sm"
               aria-label={`${formatHold(holdMs)} left to pay`}
               style={{
-                flexShrink: 0,
-                fontSize: 34,
-                lineHeight: 1,
-                fontWeight: 700,
                 fontVariantNumeric: 'tabular-nums',
-                letterSpacing: '0.01em',
+                fontWeight: 700,
                 color:
                   holdExpired || holdError
                     ? 'var(--red)'
@@ -974,45 +1116,8 @@ export function CheckoutForm({
                 : holdExpired
                   ? '0:00'
                   : formatHold(holdMs)}
-            </div>
+            </span>
           </div>
-
-          {/* Elapsed portion of the 15-minute window. */}
-          <div
-            style={{
-              height: 4,
-              marginTop: 10,
-              borderRadius: 999,
-              overflow: 'hidden',
-              background: 'var(--border-divider)',
-            }}
-          >
-            <div
-              style={{
-                height: '100%',
-                width: `${
-                  holding
-                    ? 0
-                    : holdExpired
-                      ? 100
-                      : hold
-                        ? Math.min(
-                            100,
-                            Math.max(
-                              0,
-                              Math.round(
-                                (1 - holdMs / (15 * 60_000)) * 100,
-                              ),
-                            ),
-                          )
-                        : 0
-                }%`,
-                background: 'var(--action-primary-bg)',
-                transition: 'width 1s linear',
-              }}
-            />
-          </div>
-
           {(holdExpired || holdError) && (
             <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
               {holdError ?? 'Your 15-minute reservation has expired.'}{' '}
@@ -1673,23 +1778,19 @@ export function CheckoutForm({
               {b.platform > 0 && (
                 <p
                   className="text-xs mt-2"
-                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
                 >
-                  The Platform Fee covers secure payment handling, seller
-                  verification and non-delivery protection on this order.
+                  Payment handling, seller checks and non-delivery protection.
                 </p>
               )}
             </div>
           );
         })()}
 
-      <p
-        className="text-xs"
-        style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
-      >
-        The final delivery rate and total are confirmed on the payment page
-        before you pay.
-      </p>
+      {/* Payment method sits directly above the Pay button: the two decisions
+          the buyer is making here are "how do I pay" and "pay". The old
+          "final delivery rate is confirmed on the payment page" note duplicated
+          the order summary and has been removed. */}
 
       {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
       <PaymentMethodSection
@@ -1697,6 +1798,15 @@ export function CheckoutForm({
         value={paymentProvider}
         onChange={setPaymentProvider}
       />
+
+      {!isReady() && payBlockedReason() && (
+        <p
+          className="text-xs -mb-2"
+          style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+        >
+          {payBlockedReason()}
+        </p>
+      )}
 
       {/* Proceed button */}
       <button

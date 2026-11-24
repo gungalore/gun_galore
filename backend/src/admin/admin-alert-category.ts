@@ -48,6 +48,9 @@ const MONEY_PREFIXES = [
   'SELLER_CHARGE',
   'SHIPPING_CHARGE',
   'STALE_CHECKOUT',
+  // 2026-11-24: a lapsed interrupted checkout (Peach/Ozow) released so the
+  // buyer can start again — money-adjacent, so keep it with the payment alerts.
+  'STALE_UNPAID',
   'STORE_PICKUP',
   'DISPATCH_SLA',
   'ADMIN_REFUND',
@@ -102,6 +105,9 @@ const SYSTEM_PREFIXES = [
   'WHATSAPP_',
   'EMAIL_',
   'MAIL_',
+  // A bug report the member sent successfully but whose support email failed:
+  // infrastructure, not member-account work.
+  'BUG_',
   'SHIPMENT_',
   'PARCEL_',
   'CARRIER_',

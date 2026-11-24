@@ -188,13 +188,16 @@ export default async function ListingDetailPage({
   const sellerUserId = listing.seller.userId ?? listing.seller.id;
   const isOwnListing = !!userId && userId === sellerUserId;
 
-  // A buyer who backed out of Ozow lands back here with the listing on
-  // PAYMENT_PENDING and no visible buy control. Ask whether THIS viewer owns
-  // the unpaid attempt; only then offer the resume link (another buyer's
-  // attempt stays private and is rejected by the checkout hold).
+  // A buyer who backed out of the hosted payment page lands back here with an
+  // unpaid attempt. On a TRACKED listing the listing stays ACTIVE while that
+  // attempt exists (the reservation is per unit), so the old
+  // PAYMENT_PENDING-only lookup missed the case that stranded the 2026-11-24
+  // buyer on a disabled Pay button. Ask whether THIS viewer owns the attempt;
+  // another buyer's attempt stays private and is rejected by the hold.
   const unpaidCheckout =
     !isOwnListing &&
-    listing.status === 'PAYMENT_PENDING' &&
+    (listing.status === 'ACTIVE' ||
+      listing.status === 'PAYMENT_PENDING') &&
     listing.listingType === 'BUY_NOW' &&
     userId &&
     token
@@ -209,12 +212,13 @@ export default async function ListingDetailPage({
   const hasUnpaidCheckout = !!unpaidCheckout?.transactionId;
 
   // A buyer can leave the checkout page before pressing Pay. The hold is
-  // theirs, but the listing is PAYMENT_PENDING and the generic "not
-  // available" state would hide the only way back. Look up the live hold.
+  // theirs, and on a tracked listing the listing may still be ACTIVE. Look up
+  // the live hold so the page can offer the way back.
   const heldCheckout =
     !isOwnListing &&
     !hasUnpaidCheckout &&
-    listing.status === 'PAYMENT_PENDING' &&
+    (listing.status === 'ACTIVE' ||
+      listing.status === 'PAYMENT_PENDING') &&
     listing.listingType === 'BUY_NOW' &&
     userId &&
     token
@@ -852,7 +856,74 @@ export default async function ListingDetailPage({
                 inline
               />
             ) : (
-              trackedSellable !== null && trackedSellable <= 0 ? (
+            hasUnpaidCheckout && unpaidCheckout?.transactionId ? (
+              // The buyer started a card payment and left the gateway page.
+              // Make the resume path the primary action instead of offering a
+              // second Buy that would double-charge (2026-11-24 report).
+              <div
+                className="rounded-[8px] p-4 mb-3"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1.5px solid var(--action-option-edge)',
+                }}
+              >
+                <p
+                  className="text-sm"
+                  style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                >
+                  You have an unfinished payment for this item
+                </p>
+                <p
+                  className="text-xs mt-1 mb-3"
+                  style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+                >
+                  It wasn&apos;t completed. Resume it to avoid paying twice.
+                </p>
+                <Link
+                  href={`/checkout/resume/${unpaidCheckout.transactionId}`}
+                  className="block w-full py-3 rounded-[6px] text-sm text-center"
+                  style={{
+                    background: 'var(--action-primary-bg)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Resume payment
+                </Link>
+              </div>
+            ) : heldCheckout ? (
+              // A live 15-minute hold means the item is already reserved for
+              // this buyer; send them back to finish rather than taking a
+              // second hold.
+              <div
+                className="flex items-center gap-3 rounded-[6px] px-3 py-2 mb-3"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-visible)',
+                }}
+              >
+                <span
+                  className="text-xs"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  This item is reserved for you — finish checkout before the
+                  clock runs out.
+                </span>
+                <Link
+                  href={`/checkout/${listing.id}`}
+                  className="ml-auto flex-shrink-0 px-3 py-2 rounded-[6px] text-xs"
+                  style={{
+                    background: 'var(--action-primary-bg)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Finish checkout
+                </Link>
+              </div>
+            ) : trackedSellable !== null && trackedSellable <= 0 ? (
                 /* Sold out (tracked multi-unit) — no Marketplace / Add-to-cart
                    dead ends. Wishlist instead: the buyer gets alerted if the
                    seller restocks or relists. */

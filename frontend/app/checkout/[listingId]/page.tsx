@@ -67,6 +67,29 @@ export default async function CheckoutPage({
     }).catch(() => null);
   }
 
+  // 2026-11-24 buyer report: they backed out of the Peach card page and the
+  // checkout came back with a disabled Pay button. Ask whether THIS signed-in
+  // buyer owns an unfinished payment for this listing — a tracked listing
+  // stays ACTIVE while a HELD gateway transaction exists, so the old
+  // PAYMENT_PENDING-only lookup missed exactly this case. The form shows
+  // Resume payment / Start again from it.
+  let unpaidTransactionId: string | null = null;
+  if (
+    !isAuctionWin &&
+    listing.listingType === 'BUY_NOW' &&
+    userId &&
+    token
+  ) {
+    const unpaid = await apiFetch<{ transactionId: string | null }>(
+      `/transactions/unpaid?listingId=${encodeURIComponent(listingId)}`,
+      {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    ).catch(() => null);
+    unpaidTransactionId = unpaid?.transactionId ?? null;
+  }
+
   if (!isAuctionWin) {
     if (listing.listingType !== 'BUY_NOW') return notFound();
     // ACTIVE = no hold yet. PAYMENT_PENDING is renderable when it is THIS
@@ -198,6 +221,7 @@ export default async function CheckoutPage({
             listing={effectiveListing}
             initialHold={initialHold}
             holdIncludedInListing={initialHold != null}
+            unpaidTransactionId={unpaidTransactionId}
           />
         </div>
       </div>

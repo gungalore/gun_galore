@@ -113,6 +113,40 @@ export function DeliveryOptionsPicker({
   // per-render function identity) still reports into the current handler.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  // Latest selection, so a re-fetch (quantity/address change) can keep the
+  // buyer's choice instead of silently clearing it.
+  const selectedRef = useRef<DeliveryOption | null>(null);
+
+  // One place that changes the selection, so the parent always hears about it.
+  // 2026-11-24: the checkout used to require a manual tap before Pay enabled.
+  // After a gateway round-trip the form remounts with no selection, so Pay sat
+  // grey with no explanation (the "why is Pay disabled?" buyer report). A
+  // cheapest-delivery default is what Amazon/eBay do and keeps checkout honest:
+  // the default is always editable and always priced.
+  function choose(option: DeliveryOption) {
+    selectedRef.current = option;
+    setSelectedOption(option);
+    onSelectRef.current(option);
+  }
+
+  function defaultFor(next: DeliveryOption[]): DeliveryOption | null {
+    const prev = selectedRef.current;
+    if (prev) {
+      const still = next.find(
+        (o) =>
+          o.kind === prev.kind &&
+          (o.kind !== 'STORE_PICKUP' ||
+            o.pickupPointLocationId === prev.pickupPointLocationId),
+      );
+      if (still) return still;
+    }
+    return (
+      next.find((o) => o.kind === 'DOOR_CHEAPEST') ??
+      next.find((o) => o.kind === 'DOOR_FASTEST') ??
+      next[0] ??
+      null
+    );
+  }
 
   // Serialise the address so the effect keys on the VALUES, not on a fresh
   // object identity every render (which would loop the fetch).
@@ -151,6 +185,7 @@ export function DeliveryOptionsPicker({
             'We could not load delivery options. Please try again in a moment.',
         );
         setOptions([]);
+        selectedRef.current = null;
         setSelectedOption(null);
         return;
       }
@@ -195,10 +230,17 @@ export function DeliveryOptionsPicker({
         })),
       ].filter((option): option is DeliveryOption => option !== null);
       setOptions(nextOptions);
-      setSelectedOption(null);
+      const preferred = defaultFor(nextOptions);
+      if (preferred) {
+        choose(preferred);
+      } else {
+        selectedRef.current = null;
+        setSelectedOption(null);
+      }
     } catch {
       setError('We could not load delivery options. Please try again in a moment.');
       setOptions([]);
+      selectedRef.current = null;
       setSelectedOption(null);
     } finally {
       setLoading(false);
@@ -273,10 +315,7 @@ export function DeliveryOptionsPicker({
           <button
             key={`${option.kind}:${option.pickupPointLocationId ?? option.serviceCode}`}
             type="button"
-            onClick={() => {
-              setSelectedOption(option);
-              onSelectRef.current(option);
-            }}
+            onClick={() => choose(option)}
             aria-pressed={Boolean(selected)}
             className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left"
             style={{
