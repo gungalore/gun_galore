@@ -5,7 +5,20 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-23**.
+Last updated: **2026-11-24**.
+
+## 2026-11-24 — HEADER, QUICK ACTIONS AND CARD POLISH (DEPLOYED)
+
+Operator: *"Create Buttons with no Descriptions, Sell your Gear, Motivation Creator, Armory. Armory can Spawn three buttons below again with its child buttons with a short description in the button as well."*
+
+- **Header:** emblem-only logo; the Shop pill is replaced by a measured three-way **Marketplace / Auction / Community** switch (the active pill tracks the real label width, not equal thirds). Profile trigger lost its card border/fill; header/cart/tab count badges are neutral so blue is reserved for Sell. Desktop search cap is 520px. The PWA search row gained a 44px category icon that opens the existing category-first ShopSheet; no new route or category fetch.
+- **Quick actions:** the four-box strip is three label-only buttons — **Sell your gear**, **Motivation Creator**, **Armory**. Signed-in Armory is a disclosure with three child buttons whose short descriptions sit inside the button (Paper Work Vault, Reloading Tool, Application Tracker). Signed out, Armory links to `/account` (auth wall) rather than rendering the member tool names on the public homepage.
+- **Hero:** H1 is pure white; CTA is **Explore Gear**; “Sellers list for free.” and “100% payout on Buy Now.” are checkmark trust badges under the CTA.
+- **Cards:** 1px inner image frame, frosted dark wishlist heart, crisp condition chip; title → price + neutral mode pill → location with pin → seller reputation → auction state. The old bottom Buy Now/Place bid row is gone.
+- **Report a bug:** floating desktop button removed; footer link added (account menu already had it; mobile Report tab unchanged). Beta notice copy updated.
+- **Marketplace rename:** applied to navigation/surface labels only; “Buy Now” stays where it names the transaction, payout or legal offer.
+- **Deployed `f9a40e0a` (frontend-only)**, rollback point `alloutdoor-20261124-062002.dump` (39,105,120 bytes). Frontend build clean, `pm2 reload`, frontend health ×2, public 200 ×2; backend and warden untouched and online.
+- **Checks:** backend **438 suites / 6,488 passed** (8 skipped); frontend **184 files / 2,079 passed** (1 skipped); both type-checks clean; production build clean. Live HTML verified `Marketplace`, `Sell your gear`, `Motivation Creator`, `Armory`, `gg-quick-action` and `gg-view-toggle`, with no `ShopCommunity` toggle. Real 360/390px CDP layouts had no horizontal overflow.
 
 ## 2026-11-23 — GPX ROUTES + 3D MAPS + HIKING (DEPLOYED)
 
