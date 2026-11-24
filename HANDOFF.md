@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PEACH LIVE-READINESS AUDIT + FIXES (DEPLOYED `cc23c4b7`)
+
+Operator: *"Check if peach if good to go?"* → *"fix everything and get everything ready"*
+
+- **Verdict: not live-ready, and still dark.** `peach_payin_enabled` / `peach_payouts_enabled` have no Setting rows (defaults OFF) and production has **0 `PEACH` transactions**; `/api/transactions/payment-methods` serves Ozow only.
+- **Verified working:** OAuth for the checkout pair **and** the payouts pair; Payouts + BANV APIs (authenticated 404s); payout/BANV webhook registration (`…/peach-payout`, `…/peach-banv`, with payout-status + float-allocation updates); checkout webhooks already arrive and verify (a real R2 live payment on 2026-11-24 was a Peach-dashboard test, not an app checkout).
+- **Remaining blockers (operator, in the Peach Dashboard):** `POST /v2/checkout` and `GET /v2/channels/{entity}/payment-methods` return `404 Channel not found` for the configured entity, and the classic signature is rejected (`/v1/checkout/refund` → `800.900.300 invalid authentication`; V1 checkout page → "Invalid signature"). **`PEACH_ENTITY_ID` + `PEACH_SECRET` are not a matching live Checkout pair** — re-copy both from Dashboard → Checkout → API keys, confirm the V2/Orchestration product is enabled, confirm `alloutdoor.co.za` is allowlisted, then run `cd backend && npm run peach:smoke` until it prints `READY` (add `-- --create` to mint an unpaid R1 checkout).
+- **Fixed in code:** Checkout V2 now sends the flat dotted `authentication.entityId` from Peach's OpenAPI JSON example + decimal ZAR amount (a nested `authentication` object is not parsed); refunds now post to the classic V1 endpoint as **form-urlencoded flat fields** signed with `PEACH_SECRET`, and read flat dotted `result.code` as well as nested — the old nested-JSON body was rejected live (`authentication.entityId may not be null`) and a successful refund would have been classified as failed; the **BANV payout hold now applies only while `peach_payouts_enabled` is ON**, so staging Payouts credentials no longer freezes the live Ozow payout queue on `bankVerifiedAt`; the payout-webhook boot warning now states the real behaviour (unsigned deliveries re-confirmed via API); `frontend/components/sw-update-banner.spec.tsx` type error fixed.
+- **Deployed `cc23c4b7` (full)**, rollback point `alloutdoor-20261124-110718.dump` (39,116,475 bytes). No migrations. Backend + frontend builds, PM2 reload, health ×2, warden reloaded and online, public 200 ×2; all three services online.
+- **Checks:** backend **439 suites / 6,502 passed** (8 skipped); frontend **186 files / 2,084 passed** (1 skipped); both type-checks and the production build clean. Live probe: **10 pass / 2 fail** (the two credential items) / 1 warn (payout webhook secret falls back to `PEACH_SECRET`) / 2 skip (float unknown).
+- **Enable order once READY:** `peach_payin_enabled` → live R1–R2 pay-in + refund → BANV-verify every seller with due money → `peach_payouts_enabled` → small payout batch. Keep auto payouts OFF until both rails complete a settlement cycle. Full runbook: `PAYMENTS-GO-LIVE.md` § "Peach dual-rail go-live".
+
 ## 2026-11-24 — BLOCKING UPDATE GATE (DEPLOYED)
 
 Operator: *"the update button sits underneath the report a bug button on the pwa. Move the refresh as a pop up window on the desktop and PWA to force users to click it"*
