@@ -499,7 +499,7 @@ export default function SignUpForm() {
             tabIndex={-1}
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(227,6,19,0.08)',
+              background: 'var(--red-wash)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
               outline: 'none',
@@ -793,7 +793,7 @@ export default function SignUpForm() {
                 disabled={!canSubmit}
                 className="w-full py-3 rounded-[6px] text-sm font-medium transition-opacity"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   border: 'none',
                   cursor: canSubmit ? 'pointer' : 'not-allowed',
@@ -977,7 +977,7 @@ function PhoneVerifyStep({
             aria-live="assertive"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(227,6,19,0.08)',
+              background: 'var(--red-wash)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}
@@ -991,8 +991,8 @@ function PhoneVerifyStep({
             aria-live="polite"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(34,197,94,0.08)',
-              border: '0.5px solid rgba(34,197,94,0.4)',
+              background: 'var(--success-wash)',
+              border: '0.5px solid var(--success-wash)',
               color: 'var(--success)',
             }}
           >
@@ -1044,7 +1044,7 @@ function PhoneVerifyStep({
                 disabled={busy || draft.trim().length === 0}
                 className="px-5 py-2.5 rounded-[6px] text-sm"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   border: 'none',
                   fontWeight: 500,
@@ -1113,7 +1113,7 @@ function PhoneVerifyStep({
               disabled={code.length !== 6 || busy}
               className="w-full py-3 rounded-[6px] text-sm font-medium"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 border: 'none',
                 cursor:
@@ -1254,7 +1254,7 @@ function VerifyStep({
             aria-live="assertive"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(227,6,19,0.08)',
+              background: 'var(--red-wash)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}
@@ -1268,8 +1268,8 @@ function VerifyStep({
             aria-live="polite"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
-              background: 'rgba(34,197,94,0.08)',
-              border: '0.5px solid rgba(34,197,94,0.4)',
+              background: 'var(--success-wash)',
+              border: '0.5px solid var(--success-wash)',
               color: 'var(--success)',
             }}
           >
@@ -1307,7 +1307,7 @@ function VerifyStep({
             disabled={code.length !== 6 || verifying}
             className="w-full py-3 rounded-[6px] text-sm font-medium"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               cursor: code.length === 6 && !verifying ? 'pointer' : 'not-allowed',

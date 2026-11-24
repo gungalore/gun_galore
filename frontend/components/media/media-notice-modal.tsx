@@ -45,7 +45,7 @@ export function MediaNoticeModal({
           type="button"
           onClick={onClose}
           className="w-full px-4 py-2.5 rounded-[6px] text-sm"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none', fontWeight: 500 }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', fontWeight: 500 }}
         >
           Got it
         </button>

@@ -153,7 +153,7 @@ export function PushOptInBanner() {
           width: 32,
           height: 32,
           borderRadius: '50%',
-          background: 'rgba(227,6,19,0.18)',
+          background: 'var(--red-wash)',
           color: 'var(--red)',
           display: 'inline-flex',
           alignItems: 'center',
@@ -205,7 +205,7 @@ export function PushOptInBanner() {
         disabled={push.busy}
         style={{
           padding: '8px 14px',
-          background: 'var(--red)',
+          background: 'var(--action-primary-bg)',
           color: '#fff',
           border: 'none',
           borderRadius: 6,

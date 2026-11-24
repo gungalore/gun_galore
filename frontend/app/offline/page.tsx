@@ -65,7 +65,7 @@ export default function OfflinePage() {
           href="/"
           style={{
             display: 'inline-block',
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             padding: '12px 28px',
             borderRadius: 6,

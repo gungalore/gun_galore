@@ -406,7 +406,7 @@ export function ProfileSetupPrompt() {
                       width: 6,
                       height: 6,
                       borderRadius: '50%',
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       flexShrink: 0,
                     }}
                   />
@@ -432,7 +432,7 @@ export function ProfileSetupPrompt() {
             style={{
               flex: 1,
               minWidth: 160,
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               borderRadius: 9,

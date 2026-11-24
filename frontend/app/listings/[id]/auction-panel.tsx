@@ -215,7 +215,7 @@ export default function AuctionPanel({
           className="rounded-[6px] px-4 py-4 mb-5 text-sm"
           role="alert"
           style={{
-            background: 'rgba(227,6,19,0.08)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-secondary)',
             lineHeight: 1.5,
@@ -234,7 +234,7 @@ export default function AuctionPanel({
             disabled={retrying}
             className="w-full mt-3 py-2.5 rounded-[6px] text-sm font-medium"
             style={{
-              background: retrying ? 'var(--bg-inset)' : 'var(--red)',
+              background: retrying ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
               color: retrying ? 'var(--text-tertiary)' : '#fff',
               border: 'none',
               cursor: retrying ? 'not-allowed' : 'pointer',
@@ -402,7 +402,7 @@ export default function AuctionPanel({
         <div
           className="rounded-[6px] px-3 py-2 text-xs flex items-center gap-2"
           style={{
-            background: 'rgba(245,158,11,0.10)',
+            background: 'var(--warning-wash)',
             border: '0.5px solid var(--warning)',
             color: 'var(--warning)',
             fontWeight: 500,
@@ -483,7 +483,7 @@ export default function AuctionPanel({
         <div
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
-            background: 'rgba(227,6,19,0.10)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-primary)',
             lineHeight: 1.5,
@@ -543,7 +543,7 @@ export default function AuctionPanel({
             type="button"
             className="w-full py-3 rounded-[6px] text-sm font-medium"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               cursor: 'pointer',
@@ -565,7 +565,7 @@ export default function AuctionPanel({
               disabled={submitting}
               className="w-full py-3 rounded-[6px] text-sm font-medium"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 border: 'none',
                 cursor: submitting ? 'not-allowed' : 'pointer',
@@ -581,10 +581,10 @@ export default function AuctionPanel({
               className="w-full py-3 rounded-[6px] text-sm font-medium"
               style={{
                 background:
-                  myBid?.proxyActive ? 'rgba(34,197,94,0.18)' : 'var(--red)',
+                  myBid?.proxyActive ? 'var(--success-wash)' : 'var(--action-primary-bg)',
                 color: myBid?.proxyActive ? 'var(--success)' : '#fff',
                 border: myBid?.proxyActive
-                  ? '0.5px solid rgba(34,197,94,0.55)'
+                  ? '0.5px solid var(--success-wash)'
                   : 'none',
                 cursor: submitting ? 'not-allowed' : 'pointer',
                 opacity: submitting ? 0.6 : 1,
@@ -821,8 +821,8 @@ function EndedAuctionNotice({
         className="rounded-[6px] px-4 py-4 text-sm"
         role="status"
         style={{
-          background: 'rgba(34,197,94,0.10)',
-          border: '0.5px solid rgba(34,197,94,0.55)',
+          background: 'var(--success-wash)',
+          border: '0.5px solid var(--success-wash)',
           color: 'var(--text-secondary)',
           lineHeight: 1.55,
         }}
@@ -846,7 +846,7 @@ function EndedAuctionNotice({
           href={`/checkout/${listingId}`}
           className="block w-full mt-3 py-3 rounded-[6px] text-sm text-center"
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             fontWeight: 500,
             textDecoration: 'none',

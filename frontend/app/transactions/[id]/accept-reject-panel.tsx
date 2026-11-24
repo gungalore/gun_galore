@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Seller-facing Accept / Reject panel on /transactions/[id].
@@ -179,7 +179,7 @@ export function AcceptRejectPanel({
         className="rounded-[8px] p-4"
         style={{
           background: 'var(--bg-card)',
-          border: '0.5px solid var(--red)',
+          border: '1.5px solid var(--danger-edge)',
         }}
       >
         <p
@@ -204,12 +204,11 @@ export function AcceptRejectPanel({
               key={r.value}
               className="flex items-start gap-2 cursor-pointer p-2 rounded-[6px]"
               style={{
-                background:
-                  view.reason === r.value ? 'var(--bg-inset)' : 'transparent',
-                border: `0.5px solid ${
+                background: 'transparent',
+                border: `1.5px solid ${
                   view.reason === r.value
-                    ? 'var(--text-secondary)'
-                    : 'var(--border)'
+                    ? 'var(--danger-edge)'
+                    : 'var(--border-visible)'
                 }`,
               }}
             >
@@ -277,8 +276,8 @@ export function AcceptRejectPanel({
             onClick={() => void doReject(submittable)}
             className="flex-1 py-2.5 px-3 rounded-[6px] text-sm"
             style={{
-              background: canSubmit ? 'var(--red)' : 'var(--bg-inset)',
-              color: canSubmit ? '#fff' : 'var(--text-tertiary)',
+              background: canSubmit ? 'var(--danger-fill)' : 'var(--bg-inset)',
+              color: canSubmit ? 'var(--danger-ink)' : 'var(--text-tertiary)',
               border: 'none',
               cursor: canSubmit ? 'pointer' : 'not-allowed',
               fontWeight: 500,
@@ -299,8 +298,8 @@ export function AcceptRejectPanel({
     <div
       className="rounded-[8px] p-4"
       style={{
-        background: expired ? 'rgba(227,6,19,0.08)' : 'var(--bg-card)',
-        border: `0.5px solid ${expired ? 'var(--red)' : 'var(--red)'}`,
+        background: expired ? 'var(--red-wash)' : 'var(--bg-card)',
+        border: '1px solid var(--border-visible)',
       }}
     >
       <p
@@ -354,8 +353,8 @@ export function AcceptRejectPanel({
         <p
           className="text-xs mb-3 p-2 rounded-[6px]"
           style={{
-            background: 'rgba(227,6,19,0.10)',
-            border: '0.5px solid var(--red)',
+            background: 'var(--red-wash)',
+            border: '1.5px solid var(--danger-edge)',
             color: 'var(--red)',
             lineHeight: 1.45,
           }}

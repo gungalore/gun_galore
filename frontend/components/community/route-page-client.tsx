@@ -402,7 +402,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
               onClick={() => void handleDownload()}
               disabled={downloading}
               className="gg-press rounded-[6px] px-4 py-2 text-[13px] font-medium disabled:opacity-60"
-              style={{ background: 'var(--red)', color: '#fff' }}
+              style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
             >
               {downloading ? 'Preparing…' : 'Download .gpx'}
             </button>

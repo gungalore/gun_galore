@@ -199,7 +199,7 @@ export default function HowSellingWorksPage() {
         <Link
           href="/listings/new"
           className="inline-block text-sm px-5 py-2.5 rounded-[6px]"
-          style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
         >
           Start selling
         </Link>

@@ -825,7 +825,7 @@ export default function PackPage() {
               <Link
                 href={`/licence-centre/${id}`}
                 className="mt-3 inline-flex rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-                style={{ background: 'var(--red)' }}
+                style={{ background: 'var(--action-primary-bg)' }}
               >
                 Fix missing details
               </Link>

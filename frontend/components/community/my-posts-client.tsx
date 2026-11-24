@@ -460,7 +460,7 @@ export function MyPostsClient() {
                   (!editBody.trim() && editing.images.length === 0 && !editing.video)
                 }
                 className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
-                style={{ background: 'var(--red)', color: '#fff' }}
+                style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

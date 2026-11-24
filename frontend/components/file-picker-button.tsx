@@ -76,7 +76,7 @@ export default function FilePickerButton({
       'min-h-[44px] cursor-pointer disabled:cursor-default disabled:opacity-50';
   const tone =
     variant === 'primary'
-      ? 'bg-[var(--red)] text-white hover:bg-[var(--red-hover)]'
+      ? 'bg-[var(--action-primary-bg)] text-white hover:bg-[var(--red-hover)]'
       : 'border border-[var(--border)] bg-[var(--bg-inset)] ' +
         'text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]';
 

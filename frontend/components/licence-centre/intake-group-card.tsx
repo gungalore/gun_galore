@@ -428,7 +428,7 @@ export default function IntakeGroupCard({
           disabled={!canContinue}
           onClick={() => submit()}
           className="rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50"
-          style={{ background: 'var(--red)' }}
+          style={{ background: 'var(--action-primary-bg)' }}
         >
           Continue
         </button>

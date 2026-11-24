@@ -157,7 +157,7 @@ export function NotificationItem({
           height: 36,
           flexShrink: 0,
           borderRadius: 8,
-          background: resolved ? 'var(--bg-inset)' : 'rgba(227, 6, 19, 0.10)',
+          background: resolved ? 'var(--bg-inset)' : 'var(--red-wash)',
           color: resolved ? 'var(--text-tertiary)' : 'var(--red)',
           display: 'inline-flex',
           alignItems: 'center',
@@ -238,7 +238,7 @@ export function NotificationItem({
         borderRadius: 10,
         background:
           !resolved && !item.dismissible
-            ? 'color-mix(in srgb, var(--red) 6%, var(--bg-card))'
+            ? 'color-mix(in srgb, var(--action-primary-bg) 6%, var(--bg-card))'
             : 'var(--bg-card)',
         border: '0.5px solid var(--border)',
         borderLeft:
@@ -279,7 +279,7 @@ export function NotificationItem({
               letterSpacing: 0.6,
               padding: '4px 8px',
               borderRadius: 6,
-              background: 'rgba(227, 6, 19, 0.10)',
+              background: 'var(--red-wash)',
               color: 'var(--red)',
               flexShrink: 0,
               whiteSpace: 'nowrap',

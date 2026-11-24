@@ -130,7 +130,7 @@ export function VaultConsentBody({
           type="button"
           disabled={busy}
           onClick={() => onAnswer(true)}
-          className="rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
+          className="rounded-[var(--r-md)] bg-[var(--action-primary-bg)] px-4 py-2 text-sm text-white disabled:opacity-60"
         >
           {busy ? 'Saving…' : 'Yes, keep my documents'}
         </button>

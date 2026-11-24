@@ -897,7 +897,7 @@ export function CheckoutForm({
       {error && (
         <div
           className="px-4 py-3 rounded-[6px] text-sm"
-          style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+          style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
         </div>
@@ -1007,7 +1007,7 @@ export function CheckoutForm({
                           )
                         : 0
                 }%`,
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 transition: 'width 1s linear',
               }}
             />
@@ -1255,13 +1255,17 @@ export function CheckoutForm({
                 onClick={() => setUseDifferentAddress(false)}
                 className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
                 style={{
-                  borderColor: !useDifferentAddress
-                    ? 'var(--red)'
-                    : 'var(--border-visible)',
                   background: !useDifferentAddress
-                    ? 'var(--red-wash)'
-                    : 'var(--bg-card)',
-                  color: 'var(--text-primary)',
+                    ? 'var(--action-option-selected-bg)'
+                    : 'transparent',
+                  border: `1.5px solid ${
+                    !useDifferentAddress
+                      ? 'var(--action-option-selected-edge)'
+                      : 'var(--action-option-edge)'
+                  }`,
+                  color: !useDifferentAddress
+                    ? 'var(--action-option-selected-ink)'
+                    : 'var(--text-primary)',
                 }}
               >
                 Use my saved address
@@ -1272,13 +1276,17 @@ export function CheckoutForm({
                 onClick={() => setUseDifferentAddress(true)}
                 className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
                 style={{
-                  borderColor: useDifferentAddress
-                    ? 'var(--red)'
-                    : 'var(--border-visible)',
                   background: useDifferentAddress
-                    ? 'var(--red-wash)'
-                    : 'var(--bg-card)',
-                  color: 'var(--text-primary)',
+                    ? 'var(--action-option-selected-bg)'
+                    : 'transparent',
+                  border: `1.5px solid ${
+                    useDifferentAddress
+                      ? 'var(--action-option-selected-edge)'
+                      : 'var(--action-option-edge)'
+                  }`,
+                  color: useDifferentAddress
+                    ? 'var(--action-option-selected-ink)'
+                    : 'var(--text-primary)',
                 }}
               >
                 Deliver to a different address
@@ -1697,7 +1705,7 @@ export function CheckoutForm({
         disabled={submitting || !isReady()}
         className="w-full py-3 rounded-[6px] text-sm"
         style={{
-          background: submitting || !isReady() ? 'var(--bg-inset)' : 'var(--red)',
+          background: submitting || !isReady() ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: submitting || !isReady() ? 'var(--text-tertiary)' : '#fff',
           fontWeight: 500,
           cursor: submitting || !isReady() ? 'not-allowed' : 'pointer',
@@ -1821,7 +1829,7 @@ function BuyerPhoneCapture({
           disabled={!valid || saving}
           className="px-4 py-2 rounded-[6px] text-sm"
           style={{
-            background: !valid || saving ? 'var(--bg-card)' : 'var(--red)',
+            background: !valid || saving ? 'var(--bg-card)' : 'var(--action-primary-bg)',
             color: !valid || saving ? 'var(--text-tertiary)' : '#fff',
             border: 'none',
             cursor: !valid || saving ? 'not-allowed' : 'pointer',
@@ -1907,9 +1915,9 @@ function DeliveringToChip({
       className="rounded-[6px] p-3 text-sm"
       style={{
         background: incomplete
-          ? 'rgba(245,158,11,0.08)'
-          : 'rgba(34,197,94,0.08)',
-        border: `0.5px solid ${incomplete ? 'var(--warning)' : 'rgba(34,197,94,0.45)'}`,
+          ? 'var(--warning-wash)'
+          : 'var(--success-wash)',
+        border: `0.5px solid ${incomplete ? 'var(--warning)' : 'var(--success-wash)'}`,
         color: 'var(--text-primary)',
       }}
     >
@@ -1972,7 +1980,7 @@ function CollectionPapersAck({
     <div
       className="rounded-[6px] p-4 text-sm space-y-3"
       style={{
-        background: 'rgba(227,6,19,0.06)',
+        background: 'var(--red-wash)',
         border: '0.5px solid var(--red)',
         color: 'var(--text-primary)',
         lineHeight: 1.55,

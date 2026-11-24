@@ -31,7 +31,7 @@ export function PhotoChecklist({ items }: { items: PhotoChecklistItem[] }) {
                   height: 18,
                   marginTop: 1,
                   borderRadius: '50%',
-                  background: item.required ? 'var(--red)' : 'var(--bg-card)',
+                  background: item.required ? 'var(--action-primary-bg)' : 'var(--bg-card)',
                   border: item.required ? 'none' : '0.5px solid var(--border)',
                   flexShrink: 0,
                 }}

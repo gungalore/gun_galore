@@ -88,7 +88,7 @@ export function ConnectionStatusBanner() {
         right: 0,
         zIndex: 80, // above PublicNav (z-50) + tab bar (z-55/56)
         padding: '8px 16px',
-        background: showOffline ? 'var(--red)' : 'var(--success)',
+        background: showOffline ? 'var(--action-primary-bg)' : 'var(--success)',
         color: '#fff',
         fontSize: 13,
         fontWeight: 500,

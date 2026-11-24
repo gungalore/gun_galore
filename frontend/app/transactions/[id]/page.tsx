@@ -258,7 +258,7 @@ export default async function TransactionPage({
         <div
           className="rounded-[8px] p-4 mb-5"
           style={{
-            background: 'rgba(227,6,19,0.06)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
           }}
         >
@@ -280,7 +280,7 @@ export default async function TransactionPage({
             href={`/checkout/resume/${tx.id}`}
             className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               textDecoration: 'none',
             }}
@@ -398,7 +398,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] p-4 text-sm space-y-2"
               style={{
-                background: 'rgba(227,6,19,0.06)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
               }}
             >
@@ -885,7 +885,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] p-4"
               style={{
-                background: 'rgba(227,6,19,0.06)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
               }}
             >
@@ -991,7 +991,7 @@ export default async function TransactionPage({
             <div
               className="rounded-[8px] px-4 py-3"
               style={{
-                background: 'rgba(227,6,19,0.08)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
                 lineHeight: 1.55,
               }}
@@ -1071,9 +1071,9 @@ export default async function TransactionPage({
               const isDealerTransfer =
                 tx.shippingMethod === 'DEALER_TRANSFER';
               const tone = expired
-                ? { bg: 'rgba(227,6,19,0.12)', border: 'var(--red)', label: 'var(--red)' }
+                ? { bg: 'var(--red-wash)', border: 'var(--red)', label: 'var(--red)' }
                 : isCritical
-                  ? { bg: 'rgba(227,6,19,0.08)', border: 'var(--red)', label: 'var(--red)' }
+                  ? { bg: 'var(--red-wash)', border: 'var(--red)', label: 'var(--red)' }
                   : { bg: 'rgba(0,160,60,0.06)', border: 'rgba(0,160,60,0.35)', label: 'var(--success)' };
               const remaining = expired
                 ? 'overdue'
@@ -1263,7 +1263,7 @@ export default async function TransactionPage({
                   href={`/transactions/${tx.id}/dealer-verification`}
                   className="inline-block py-2.5 px-4 rounded-[6px] text-sm"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontWeight: 500,
                     textDecoration: 'none',
@@ -1299,8 +1299,8 @@ export default async function TransactionPage({
               <div
                 className="rounded-[8px] p-4"
                 style={{
-                  background: 'rgba(34,197,94,0.06)',
-                  border: '0.5px solid rgba(34,197,94,0.45)',
+                  background: 'var(--success-wash)',
+                  border: '0.5px solid var(--success-wash)',
                 }}
               >
                 <p

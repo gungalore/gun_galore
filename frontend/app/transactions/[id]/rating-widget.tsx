@@ -165,7 +165,7 @@ export function RatingWidget({
         disabled={!stars || submitting}
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
-          background: !stars || submitting ? 'var(--bg-inset)' : 'var(--red)',
+          background: !stars || submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: !stars || submitting ? 'var(--text-tertiary)' : '#fff',
           border: 'none',
           cursor: !stars || submitting ? 'not-allowed' : 'pointer',

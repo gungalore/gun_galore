@@ -205,7 +205,7 @@ export function ProfileClient({ username }: { username: string }) {
           onClick={toggleFollow}
           className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
           style={{
-            background: data.isFollowing ? 'var(--bg-card)' : 'var(--red)',
+            background: data.isFollowing ? 'var(--bg-card)' : 'var(--action-primary-bg)',
             color: data.isFollowing ? 'var(--text-secondary)' : '#fff',
             border: data.isFollowing ? '0.5px solid var(--border)' : 'none',
           }}

@@ -355,7 +355,7 @@ export default function ReviewScreen({
             <button
               type="button"
               onClick={onFinish}
-              className="mx-auto mt-6 rounded-[10px] border border-[var(--red)] bg-[var(--red)] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)]"
+              className="mx-auto mt-6 rounded-[10px] border border-[var(--red)] bg-[var(--action-primary-bg)] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)]"
             >
               Done
             </button>
@@ -446,7 +446,7 @@ export default function ReviewScreen({
                   </span>
                 )}
                 {rejected.length > 0 && (
-                  <span className="rounded-full border border-[rgba(227,6,19,0.5)] bg-[rgba(227,6,19,0.09)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--red)]">
+                  <span className="rounded-full border border-[var(--red-line)] bg-[var(--red-wash)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--red)]">
                     {rejected.length} did not go through
                   </span>
                 )}
@@ -540,7 +540,7 @@ export default function ReviewScreen({
                     type="button"
                     disabled={busy}
                     onClick={() => void acceptAll()}
-                    className="rounded-[10px] border border-[var(--red)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+                    className="rounded-[10px] border border-[var(--red)] bg-[var(--action-primary-bg)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
                   >
                     {working
                       ? 'Filing…'
@@ -604,7 +604,7 @@ export default function ReviewScreen({
                   onClick={() => void refile(sheetItem, k)}
                   className={`flex min-h-[44px] items-center justify-between gap-3 rounded-[6px] border px-3 text-left text-[12.5px] disabled:opacity-50 ${
                     k === sheetItem.kind
-                      ? 'border-[var(--red)] bg-[rgba(227,6,19,0.09)] font-semibold'
+                      ? 'border-[var(--red)] bg-[var(--red-wash)] font-semibold'
                       : 'border-transparent hover:bg-[var(--bg-card-hover)]'
                   }`}
                 >

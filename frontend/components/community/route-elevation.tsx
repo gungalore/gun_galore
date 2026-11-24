@@ -287,7 +287,7 @@ export function RouteElevation({
                 width: 9,
                 height: 9,
                 borderRadius: 9999,
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 border: '2px solid var(--bg-card)',
                 transform: 'translate(-50%, -50%)',
               }}

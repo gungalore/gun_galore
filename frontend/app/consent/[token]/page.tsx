@@ -380,7 +380,7 @@ export default function SellerConsentPage() {
       <button
         type="button"
         onClick={() => setCapturing(true)}
-        className="mt-2 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white"
+        className="mt-2 w-full rounded-[var(--r-md)] bg-[var(--action-primary-bg)] px-4 py-3 text-sm font-semibold text-white"
       >
         {photographed ? 'Retake the photographs' : 'Open the camera'}
       </button>
@@ -615,7 +615,7 @@ export default function SellerConsentPage() {
         type="button"
         onClick={submit}
         disabled={!ready || busy}
-        className="mt-5 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-5 w-full rounded-[var(--r-md)] bg-[var(--action-primary-bg)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
       >
         {busy ? 'Sending…' : 'Give my consent'}
       </button>

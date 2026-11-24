@@ -155,7 +155,7 @@ export default function PrintBookingPage() {
             type="button"
             onClick={() => void book()}
             className="mt-4 min-h-[44px] rounded-lg px-4 text-[13.5px] font-medium text-white"
-            style={{ background: 'var(--red)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             Try again
           </button>

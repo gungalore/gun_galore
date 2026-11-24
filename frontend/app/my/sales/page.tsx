@@ -124,7 +124,7 @@ export default async function MySalesPage() {
               href="/listings/new"
               className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 500,
                 textDecoration: 'none',

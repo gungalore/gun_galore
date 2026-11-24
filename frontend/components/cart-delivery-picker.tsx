@@ -236,7 +236,7 @@ export function CartDeliveryPicker({
       <div
         className="rounded-[8px] p-4 text-sm"
         style={{
-          background: 'rgba(227,6,19,0.08)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
           color: 'var(--red)',
         }}
@@ -270,8 +270,8 @@ export function CartDeliveryPicker({
             <div
               className="rounded-[8px] p-4 text-sm"
               style={{
-                background: 'rgba(245,158,11,0.10)',
-                border: '0.5px solid rgba(245,158,11,0.5)',
+                background: 'var(--warning-wash)',
+                border: '0.5px solid var(--warning-wash)',
                 color: 'var(--text-secondary)',
               }}
             >
@@ -293,8 +293,17 @@ export function CartDeliveryPicker({
                   aria-pressed={active}
                   className="flex w-full items-center gap-3 rounded-[8px] p-3 text-left"
                   style={{
-                    background: active ? 'var(--red-wash)' : 'var(--bg-card)',
-                    border: `1px solid ${active ? 'var(--red)' : 'var(--border-visible)'}`,
+                    background: active
+                      ? 'var(--action-option-selected-bg)'
+                      : 'transparent',
+                    border: `1.5px solid ${
+                      active
+                        ? 'var(--action-option-selected-edge)'
+                        : 'var(--action-option-edge)'
+                    }`,
+                    color: active
+                      ? 'var(--action-option-selected-ink)'
+                      : 'var(--text-primary)',
                   }}
                 >
                   <span className="flex-1 min-w-0">

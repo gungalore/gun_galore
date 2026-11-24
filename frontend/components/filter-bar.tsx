@@ -110,9 +110,9 @@ const chipStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: '6px',
   maxWidth: '100%',
-  background: 'var(--bg-inset)',
+  background: 'transparent',
   border: '1px solid var(--border-visible)',
-  color: 'var(--text-secondary)',
+  color: 'var(--text-primary)',
   borderRadius: '999px',
   padding: '5px 10px',
   fontSize: '12px',
@@ -1003,9 +1003,9 @@ export function FilterBar({
           aria-expanded={sheetOpen}
           className={`sm:hidden shrink-0 rounded-[6px] ${FOCUS_RING}`}
           style={{
-            background: activeCount > 0 ? 'var(--red)' : 'var(--bg-inset)',
-            color: activeCount > 0 ? '#fff' : 'var(--text-secondary)',
-            border: `1px solid ${activeCount > 0 ? 'var(--red)' : 'var(--border-visible)'}`,
+            background: 'transparent',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-visible)',
             padding: '9px 14px',
             fontSize: '13px',
             fontWeight: 500,
@@ -1222,7 +1222,7 @@ export function FilterBar({
                   onClick={() => setSheetOpen(false)}
                   className={`flex-1 py-3 rounded-[6px] text-sm ${FOCUS_RING}`}
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontWeight: 500,
                     border: 'none',

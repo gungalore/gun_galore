@@ -109,9 +109,15 @@ export function WishlistButton({
           gap: 8,
           padding: '10px 16px',
           borderRadius: 8,
-          background: saved ? 'rgba(227,6,19,0.08)' : 'var(--bg-card)',
-          border: `0.5px solid ${saved ? 'var(--red)' : 'var(--border)'}`,
-          color: saved ? 'var(--red)' : 'var(--text-secondary)',
+          background: saved
+            ? 'var(--action-option-selected-bg)'
+            : 'var(--action-secondary-bg)',
+          border: saved
+            ? '1.5px solid var(--action-option-selected-edge)'
+            : 'none',
+          color: saved
+            ? 'var(--action-option-selected-ink)'
+            : 'var(--action-secondary-ink)',
           fontSize: 14,
           fontWeight: 500,
           cursor: busy ? 'wait' : 'pointer',

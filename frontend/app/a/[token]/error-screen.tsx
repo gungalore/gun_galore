@@ -45,7 +45,7 @@ export function ActionTokenError({ status }: { status: number }) {
         href="/sign-in"
         style={{
           display: 'inline-block',
-          background: 'var(--red)',
+          background: 'var(--action-primary-bg)',
           color: '#fff',
           textDecoration: 'none',
           padding: '12px 24px',

@@ -272,7 +272,7 @@ export default function OfferPanel({
                     cursor: 'pointer',
                   }
                 : {
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     border: 'none',
                     cursor: 'pointer',
@@ -313,9 +313,8 @@ export default function OfferPanel({
           }}
           className="block w-full py-2.5 rounded-[6px] text-sm text-center"
           style={{
-            background: 'transparent',
-            color: 'var(--red)',
-            border: '1px solid var(--red)',
+            background: 'var(--action-secondary-bg)',
+            color: 'var(--action-secondary-ink)',
             cursor: 'pointer',
           }}
         >
@@ -428,9 +427,8 @@ export default function OfferPanel({
             onClick={() => setShowForm(true)}
             className="block w-full py-2.5 rounded-[6px] text-sm text-center"
             style={{
-              background: 'transparent',
-              color: 'var(--red)',
-              border: '1px solid var(--red)',
+              background: 'var(--action-secondary-bg)',
+              color: 'var(--action-secondary-ink)',
               cursor: 'pointer',
             }}
           >
@@ -453,9 +451,8 @@ export default function OfferPanel({
           onClick={() => setExpanded(true)}
           className="w-full py-2.5 rounded-[6px] text-sm text-center"
           style={{
-            background: 'transparent',
-            color: 'var(--red)',
-            border: '1px solid var(--red)',
+            background: 'var(--action-secondary-bg)',
+            color: 'var(--action-secondary-ink)',
             cursor: 'pointer',
           }}
         >
@@ -563,7 +560,7 @@ export default function OfferPanel({
         disabled={submitting}
         className="w-full py-3 rounded-[6px] text-sm font-medium"
         style={{
-          background: submitting ? 'var(--bg-inset)' : 'var(--red)',
+          background: submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: submitting ? 'var(--text-tertiary)' : '#fff',
         }}
       >
@@ -598,8 +595,8 @@ function ExistingOfferCard({
 
   const secondary: React.CSSProperties = {
     background: 'transparent',
-    color: 'var(--red)',
-    border: '1px solid var(--red)',
+    color: 'var(--danger-edge)',
+    border: '1.5px solid var(--danger-edge)',
     cursor: acting ? 'not-allowed' : 'pointer',
     opacity: acting ? 0.6 : 1,
   };
@@ -683,7 +680,7 @@ function ExistingOfferCard({
               disabled={acting}
               className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 border: 'none',
                 cursor: acting ? 'not-allowed' : 'pointer',
@@ -723,7 +720,7 @@ function ExistingOfferCard({
             href={`/checkout/offer/${offer.id}`}
             className="block w-full mt-3 py-3 rounded-[6px] text-sm text-center"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',

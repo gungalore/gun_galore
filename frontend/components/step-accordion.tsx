@@ -289,7 +289,7 @@ export function StepAccordion({
                 disabled={continueDisabled}
                 className="px-5 py-2.5 rounded-[6px] text-sm"
                 style={{
-                  background: continueDisabled ? 'var(--bg-inset)' : 'var(--red)',
+                  background: continueDisabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
                   color: continueDisabled
                     ? 'var(--text-tertiary)'
                     : '#fff',

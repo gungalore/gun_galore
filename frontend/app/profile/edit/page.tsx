@@ -87,7 +87,7 @@ function PrimaryButton({
       disabled={disabled}
       className="px-5 py-2.5 rounded-[6px] text-sm"
       style={{
-        background: disabled ? 'var(--bg-inset)' : 'var(--red)',
+        background: disabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
         color: disabled ? 'var(--text-tertiary)' : '#fff',
         border: 'none',
         fontWeight: 500,
@@ -103,10 +103,15 @@ function SecondaryButton({
   children,
   disabled,
   onClick,
+  accentText,
 }: {
   children: ReactNode;
   disabled?: boolean;
   onClick?: () => void;
+  /** Accent text link (no fill, underlined edge ink) — used by "Resend code".
+   *  Kept as a prop so the shared neutral secondary button is unchanged and no
+   *  padding/layout moves. */
+  accentText?: boolean;
 }) {
   return (
     <button
@@ -116,8 +121,11 @@ function SecondaryButton({
       className="px-4 py-2 rounded-[6px] text-sm"
       style={{
         background: 'transparent',
-        color: 'var(--text-secondary)',
-        border: '1px solid var(--border-visible)',
+        color: accentText
+          ? 'var(--action-option-edge)'
+          : 'var(--text-secondary)',
+        border: accentText ? 'none' : '1px solid var(--border-visible)',
+        ...(accentText ? { textDecoration: 'underline' } : {}),
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}
@@ -1056,8 +1064,8 @@ export default function EditProfilePage() {
                 className="text-xs px-2.5 py-1 rounded-full"
                 style={{
                   background: emailVerified
-                    ? 'rgba(34,197,94,0.12)'
-                    : 'rgba(245,158,11,0.12)',
+                    ? 'var(--success-wash)'
+                    : 'var(--warning-wash)',
                   border: `0.5px solid ${emailVerified ? 'var(--success)' : 'var(--warning)'}`,
                   color: emailVerified ? 'var(--success)' : 'var(--warning)',
                   fontWeight: 500,
@@ -1117,6 +1125,7 @@ export default function EditProfilePage() {
                     <SecondaryButton
                       onClick={handleSendEmailCode}
                       disabled={emailBusy}
+                      accentText
                     >
                       Resend code
                     </SecondaryButton>
@@ -1176,8 +1185,8 @@ export default function EditProfilePage() {
                   className="text-xs px-2.5 py-1 rounded-full"
                   style={{
                     background: me.phoneVerified
-                      ? 'rgba(34,197,94,0.12)'
-                      : 'rgba(245,158,11,0.12)',
+                      ? 'var(--success-wash)'
+                      : 'var(--warning-wash)',
                     border: `0.5px solid ${me.phoneVerified ? 'var(--success)' : 'var(--warning)'}`,
                     color: me.phoneVerified ? 'var(--success)' : 'var(--warning)',
                     fontWeight: 500,
@@ -1341,7 +1350,7 @@ export default function EditProfilePage() {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: 'var(--red)',
+                  color: 'var(--action-option-edge)',
                   fontWeight: 600,
                   textDecoration: 'underline',
                   cursor: phoneBusy ? 'not-allowed' : 'pointer',
@@ -1386,9 +1395,9 @@ export default function EditProfilePage() {
                   whiteSpace: 'nowrap',
                   background:
                     kyc === 'VERIFIED'
-                      ? 'rgba(34,197,94,0.12)'
+                      ? 'var(--success-wash)'
                       : kyc === 'UNDER_REVIEW'
-                        ? 'rgba(245,158,11,0.12)'
+                        ? 'var(--warning-wash)'
                         : 'var(--bg-inset)',
                   border: `0.5px solid ${
                     kyc === 'VERIFIED'
@@ -1419,7 +1428,7 @@ export default function EditProfilePage() {
                   href="/kyc/verify?returnTo=/profile/edit"
                   style={{
                     display: 'inline-block',
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     borderRadius: 8,
                     padding: '10px 18px',
@@ -1643,7 +1652,7 @@ export default function EditProfilePage() {
                 borderRadius: '50%',
                 overflow: 'hidden',
                 flexShrink: 0,
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',

@@ -34,7 +34,7 @@ function ScoreBar({ value, max, label }: { value: number; max: number; label: st
       <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-inset)' }}>
         <div
           className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: 'var(--red)', transition: 'width 0.3s' }}
+          style={{ width: `${pct}%`, background: 'var(--action-primary-bg)', transition: 'width 0.3s' }}
         />
       </div>
     </div>

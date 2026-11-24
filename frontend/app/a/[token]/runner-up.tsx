@@ -340,7 +340,7 @@ export function RunnerUpPage({
           width: '100%',
           padding: '16px',
           borderRadius: 10,
-          background: submitting ? 'var(--bg-inset)' : 'var(--red)',
+          background: submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: submitting ? 'var(--text-tertiary)' : '#fff',
           border: 'none',
           fontSize: 16,

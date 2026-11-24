@@ -138,7 +138,7 @@ export function VerifyEmailForm() {
         disabled={busy || code.length < 4}
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
-          background: 'var(--red)',
+          background: 'var(--action-primary-bg)',
           color: '#fff',
           border: 'none',
           opacity: busy || code.length < 4 ? 0.6 : 1,

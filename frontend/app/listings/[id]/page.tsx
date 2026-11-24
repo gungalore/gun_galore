@@ -735,9 +735,9 @@ export default async function ListingDetailPage({
               <span
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
-                  background: 'rgba(245,158,11,0.10)',
+                  background: 'var(--warning-wash)',
                   color: 'var(--warning)',
-                  border: '0.5px solid rgba(245,158,11,0.45)',
+                  border: '0.5px solid var(--warning-wash)',
                 }}
               >
                 Collection only
@@ -855,7 +855,7 @@ export default async function ListingDetailPage({
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <span
                     className="text-sm px-2 py-0.5 rounded-[4px]"
-                    style={{ background: 'rgba(227,6,19,0.10)', color: 'var(--red)', fontWeight: 600 }}
+                    style={{ background: 'var(--red-wash)', color: 'var(--action-secondary-ink)', fontWeight: 600 }}
                   >
                     {compareAtPct}% off
                   </span>
@@ -1054,7 +1054,7 @@ export default async function ListingDetailPage({
                   href={`/checkout/${listing.id}`}
                   className="block w-full py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-2"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontFamily: 'var(--font-head)',
                     fontWeight: 700,
@@ -1126,7 +1126,7 @@ export default async function ListingDetailPage({
             <div
               className="rounded-[6px] px-4 py-3 mb-5 text-sm"
               style={{
-                background: 'rgba(227,6,19,0.06)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
               }}
             >
@@ -1146,7 +1146,7 @@ export default async function ListingDetailPage({
                 }
                 className="inline-block px-3 py-1.5 rounded-[4px] text-xs font-medium"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   textDecoration: 'none',
                 }}
@@ -1470,7 +1470,7 @@ export default async function ListingDetailPage({
                 href={`/checkout/${listing.id}`}
                 className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontWeight: 500,
                   textDecoration: 'none',
@@ -1486,7 +1486,7 @@ export default async function ListingDetailPage({
                 href="#buy-panel"
                 className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontWeight: 500,
                   textDecoration: 'none',

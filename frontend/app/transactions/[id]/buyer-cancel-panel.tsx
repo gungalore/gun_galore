@@ -78,7 +78,7 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="text-sm px-3 py-1.5 rounded-md border border-[var(--red)] text-[var(--red)] hover:bg-[var(--red)]/10"
+          className="text-sm px-3 py-1.5 rounded-md border-[1.5px] border-[var(--danger-edge)] text-[var(--danger-edge)] hover:bg-[var(--danger-fill)]/10"
         >
           Request cancellation
         </button>
@@ -87,7 +87,7 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
   }
 
   return (
-    <div className="rounded-lg border border-[var(--red)] p-4">
+    <div className="rounded-lg border-[1.5px] border-[var(--danger-edge)] p-4">
       <p className="text-sm font-medium text-[var(--text-primary)] mb-2">
         Request a cancellation?
       </p>
@@ -143,7 +143,7 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
           onClick={submit}
           disabled={!reasonOk || busy}
           className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
-          style={{ background: 'var(--red)' }}
+          style={{ background: 'var(--danger-fill)', color: 'var(--danger-ink)' }}
         >
           {busy ? 'Requesting…' : 'Request cancellation'}
         </button>

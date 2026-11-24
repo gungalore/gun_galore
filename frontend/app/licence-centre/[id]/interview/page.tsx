@@ -36,7 +36,7 @@ function Progress({ q }: { q: IntakeQuestion }) {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: 'var(--bg-inset)' }}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--red)' }} />
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--action-primary-bg)' }} />
       </div>
       <span className="text-[11px] tabular-nums text-[var(--text-tertiary)]">
         {q.progress.answered}/{q.progress.total}
@@ -853,7 +853,7 @@ export default function IntakeInterviewPage() {
                 type="button"
                 onClick={() => setHistoryIndex(null)}
                 className="rounded-lg px-3 py-2 text-[13px] font-medium text-white"
-                style={{ background: 'var(--red)' }}
+                style={{ background: 'var(--action-primary-bg)' }}
               >
                 Back to current question
               </button>
@@ -915,7 +915,7 @@ export default function IntakeInterviewPage() {
                 disabled={busy || !selected.length}
                 onClick={() => void send({ values: selected })}
                 className="mt-3 rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-50"
-                style={{ background: 'var(--red)' }}
+                style={{ background: 'var(--action-primary-bg)' }}
               >
                 Continue with {selected.length || 0} selected
               </button>
@@ -950,7 +950,7 @@ export default function IntakeInterviewPage() {
                   disabled={busy || !text.trim()}
                   onClick={submitText}
                   className="rounded-lg px-4 text-[13px] font-medium text-white disabled:opacity-50"
-                  style={{ background: 'var(--red)' }}
+                  style={{ background: 'var(--action-primary-bg)' }}
                 >
                   Send
                 </button>
@@ -1005,7 +1005,7 @@ export default function IntakeInterviewPage() {
               disabled={busy || Boolean(data.needsDetail?.length)}
               onClick={() => void finish()}
               className="mt-3 rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white disabled:opacity-60"
-              style={{ background: 'var(--red)' }}
+              style={{ background: 'var(--action-primary-bg)' }}
             >
               Review my answers
             </button>
@@ -1084,7 +1084,7 @@ export default function IntakeInterviewPage() {
                 </label>
                 <label
                   className="cursor-pointer rounded-lg border px-3 py-2 text-[12.5px] font-medium"
-                  style={{ borderColor: 'var(--border-visible)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                  style={{ borderColor: 'var(--border-visible)', background: 'transparent', color: 'var(--text-primary)' }}
                 >
                   Scan
                   <input
@@ -1111,7 +1111,7 @@ export default function IntakeInterviewPage() {
                     )
                   }
                   className="rounded-lg border px-3 py-2 text-[12.5px] font-medium disabled:opacity-50"
-                  style={{ borderColor: 'var(--red)', background: 'var(--bg-card)', color: 'var(--red)' }}
+                  style={{ border: 'none', background: 'var(--action-secondary-bg)', color: 'var(--action-secondary-ink)' }}
                 >
                   Send seller consent form
                 </button>
@@ -1210,7 +1210,7 @@ export default function IntakeInterviewPage() {
                     }
                     onClick={() => void saveManualFirearm()}
                     className="rounded-lg px-3 py-2 text-[13px] font-medium text-white disabled:opacity-50 sm:col-span-2"
-                    style={{ background: 'var(--red)' }}
+                    style={{ background: 'var(--action-primary-bg)' }}
                   >
                     {manualSaving ? 'Saving…' : 'Use these details'}
                   </button>
@@ -1531,7 +1531,7 @@ export default function IntakeInterviewPage() {
                 disabled={busy}
                 onClick={saveDetails}
                 className="rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60"
-                style={{ background: 'var(--red)' }}
+                style={{ background: 'var(--action-primary-bg)' }}
               >
                 Save answer
               </button>

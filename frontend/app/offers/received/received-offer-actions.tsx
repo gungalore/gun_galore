@@ -289,7 +289,7 @@ export default function ReceivedOfferActions({
           disabled={!!loading}
           className="flex-1 py-2 rounded-[6px] text-sm font-medium"
           style={{
-            background: loading === 'accept' ? 'var(--bg-inset)' : 'var(--red)',
+            background: loading === 'accept' ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
             color: loading === 'accept' ? 'var(--text-tertiary)' : '#fff',
           }}
         >
@@ -463,7 +463,7 @@ export default function ReceivedOfferActions({
                     ? 'var(--bg-inset)'
                     : confirm === 'accept'
                       ? 'var(--red)'
-                      : '#6b7280',
+                      : 'var(--text-secondary)',
                   color: loading ? 'var(--text-tertiary)' : '#fff',
                   border: 'none',
                   cursor: loading ? 'not-allowed' : 'pointer',

@@ -46,13 +46,17 @@ Use role tokens (`--text`, `--surface`, `--accent`...) in components. Scales are
 | Card / panel | `--surface` (#FFF) | cards, header, dropdowns |
 | Sunken | `--surface-sunken` | input fills, table stripes, skeletons |
 | Border | `--border` | 1px hairlines, only where shadow isn't enough. **Card edges only — never the sole cue of a control.** |
-| Interactive boundary | `--border-visible` | any control edge: chips, pills, option cards, pickers, inputs, quiet secondary buttons. ≥3:1 on card and page (light `#9C8F76`, dark `#756D63`). |
+| Interactive boundary | `--border-visible` | neutral control edge: browse chips, filters, quiet option buttons. ≥3:1 on card and page (light `#9C8F76`, dark `#756D63`). |
 | Text | `--text` (#1A1A1A) | headings, body. Never pure #000 for text |
 | Secondary text | `--text-2` | descriptions, meta |
 | Muted text | `--text-3` | placeholders, timestamps; the minimum for an interactive label |
-| Primary action | `--accent` (#E30613) | one primary button per view |
+| **T1 primary action** | `--action-primary-bg/-hover/-ink` | deep accent fill, white ink. Sale-critical action, **one per view**. Light `#92400E` (7.09:1), dark `#0B47C4` (7.74:1). Live buttons: `Buy`, `Pay`, `Place bid`, `Accept`, `Submit offer`, `Publish`. |
+| **T2 secondary action** | `--action-secondary-bg/-hover/-ink` | lighter tonal fill. Second sale action: `Add to cart`, `Make an offer`, `Counter`, `Alert me`, `Contact seller`. Light `#F4E7DD`/`#8A3F07` (6.20:1), dark `#192840`/`#9CC9FF` (8.61:1). |
+| **T3 option / change** | `--action-option-edge/-selected-*` | transparent fill + solid edge (1.5px accent edge). Anything that changes an order or selects a value: category, condition, shipping, payment rail, delivery rate, address, filters, chips, quantity, toggles. Selected = `--action-option-selected-bg` + accent edge + accent ink. |
+| Accent text/links | `--red` / `--link` | text links and inline emphasis only — never a primary fill. |
 | Accent tint | `--accent-soft` | selected rows, active chips, icon wells |
-| Soft action fill | `--action-soft` | quiet-but-actionable controls that need presence without a full outline (dropzone, floating affordance) |
+| Soft action fill | `--action-soft` | quiet hover/affordance wash |
+| Destructive | `--danger-*` | `--danger-fill` + `--danger-ink` for destructive confirms; `--danger-edge` for outlined rejects. Separate from the accent; dark ink is `--danger` (`#FCA5A5`, 9.14:1 on card). |
 
 Rules:
 - Red text on light: use `--red-700` for body-size text, `--red-500` only at 14px+ semibold.
@@ -60,8 +64,9 @@ Rules:
 - Error states use `--danger` plus an icon plus text. Never colour alone.
 - Success/warning/info only for status, never decoration.
 - Dark sections (hero, footer, live auction panel): wrap in `.surface-dark`, tokens flip automatically.
-- ⚠️ **A control's boundary must reach 3:1**, so an interactive edge is `--border-visible`, never `--border` (which is a 1.3:1 card hairline). Never style a required choice (category, condition, shipping, payment rail, delivery rate, address) as a ghost or as a white-on-white "secondary".
-- ⚠️ **Never put white text on `--surface-sunken`/`--surface`.** A filled confirmation is white on `--accent`/`--danger`; a quiet one is accent text on a transparent/accent-soft fill.
+- ⚠️ **A control's boundary must reach 3:1**, so an interactive edge is `--border-visible` (neutral) or `--action-option-edge` (accent, for order-changing choices), never `--border`.
+- ⚠️ **Emphasis is a token decision, not a colour pick**: a filled `--action-primary-*` is T1; `--action-secondary-*` is T2; outlined `--action-option-*` is T3; text is T4; destructive uses `--danger-*`.
+- ⚠️ **Never put white text on `--surface`/`--surface-sunken`.** Filled confirmations use white on `--action-primary-bg`/`--danger-fill`; quiet ones use accent ink on transparent or a tonal fill.
 
 ## 4. Typography
 
@@ -150,15 +155,16 @@ animate the logo, exceed 500ms on anything interactive, or ignore `prefers-reduc
 ### Buttons
 | Variant | Look |
 |---|---|
-| Primary | Pill, `--accent` bg, white 600 text, height 44px (40px in header), padding 0 22px. Subtle top highlight. Hover: `--accent-hover`, `--shadow-red`, `translateY(-1px)`. Press: `--accent-press`, scale 0.97. |
-| Secondary | Pill, `--surface` bg, `--text`, 1px `--border-visible`. Hover: `--surface-sunken` bg. |
-| **Accent outline** (important secondary) | Pill/rounded, transparent or `--surface` bg, 1px `--accent` border, `--accent` 600 text. Use for the second money/decision action on a view (Add to cart, Decline/Counter, handover dispute, recovery actions) when the filled primary must stay the only red fill. |
-| Ghost | No bg. Hover: `--surface-sunken` pill bg fades in. **Tertiary/dismiss only — never a required choice or a second money action.** |
-| Dark (on photos/hero) | Pill, white bg, `--stone-900` text. Or primary red. |
+| **T1 Primary** | Pill, `--action-primary-bg` fill, `--action-primary-ink` 600 text, height 44px (40px header), padding 0 22px. Hover: `--action-primary-hover`, `--shadow-red`, `translateY(-1px)`. Press: scale 0.97. **One per view.** |
+| **T2 Tonal** | Pill, `--action-secondary-bg` fill, `--action-secondary-ink` 600 text, no border. Hover: `--action-secondary-hover`. For the second sale action (add to cart, make an offer, counter, contact seller). |
+| **T3 Option / outlined** | Transparent fill, 1.5px `--action-option-edge`, `--text` 600 label. Selected: `--action-option-selected-bg` + `--action-option-selected-edge` + `--action-option-selected-ink`. For choices, pickers, filters and anything that changes the order. `--border-visible` is the neutral variant for browse chips. |
+| Quiet / ghost | No bg, no border. Hover: `--action-soft` pill bg fades in. **Dismiss/back/tertiary only — never a required choice or a second money action.** |
+| Dark (on photos/hero) | Pill, white bg, `--stone-900` text. Or a T1 fill. |
 | Icon button | 40px circle, ghost style, 20px icon, tooltip on hover (400ms delay). |
-| Destructive | Accent-outline shape with `--danger` text and `--danger` border; confirm via modal; the modal's confirm CTA is a filled `--danger`. |
+| **Destructive** | Confirm: `--danger-fill` + `--danger-ink` (or `--danger-edge` outline for the entry action); always via a confirmation step, never the easiest hit. |
 
-- One primary button per view. Everything else secondary, accent-outline or ghost.
+- **One primary (T1) per view.** Everything else is T2 tonal, T3 outlined, or quiet.
+- Destructive is a separate red semantic, never the theme accent — a reject must not look like a buy.
 - Buttons with arrows: the arrow nudges `translateX(3px)` on hover.
 - Loading: keep width, swap label for a 16px spinner, disable pointer events.
 - Focus: `box-shadow: var(--focus-ring)` on `:focus-visible` for every interactive element. Never remove outlines without this.

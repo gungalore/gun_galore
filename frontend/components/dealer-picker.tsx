@@ -142,7 +142,7 @@ export function DealerPicker({
                   {isSelected && (
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-[3px]"
-                      style={{ background: 'var(--red)', color: '#fff' }}
+                      style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
                     >
                       Selected
                     </span>

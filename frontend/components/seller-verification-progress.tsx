@@ -63,9 +63,9 @@ export function SellerVerificationProgress({ me }: { me: Me }) {
           <span
             className="text-xs"
             style={{
-              background: 'rgba(245,158,11,0.14)',
+              background: 'var(--warning-wash)',
               color: 'var(--warning)',
-              border: '0.5px solid rgba(245,158,11,0.4)',
+              border: '0.5px solid var(--warning-wash)',
               borderRadius: 999,
               padding: '2px 10px',
               fontWeight: 500,

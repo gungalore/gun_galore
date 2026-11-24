@@ -430,7 +430,7 @@ export default function DocumentShelf({
                     <span
                       aria-hidden="true"
                       className={`h-[10px] w-[10px] rounded-[2px] ${
-                        picked.has(d.id) ? "bg-[var(--red)]" : "bg-transparent"
+                        picked.has(d.id) ? "bg-[var(--action-primary-bg)]" : "bg-transparent"
                       }`}
                     />
                   </label>

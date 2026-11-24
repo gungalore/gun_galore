@@ -150,7 +150,7 @@ function UrgentPill({ n }: { n: number }) {
         fontSize: 11,
         fontWeight: 700,
         color: '#fff',
-        background: 'var(--red)',
+        background: 'var(--action-primary-bg)',
         borderRadius: 999,
         padding: '1px 8px',
         minWidth: 20,
@@ -241,7 +241,7 @@ function ActionRequiredCard({
       <div
         className="flex items-center gap-3 px-4 py-3"
         style={{
-          background: 'color-mix(in srgb, var(--red) 6%, var(--bg-card))',
+          background: 'color-mix(in srgb, var(--action-primary-bg) 6%, var(--bg-card))',
           borderBottom: '0.5px solid var(--border)',
         }}
       >
@@ -251,7 +251,7 @@ function ActionRequiredCard({
             width: 8,
             height: 8,
             borderRadius: 999,
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             flexShrink: 0,
           }}
         />
@@ -425,7 +425,7 @@ export default async function AccountPage() {
               borderRadius: '50%',
               overflow: 'hidden',
               flexShrink: 0,
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               display: 'flex',
               alignItems: 'center',
@@ -501,7 +501,7 @@ export default async function AccountPage() {
               className="text-sm px-3 py-2 rounded-[6px]"
               style={{
                 color: '#fff',
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 fontWeight: 500,
                 textDecoration: 'none',
               }}

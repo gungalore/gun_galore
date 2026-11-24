@@ -79,7 +79,7 @@ export default function RegulatedItemsAnnexPage() {
 
       <div
         style={{
-          background: 'rgba(227,6,19,0.06)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
           borderRadius: 8,
           padding: 16,
@@ -164,7 +164,7 @@ export default function RegulatedItemsAnnexPage() {
       </h2>
       <div
         style={{
-          background: 'rgba(227,6,19,0.06)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
           borderRadius: 8,
           padding: 16,

@@ -85,7 +85,7 @@ export function NotificationsTabs({
                   height: 18,
                   padding: '0 6px',
                   borderRadius: 9,
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontSize: 10.5,
                   fontWeight: 700,

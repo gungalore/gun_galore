@@ -54,7 +54,7 @@ export default function ComplaintsPage() {
         <Link
           href="/complaints/new"
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             padding: '9px 16px',
             borderRadius: 8,

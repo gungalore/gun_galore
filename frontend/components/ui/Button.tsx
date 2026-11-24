@@ -23,7 +23,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'rounded-pill h-[44px] px-5 py-2.5 bg-[var(--red)] text-white font-semibold transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--accent-hover)] active:scale-[0.97] focus-visible:[box-shadow:var(--focus-ring)] disabled:opacity-50 disabled:pointer-events-none',
+  primary: 'rounded-pill h-[44px] px-5 py-2.5 bg-[var(--action-primary-bg)] text-white font-semibold transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--accent-hover)] active:scale-[0.97] focus-visible:[box-shadow:var(--focus-ring)] disabled:opacity-50 disabled:pointer-events-none',
   secondary: 'rounded-pill h-[44px] px-5 py-2.5 bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] font-semibold transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-sunken)] focus-visible:[box-shadow:var(--focus-ring)] disabled:opacity-50 disabled:pointer-events-none',
   ghost: 'rounded-pill h-[40px] px-4 py-1.5 text-[var(--text)] font-semibold transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-sunken)]/80 focus-visible:[box-shadow:var(--focus-ring)] disabled:opacity-50 disabled:pointer-events-none',
   destructive: 'rounded-pill h-[44px] px-5 py-2.5 bg-transparent text-[var(--danger)] border border-[var(--border)] font-semibold transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--danger-bg)] focus-visible:[box-shadow:var(--focus-ring)] disabled:opacity-50 disabled:pointer-events-none',

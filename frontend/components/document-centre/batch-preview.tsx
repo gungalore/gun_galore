@@ -123,7 +123,7 @@ export default function BatchReview({
           type="button"
           disabled={!canFile}
           onClick={onConfirm}
-          className="min-h-[42px] rounded-[var(--r-sm)] border border-[var(--red)] bg-[var(--red)] px-[14px] text-[13.5px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-45"
+          className="min-h-[42px] rounded-[var(--r-sm)] border border-[var(--red)] bg-[var(--action-primary-bg)] px-[14px] text-[13.5px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-45"
         >
           {busy ? 'Filing…' : 'Confirm and file'}
         </button>

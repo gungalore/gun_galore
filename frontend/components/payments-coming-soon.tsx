@@ -48,7 +48,7 @@ export function PaymentsComingSoon({
         <Link
           href="/"
           className="text-sm px-4 py-2 rounded-[6px]"
-          style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
         >
           Browse the marketplace
         </Link>

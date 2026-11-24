@@ -2851,7 +2851,7 @@ export default function NewListingPage() {
           role="alert"
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
-            background: 'rgba(227,6,19,0.08)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             color: 'var(--red)',
           }}
@@ -2866,7 +2866,7 @@ export default function NewListingPage() {
         <div
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
-            background: 'rgba(227,6,19,0.08)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             color: 'var(--red)',
           }}
@@ -2992,7 +2992,7 @@ export default function NewListingPage() {
                   className="mt-3 text-sm"
                   style={{
                     color: 'var(--text-secondary)',
-                    background: 'rgba(227, 6, 19, 0.10)',
+                    background: 'var(--red-wash)',
                     border: '1px solid var(--border)',
                     borderRadius: 'var(--r-md)',
                     padding: '10px 12px',
@@ -3093,7 +3093,7 @@ export default function NewListingPage() {
                   disabled={enhancing || form.description.trim().length < 10}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-[6px] text-sm transition-opacity"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     border: 'none',
                     fontWeight: 600,
@@ -3284,7 +3284,7 @@ export default function NewListingPage() {
                       className="text-left rounded-[8px] p-3"
                       style={{
                         background: selected
-                          ? 'rgba(227,6,19,0.03)'
+                          ? 'var(--red-wash)'
                           : 'var(--bg-card)',
                         border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
                         cursor: 'pointer',
@@ -3616,8 +3616,8 @@ export default function NewListingPage() {
                   <p
                     className="text-xs mt-2 px-2 py-1.5 rounded"
                     style={{
-                      background: 'rgba(245,158,11,0.10)',
-                      border: '0.5px solid rgba(245,158,11,0.40)',
+                      background: 'var(--warning-wash)',
+                      border: '0.5px solid var(--warning-wash)',
                       color: 'var(--text-secondary)',
                       lineHeight: 1.5,
                     }}
@@ -3781,7 +3781,7 @@ export default function NewListingPage() {
                     className="mt-3 flex items-start gap-2 rounded-[8px] p-3 cursor-pointer"
                     style={{
                       background: paConsent
-                        ? 'rgba(227,6,19,0.06)'
+                        ? 'var(--red-wash)'
                         : 'var(--bg-inset)',
                       border: `0.5px solid ${paConsent ? 'var(--red)' : 'var(--border)'}`,
                     }}
@@ -3862,7 +3862,7 @@ export default function NewListingPage() {
               <div
                 className="rounded-[6px] p-4 text-sm space-y-3 mb-4"
                 style={{
-                  background: 'rgba(227,6,19,0.06)',
+                  background: 'var(--red-wash)',
                   border: '0.5px solid var(--red)',
                   color: 'var(--text-primary)',
                   lineHeight: 1.55,
@@ -4013,7 +4013,7 @@ export default function NewListingPage() {
                 <label
                   className="mt-3 flex items-start gap-2 rounded-[8px] p-3 cursor-pointer"
                   style={{
-                    background: paConsent ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+                    background: paConsent ? 'var(--red-wash)' : 'var(--bg-inset)',
                     border: `0.5px solid ${paConsent ? 'var(--red)' : 'var(--border)'}`,
                   }}
                 >
@@ -4069,7 +4069,7 @@ export default function NewListingPage() {
                           cursor: 'pointer',
                           border: '1px solid var(--border)',
                           background: !dealerManual
-                            ? 'var(--red)'
+                            ? 'var(--action-primary-bg)'
                             : 'var(--bg-inset)',
                           color: !dealerManual ? '#fff' : 'var(--text-secondary)',
                         }}
@@ -4088,7 +4088,7 @@ export default function NewListingPage() {
                           cursor: 'pointer',
                           border: '1px solid var(--border)',
                           background: dealerManual
-                            ? 'var(--red)'
+                            ? 'var(--action-primary-bg)'
                             : 'var(--bg-inset)',
                           color: dealerManual ? '#fff' : 'var(--text-secondary)',
                         }}
@@ -4265,10 +4265,10 @@ export default function NewListingPage() {
                               className="text-xs mt-2"
                               style={{
                                 background: 'transparent',
-                                border: '1px solid var(--red)',
+                                border: '1.5px solid var(--action-option-edge)',
                                 padding: '5px 10px',
                                 borderRadius: 6,
-                                color: 'var(--red)',
+                                color: 'var(--text-primary)',
                                 cursor: 'pointer',
                                 fontWeight: 600,
                               }}
@@ -4852,7 +4852,7 @@ export default function NewListingPage() {
                 style={{
                   width: `${Math.round((publishProgress.done / publishProgress.total) * 100)}%`,
                   height: '100%',
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   transition: 'width 200ms linear',
                 }}
               />

@@ -153,7 +153,7 @@ export function ResultView({
           disabled={creatingListing}
           className="rounded-[8px] px-5 py-3 text-sm font-semibold"
           style={{
-            background: creatingListing ? 'var(--bg-inset)' : 'var(--red)',
+            background: creatingListing ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
             color: creatingListing ? 'var(--text-tertiary)' : '#fff',
             border: 'none',
             cursor: creatingListing ? 'not-allowed' : 'pointer',

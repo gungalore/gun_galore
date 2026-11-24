@@ -153,7 +153,7 @@ export function OfferDecisionPage({
             display: 'inline-block',
             padding: '10px 18px',
             borderRadius: 8,
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             fontSize: 14,
             fontWeight: 600,
@@ -576,7 +576,7 @@ function ActionButton({
 }) {
   const styles: Record<typeof variant, React.CSSProperties> = {
     primary: {
-      background: disabled ? 'var(--bg-inset)' : 'var(--red)',
+      background: disabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
       color: disabled ? 'var(--text-tertiary)' : '#fff',
       border: 'none',
     },
@@ -784,8 +784,8 @@ function CounterForm({
             fontSize: 12,
             color: 'var(--warning)',
             textAlign: 'center',
-            background: 'rgba(245,158,11,0.08)',
-            border: '0.5px solid rgba(245,158,11,0.45)',
+            background: 'var(--warning-wash)',
+            border: '0.5px solid var(--warning-wash)',
             borderRadius: 6,
             padding: '8px 10px',
           }}

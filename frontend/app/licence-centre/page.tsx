@@ -630,7 +630,7 @@ function DocumentCentre() {
             void readGate();
           }}
           className="mt-4 rounded-[6px] px-4 py-2 text-sm"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none' }}
         >
           Try again
         </button>
@@ -1920,7 +1920,7 @@ function AddPanel({
             aria-label="Documents read"
           >
             <div
-              className="h-full rounded-[99px] bg-[var(--red)]"
+              className="h-full rounded-[99px] bg-[var(--action-primary-bg)]"
               style={{
                 width: progress
                   ? `${Math.round((progress.done / progress.total) * 100)}%`

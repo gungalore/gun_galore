@@ -526,7 +526,7 @@ export default function MotivationSellerConsent({
                 setAdopted(true);
                 writeFlag(motivationId, ADOPTED_FLAG);
               }}
-              className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white"
+              className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--action-primary-bg)] px-4 py-2.5 text-sm font-medium text-white"
             >
               Use these details in my application
             </button>
@@ -800,7 +800,7 @@ export default function MotivationSellerConsent({
             !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) ||
           !labelToSend
         }
-        className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+        className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--action-primary-bg)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
       >
         {busy
           ? 'Sending…'

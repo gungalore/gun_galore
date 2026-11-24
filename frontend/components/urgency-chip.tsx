@@ -19,7 +19,7 @@ export function UrgencyChip({
         className ?? 'text-xs px-1.5 py-0.5 rounded-[3px] leading-none'
       }
       style={{
-        background: 'rgba(227,6,19,0.10)',
+        background: 'var(--red-wash)',
         color: 'var(--red)',
         fontWeight: 500,
         border: '0.5px solid var(--red)',

@@ -716,7 +716,7 @@ export default function EditListingPage() {
           href={`/listings/${listing.id}`}
           className="inline-block px-4 py-2 rounded-[6px] text-sm"
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             textDecoration: 'none',
             fontWeight: 500,
@@ -758,7 +758,7 @@ export default function EditListingPage() {
       <div
         className="mb-5 px-3 py-2 rounded-[6px] text-xs flex items-center gap-2"
         style={{
-          background: 'rgba(245,158,11,0.08)',
+          background: 'var(--warning-wash)',
           border: '0.5px solid var(--warning)',
           color: 'var(--text-secondary)',
         }}
@@ -772,7 +772,7 @@ export default function EditListingPage() {
       </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
+        <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
           {error}
         </div>
       )}
@@ -787,7 +787,7 @@ export default function EditListingPage() {
           role="status"
           className="mb-4 px-4 py-3 rounded-[6px] text-sm"
           style={{
-            background: 'rgba(245,158,11,0.08)',
+            background: 'var(--warning-wash)',
             border: '0.5px solid var(--warning)',
             color: 'var(--text-secondary)',
             lineHeight: 1.55,
@@ -832,7 +832,7 @@ export default function EditListingPage() {
                       width: 20,
                       height: 20,
                       borderRadius: '50%',
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       color: '#fff',
                       border: '0.5px solid var(--bg)',
                       fontSize: 12,
@@ -881,7 +881,7 @@ export default function EditListingPage() {
             <div
               className="mt-2 px-3 py-2 rounded-[6px] text-xs"
               style={{
-                background: 'rgba(227,6,19,0.08)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-secondary)',
                 lineHeight: 1.5,
@@ -1237,7 +1237,7 @@ export default function EditListingPage() {
             <div
               className="mt-2 px-3 py-2 rounded-[6px] text-xs"
               style={{
-                background: 'rgba(227,6,19,0.08)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-secondary)',
                 lineHeight: 1.5,
@@ -1315,7 +1315,7 @@ export default function EditListingPage() {
             type="submit"
             disabled={submitting}
             className="flex-1 py-3 rounded-[6px] text-sm font-medium"
-            style={{ background: submitting ? 'var(--bg-inset)' : 'var(--red)', color: submitting ? 'var(--text-tertiary)' : '#fff' }}
+            style={{ background: submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)', color: submitting ? 'var(--text-tertiary)' : '#fff' }}
           >
             {submitting ? 'Saving…' : 'Save changes'}
           </button>

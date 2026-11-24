@@ -88,7 +88,7 @@ export default function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="min-h-[40px] rounded-[var(--r-sm)] bg-[var(--red)] px-3 text-[13px] font-medium text-white"
+            className="min-h-[40px] rounded-[var(--r-sm)] bg-[var(--action-primary-bg)] px-3 text-[13px] font-medium text-white"
           >
             {confirmLabel}
           </button>

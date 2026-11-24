@@ -198,8 +198,8 @@ export default function IdentifyFromPhotos({
         style={{
           marginTop: 12,
           padding: '12px 14px',
-          background: 'rgba(227,6,19,0.08)',
-          border: '0.5px solid rgba(227,6,19,0.35)',
+          background: 'var(--red-wash)',
+          border: '0.5px solid var(--red-line)',
           borderRadius: 10,
           fontSize: 13,
           color: 'var(--text-primary)',
@@ -289,7 +289,7 @@ export default function IdentifyFromPhotos({
             padding: '8px 10px',
             fontSize: 12,
             color: 'var(--red)',
-            background: 'rgba(227,6,19,0.10)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             borderRadius: 6,
           }}
@@ -425,7 +425,7 @@ function ProposalCard({
           onClick={onApply}
           style={{
             padding: '9px 18px',
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             border: 'none',
             borderRadius: 8,

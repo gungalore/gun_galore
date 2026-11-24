@@ -443,7 +443,7 @@ function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
       // count beside it give way instead — it already truncates.
       className="px-1.5 py-0.5 rounded-[3px] whitespace-nowrap shrink-0"
       style={{
-        background: urgent ? 'rgba(227,6,19,0.10)' : 'var(--bg-inset)',
+        background: urgent ? 'var(--red-wash)' : 'var(--bg-inset)',
         color: urgent ? 'var(--red)' : 'var(--text-secondary)',
         fontWeight: urgent ? 500 : 400,
         border: `0.5px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,

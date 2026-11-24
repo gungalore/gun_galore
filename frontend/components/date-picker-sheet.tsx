@@ -1251,7 +1251,7 @@ function Cell({
           // Background AND colour on every branch. Nothing inherited, and
           // nothing dimmed by opacity — an unavailable day is signalled by
           // losing its border and its hover, not by being hard to read.
-          background: selected ? 'var(--red)' : 'var(--bg-inset)',
+          background: selected ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
           color: selected
             ? '#ffffff'
             : disabled

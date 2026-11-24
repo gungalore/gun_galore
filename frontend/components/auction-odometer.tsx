@@ -264,7 +264,7 @@ export function AuctionOdometer({
         .odo-livewrap { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
         .odo-live {
           width: 7px; height: 7px; border-radius: 999px;
-          background: var(--red); display: inline-block;
+          background: var(--action-primary-bg); display: inline-block;
         }
         .odo-priceline { position: relative; display: flex; align-items: baseline; gap: 10px; }
         .odo-price {

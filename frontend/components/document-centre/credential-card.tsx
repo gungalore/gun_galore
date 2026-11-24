@@ -666,7 +666,7 @@ export default function CredentialCard({
             <button
               type="button"
               disabled={busy}
-              className="mt-2 rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+              className="mt-2 rounded bg-[var(--action-primary-bg)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
               onClick={async () => {
                 setBusy(true);
                 setRenewErr(null);
@@ -802,7 +802,7 @@ export default function CredentialCard({
               type="button"
               onClick={() => void saveDescription()}
               disabled={describing || !describeDraft.trim()}
-              className="min-h-[40px] rounded-[6px] bg-[var(--red)] px-3 text-[13px] font-medium text-white disabled:opacity-50"
+              className="min-h-[40px] rounded-[6px] bg-[var(--action-primary-bg)] px-3 text-[13px] font-medium text-white disabled:opacity-50"
             >
               {describing ? 'Filing…' : 'File it'}
             </button>
@@ -836,7 +836,7 @@ export default function CredentialCard({
             className={
               row.confirmed || row.state === 'no-expiry'
                 ? 'underline'
-                : 'rounded bg-[var(--red)] px-3 py-1.5 text-white hover:bg-[var(--red-hover)]'
+                : 'rounded bg-[var(--action-primary-bg)] px-3 py-1.5 text-white hover:bg-[var(--red-hover)]'
             }
             onClick={() => setEditing(true)}
           >

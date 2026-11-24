@@ -168,7 +168,7 @@ export function AddedToCartDrawer() {
           <Link
             href="/cart"
             className="block w-full py-3 rounded-[6px] text-sm text-center mb-2"
-            style={{ background: 'var(--red)', color: '#fff', fontWeight: 500, textDecoration: 'none' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500, textDecoration: 'none' }}
           >
             Go to Cart
           </Link>

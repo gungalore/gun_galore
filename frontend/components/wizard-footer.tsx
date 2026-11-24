@@ -85,7 +85,7 @@ export function WizardFooter({
             onClick={onBack}
             className="px-5 py-2.5 rounded-[6px] text-sm gg-press"
             style={{
-              background: 'var(--bg-card)',
+              background: 'transparent',
               border: '1px solid var(--border-visible)',
               color: 'var(--text-secondary)',
               fontWeight: 500,
@@ -103,7 +103,7 @@ export function WizardFooter({
             className="px-6 py-2.5 rounded-[6px] text-sm gg-press"
             style={{
               marginLeft: 'auto',
-              background: complete ? 'var(--red)' : 'var(--bg-inset)',
+              background: complete ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
               color: complete ? '#fff' : 'var(--text-tertiary)',
               border: complete ? 'none' : '1px solid var(--border)',
               fontWeight: 500,

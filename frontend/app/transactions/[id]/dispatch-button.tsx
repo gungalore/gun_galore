@@ -240,7 +240,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const failureNotice = failure && (
     <div
       className="rounded-[8px] p-4"
-      style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)' }}
+      style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)' }}
     >
       <p className="text-sm mb-1" style={{ color: 'var(--red)', fontWeight: 600 }}>
         This shipment failed
@@ -348,7 +348,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
             disabled={rebooking}
             className="w-full py-2.5 rounded-[6px] text-sm"
             style={{
-              background: rebooking ? 'var(--bg-inset)' : 'var(--red)',
+              background: rebooking ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
               color: rebooking ? 'var(--text-tertiary)' : '#fff',
               border: 'none',
               cursor: rebooking ? 'not-allowed' : 'pointer',
@@ -415,7 +415,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
               disabled={printing}
               className="w-full py-2.5 rounded-[6px] text-sm mt-1"
               style={{
-                background: printing ? 'var(--bg-inset)' : 'var(--red)',
+                background: printing ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
                 color: printing ? 'var(--text-tertiary)' : '#fff',
                 border: 'none',
                 cursor: printing ? 'not-allowed' : 'pointer',
@@ -445,7 +445,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         {error && (
           <div
             className="px-3 py-2 rounded-[6px] text-sm"
-            style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+            style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
           >
             {error}
           </div>
@@ -483,7 +483,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         <button
           onClick={() => setOpen(true)}
           className="w-full py-2.5 rounded-[6px] text-sm"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 500 }}
         >
           {isDealerTransfer ? 'Confirm transfer to dealer' : 'Confirm dispatch'}
         </button>
@@ -502,7 +502,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
       {error && (
         <div
           className="px-3 py-2 rounded-[6px] text-sm"
-          style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+          style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
         </div>
@@ -545,7 +545,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
           disabled={!canSubmit}
           className="flex-1 py-2.5 rounded-[6px] text-sm"
           style={{
-            background: canSubmit ? 'var(--red)' : 'var(--bg-inset)',
+            background: canSubmit ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
             color: canSubmit ? '#fff' : 'var(--text-tertiary)',
             border: 'none',
             cursor: canSubmit ? 'pointer' : 'not-allowed',
@@ -668,7 +668,7 @@ function ConfirmModal({
             disabled={loading}
             className="flex-1 py-2 rounded text-sm font-medium"
             style={{
-              background: loading ? 'var(--bg-inset)' : 'var(--red)',
+              background: loading ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
               color: loading ? 'var(--text-tertiary)' : '#fff',
               border: 'none',
               cursor: loading ? 'not-allowed' : 'pointer',

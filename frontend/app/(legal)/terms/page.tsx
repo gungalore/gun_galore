@@ -533,7 +533,7 @@ export default function TermsPage() {
           border: '1px solid var(--red)',
           borderRadius: 8,
           padding: 16,
-          background: 'rgba(227,6,19,0.04)',
+          background: 'var(--red-wash)',
         }}
       >
         <strong>Courier re-weigh charge — the Seller&apos;s liability.</strong>{' '}
@@ -665,7 +665,7 @@ export default function TermsPage() {
           border: '1px solid var(--red)',
           borderRadius: 8,
           padding: 16,
-          background: 'rgba(227,6,19,0.04)',
+          background: 'var(--red-wash)',
         }}
       >
         A Buyer may not cancel a paid order without our approval. To cancel
@@ -713,7 +713,7 @@ export default function TermsPage() {
           border: '1px solid var(--red)',
           borderRadius: 8,
           padding: 16,
-          background: 'rgba(227,6,19,0.04)',
+          background: 'var(--red-wash)',
         }}
       >
         <strong>Seller failure charge.</strong> If a paid sale ends because the

@@ -101,7 +101,7 @@ export default function BetaNotice({ motivationId }: { motivationId: string }) {
           type="button"
           onClick={dismiss}
           className="mt-4 flex min-h-[44px] w-full items-center justify-center rounded-[var(--r-sm)] px-4 text-[14.5px] font-medium text-white"
-          style={{ background: 'var(--red)' }}
+          style={{ background: 'var(--action-primary-bg)' }}
         >
           Got it — start my application
         </button>

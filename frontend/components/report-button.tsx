@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { useAuth } from '../lib/auth';
@@ -187,7 +187,7 @@ export function ReportButton({
                       onClick={submit}
                       disabled={busy}
                       className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
-                      style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                      style={{ background: 'var(--danger-fill)', color: 'var(--danger-ink)', border: 'none', cursor: 'pointer' }}
                     >
                       {busy ? 'Submitting…' : 'Submit report'}
                     </button>

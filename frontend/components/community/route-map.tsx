@@ -457,7 +457,7 @@ export function RouteMap({
             aria-pressed={is3D}
             className="gg-press rounded-[6px] px-3 py-1 text-[12px] font-medium disabled:opacity-50"
             style={{
-              background: is3D ? 'var(--red)' : 'var(--bg-card)',
+              background: is3D ? 'var(--action-primary-bg)' : 'var(--bg-card)',
               color: is3D ? '#fff' : 'var(--text-primary)',
               border: '0.5px solid var(--border)',
             }}

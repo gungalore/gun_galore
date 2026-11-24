@@ -127,7 +127,7 @@ export function ClickableAvatar({
         flexShrink: 0,
         padding: 0,
         border: '0.5px solid var(--border)',
-        background: 'var(--red)',
+        background: 'var(--action-primary-bg)',
         color: '#fff',
         display: 'inline-flex',
         alignItems: 'center',

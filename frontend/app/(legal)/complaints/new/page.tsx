@@ -283,7 +283,7 @@ export default function NewComplaintPage() {
           <Link
             href="/support"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               padding: '8px 14px',
               borderRadius: 6,
@@ -509,7 +509,7 @@ export default function NewComplaintPage() {
           onClick={submit}
           disabled={busy}
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             padding: '11px 20px',
             borderRadius: 8,

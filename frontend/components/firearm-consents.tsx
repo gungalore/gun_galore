@@ -111,8 +111,8 @@ export function DealerTransferConsent({
         className="text-xs"
         style={{
           color: 'var(--text-tertiary)',
-          background: 'rgba(245,158,11,0.08)',
-          border: '0.5px solid rgba(245,158,11,0.45)',
+          background: 'var(--warning-wash)',
+          border: '0.5px solid var(--warning-wash)',
           borderRadius: 4,
           padding: '8px 10px',
           lineHeight: 1.5,
@@ -175,7 +175,7 @@ export function FirearmAttestation({
     <div
       className="rounded-[6px] p-4 text-sm space-y-3"
       style={{
-        background: 'rgba(227,6,19,0.06)',
+        background: 'var(--red-wash)',
         border: '0.5px solid var(--red)',
         color: 'var(--text-primary)',
         lineHeight: 1.55,

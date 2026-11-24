@@ -91,7 +91,7 @@ export default function PhoneCapturePage() {
       </p>
 
       {error && (
-        <div className="rounded-[8px] px-3 py-2 text-sm mb-3" style={{ background: 'rgba(227,6,19,0.08)', color: 'var(--red)' }}>
+        <div className="rounded-[8px] px-3 py-2 text-sm mb-3" style={{ background: 'var(--red-wash)', color: 'var(--action-secondary-ink)' }}>
           {error}
         </div>
       )}
@@ -114,7 +114,7 @@ export default function PhoneCapturePage() {
         disabled={busy || (state?.slotsRemaining ?? 0) <= 0}
         className="w-full rounded-[10px] py-4 text-sm font-semibold mb-4"
         style={{
-          background: (state?.slotsRemaining ?? 0) <= 0 ? 'var(--bg-inset)' : 'var(--red)',
+          background: (state?.slotsRemaining ?? 0) <= 0 ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: (state?.slotsRemaining ?? 0) <= 0 ? 'var(--text-tertiary)' : '#fff',
           border: 'none',
           cursor: busy ? 'wait' : 'pointer',

@@ -90,7 +90,7 @@ export function ResearchProgress({
           type="button"
           onClick={onRetry}
           className="rounded-[8px] px-4 py-2 text-sm font-semibold"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
         >
           Try again
         </button>
@@ -119,7 +119,7 @@ export function ResearchProgress({
                   width: 20,
                   height: 20,
                   borderRadius: '50%',
-                  background: done ? 'var(--red)' : 'var(--bg-inset)',
+                  background: done ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
                   border: `0.5px solid ${done || current ? 'var(--red)' : 'var(--border)'}`,
                   flexShrink: 0,
                 }}

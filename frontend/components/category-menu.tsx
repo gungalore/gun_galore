@@ -272,7 +272,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
                 onClick={() => ensureLoaded()}
                 className="rounded-[6px]"
                 style={{
-                  background: 'var(--bg-inset)',
+                  background: 'transparent',
                   color: 'var(--text-secondary)',
                   border: '1px solid var(--border-visible)',
                   cursor: 'pointer',
@@ -335,7 +335,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
                     fontSize: 13,
                     textDecoration: 'none',
                     color: active ? '#fff' : 'var(--text-secondary)',
-                    background: active ? 'rgba(227,6,19,0.12)' : 'transparent',
+                    background: active ? 'var(--red-wash)' : 'transparent',
                     borderLeft: active ? '2px solid var(--red)' : '2px solid transparent',
                   }}
                 >

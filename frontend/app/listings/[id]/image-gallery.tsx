@@ -169,7 +169,7 @@ export function ImageGallery({
                 style={{
                   background: 'var(--bg-inset)',
                   border: isActive
-                    ? '1.5px solid var(--red)'
+                    ? '1.5px solid var(--action-primary-bg)'
                     : '0.5px solid var(--border)',
                   cursor: 'pointer',
                   padding: 0,
@@ -323,7 +323,7 @@ function VideoThumb({
       style={{
         background: 'var(--bg-inset)',
         border: active
-          ? '1.5px solid var(--red)'
+          ? '1.5px solid var(--action-primary-bg)'
           : '0.5px solid var(--border)',
         cursor: 'pointer',
         padding: 0,

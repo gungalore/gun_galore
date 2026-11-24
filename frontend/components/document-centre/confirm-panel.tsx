@@ -353,7 +353,7 @@ export default function ConfirmPanel({
              left the member with nothing to press but "I will do this later".
              The tick is the other complete answer. */
           disabled={busy || (!neverExpires && !expiresOn)}
-          className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+          className="rounded bg-[var(--action-primary-bg)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
           onClick={async () => {
             setBusy(true);
             setErr(null);

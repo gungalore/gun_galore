@@ -815,7 +815,7 @@ function ActionButton({
 }) {
   const styles: Record<typeof variant, React.CSSProperties> = {
     primary: {
-      background: disabled ? 'var(--bg-inset)' : 'var(--red)',
+      background: disabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
       color: disabled ? 'var(--text-tertiary)' : '#fff',
       border: 'none',
     },

@@ -280,9 +280,17 @@ export function DeliveryOptionsPicker({
             aria-pressed={Boolean(selected)}
             className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left"
             style={{
-              borderColor: selected ? 'var(--red)' : 'var(--border-visible)',
-              background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
-              color: 'var(--text-primary)',
+              border: `1.5px solid ${
+                selected
+                  ? 'var(--action-option-selected-edge)'
+                  : 'var(--action-option-edge)'
+              }`,
+              background: selected
+                ? 'var(--action-option-selected-bg)'
+                : 'transparent',
+              color: selected
+                ? 'var(--action-option-selected-ink)'
+                : 'var(--text-primary)',
             }}
           >
             <span aria-hidden className="text-neutral-500"><TruckIcon /></span>

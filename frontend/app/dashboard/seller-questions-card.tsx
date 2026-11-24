@@ -432,7 +432,7 @@ export function SellerQuestionsCard({
               disabled={busy || draft.trim().length === 0}
               className="text-xs px-3 py-1.5 rounded-[4px]"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 500,
                 border: 'none',
@@ -608,7 +608,7 @@ export function SellerQuestionsCard({
                     style={{
                       background:
                         q.role === 'SELLER'
-                          ? 'rgba(245,158,11,0.10)'
+                          ? 'var(--warning-wash)'
                           : 'var(--bg-inset)',
                       color:
                         q.role === 'SELLER'

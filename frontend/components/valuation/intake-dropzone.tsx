@@ -47,7 +47,7 @@ export function IntakeDropzone({
       className="flex flex-col items-center justify-center text-center rounded-[10px] py-10 px-4"
       style={{
         border: `1px dashed ${dragOver ? 'var(--red)' : 'var(--border)'}`,
-        background: dragOver ? 'rgba(227,6,19,0.04)' : 'var(--bg-inset)',
+        background: dragOver ? 'var(--red-wash)' : 'var(--bg-inset)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.55 : 1,
       }}

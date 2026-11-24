@@ -124,7 +124,7 @@ export function Hero() {
              4.5:1 across all five. */
           background:
             linear-gradient(90deg, rgba(8,10,14,0.76) 0%, rgba(8,10,14,0.52) 34%, rgba(8,10,14,0.14) 62%, rgba(8,10,14,0) 100%),
-            radial-gradient(circle at 0% 100%, rgba(227,6,19,0.10) 0%, transparent 45%);
+            radial-gradient(circle at 0% 100%, var(--red-wash) 0%, transparent 45%);
         }
         @media (max-width: 767.98px) {
           /* ⚠️ NO HERO ON PHONES OR THE PHONE PWA (operator, 2026-09-30).
@@ -368,7 +368,7 @@ export function Hero() {
               href="/?sort=newest"
               className="hero-cta gg-press inline-flex items-center justify-center text-sm"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 600,
                 textDecoration: 'none',

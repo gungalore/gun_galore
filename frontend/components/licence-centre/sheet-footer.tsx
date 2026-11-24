@@ -136,8 +136,8 @@ export default function SheetFooter({
         type="button"
         disabled={blocked || busy || paying}
         onClick={() => onWrite({ testimonialConsent: testimonial })}
-        className={`flex min-h-[44px] w-full items-center justify-center rounded-[var(--r-sm)] bg-[var(--red)] px-4 text-[15px] font-medium text-white ${
-          blocked || busy || paying ? 'opacity-50' : 'hover:bg-[#C7050F]'
+        className={`flex min-h-[44px] w-full items-center justify-center rounded-[var(--r-sm)] bg-[var(--action-primary-bg)] px-4 text-[15px] font-medium text-white ${
+          blocked || busy || paying ? 'opacity-50' : 'hover:bg-[var(--action-primary-hover)]'
         }`}
       >
         {maintenance

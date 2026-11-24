@@ -381,7 +381,7 @@ export function ListingPreviewModal({
             className="px-6 py-4"
             style={{
               borderBottom: '0.5px solid var(--border)',
-              background: 'rgba(245,158,11,0.06)',
+              background: 'var(--warning-wash)',
             }}
           >
             <p
@@ -413,8 +413,8 @@ export function ListingPreviewModal({
             <div
               className="rounded-[6px] p-3 text-sm"
               style={{
-                background: 'rgba(34,197,94,0.08)',
-                border: '0.5px solid rgba(34,197,94,0.4)',
+                background: 'var(--success-wash)',
+                border: '0.5px solid var(--success-wash)',
                 color: 'var(--text-primary)',
                 lineHeight: 1.55,
               }}
@@ -607,7 +607,7 @@ export function ListingPreviewModal({
           <div
             className="mx-6 mb-4 px-4 py-3 rounded-[6px] text-sm"
             style={{
-              background: 'rgba(227,6,19,0.08)',
+              background: 'var(--red-wash)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}
@@ -663,7 +663,7 @@ export function ListingPreviewModal({
                 title={noPhotos ? 'Add at least one photo before publishing.' : undefined}
                 className="px-5 py-2.5 rounded-[6px] text-sm transition-opacity"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   border: 'none',
                   fontWeight: 500,

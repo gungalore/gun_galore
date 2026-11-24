@@ -18,7 +18,7 @@ export function actionBoxButtonStyle(tone: ActionBoxTone = 'primary'): CSSProper
     border: '1px solid transparent',
   };
   if (tone === 'primary') {
-    return { ...base, background: 'var(--red)', color: '#fff' };
+    return { ...base, background: 'var(--action-primary-bg)', color: '#fff' };
   }
   if (tone === 'accent') {
     return {

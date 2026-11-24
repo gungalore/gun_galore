@@ -535,7 +535,7 @@ function InstallPromptBody() {
               border: '0.5px solid var(--border)',
               borderRadius: 16,
               boxShadow:
-                '0 24px 60px rgba(0,0,0,0.55), 0 0 22px rgba(227,6,19,0.22)',
+                '0 24px 60px rgba(0,0,0,0.55), 0 0 22px var(--red-line)',
               padding: '24px 22px 18px',
               display: 'flex',
               flexDirection: 'column',
@@ -640,7 +640,7 @@ function InstallPromptBody() {
                       width: 18,
                       height: 18,
                       borderRadius: '50%',
-                      background: 'rgba(227,6,19,0.14)',
+                      background: 'var(--red-wash)',
                       color: 'var(--red)',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -662,7 +662,7 @@ function InstallPromptBody() {
               disabled={busy}
               style={{
                 width: '100%',
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 border: 'none',
                 padding: '12px 14px',
@@ -834,7 +834,7 @@ function InstallPromptBody() {
             disabled={busy}
             style={{
               flex: '0 0 auto',
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               padding: '9px 14px',
@@ -1038,7 +1038,7 @@ function InstallHelpModal({
                 onClick={openInSafari}
                 style={{
                   flex: 1,
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   border: 'none',
                   padding: '11px 14px',
@@ -1234,7 +1234,7 @@ function InstallHelpModal({
             onClick={onInstall}
             style={{
               width: '100%',
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               padding: '11px 14px',
@@ -1252,7 +1252,7 @@ function InstallHelpModal({
           onClick={onClose}
           style={{
             width: '100%',
-            background: !isIos && canInstall ? 'transparent' : 'var(--red)',
+            background: !isIos && canInstall ? 'transparent' : 'var(--action-primary-bg)',
             color: !isIos && canInstall ? 'var(--text-secondary)' : '#fff',
             border: !isIos && canInstall ? '0.5px solid var(--border)' : 'none',
             padding: '11px 14px',

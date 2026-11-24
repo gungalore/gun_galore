@@ -124,9 +124,9 @@ export function SaveSearchButton({ params }: { params: Params }) {
         onClick={() => router.push('/sign-in')}
         className="flex items-center gap-1.5 text-[13px] rounded-[6px] px-3 py-1.5"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'transparent',
           border: '1px solid var(--border-visible)',
-          color: 'var(--text-secondary)',
+          color: 'var(--text-primary)',
         }}
       >
         Sign in to get alerts for this search →
@@ -142,9 +142,9 @@ export function SaveSearchButton({ params }: { params: Params }) {
         disabled={state === 'saving'}
         className="flex items-center gap-1.5 text-[13px] rounded-[6px] px-3 py-1.5 transition-opacity"
         style={{
-          background: 'var(--red)',
+          background: 'var(--action-secondary-bg)',
           border: 'none',
-          color: '#fff',
+          color: 'var(--action-secondary-ink)',
           opacity: state === 'saving' ? 0.6 : 1,
           fontWeight: 500,
         }}

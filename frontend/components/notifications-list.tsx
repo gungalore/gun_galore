@@ -169,7 +169,7 @@ export function NotificationsList({
             style={{
               marginTop: 14,
               padding: '10px 20px',
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               borderRadius: 6,
@@ -222,7 +222,7 @@ export function NotificationsList({
             style={{
               padding: '8px 18px',
               borderRadius: 8,
-              background: 'var(--bg-card)',
+              background: 'transparent',
               color: 'var(--text-secondary)',
               border: '1px solid var(--border-visible)',
               fontSize: 13,

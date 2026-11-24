@@ -41,7 +41,7 @@ export default function PreparingMotivation() {
         aria-hidden="true"
         className="mx-auto mt-5 h-[6px] w-[160px] overflow-hidden rounded-full bg-[var(--bg-inset)]"
       >
-        <div className="h-full w-1/2 animate-pulse rounded-full bg-[var(--red)]" />
+        <div className="h-full w-1/2 animate-pulse rounded-full bg-[var(--action-primary-bg)]" />
       </div>
     </div>
   );

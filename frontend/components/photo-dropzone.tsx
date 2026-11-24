@@ -136,10 +136,10 @@ export function PhotoDropzone({
         className="rounded-[8px] text-center transition-colors cursor-pointer"
         style={{
           padding: '36px 16px',
-          background: dragOverDrop ? 'rgba(227,6,19,0.06)' : 'var(--action-soft)',
+          background: dragOverDrop ? 'var(--red-wash)' : 'transparent',
           border: dragOverDrop
-            ? '0.5px dashed var(--red)'
-            : '1px dashed var(--red)',
+            ? '0.5px dashed var(--action-primary-bg)'
+            : '1.5px dashed var(--action-option-edge)',
         }}
       >
         <div
@@ -197,7 +197,7 @@ export function PhotoDropzone({
                   aspectRatio: '1/1',
                   background: 'var(--bg-inset)',
                   border: isDragOver
-                    ? '0.5px solid var(--red)'
+                    ? '0.5px solid var(--action-primary-bg)'
                     : isHero
                       ? '0.5px solid var(--red)'
                       : '0.5px solid var(--border)',
@@ -213,7 +213,7 @@ export function PhotoDropzone({
                   <span
                     className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0.5 rounded-[3px]"
                     style={{
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       color: '#fff',
                       fontWeight: 500,
                       fontSize: 10,

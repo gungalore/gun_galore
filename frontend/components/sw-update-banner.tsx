@@ -265,7 +265,7 @@ export function SwUpdateBanner() {
             minHeight: 46,
             borderRadius: 8,
             border: 'none',
-            background: 'var(--sw-banner-accent, var(--red))',
+            background: 'var(--sw-banner-accent, var(--action-primary-bg))',
             color: '#fff',
             fontFamily: 'var(--font-body)',
             fontSize: 14,

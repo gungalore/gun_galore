@@ -340,7 +340,7 @@ export default async function ProfilePage() {
             <div
               className="mt-3 rounded-[6px] px-3 py-2.5 text-xs"
               style={{
-                background: 'rgba(227,6,19,0.10)',
+                background: 'var(--red-wash)',
                 border: '0.5px solid var(--red)',
                 color: 'var(--text-primary)',
                 lineHeight: 1.55,
@@ -389,7 +389,7 @@ export default async function ProfilePage() {
                     href="/kyc/verify?returnTo=/profile"
                     className="inline-block px-3 py-1.5 rounded-[6px]"
                     style={{
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       color: '#fff',
                       fontWeight: 500,
                       textDecoration: 'none',
@@ -475,7 +475,7 @@ export default async function ProfilePage() {
             href="/profile/edit"
             className="text-sm px-4 py-2 rounded-[6px] text-center"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',

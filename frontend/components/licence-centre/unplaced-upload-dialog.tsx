@@ -123,7 +123,7 @@ export default function UnplacedUploadDialog({
               type="button"
               onClick={() => onRetry(words)}
               disabled={busy || !words.trim()}
-              className="min-h-[44px] rounded-[var(--r-sm)] bg-[var(--red)] px-4 text-[13px] font-medium text-white disabled:opacity-50"
+              className="min-h-[44px] rounded-[var(--r-sm)] bg-[var(--action-primary-bg)] px-4 text-[13px] font-medium text-white disabled:opacity-50"
             >
               {busy ? 'Reading…' : 'Try again'}
             </button>

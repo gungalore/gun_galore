@@ -58,7 +58,7 @@ export default function WitnessStepper({
                 done
                   ? 'bg-[var(--success)] font-bold text-white'
                   : active
-                    ? 'bg-[var(--red)] font-bold text-white'
+                    ? 'bg-[var(--action-primary-bg)] font-bold text-white'
                     : 'border border-[var(--border-hover)] font-semibold text-[var(--text-faint)]',
               ].join(' ')}
             >

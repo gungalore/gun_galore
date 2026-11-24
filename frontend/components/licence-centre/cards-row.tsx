@@ -184,7 +184,7 @@ export default function CardsRow({
                 <span
                   className={`mt-[1px] flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-[4px] border ${
                     on
-                      ? 'border-[var(--red)] bg-[var(--red)]'
+                      ? 'border-[var(--red)] bg-[var(--action-primary-bg)]'
                       : 'border-[var(--border-hover)] bg-white'
                   }`}
                 >

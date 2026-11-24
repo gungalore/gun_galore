@@ -73,7 +73,7 @@ export default async function ReceivedOffersPage() {
               href="/listings/new"
               className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 500,
                 textDecoration: 'none',
@@ -132,7 +132,7 @@ function ResponseDeadline({ expiresAt }: { expiresAt: string }) {
       <p
         className="text-xs mb-3 px-2 py-1 rounded inline-block"
         style={{
-          background: 'rgba(227,6,19,0.10)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
           color: 'var(--red)',
         }}
@@ -146,9 +146,9 @@ function ResponseDeadline({ expiresAt }: { expiresAt: string }) {
   const isCritical = hours < 2;
   const isWarning = hours < 6;
   const tone = isCritical
-    ? { bg: 'rgba(227,6,19,0.10)', border: 'var(--red)', label: 'var(--red)' }
+    ? { bg: 'var(--red-wash)', border: 'var(--red)', label: 'var(--red)' }
     : isWarning
-      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: 'var(--warning)' }
+      ? { bg: 'var(--warning-wash)', border: 'var(--warning-wash)', label: 'var(--warning)' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
   const left = hours >= 1 ? `${hours}h ${minutes}m` : `${minutes}m`;
   return (

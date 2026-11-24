@@ -51,11 +51,15 @@ export function Pill({
       style={{
         padding,
         fontSize,
-        background: selected ? 'var(--stone-900)' : 'var(--bg-inset)',
-        color: selected ? '#fff' : 'var(--text-secondary)',
+        background: selected
+          ? 'var(--action-option-selected-bg)'
+          : 'transparent',
+        color: selected
+          ? 'var(--action-option-selected-ink)'
+          : 'var(--text-primary)',
         border: selected
-          ? 'none'
-          : '1px solid var(--border-visible)',
+          ? '1.5px solid var(--action-option-selected-edge)'
+          : '1.5px solid var(--action-option-edge)',
         fontWeight: selected ? 600 : 400,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,

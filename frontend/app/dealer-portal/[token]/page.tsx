@@ -301,7 +301,7 @@ export default function DealerPortalPage() {
       {error && (
         <p
           className="text-xs mb-3 p-2 rounded-[6px]"
-          style={{ background: 'rgba(227,6,19,0.10)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+          style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
         </p>

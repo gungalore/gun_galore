@@ -87,7 +87,7 @@ const primary: React.CSSProperties = {
   width: '100%',
   padding: '11px 14px',
   borderRadius: 6,
-  background: 'var(--red)',
+  background: 'var(--action-primary-bg)',
   color: '#fff',
   border: 'none',
   fontSize: 15,

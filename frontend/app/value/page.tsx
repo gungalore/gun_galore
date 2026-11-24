@@ -40,7 +40,7 @@ export default async function ValuePage() {
           <Link
             href="/sign-in?redirect_url=/value"
             className="inline-block mt-5 rounded-[8px] px-5 py-2.5 text-sm font-semibold"
-            style={{ background: 'var(--red)', color: '#fff', textDecoration: 'none' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', textDecoration: 'none' }}
           >
             Sign in
           </Link>

@@ -38,7 +38,7 @@ export default function RefundPolicyPage() {
       <h2>Quick reference</h2>
       <div
         style={{
-          background: 'rgba(34,197,94,0.06)',
+          background: 'var(--success-wash)',
           border: '0.5px solid var(--success)',
           borderRadius: 8,
           padding: 16,

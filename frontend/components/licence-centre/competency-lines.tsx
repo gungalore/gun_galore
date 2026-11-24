@@ -82,7 +82,7 @@ export default function CompetencyLines({
                     onChange(i.key, draft);
                     setEditing(null);
                   }}
-                  className="min-h-[40px] rounded-[6px] bg-[var(--red)] px-3 text-[13px] font-medium text-white"
+                  className="min-h-[40px] rounded-[6px] bg-[var(--action-primary-bg)] px-3 text-[13px] font-medium text-white"
                 >
                   Save
                 </button>

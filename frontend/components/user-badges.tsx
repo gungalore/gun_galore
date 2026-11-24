@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // Phase E1 — subscription-tier badges rendered next to a username
 // on every public surface (listing card, listing-detail seller chip,
@@ -131,8 +131,8 @@ function GgPlusPill({
         borderRadius: '3px',
         lineHeight: 1.2,
         color: isPro ? '#fff' : 'var(--red)',
-        background: isPro ? 'var(--red)' : 'rgba(227,6,19,0.10)',
-        border: `0.5px solid ${isPro ? 'var(--red)' : 'rgba(227,6,19,0.40)'}`,
+        background: isPro ? 'var(--action-primary-bg)' : 'var(--red-wash)',
+        border: `0.5px solid ${isPro ? 'var(--red)' : 'var(--red-line)'}`,
       }}
     >
       {label}
@@ -169,8 +169,8 @@ function ExpertBadge({
         borderRadius: '3px',
         lineHeight: 1.2,
         color: 'var(--success)',
-        background: 'rgba(34,197,94,0.08)',
-        border: '0.5px solid rgba(34,197,94,0.40)',
+        background: 'var(--success-wash)',
+        border: '0.5px solid var(--success-wash)',
       }}
     >
       ✓ EXPERT

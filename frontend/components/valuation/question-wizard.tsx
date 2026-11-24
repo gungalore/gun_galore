@@ -87,7 +87,7 @@ export function QuestionWizard({
         <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-inset)' }}>
           <div
             className="h-full rounded-full"
-            style={{ width: `${progress}%`, background: 'var(--red)', transition: 'width 0.3s' }}
+            style={{ width: `${progress}%`, background: 'var(--action-primary-bg)', transition: 'width 0.3s' }}
           />
         </div>
       </div>
@@ -111,7 +111,7 @@ export function QuestionWizard({
               onClick={() => toggleOption(option)}
               className="text-left rounded-[8px] px-3 py-2.5 text-sm flex items-center gap-3"
               style={{
-                background: checked ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+                background: checked ? 'var(--red-wash)' : 'var(--bg-inset)',
                 border: `0.5px solid ${checked ? 'var(--red)' : 'var(--border)'}`,
                 color: 'var(--text-primary)',
                 cursor: 'pointer',
@@ -124,7 +124,7 @@ export function QuestionWizard({
                   height: 16,
                   borderRadius: question.type === 'multi' ? 3 : '50%',
                   border: `1.5px solid ${checked ? 'var(--red)' : 'var(--border)'}`,
-                  background: checked ? 'var(--red)' : 'transparent',
+                  background: checked ? 'var(--action-primary-bg)' : 'transparent',
                   flexShrink: 0,
                 }}
               />
@@ -184,7 +184,7 @@ export function QuestionWizard({
           type="button"
           onClick={next}
           className="text-sm font-semibold px-5 py-2 rounded-[8px]"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
         >
           {index + 1 >= total ? 'Finish' : 'Next'}
         </button>

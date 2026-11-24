@@ -100,7 +100,7 @@ export function RatingReply({
           onClick={() => void submit()}
           className="text-xs px-3 py-1.5 rounded-[5px]"
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             border: 'none',
             cursor: 'pointer',

@@ -12,7 +12,7 @@ export function LegalFlagsCard({
   return (
     <div
       className="rounded-[10px] p-4"
-      style={{ background: 'rgba(227,6,19,0.06)', border: '0.5px solid rgba(227,6,19,0.3)' }}
+      style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red-line)' }}
     >
       <p className="text-sm font-semibold mb-2" style={{ color: 'var(--red)' }}>
         Before you list this item

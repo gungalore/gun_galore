@@ -772,7 +772,7 @@ export function BottomTabBar() {
                       width: 38,
                       height: 38,
                       borderRadius: '50%',
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       color: '#fff',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -1206,12 +1206,12 @@ function ShopSheet({
                             padding: '10px 12px',
                             borderRadius: 10,
                             background: active
-                              ? 'rgba(227, 6, 19, 0.10)'
-                              : 'var(--bg-inset)',
+                              ? 'var(--action-option-selected-bg)'
+                              : 'transparent',
                             border: `0.5px solid ${
                               active
-                                ? 'rgba(227, 6, 19, 0.40)'
-                                : 'var(--border)'
+                                ? 'var(--action-option-selected-edge)'
+                                : 'var(--border-visible)'
                             }`,
                             color: 'var(--text-primary)',
                             textDecoration: 'none',
@@ -1292,10 +1292,10 @@ function ShopSheet({
                   padding: '14px 16px',
                   borderRadius: 10,
                   background: s.isActive
-                    ? 'rgba(227, 6, 19, 0.10)'
-                    : 'var(--bg-inset)',
+                    ? 'var(--action-option-selected-bg)'
+                    : 'transparent',
                   border: `0.5px solid ${
-                    s.isActive ? 'rgba(227, 6, 19, 0.40)' : 'var(--border)'
+                    s.isActive ? 'var(--action-option-selected-edge)' : 'var(--border-visible)'
                   }`,
                   color: 'var(--text-primary)',
                   textDecoration: 'none',
@@ -1308,7 +1308,7 @@ function ShopSheet({
                     height: 40,
                     borderRadius: 8,
                     background: s.isActive
-                      ? 'rgba(227, 6, 19, 0.20)'
+                      ? 'var(--action-option-selected-bg)'
                       : 'var(--bg-card)',
                     color: s.isActive
                       ? 'var(--red)'
@@ -1537,7 +1537,7 @@ function MoreSheet({
                   width: 44,
                   height: 44,
                   borderRadius: '50%',
-                  background: 'rgba(227,6,19,0.18)',
+                  background: 'var(--red-wash)',
                   color: 'var(--red)',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1588,7 +1588,7 @@ function MoreSheet({
                 style={{
                   width: '100%',
                   padding: '14px 16px',
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 12,
@@ -1762,7 +1762,7 @@ function SheetLink({
                 height: 18,
                 padding: '0 5px',
                 borderRadius: 9,
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontSize: 11,
                 fontWeight: 700,

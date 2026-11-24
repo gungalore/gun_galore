@@ -256,7 +256,7 @@ export function CommentThread({
           aria-label={replyTo ? 'Send reply' : 'Post comment'}
           className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium shrink-0"
           style={{
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             color: '#fff',
             opacity: busy || !draft.trim() ? 0.6 : 1,
           }}

@@ -58,8 +58,8 @@ export function DownloadReceiptButton({
         className="w-full py-2 rounded-[6px] text-sm"
         style={{
           background: 'transparent',
-          color: 'var(--red)',
-          border: '1px solid var(--red)',
+          color: 'var(--text-primary)',
+          border: '1.5px solid var(--action-option-edge)',
           cursor: busy ? 'default' : 'pointer',
         }}
       >

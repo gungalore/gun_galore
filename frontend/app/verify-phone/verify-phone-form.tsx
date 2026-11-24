@@ -260,7 +260,7 @@ export function VerifyPhoneForm() {
             disabled={busy || phone.trim().length < 9}
             className="w-full rounded-[6px] px-4 py-2 text-sm"
             style={{
-              background: busy ? 'var(--bg-card)' : 'var(--red)',
+              background: busy ? 'var(--bg-card)' : 'var(--action-primary-bg)',
               color: busy ? 'var(--text-tertiary)' : '#fff',
               border: 'none',
               cursor: busy ? 'not-allowed' : 'pointer',
@@ -299,7 +299,7 @@ export function VerifyPhoneForm() {
             disabled={busy || code.length < 4}
             className="w-full rounded-[6px] px-4 py-2 text-sm"
             style={{
-              background: busy ? 'var(--bg-card)' : 'var(--red)',
+              background: busy ? 'var(--bg-card)' : 'var(--action-primary-bg)',
               color: busy ? 'var(--text-tertiary)' : '#fff',
               border: 'none',
               cursor: busy ? 'not-allowed' : 'pointer',

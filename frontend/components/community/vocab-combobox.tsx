@@ -180,7 +180,7 @@ export function VocabCombobox({
               key={v}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[12px]"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
               }}
             >

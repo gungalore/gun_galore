@@ -110,7 +110,7 @@ export default function PrivateArrangePanel({
             onClick={() => post('delivered')}
             disabled={busy !== null}
             className="text-sm px-3 py-1.5 rounded-md font-medium text-white disabled:opacity-50"
-            style={{ background: 'var(--red)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             {busy === 'delivered' ? 'Saving…' : 'Item delivered'}
           </button>
@@ -134,8 +134,8 @@ export default function PrivateArrangePanel({
             className="text-sm px-3 py-1.5 rounded-md border text-[var(--text-secondary)] disabled:opacity-50"
             style={{
               background: 'transparent',
-              border: '1px solid var(--red)',
-              color: 'var(--red)',
+              border: '1.5px solid var(--danger-edge)',
+              color: 'var(--danger-edge)',
             }}
           >
             {busy === 'dispute' ? 'Reporting…' : 'Handover did not happen'}
@@ -198,7 +198,7 @@ export default function PrivateArrangePanel({
                 disabled={busy !== null}
                 className="flex-1 py-2.5 rounded-[6px] text-sm font-medium text-white"
                 style={{
-                  background: ask === 'received' ? 'var(--success)' : 'var(--red)',
+                  background: ask === 'received' ? 'var(--success)' : 'var(--action-primary-bg)',
                   border: 'none',
                   cursor: busy ? 'wait' : 'pointer',
                 }}

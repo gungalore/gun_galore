@@ -83,8 +83,17 @@ export function SavedAddressPicker({
             key={a.id}
             className="flex items-start gap-3 rounded-[6px] p-3 cursor-pointer"
             style={{
-              background: active ? 'var(--red-wash)' : 'var(--bg-inset)',
-              border: `1px solid ${active ? 'var(--red)' : 'var(--border-visible)'}`,
+              background: active
+                ? 'var(--action-option-selected-bg)'
+                : 'transparent',
+              border: `1.5px solid ${
+                active
+                  ? 'var(--action-option-selected-edge)'
+                  : 'var(--action-option-edge)'
+              }`,
+              color: active
+                ? 'var(--action-option-selected-ink)'
+                : 'var(--text-primary)',
             }}
           >
             <input

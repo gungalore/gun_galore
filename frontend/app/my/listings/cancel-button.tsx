@@ -82,7 +82,7 @@ export default function CancelButton({ listingId }: { listingId: string }) {
       <button
         onClick={openConfirm}
         className="px-2.5 py-1 rounded text-xs"
-        style={{ color: 'var(--red)', border: '0.5px solid var(--red-line)' }}
+        style={{ background: 'transparent', color: 'var(--danger-edge)', border: '1.5px solid var(--danger-edge)' }}
       >
         Cancel
       </button>
@@ -140,7 +140,7 @@ export default function CancelButton({ listingId }: { listingId: string }) {
               <div
                 className="rounded-[6px] p-3"
                 style={{
-                  background: 'rgba(227,6,19,0.08)',
+                  background: 'var(--red-wash)',
                   border: '0.5px solid var(--red)',
                 }}
               >
@@ -204,8 +204,8 @@ export default function CancelButton({ listingId }: { listingId: string }) {
             disabled={busy}
             className="flex-1 py-2 rounded text-sm font-medium"
             style={{
-              background: busy ? 'var(--bg-inset)' : 'var(--red)',
-              color: busy ? 'var(--text-tertiary)' : '#fff',
+              background: busy ? 'var(--bg-inset)' : 'var(--danger-fill)',
+              color: busy ? 'var(--text-tertiary)' : 'var(--danger-ink)',
               border: 'none',
               cursor: busy ? 'not-allowed' : 'pointer',
             }}

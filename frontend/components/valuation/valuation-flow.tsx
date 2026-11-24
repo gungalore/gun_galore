@@ -322,7 +322,7 @@ export function ValuationFlow() {
       </div>
 
       {error && (
-        <div role="alert" className="rounded-[8px] px-4 py-3 text-sm" style={{ background: 'rgba(227,6,19,0.08)', color: 'var(--red)' }}>
+        <div role="alert" className="rounded-[8px] px-4 py-3 text-sm" style={{ background: 'var(--red-wash)', color: 'var(--action-primary-bg)' }}>
           {error}
         </div>
       )}

@@ -100,7 +100,7 @@ export default function DocumentCentreAdd({
         type="button"
         disabled={busy}
         onClick={() => fileRef.current?.click()}
-        className="inline-flex min-h-[38px] items-center gap-2 rounded-[10px] border border-[var(--red)] bg-[var(--red)] px-3.5 text-[13px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+        className="inline-flex min-h-[38px] items-center gap-2 rounded-[10px] border border-[var(--red)] bg-[var(--action-primary-bg)] px-3.5 text-[13px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
       >
         <svg
           width="15"

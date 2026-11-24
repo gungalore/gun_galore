@@ -37,7 +37,7 @@ export function Pagination({
   const active: React.CSSProperties = {
     border: '0.5px solid var(--red)',
     color: '#fff',
-    background: 'var(--red)',
+    background: 'var(--action-primary-bg)',
   };
 
   return (

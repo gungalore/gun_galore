@@ -256,7 +256,7 @@ export function QuestionsPanel({
                 href="/messages#inquiries"
                 className="inline-block mt-2 px-3 py-1.5 rounded-[4px]"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontWeight: 500,
                   textDecoration: 'none',
@@ -290,7 +290,7 @@ export function QuestionsPanel({
               type="button"
               className="text-xs px-3 py-1.5 rounded-[4px]"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 500,
                 border: 'none',
@@ -488,7 +488,7 @@ export function QuestionsPanel({
               disabled={sending || draft.trim().length === 0}
               className="text-xs px-3 py-1.5 rounded-[4px]"
               style={{
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 color: '#fff',
                 fontWeight: 500,
                 opacity:

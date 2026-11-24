@@ -51,7 +51,7 @@ export default async function OfferCheckoutPage({
         <div
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
-            background: 'rgba(227,6,19,0.10)',
+            background: 'var(--red-wash)',
             border: '0.5px solid var(--red)',
             color: 'var(--text-primary)',
             lineHeight: 1.55,

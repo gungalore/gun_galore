@@ -89,7 +89,7 @@ export function ResetForm() {
           type="button"
           onClick={() => router.push('/sign-in')}
           className="px-4 py-2 rounded-[6px] text-sm"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none' }}
         >
           Sign in
         </button>
@@ -169,7 +169,7 @@ export function ResetForm() {
         disabled={busy || !!passwordIssue || mismatch || !password}
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
-          background: 'var(--red)',
+          background: 'var(--action-primary-bg)',
           color: '#fff',
           border: 'none',
           opacity: busy || passwordIssue || mismatch || !password ? 0.6 : 1,

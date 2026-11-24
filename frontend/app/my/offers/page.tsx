@@ -67,7 +67,7 @@ export default async function MyOffersPage() {
             href="/?listingType=TAKE_A_SHOT"
             className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',
@@ -123,11 +123,11 @@ function OfferCard({ offer }: { offer: Offer }) {
           className="text-[10px] uppercase px-2 py-0.5 rounded-full"
           style={{
             background: isActive
-              ? 'rgba(34,197,94,0.14)'
+              ? 'var(--success-wash)'
               : 'rgba(108,108,108,0.16)',
             color: isActive ? 'var(--success)' : 'var(--text-tertiary)',
             border: `0.5px solid ${
-              isActive ? 'rgba(34,197,94,0.35)' : 'var(--border)'
+              isActive ? 'var(--success-wash)' : 'var(--border)'
             }`,
             fontWeight: 600,
             letterSpacing: '0.06em',
@@ -203,7 +203,7 @@ function OfferCard({ offer }: { offer: Offer }) {
           <a
             href={`/checkout/offer/${offer.id}`}
             className="block w-full py-2.5 rounded-[6px] text-sm text-center"
-            style={{ background: 'var(--red)', color: '#fff', fontWeight: 500, textDecoration: 'none' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500, textDecoration: 'none' }}
           >
             Complete Checkout — {formatPrice(settled)}
           </a>
@@ -239,7 +239,7 @@ function ExpiryCountdown({
       <p
         className="text-xs mb-2 px-2 py-1 rounded"
         style={{
-          background: 'rgba(227,6,19,0.10)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
           color: 'var(--red)',
         }}
@@ -253,9 +253,9 @@ function ExpiryCountdown({
   const isCritical = hours < 2;
   const isWarning = hours < 6;
   const tone = isCritical
-    ? { bg: 'rgba(227,6,19,0.10)', border: 'var(--red)', label: 'var(--red)' }
+    ? { bg: 'var(--red-wash)', border: 'var(--red)', label: 'var(--red)' }
     : isWarning
-      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: 'var(--warning)' }
+      ? { bg: 'var(--warning-wash)', border: 'var(--warning-wash)', label: 'var(--warning)' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
   const verb = mode === 'respond' ? 'left to respond' : 'left to pay';
   const left = hours >= 1 ? `${hours}h ${minutes}m ${verb}` : `${minutes}m ${verb}`;

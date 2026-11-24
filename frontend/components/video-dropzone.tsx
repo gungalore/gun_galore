@@ -99,9 +99,9 @@ export function VideoDropzone({
         className="rounded-[8px] text-center transition-colors cursor-pointer"
         style={{
           padding: '20px 16px',
-          background: dragOver ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+          background: dragOver ? 'var(--red-wash)' : 'var(--bg-inset)',
           border: dragOver
-            ? '0.5px dashed var(--red)'
+            ? '0.5px dashed var(--action-primary-bg)'
             : '0.5px dashed var(--border-hover)',
         }}
       >
@@ -152,7 +152,7 @@ export function VideoDropzone({
                   onClick={() => onAudioChange?.(opt.on)}
                   className="text-xs px-3 py-1.5 rounded-[6px]"
                   style={{
-                    background: selected ? 'var(--red)' : 'var(--bg-inset)',
+                    background: selected ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
                     color: selected ? '#fff' : 'var(--text-secondary)',
                     border: `0.5px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
                     fontWeight: 500,
@@ -183,7 +183,7 @@ export function VideoDropzone({
           onClick={() => onHeroChange(!isHero)}
           className="mt-3 flex w-full items-start gap-3 rounded-[6px] px-3 py-2.5 text-left"
           style={{
-            background: isHero ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+            background: isHero ? 'var(--red-wash)' : 'var(--bg-inset)',
             border: `0.5px solid ${isHero ? 'var(--red)' : 'var(--border)'}`,
             cursor: 'pointer',
           }}
@@ -192,7 +192,7 @@ export function VideoDropzone({
             aria-hidden
             className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px]"
             style={{
-              background: isHero ? 'var(--red)' : 'transparent',
+              background: isHero ? 'var(--action-primary-bg)' : 'transparent',
               border: `1px solid ${isHero ? 'var(--red)' : 'var(--border-hover)'}`,
               color: '#fff',
               fontSize: 10,

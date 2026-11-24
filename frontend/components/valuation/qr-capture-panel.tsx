@@ -58,7 +58,7 @@ export function QrCapturePanel({
             type="button"
             onClick={onRefresh}
             className="rounded-[6px] px-3 py-1.5 text-xs font-medium"
-            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
             Show a new code
           </button>

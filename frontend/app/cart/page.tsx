@@ -460,7 +460,7 @@ export default function CartPage() {
         <Link
           href="/"
           className="inline-block text-sm px-5 py-2.5 rounded-[6px]"
-          style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
         >
           Browse the marketplace
         </Link>
@@ -587,7 +587,7 @@ export default function CartPage() {
                   <span
                     className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-[4px] uppercase"
                     style={{
-                      background: 'rgba(227,6,19,0.08)',
+                      background: 'var(--red-wash)',
                       border: '0.5px solid var(--red)',
                       color: 'var(--red)',
                       letterSpacing: '0.03em',
@@ -622,12 +622,16 @@ export default function CartPage() {
                             className="px-2.5 py-1 rounded-[6px] text-xs"
                             style={{
                               background: active
-                                ? 'var(--red)'
-                                : 'var(--bg-inset)',
-                              color: active ? '#fff' : 'var(--text-secondary)',
-                              border: active
-                                ? '1px solid var(--red)'
-                                : '1px solid var(--border-visible)',
+                                ? 'var(--action-option-selected-bg)'
+                                : 'transparent',
+                              color: active
+                                ? 'var(--action-option-selected-ink)'
+                                : 'var(--text-primary)',
+                              border: `1.5px solid ${
+                                active
+                                  ? 'var(--action-option-selected-edge)'
+                                  : 'var(--action-option-edge)'
+                              }`,
                               fontWeight: 500,
                             }}
                           >
@@ -784,7 +788,7 @@ export default function CartPage() {
         <div
           key={i.listingId}
           className="rounded-[8px] mb-4 p-3"
-          style={{ border: '0.5px solid var(--red)', background: 'rgba(227,6,19,0.06)' }}
+          style={{ border: '0.5px solid var(--red)', background: 'var(--red-wash)' }}
         >
           <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
             {i.title}
@@ -797,7 +801,7 @@ export default function CartPage() {
             <Link
               href={`/checkout/${i.listingId}`}
               className="text-xs px-3 py-1.5 rounded-[6px]"
-              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+              style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
             >
               Buy this item on its own
             </Link>
@@ -904,12 +908,19 @@ export default function CartPage() {
                         }
                         className="flex-1 py-2.5 rounded-[6px] text-xs"
                         style={{
-                          background: s.route === route ? 'var(--red)' : 'var(--bg-inset)',
-                          color: s.route === route ? '#fff' : 'var(--text-secondary)',
-                          border:
+                          background:
                             s.route === route
-                              ? '1px solid var(--red)'
-                              : '1px solid var(--border-visible)',
+                              ? 'var(--action-option-selected-bg)'
+                              : 'transparent',
+                          color:
+                            s.route === route
+                              ? 'var(--action-option-selected-ink)'
+                              : 'var(--text-primary)',
+                          border: `1.5px solid ${
+                            s.route === route
+                              ? 'var(--action-option-selected-edge)'
+                              : 'var(--action-option-edge)'
+                          }`,
                           fontWeight: 500,
                           lineHeight: 1.4,
                         }}
@@ -990,7 +1001,7 @@ export default function CartPage() {
         onClick={checkout}
         className="block w-full py-3 rounded-[6px] text-sm text-center"
         style={{
-          background: !shippingReady || submitting ? 'var(--bg-inset)' : 'var(--red)',
+          background: !shippingReady || submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: !shippingReady || submitting ? 'var(--text-tertiary)' : '#fff',
           fontWeight: 500,
           cursor: !shippingReady || submitting ? 'not-allowed' : 'pointer',

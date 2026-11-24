@@ -135,7 +135,7 @@ export function ShellStepRow() {
           style={{
             width: `${pct}%`,
             height: '100%',
-            background: 'var(--red)',
+            background: 'var(--action-primary-bg)',
             transition: 'width var(--dur-base) var(--ease-out)',
           }}
         />

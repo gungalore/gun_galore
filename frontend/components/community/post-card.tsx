@@ -208,7 +208,8 @@ export function PostCard({
             onClick={() => setMenuOpen((v) => !v)}
             className="gg-press px-2 py-1 rounded"
             style={{
-              color: 'var(--text-secondary)',
+              background: 'transparent',
+              color: 'var(--text-primary)',
               border: '1px solid var(--border-visible)',
               borderRadius: 6,
             }}
@@ -371,7 +372,7 @@ export function PostCard({
                     onClick={submitDispute}
                     disabled={disputing}
                     className="gg-press self-start px-3 py-1.5 rounded-[6px] text-[12px] font-medium"
-                    style={{ background: 'var(--red)', color: '#fff' }}
+                    style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
                   >
                     {disputing ? 'Sending…' : 'Dispute this decision'}
                   </button>

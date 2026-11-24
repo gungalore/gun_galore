@@ -83,7 +83,7 @@ export default function OfferActions({
             disabled={!!loading}
             className="flex-1 py-2 rounded-[6px] text-sm font-medium"
             style={{
-              background: loading === 'accept' ? 'var(--bg-inset)' : 'var(--red)',
+              background: loading === 'accept' ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
               color: loading === 'accept' ? 'var(--text-tertiary)' : '#fff',
             }}
           >
@@ -96,8 +96,11 @@ export default function OfferActions({
             className="flex-1 py-2 rounded-[6px] text-sm"
             style={{
               background: 'transparent',
-              border: '1px solid var(--red)',
-              color: loading === 'reject' ? 'var(--text-tertiary)' : 'var(--red)',
+              border: '1.5px solid var(--danger-edge)',
+              color:
+                loading === 'reject'
+                  ? 'var(--text-tertiary)'
+                  : 'var(--danger-edge)',
             }}
           >
             {loading === 'reject' ? 'Declining…' : 'Decline'}
@@ -112,7 +115,7 @@ export default function OfferActions({
           disabled={!!loading}
           className="text-xs"
           style={{
-            color: loading ? 'var(--text-tertiary)' : 'var(--red)',
+            color: loading ? 'var(--text-tertiary)' : 'var(--danger-edge)',
             textDecoration: 'underline',
           }}
         >
@@ -198,8 +201,8 @@ export default function OfferActions({
                 disabled={!!loading}
                 className="flex-1 py-2 rounded text-sm font-medium"
                 style={{
-                  background: loading ? 'var(--bg-inset)' : 'var(--red)',
-                  color: loading ? 'var(--text-secondary)' : '#fff',
+                  background: loading ? 'var(--bg-inset)' : 'var(--danger-fill)',
+                  color: loading ? 'var(--text-secondary)' : 'var(--danger-ink)',
                   border: 'none',
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }}

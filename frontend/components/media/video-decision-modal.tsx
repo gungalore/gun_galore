@@ -57,7 +57,7 @@ export function VideoDecisionModal({
             type="button"
             onClick={onReview}
             className="w-full px-4 py-2.5 rounded-[6px] text-sm"
-            style={{ background: 'var(--red)', color: '#fff', border: 'none', fontWeight: 500 }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', fontWeight: 500 }}
           >
             Send for admin review
           </button>
@@ -65,7 +65,7 @@ export function VideoDecisionModal({
             type="button"
             onClick={onReupload}
             className="w-full px-4 py-2.5 rounded-[6px] text-sm"
-            style={{ background: 'transparent', color: 'var(--text-primary)', border: '0.5px solid var(--border)' }}
+            style={{ background: 'transparent', color: 'var(--text-primary)', border: '1px solid var(--border-visible)' }}
           >
             Upload another video
           </button>
@@ -73,7 +73,7 @@ export function VideoDecisionModal({
             type="button"
             onClick={onDelete}
             className="w-full px-4 py-2.5 rounded-[6px] text-sm"
-            style={{ background: 'transparent', color: 'var(--red)', border: '0.5px solid var(--border)' }}
+            style={{ background: 'transparent', color: 'var(--danger-edge)', border: '1.5px solid var(--danger-edge)' }}
           >
             Delete video
           </button>

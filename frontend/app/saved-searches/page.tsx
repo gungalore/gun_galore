@@ -129,7 +129,7 @@ export default function SavedSearchesPage() {
           <Link
             href="/sign-in"
             className="inline-block rounded-[6px] px-4 py-2 text-sm"
-            style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
           >
             Sign in
           </Link>
@@ -195,7 +195,7 @@ export default function SavedSearchesPage() {
                   disabled={busy === s.id}
                   className="text-[12px] rounded-[6px] px-2.5 py-1"
                   style={{
-                    background: 'var(--bg-inset)',
+                    background: 'transparent',
                     border: '1px solid var(--border-visible)',
                     color: 'var(--text-secondary)',
                   }}

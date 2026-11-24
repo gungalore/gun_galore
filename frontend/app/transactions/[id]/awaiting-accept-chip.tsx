@@ -41,8 +41,8 @@ export default function AwaitingAcceptChip({
     <div
       className="rounded-[8px] px-4 py-3"
       style={{
-        background: expired ? 'rgba(227,6,19,0.10)' : 'rgba(245,158,11,0.08)',
-        border: `0.5px solid ${expired ? 'var(--red)' : 'rgba(245,158,11,0.45)'}`,
+        background: expired ? 'var(--red-wash)' : 'var(--warning-wash)',
+        border: `0.5px solid ${expired ? 'var(--red)' : 'var(--warning-wash)'}`,
         lineHeight: 1.55,
       }}
     >

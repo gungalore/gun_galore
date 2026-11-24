@@ -396,7 +396,7 @@ export default async function MyOrdersPage() {
             href="/"
             className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',
@@ -424,7 +424,7 @@ export default async function MyOrdersPage() {
                     __html:
                       [
                         `.order-filter-scope:has(#order-filter-ALL:checked) label[for="order-filter-ALL"]{background:var(--text-primary);border-color:var(--text-primary);color:#fff;}`,
-                        `.order-filter-scope:has(#order-filter-ALL:focus-visible) label[for="order-filter-ALL"]{outline:2px solid var(--red);outline-offset:2px;}`,
+                        `.order-filter-scope:has(#order-filter-ALL:focus-visible) label[for="order-filter-ALL"]{outline:2px solid var(--action-primary-bg);outline-offset:2px;}`,
                       ].join('') +
                       presentStatusCodes
                         .map(
@@ -433,7 +433,7 @@ export default async function MyOrdersPage() {
                             // checked pill's own status code.
                             `.order-filter-scope:has(#order-filter-${code}:checked) .order-list [data-tx-status]:not([data-tx-status="${code}"]){display:none;}` +
                             `.order-filter-scope:has(#order-filter-${code}:checked) label[for="order-filter-${code}"]{background:var(--text-primary);border-color:var(--text-primary);color:#fff;}` +
-                            `.order-filter-scope:has(#order-filter-${code}:focus-visible) label[for="order-filter-${code}"]{outline:2px solid var(--red);outline-offset:2px;}`,
+                            `.order-filter-scope:has(#order-filter-${code}:focus-visible) label[for="order-filter-${code}"]{outline:2px solid var(--action-primary-bg);outline-offset:2px;}`,
                         )
                         .join(''),
                   }}
@@ -671,7 +671,7 @@ export default async function MyOrdersPage() {
                         className="text-xs px-3 py-1.5 rounded-[6px]"
                         style={
                           cue?.action
-                            ? { background: 'var(--red)', color: '#fff', fontWeight: 500, textDecoration: 'none' }
+                            ? { background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500, textDecoration: 'none' }
                             : {
                                 background: 'var(--bg-inset)',
                                 border: '0.5px solid var(--border)',

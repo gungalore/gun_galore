@@ -325,7 +325,7 @@ function Card({
                     onClick={() =>
                       void onDescribe(card.id, card.description.trim())
                     }
-                    className="min-h-[38px] rounded-[6px] border border-[var(--red)] bg-[var(--red)] px-3 text-[13px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+                    className="min-h-[38px] rounded-[6px] border border-[var(--red)] bg-[var(--action-primary-bg)] px-3 text-[13px] font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
                   >
                     {working ? 'Filing…' : 'File it'}
                   </button>

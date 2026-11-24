@@ -142,7 +142,7 @@ export function BugReportForm({
             type="button"
             onClick={onClose}
             className="mt-4 px-4 py-2 rounded-md text-sm font-medium text-white"
-            style={{ background: 'var(--red)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             Close
           </button>
@@ -293,7 +293,7 @@ export function BugReportForm({
           onClick={submit}
           disabled={busy || description.trim().length < MIN_DESCRIPTION}
           className="px-5 py-2.5 rounded-md text-sm font-semibold text-white disabled:opacity-50"
-          style={{ background: 'var(--red)' }}
+          style={{ background: 'var(--action-primary-bg)' }}
         >
           {busy ? 'Sending…' : 'Send report'}
         </button>

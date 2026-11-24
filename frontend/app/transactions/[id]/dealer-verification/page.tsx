@@ -322,7 +322,7 @@ export default function DealerVerificationPage() {
       <div
         className="rounded-[8px] p-4 mb-5"
         style={{
-          background: 'rgba(245,158,11,0.08)',
+          background: 'var(--warning-wash)',
           border: '0.5px solid var(--warning)',
         }}
       >
@@ -347,7 +347,7 @@ export default function DealerVerificationPage() {
       <div
         className="rounded-[8px] p-4 mb-5"
         style={{
-          background: 'rgba(227,6,19,0.06)',
+          background: 'var(--red-wash)',
           border: '0.5px solid var(--red)',
         }}
       >
@@ -565,7 +565,7 @@ export default function DealerVerificationPage() {
           <div
             className="rounded-[6px] px-3 py-2 text-sm"
             style={{
-              background: 'rgba(227,6,19,0.08)',
+              background: 'var(--red-wash)',
               border: '0.5px solid var(--red)',
               color: 'var(--red)',
             }}
@@ -594,7 +594,7 @@ export default function DealerVerificationPage() {
             disabled={!allReady || submitting}
             className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
             style={{
-              background: allReady && !submitting ? 'var(--red)' : 'var(--bg-inset)',
+              background: allReady && !submitting ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
               color: allReady && !submitting ? '#fff' : 'var(--text-tertiary)',
               border: 'none',
               cursor: allReady && !submitting ? 'pointer' : 'not-allowed',
@@ -845,7 +845,7 @@ function VerificationResultPanel({
             onClick={onReshoot}
             className="flex-1 py-2 rounded text-sm font-medium"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               border: 'none',
               cursor: 'pointer',

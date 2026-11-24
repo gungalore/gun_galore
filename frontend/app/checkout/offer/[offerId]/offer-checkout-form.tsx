@@ -334,7 +334,7 @@ export function OfferCheckoutForm({
       {error && (
         <div
           className="px-4 py-3 rounded-[6px] text-sm"
-          style={{ background: 'rgba(227,6,19,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
+          style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
         </div>
@@ -564,7 +564,7 @@ export function OfferCheckoutForm({
         disabled={submitting || !isReady()}
         className="w-full py-3 rounded-[6px] text-sm"
         style={{
-          background: submitting || !isReady() ? 'var(--bg-inset)' : 'var(--red)',
+          background: submitting || !isReady() ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
           color: submitting || !isReady() ? 'var(--text-tertiary)' : '#fff',
           fontWeight: 500,
           cursor: submitting || !isReady() ? 'not-allowed' : 'pointer',

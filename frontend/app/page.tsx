@@ -520,7 +520,7 @@ export default async function HomePage({
                 return s ? `/?${s}` : '/';
               })()}
               className="inline-block text-sm px-5 py-2.5 rounded-[6px]"
-              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+              style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
             >
               Try again
             </a>
@@ -577,7 +577,7 @@ export default async function HomePage({
                   href={pageHref(1)}
                   className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontWeight: 500,
                     textDecoration: 'none',
@@ -604,7 +604,7 @@ export default async function HomePage({
                   })()}
                   className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontWeight: 500,
                     textDecoration: 'none',
@@ -631,7 +631,7 @@ export default async function HomePage({
                   })()}
                   className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
                   style={{
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     color: '#fff',
                     fontWeight: 500,
                     textDecoration: 'none',
@@ -644,7 +644,7 @@ export default async function HomePage({
                 href="/listings/new"
                 className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontWeight: 500,
                   textDecoration: 'none',

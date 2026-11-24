@@ -47,7 +47,7 @@ export function CommunityGate({ as = 'main' }: { as?: 'main' | 'section' }) {
           <Link
             href="/sign-in?redirect_url=/community"
             className="gg-press px-5 py-3 rounded-[6px] text-[14px] font-medium"
-            style={{ background: 'var(--red)', color: '#fff' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
           >
             Sign in
           </Link>

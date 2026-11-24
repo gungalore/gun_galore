@@ -172,7 +172,7 @@ export default function EarningsPage() {
                 className="flex-1 rounded-t"
                 style={{
                   height: `${Math.max(4, (p.gmvCents / maxGmv) * 100)}%`,
-                  background: 'var(--accent, #2563eb)',
+                  background: 'var(--action-primary-bg)',
                   minWidth: 3,
                 }}
               />
@@ -286,7 +286,7 @@ function Kpi({ label, value, accent }: { label: string; value: string; accent?: 
       <p className="text-xs text-[var(--text-tertiary)]">{label}</p>
       <p
         className="text-lg font-semibold mt-0.5"
-        style={{ color: accent ? 'var(--accent, #2563eb)' : 'var(--text-primary)' }}
+        style={{ color: accent ? 'var(--red)' : 'var(--text-primary)' }}
       >
         {value}
       </p>

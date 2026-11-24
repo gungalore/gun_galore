@@ -176,7 +176,7 @@ export default function EditMissingSheet() {
           <Link
             href={`/licence-centre/${id}/pack`}
             className="mt-4 inline-flex rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white"
-            style={{ background: 'var(--red)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             Go to your pack
           </Link>
@@ -298,7 +298,7 @@ export default function EditMissingSheet() {
             disabled={busy}
             onClick={() => void save()}
             className="mt-6 w-full rounded-[var(--r-sm)] px-4 py-3 text-[14px] font-medium text-white disabled:opacity-50"
-            style={{ background: 'var(--red)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             {busy ? 'Saving…' : 'Save and go to my pack'}
           </button>

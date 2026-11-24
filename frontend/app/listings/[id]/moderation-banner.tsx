@@ -97,7 +97,7 @@ export default function ModerationBanner({
           href={`/listings/${listingId}/edit`}
           className="inline-block mt-3 text-xs px-3 py-1.5 rounded-[6px]"
           style={{
-            background: showRejected ? 'var(--red)' : 'var(--bg-inset)',
+            background: showRejected ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
             color: showRejected ? '#fff' : 'var(--text-primary)',
             border: showRejected ? 'none' : '0.5px solid var(--border)',
             textDecoration: 'none',

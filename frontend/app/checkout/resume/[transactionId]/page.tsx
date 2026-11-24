@@ -88,7 +88,7 @@ export default function ResumeCheckoutPage() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(227,6,19,0.10)', color: 'var(--red)' }}
+            style={{ background: 'var(--red-wash)', color: 'var(--action-secondary-ink)' }}
           >
             !
           </div>
@@ -105,7 +105,7 @@ export default function ResumeCheckoutPage() {
             <Link
               href="/my/orders"
               className="px-5 py-2.5 rounded-[6px] text-sm"
-              style={{ background: 'var(--red)', color: '#fff', textDecoration: 'none' }}
+              style={{ background: 'var(--action-primary-bg)', color: '#fff', textDecoration: 'none' }}
             >
               View my orders
             </Link>

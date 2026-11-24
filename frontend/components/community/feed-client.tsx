@@ -634,7 +634,7 @@ export function FeedClient() {
           disabled={loadingMore}
           className="gg-press mx-auto px-5 py-2.5 rounded-[6px] text-[13px]"
           style={{
-            background: 'var(--bg-card)',
+            background: 'transparent',
             border: '1px solid var(--border-visible)',
             color: 'var(--text-secondary)',
           }}

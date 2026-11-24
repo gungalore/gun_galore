@@ -152,7 +152,7 @@ export default function ExtractionReview({
           type="button"
           disabled={busy || chosen.length === 0}
           onClick={() => onAccept(acceptedFrom(suggestions, ticked))}
-          className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[9px] text-[13px] font-medium text-white disabled:opacity-45"
+          className="rounded-[var(--r-sm)] border-0 bg-[var(--action-primary-bg)] px-4 py-[9px] text-[13px] font-medium text-white disabled:opacity-45"
         >
           {/* The count is on the button because the member chose it. "Use
               these" alone hides how many they are about to sign for. */}

@@ -132,7 +132,7 @@ function StageLadder({
                 aria-hidden="true"
                 className="mt-[5px] h-2 w-2 shrink-0 rounded-full"
                 style={{
-                  background: here ? 'var(--red)' : 'transparent',
+                  background: here ? 'var(--action-primary-bg)' : 'transparent',
                   border: here
                     ? 'none'
                     : '1.5px solid var(--border-strong)',

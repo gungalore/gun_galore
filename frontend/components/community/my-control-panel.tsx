@@ -151,7 +151,7 @@ export function MyControlPanel() {
           type="button"
           onClick={() => setComposerOpen(true)}
           className="gg-press w-full rounded-pill py-2.5 text-[13px] font-medium"
-          style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none' }}
         >
           Create Post
         </button>

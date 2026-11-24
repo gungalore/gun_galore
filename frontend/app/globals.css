@@ -145,6 +145,33 @@
       affordances). --red ink on it measures 4.64:1. */
    --action-soft: rgba(180, 83, 9, 0.06);
 
+   /* ── ACTION HIERARCHY (2026-11-24) ──────────────────────────────────
+      One accent token was painting every emphasis level, so "buy this" and
+      "pick a colour" looked identical (and in dark mode everything turned the
+      same blue). Four tiers, measured; see docs/history/
+      UI-ACTION-HIERARCHY-AUDIT-2026-11.md. Do not use --red as a FILL for a
+      primary action any more — use --action-primary-*.
+
+        T1 primary   deep fill, white ink         (sale-critical, one per view)
+        T2 secondary lighter tonal fill            (add to cart / second sale act)
+        T3 option    transparent + solid edge      (choices, pickers, filters)
+        D  danger    red semantic, separate hue    (reject / decline / delete)  */
+   --action-primary-bg: #92400E;          /* white ink 7.09:1 */
+   --action-primary-hover: #7C2D12;
+   --action-primary-ink: #FFFFFF;
+   --action-secondary-bg: #F4E7DD;        /* #8A3F07 ink 6.20:1 */
+   --action-secondary-hover: #F0DDCE;
+   --action-secondary-ink: #8A3F07;
+   --action-option-edge: #B45309;         /* 5.02:1 on white — T3 outlined edge */
+   --action-option-selected-bg: #F6EAE1;
+   --action-option-selected-edge: #92400E;
+   --action-option-selected-ink: #8A3F07;
+   --action-quiet-ink: #57534E;
+   --danger-fill: #B91C1C;                /* white ink 6.47:1 */
+   --danger-hover: #991B1B;
+   --danger-ink: #FFFFFF;
+   --danger-edge: #B91C1C;
+
    /* Brand — the light-mode accent is veld ochre, the warm contrast to the
       dark-mode electric blue. The logo keeps its own red artwork. */
    --red:         #B45309;
@@ -270,6 +297,8 @@
    --accent-line:   var(--red-line);
    --danger-bg:     var(--red-50);
    --warning-bg:    #fff7ed;
+   --warning-wash:  rgba(143, 110, 15, 0.10);
+   --warning-line:  rgba(143, 110, 15, 0.42);
    --info-bg:       #eff6ff;
    --success-bg:    #ecfdf3;
    --focus-ring:    0 0 0 3px rgb(180 83 9 / 0.28);
@@ -378,6 +407,28 @@
    --border-visible: #756D63;
    /* Soft accent fill (night-sky blue in dark); --accent-text on it is 6.4:1. */
    --action-soft: rgba(9, 103, 245, 0.14);
+
+   /* Action hierarchy, dark theme — deep blue T1, lighter blue T2 tonal,
+      lighter-blue edge for T3 options, separate danger red. See the light
+      block for what each tier is for and the measured ratios. */
+   --action-primary-bg: #0B47C4;          /* white ink 7.74:1 */
+   --action-primary-hover: #0A3FA8;
+   --action-primary-ink: #FFFFFF;
+   --action-secondary-bg: #192840;        /* #9CC9FF ink 8.61:1 */
+   --action-secondary-hover: #182B49;
+   --action-secondary-ink: #9CC9FF;
+   --action-option-edge: #6FA8FF;         /* 7.21:1 on card */
+   --action-option-selected-bg: #192840;
+   --action-option-selected-edge: #6FA8FF;
+   --action-option-selected-ink: #9CC9FF;
+   --action-quiet-ink: #B0A99F;
+   --danger-fill: #7F1D1D;                /* white ink 10.02:1 */
+   --danger-hover: #6B1616;
+   --danger-ink: #FFFFFF;
+   --danger-edge: #FCA5A5;                /* 9.14:1 on card */
+   /* ⚠️ --danger was #B8050F on a #1C1A18 card = 2.53:1 — destructive text and
+      outlined rejects were the least visible controls in dark mode. */
+   --danger: #FCA5A5;
 
    /* Night-sky blue replaces the red accent in dark mode. The logo keeps
       its own red artwork; this token drives primary actions and links. */
@@ -1017,7 +1068,7 @@ html:not([data-standalone='true'])
 }
 .cat-submenu-item:hover,
 .cat-submenu-item:focus-visible {
-  background: rgba(227, 6, 19, 0.12);
+  background: var(--red-wash);
   border-left-color: var(--red);
   color: #fff;
 }
@@ -2057,11 +2108,12 @@ canvas,
   height: var(--chip-h);
   padding: 0 var(--chip-px);
   border-radius: var(--radius-pill);
-  /* ⚠️ --border-visible, not --border: a chip is a control, and its pill edge
-     is the only thing saying "button" when the label is a single word.
-     --border (1.31:1) made whole filter rows read as plain text (2026-11-24). */
+  /* T3 option (2026-11-24 hierarchy): transparent fill + solid edge. Chips are
+     choices, not cards; the accent-coloured T2/T1 fills are reserved for sale
+     actions. Edge stays --border-visible (neutral) so a filter row does not
+     compete with a buy button. */
   border: 1px solid var(--border-visible);
-  background: var(--surface);
+  background: transparent;
   color: var(--text-2);
   font: 600 var(--chip-fs)/1 var(--font-body);
   letter-spacing: 0.005em;
@@ -2073,22 +2125,27 @@ canvas,
 @media (hover: hover) {
   /* Border deliberately unchanged on hover — it is already the visible one;
      darkening it here used to LOWER contrast (--border-hover is lighter). */
-  .chip:hover { color: var(--text); background: var(--stone-25); }
+  .chip:hover { color: var(--text); background: var(--action-soft); }
 }
 .chip:active { transform: scale(0.96); }
 .chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-/* single-select active: dark ink pill slides between chips (red stays reserved for primary actions) */
-.chip[data-active="true"] { color: #fff; border-color: transparent; background: transparent; }
+/* single-select active: T3 SELECTED fill (accent tint + accent edge + accent ink),
+   slid between chips. Replaces the old near-black pill, which disappeared on the
+   dark theme card. */
+.chip[data-active="true"] { color: var(--action-option-selected-ink); border-color: transparent; background: transparent; }
 .chip__pill {
   position: absolute; inset: -1px; z-index: -1;
   border-radius: inherit;
-  background: var(--stone-900);
-  box-shadow: var(--shadow-sm), var(--inner-highlight);
+  background: var(--action-option-selected-bg);
+  border: 1px solid var(--action-option-selected-edge);
+  box-shadow: var(--inner-highlight);
 }
-/* multi-select active: soft red tint + check */
+/* multi-select active: T3 SELECTED fill + check */
 .chip[role="checkbox"][data-active="true"] {
-  color: var(--red-700); background: var(--accent-soft); border-color: var(--red-200);
+  color: var(--action-option-selected-ink);
+  background: var(--action-option-selected-bg);
+  border-color: var(--action-option-selected-edge);
 }
 .chip__check { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2;
   stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; }
@@ -2101,7 +2158,7 @@ canvas,
   background: var(--surface-sunken); color: var(--text-3);
   font-size: 0.6875rem; font-variant-numeric: tabular-nums;
 }
-.chip[data-active="true"] .chip__count { background: rgb(255 255 255 / 0.16); color: #fff; }
+.chip[data-active="true"] .chip__count { background: var(--bg-card); color: var(--action-option-selected-ink); }
 
 /* ---- scroll arrows: desktop pointer only, appear only when there is more ---- */
 .chip-rail__arrow {
@@ -2255,7 +2312,7 @@ canvas,
   /* A control, not a card: visible boundary (see --border-visible). */
   border: 1px solid var(--border-visible);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 11.5px;
@@ -2320,7 +2377,7 @@ canvas,
   /* A persistent floating control must not rely on its shadow alone to be
      found: soft accent fill + a visible boundary. */
   border: 1px solid var(--border-visible);
-  background: var(--action-soft);
+  background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: 13px;
@@ -2352,7 +2409,7 @@ html[data-standalone='true'] .gg-bug-fab {
      the card hairline. */
   border: 1px solid var(--border-visible);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: transparent;
   text-decoration: none;
   transition:
     background-color var(--dur-fast) var(--ease-standard),

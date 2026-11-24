@@ -569,7 +569,7 @@ export default function DocumentAddButtons({
                     disabled={savingReview}
                     onClick={() => void finishReview()}
                     className="rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white disabled:opacity-60"
-                    style={{ background: 'var(--red)' }}
+                    style={{ background: 'var(--action-primary-bg)' }}
                   >
                     {savingReview
                       ? 'Saving…'

@@ -109,7 +109,7 @@ export default function SuggestedDocuments({
                 busy ||
                 (suggested.some((sg) => sg.askPlace) && !place)
               }
-              className="min-h-[44px] rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+              className="min-h-[44px] rounded bg-[var(--action-primary-bg)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
               onClick={async () => {
                 // ⚠️ THE PANEL STAYS UP UNTIL EVERY ONE IS ATTACHED. It used
                 // to set `suggestDone` FIRST and then swallow every

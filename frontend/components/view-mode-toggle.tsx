@@ -106,7 +106,7 @@ function ToggleView({
           // stays a pill rather than a second solid CTA: electric blue on the
           // dark theme, veld ochre/brown on the light one. Keeping it
           // translucent lets the track show through (operator, 2026-11-24).
-          background: 'color-mix(in srgb, var(--red) 22%, transparent)',
+          background: 'color-mix(in srgb, var(--action-primary-bg) 22%, transparent)',
           border: '1px solid var(--red-line)',
           transform: `translateX(${indicator.left}px)`,
           opacity: indicator.width > 0 ? 1 : 0,

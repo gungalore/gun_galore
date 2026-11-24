@@ -136,7 +136,7 @@ export function StepRail({
               style={{
                 width: `${pct}%`,
                 height: '100%',
-                background: 'var(--red)',
+                background: 'var(--action-primary-bg)',
                 transition: 'width var(--dur-base) var(--ease-out)',
               }}
             />
@@ -190,7 +190,7 @@ export function StepRail({
             ...(isComplete
               ? { background: 'var(--success)', color: '#fff', fontWeight: 700 }
               : isCurrent
-                ? { background: 'var(--red)', color: '#fff', fontWeight: 700 }
+                ? { background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 700 }
                 : {
                     background: 'var(--bg-card)',
                     border: '1px solid var(--border-hover)',

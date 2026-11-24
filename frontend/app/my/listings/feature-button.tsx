@@ -79,7 +79,7 @@ export default function FeatureButton({ listingId }: { listingId: string }) {
       }
       className="text-xs px-2 py-1 rounded-[6px]"
       style={{
-        background: on ? 'var(--red)' : 'var(--bg-inset)',
+        background: on ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
         color: on ? '#fff' : 'var(--red)',
         border: '0.5px solid var(--red)',
         fontWeight: 500,

@@ -191,7 +191,7 @@ export function ProfileCompleteNudge() {
         style={{
           width: '100%',
           padding: '9px 12px',
-          background: 'var(--red)',
+          background: 'var(--action-primary-bg)',
           color: '#fff',
           border: 'none',
           borderRadius: 8,

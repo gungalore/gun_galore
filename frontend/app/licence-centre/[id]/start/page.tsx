@@ -42,7 +42,7 @@ function Tick({ on, disabled }: { on: boolean; disabled?: boolean }) {
       className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border"
       style={{
         borderColor: on ? 'var(--red)' : 'var(--border)',
-        background: on ? 'var(--red)' : 'var(--bg-inset)',
+        background: on ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
         opacity: disabled ? 0.55 : 1,
       }}
     >
@@ -92,7 +92,7 @@ function DocumentRow({
             {item.title}
           </span>
           {item.tick === 'required' ? (
-            <span className="hidden" style={{ background: 'var(--red)', color: '#fff' }}>
+            <span className="hidden" style={{ background: 'var(--action-primary-bg)', color: '#fff' }}>
               Required
             </span>
           ) : null}
@@ -494,7 +494,7 @@ export default function IntakeStartPage() {
                   disabled={busy}
                   onClick={() => chooseOutput('MOTIVATION_ONLY')}
                   className={primaryButton}
-                  style={{ background: 'var(--red)' }}
+                  style={{ background: 'var(--action-primary-bg)' }}
                 >
                   Choose Motivation letter only
                 </button>
@@ -517,7 +517,7 @@ export default function IntakeStartPage() {
                   disabled={busy}
                   onClick={() => chooseOutput('PRINT_READY')}
                   className={primaryButton}
-                  style={{ background: 'var(--red)' }}
+                  style={{ background: 'var(--action-primary-bg)' }}
                 >
                   Choose Print-ready pack
                 </button>
@@ -582,7 +582,7 @@ export default function IntakeStartPage() {
                   disabled={busy}
                   onClick={() => void chooseFulfilment('DIGITAL')}
                   className={primaryButton}
-                  style={{ background: 'var(--red)' }}
+                  style={{ background: 'var(--action-primary-bg)' }}
                 >
                   Choose Print / Download
                 </button>
@@ -608,7 +608,7 @@ export default function IntakeStartPage() {
                   disabled={busy}
                   onClick={() => void chooseFulfilment('DELIVER')}
                   className={primaryButton}
-                  style={{ background: 'var(--red)' }}
+                  style={{ background: 'var(--action-primary-bg)' }}
                 >
                   Choose Print and Deliver
                 </button>
@@ -652,7 +652,7 @@ export default function IntakeStartPage() {
         disabled={busy}
         onClick={() => void start('INTERVIEW')}
         className="mt-6 w-full rounded-xl px-4 py-3 text-[14px] font-medium text-white disabled:opacity-50"
-        style={{ background: 'var(--red)' }}
+        style={{ background: 'var(--action-primary-bg)' }}
       >
         {busy ? 'Starting…' : 'Continue to the interview'}
       </button>

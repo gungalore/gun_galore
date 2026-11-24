@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
@@ -165,7 +165,7 @@ export default function SupportPage() {
         <a
           href="/sign-in?redirect_url=/support"
           className="mt-5 inline-block rounded-md px-4 py-2 text-sm font-medium text-white"
-          style={{ background: 'var(--accent, #2563eb)' }}
+          style={{ background: 'var(--action-primary-bg)' }}
         >
           Sign in to open a support ticket
         </a>
@@ -194,10 +194,10 @@ export default function SupportPage() {
               className="rounded-lg p-3 text-sm"
               style={{
                 background: r.fromAdmin ? 'var(--bg-card)' : 'var(--bg-inset)',
-                border: `0.5px solid ${r.fromAdmin ? 'var(--accent, #2563eb)' : 'var(--border)'}`,
+                border: `0.5px solid ${r.fromAdmin ? 'var(--red)' : 'var(--border)'}`,
               }}
             >
-              <p className="text-xs mb-1" style={{ color: r.fromAdmin ? 'var(--accent, #2563eb)' : 'var(--text-tertiary)' }}>
+              <p className="text-xs mb-1" style={{ color: r.fromAdmin ? 'var(--red)' : 'var(--text-tertiary)' }}>
                 {r.fromAdmin ? 'ALL Outdoor support' : 'You'} · {new Date(r.createdAt).toLocaleString('en-ZA')}
               </p>
               <p className="text-[var(--text-primary)] whitespace-pre-wrap">{r.body}</p>
@@ -218,7 +218,7 @@ export default function SupportPage() {
               onClick={sendReply}
               disabled={busy || !reply.trim()}
               className="mt-2 px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
-              style={{ background: 'var(--accent, #2563eb)' }}
+              style={{ background: 'var(--action-primary-bg)' }}
             >
               {busy ? 'Sending…' : 'Send reply'}
             </button>
@@ -237,7 +237,7 @@ export default function SupportPage() {
           <button
             onClick={() => setCreating(true)}
             className="px-3 py-1.5 rounded-md text-sm font-medium text-white"
-            style={{ background: 'var(--accent, #2563eb)' }}
+            style={{ background: 'var(--action-primary-bg)' }}
           >
             New ticket
           </button>
@@ -275,7 +275,7 @@ export default function SupportPage() {
               onClick={submitNew}
               disabled={busy || subject.trim().length < 3 || bodyText.trim().length < 5}
               className="flex-1 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
-              style={{ background: 'var(--accent, #2563eb)' }}
+              style={{ background: 'var(--action-primary-bg)' }}
             >
               {busy ? 'Submitting…' : 'Submit'}
             </button>
@@ -302,7 +302,7 @@ export default function SupportPage() {
               <span
                 className="text-xs px-2 py-0.5 rounded-full shrink-0"
                 style={{
-                  background: t.status === 'AWAITING_USER' ? 'var(--accent, #2563eb)' : 'var(--bg-inset)',
+                  background: t.status === 'AWAITING_USER' ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
                   color: t.status === 'AWAITING_USER' ? '#fff' : 'var(--text-tertiary)',
                 }}
               >

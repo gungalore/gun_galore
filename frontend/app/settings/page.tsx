@@ -608,7 +608,7 @@ export default function SettingsPage() {
                 // primary button in the app. Same for the success green below,
                 // which now matches the KYC-verified chips on /account
                 // and /profile.
-                style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
+                style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
               >
                 {busy ? 'Saving…' : 'Save defaults'}
               </button>
@@ -681,7 +681,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={() => setForm({ ...EMPTY })}
                   className="text-sm px-3 py-1.5 rounded-[6px]"
-                  style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                  style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
                 >
                   + Add
                 </button>
@@ -760,7 +760,7 @@ export default function SettingsPage() {
                             type="button"
                             onClick={() => remove(a.id)}
                             className="text-xs"
-                            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', textDecoration: 'underline' }}
+                            style={{ background: 'transparent', border: '1.5px solid var(--danger-edge)', color: 'var(--danger-edge)', cursor: 'pointer', textDecoration: 'underline' }}
                           >
                             Delete
                           </button>

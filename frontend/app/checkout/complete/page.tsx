@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -185,7 +185,7 @@ function CheckoutCompleteInner() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(227,6,19,0.10)', color: 'var(--red)' }}
+            style={{ background: 'var(--red-wash)', color: 'var(--action-secondary-ink)' }}
           >
             ✕
           </div>
@@ -209,7 +209,7 @@ function CheckoutCompleteInner() {
               aria-busy={rechecking}
               className="px-5 py-2.5 rounded-[6px] text-sm"
               style={{
-                background: rechecking ? 'var(--bg-inset)' : 'var(--red)',
+                background: rechecking ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
                 color: rechecking ? 'var(--text-tertiary)' : '#fff',
                 border: 'none',
                 fontWeight: 500,
@@ -248,7 +248,7 @@ function CheckoutCompleteInner() {
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
-            style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--warning)' }}
+            style={{ background: 'var(--warning-wash)', color: 'var(--warning)' }}
           >
             !
           </div>
@@ -264,7 +264,7 @@ function CheckoutCompleteInner() {
           <button
             onClick={() => router.replace('/my/orders')}
             className="px-5 py-2.5 rounded-[6px] text-sm"
-            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+            style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
             View my orders
           </button>

@@ -22,7 +22,7 @@ export default function IntakeBlocked({
         className="rounded-xl border p-4"
         style={{ borderColor: 'var(--red)', background: 'var(--red-wash)' }}
       >
-        <p className="m-0 text-[12px] uppercase tracking-[0.12em] text-[var(--red)]">
+        <p className="m-0 text-[12px] uppercase tracking-[0.12em] text-[var(--action-primary-bg)]">
           This firearm cannot go under this section
         </p>
         <p className="mt-2 text-[14px] leading-6 text-[var(--text-primary)]">

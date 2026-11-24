@@ -67,7 +67,7 @@ export default async function MyListingsPage() {
         <Link
           href="/listings/new"
           className="px-3 py-1.5 rounded-[6px] text-sm font-medium"
-          style={{ background: 'var(--red)', color: '#fff' }}
+          style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
         >
           + New listing
         </Link>
@@ -101,7 +101,7 @@ export default async function MyListingsPage() {
             href="/my/listings"
             className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',
@@ -136,7 +136,7 @@ export default async function MyListingsPage() {
             href="/listings/new"
             className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--red)',
+              background: 'var(--action-primary-bg)',
               color: '#fff',
               fontWeight: 500,
               textDecoration: 'none',

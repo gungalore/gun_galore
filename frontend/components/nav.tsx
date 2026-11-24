@@ -489,7 +489,7 @@ export function Nav() {
                 href="/listings/new"
                 className="md:hidden text-sm px-3 rounded-[6px] transition-colors inline-flex items-center justify-center"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontWeight: 500,
                   minHeight: 44,
@@ -501,7 +501,7 @@ export function Nav() {
                 href="/listings/new"
                 className="hidden md:inline-flex items-center justify-center rounded-[6px] transition-colors"
                 style={{
-                  background: 'var(--red)',
+                  background: 'var(--action-primary-bg)',
                   color: '#fff',
                   fontFamily: 'var(--font-display)',
                   fontWeight: 700,
@@ -718,7 +718,7 @@ export function Nav() {
                   className="w-full px-3 py-3 rounded-[6px] text-base flex items-center gap-2"
                   style={{
                     color: '#fff',
-                    background: 'var(--red)',
+                    background: 'var(--action-primary-bg)',
                     border: 'none',
                     fontWeight: 500,
                     cursor: 'pointer',
@@ -773,7 +773,7 @@ export function Nav() {
                         width: 40,
                         height: 40,
                         borderRadius: '50%',
-                        background: 'var(--red)',
+                        background: 'var(--action-primary-bg)',
                         color: '#fff',
                         display: 'flex',
                         alignItems: 'center',
@@ -837,7 +837,7 @@ export function Nav() {
                     onClick={() => setMobileOpen(false)}
                     className="w-full px-3 py-3 rounded-[6px] text-base"
                     style={{
-                      background: 'var(--red)',
+                      background: 'var(--action-primary-bg)',
                       color: '#fff',
                       border: 'none',
                       fontWeight: 500,

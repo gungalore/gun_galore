@@ -127,7 +127,7 @@ export default function SellerControls({
               onClick={handleCancel}
               disabled={busy}
               className="px-3 py-2 rounded-[6px] text-sm font-medium"
-              style={{ background: 'var(--red)', color: '#fff', opacity: busy ? 0.6 : 1 }}
+              style={{ background: 'var(--danger-fill)', color: 'var(--danger-ink)', opacity: busy ? 0.6 : 1 }}
             >
               Confirm cancel
             </button>
@@ -147,7 +147,7 @@ export default function SellerControls({
                 ? 'flex-1 py-2 rounded-[6px] text-sm font-medium'
                 : 'px-3 py-2 rounded-[6px] text-sm'
             }
-            style={{ color: 'var(--red)', border: '0.5px solid var(--red-line)' }}
+            style={{ color: 'var(--danger-edge)', border: '1.5px solid var(--danger-edge)' }}
           >
             Cancel listing
           </button>

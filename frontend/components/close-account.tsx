@@ -280,7 +280,7 @@ function CloseAccountDialog({
                 type="button"
                 onClick={() => void load()}
                 className="rounded-[6px] px-4 py-2 text-sm"
-                style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
               >
                 Try again
               </button>
@@ -318,7 +318,7 @@ function CloseAccountDialog({
               <Link
                 href="/support"
                 className="rounded-[6px] px-4 py-2 text-sm"
-                style={{ background: 'var(--red)', color: '#fff' }}
+                style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
               >
                 Contact support
               </Link>
@@ -356,7 +356,7 @@ function CloseAccountDialog({
               type="button"
               onClick={() => void signOut({ redirectUrl: '/' })}
               className="mt-5 rounded-[6px] px-4 py-2 text-sm"
-              style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+              style={{ background: 'var(--action-primary-bg)', color: '#fff', border: 'none', cursor: 'pointer' }}
             >
               Sign out
             </button>
@@ -620,8 +620,8 @@ function CloseAccountDialog({
                 disabled={!canSubmit}
                 className="rounded-[6px] px-4 py-2 text-sm"
                 style={{
-                  background: canSubmit ? 'var(--red)' : 'var(--bg-inset)',
-                  color: canSubmit ? '#fff' : 'var(--text-tertiary-on-card)',
+                  background: canSubmit ? 'var(--danger-fill)' : 'var(--bg-inset)',
+                  color: canSubmit ? 'var(--danger-ink)' : 'var(--text-tertiary-on-card)',
                   border: canSubmit ? 'none' : '0.5px solid var(--border)',
                   cursor: canSubmit ? 'pointer' : 'default',
                 }}
@@ -712,8 +712,8 @@ export default function CloseAccountSection({
         // accident on the way past the address book.
         style={{
           background: 'transparent',
-          color: 'var(--red)',
-          border: '0.5px solid var(--red)',
+          color: 'var(--danger-edge)',
+          border: '1.5px solid var(--danger-edge)',
           cursor: 'pointer',
         }}
       >

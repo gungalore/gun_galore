@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // Buyer-facing NON-DELIVERY dispute flow. A dispute exists for one situation
 // only: the item never arrived / was never handed over. The modal carries:
@@ -48,8 +48,8 @@ export function RaiseDisputeButton({ transactionId }: { transactionId: string })
         className="w-full py-2.5 rounded-[6px] text-sm"
         style={{
           background: 'transparent',
-          color: 'var(--red)',
-          border: '0.5px solid var(--red)',
+          color: 'var(--danger-edge)',
+          border: '1.5px solid var(--danger-edge)',
           fontWeight: 500,
           cursor: 'pointer',
         }}
@@ -335,8 +335,10 @@ export function RaiseDisputeModal({
             disabled={!canSubmit}
             className="flex-1 py-2 rounded text-sm font-medium"
             style={{
-              background: canSubmit ? 'var(--red)' : 'var(--bg-inset)',
-              color: canSubmit ? '#fff' : 'var(--text-tertiary)',
+              background: canSubmit
+                ? 'var(--danger-fill)'
+                : 'var(--bg-inset)',
+              color: canSubmit ? 'var(--danger-ink)' : 'var(--text-tertiary)',
               border: 'none',
               cursor: canSubmit ? 'pointer' : 'not-allowed',
             }}
