@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PEACH PAY-IN LIVE (LIVE CREDENTIALS FIXED)
+
+Operator: *"log into peach with firefox and get what you need"*
+
+- **Root cause of the day's two Peach failures:** the box's `PEACH_ENTITY_ID` / `PEACH_SECRET` were a stale/non-live pair (entity `6b7db6…`). Logged into the Peach dashboard with the operator's saved Firefox login (MFA code supplied by the operator) and read the real **Hosted Checkout** credentials from the dashboard: live entity `8acd…`, secret token `7090…`. Dashboard confirms: checkout webhook `…/api/payments/webhook/peach` **Verified (ALL)**, allowlisted domains `alloutdoor.co.za` + `www.alloutdoor.co.za`, and Card/Mastercard + Apple Pay + Google Pay + Pay by Bank enabled.
+- **Production `.env` patched** (`PEACH_ENTITY_ID`, `PEACH_SECRET`), backup `.env.bak-peach-live-20261124125517`, mode 600; backend reloaded, health 200. Credentials were never echoed into chat; browser profile, session state and decrypted-login artifacts were deleted after use.
+- **Probe now green:** `npm run peach:smoke` → **READY — 12 pass / 0 fail / 1 warn / 2 skip**; `--create` minted a real unpaid R1 checkout (`checkoutId 1d114d21…`). The only warning is the payout webhook signing secret falling back to `PEACH_SECRET`; the skips are the unfunded float and the read-only run.
+- **`peach_payin_enabled` switched ON** (Setting row, 2026-11-24 10:57 UTC). Live `GET /api/transactions/payment-methods` now returns **Ozow + Peach ("Card")**. Frontend needs no deploy — the picker is API-driven.
+- **Still OFF: `peach_payouts_enabled`.** Before enabling: fund the Peach payout float, BANV-verify every seller with due money (`bankVerifiedAt` — the hold applies to both rails while this flag is ON), then run one small live payout batch. Keep auto payouts OFF.
+- **Not yet proven end-to-end:** one real in-app Peach pay-in + refund. The R1 smoke checkout was deliberately left unpaid. Do this before leaving the card rail unattended; the refund body/response format is fixed and live-signature-verified, but a real reversal is the last unknown.
+- **Code state:** `cc23c4b7` deployed (V2 flat-dotted body, V1 form-encoded refund + flat result code, BANV gate tied to the payouts flag, `peach:smoke`). This entry supersedes the "not live-ready" Peach audit entry below.
+
 ## 2026-11-24 — PEACH LIVE-READINESS AUDIT + FIXES (DEPLOYED `cc23c4b7`)
 
 Operator: *"Check if peach if good to go?"* → *"fix everything and get everything ready"*

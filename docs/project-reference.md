@@ -481,8 +481,9 @@ stats, news clippings, complaints, the reloading corpus, Warden.
 **Built but INERT, behind a switch:**
 - **Motivation paygate (Yoco)** — code-complete and inert until the `YOCO_*`
   keys exist and `motivation_paid_enabled` is ON. Not a marketplace rail.
-- **Peach pay-in** — hidden until `peach_payin_enabled` is ON and the Peach
-  checkout credentials are configured. Ozow remains the default rail.
+- **Peach pay-in** — **LIVE 2026-11-24** (`peach_payin_enabled` ON): buyers can
+  choose Card alongside Ozow. The live Hosted Checkout entity + secret token are
+  on the box; `npm run peach:smoke` reports READY. Ozow remains the default rail.
 - **Peach payouts** — hidden until `peach_payouts_enabled` is ON and the Peach
   Payouts product is configured. A Peach-paid sale is never routed to Ozow.
 - **BANV** — requests run once Peach Payouts credentials exist, but the payout
