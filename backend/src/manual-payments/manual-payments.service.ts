@@ -507,14 +507,8 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      if (availableCents < 1000) {
-        collected.skipped.push({
-          kind: 'PAYOUT',
-          ref: p.orderReference ?? p.id,
-          reason: `Amount R${(availableCents / 100).toFixed(2)} is below Peach's R10 payout minimum — held until combined with a later payout`,
-        });
-        continue;
-      }
+      // Peach removed its R10 payout minimum on 2026-10-28 (Payouts changelog),
+      // so there is no amount floor here any more: any positive net is payable.
 
       const payoutId = randomUUID();
       let applied = 0;
@@ -602,6 +596,68 @@ export class ManualPaymentsService {
 
     if (candidates.length === 0) return empty;
 
+    // ⚠️ FLOAT PREFLIGHT. The float is topped up from the payments side
+    // (auto-reload). Sending a payout the float cannot cover makes Peach accept
+    // the request and fail it with 2900.002.000 "Load more funds" (live
+    // 2026-11-24, R100 attempt) — an attempt and an alert for a problem the
+    // operator already fixed. Read the balance first and skip with a reason the
+    // operator can act on. A failed balance READ must not block payouts.
+    const requiredCents = candidates.reduce((sum, c) => sum + c.amountCents, 0);
+    if (requiredCents > 0) {
+      let available: number | null = null;
+      try {
+        available = await this.peach!.getAvailableBalanceCents();
+      } catch (err) {
+        this.logger.warn(
+          `Peach balance preflight failed: ${(err as Error).message}`,
+        );
+      }
+      if (available !== null && available < requiredCents) {
+        for (const c of candidates) {
+          await this.prisma.transaction.updateMany({
+            where: { id: c.txId, paidOutAt: null },
+            data: {
+              payoutRequestedAt: null,
+              payoutHeldAt: null,
+              payoutHoldReason: null,
+              payoutHeldById: null,
+            },
+          });
+          await this.prisma.peachPayoutAttempt
+            .update({
+              where: { payoutId: c.payoutId },
+              data: {
+                status: 'CANCELLED',
+                resultCode: 'FLOAT_SHORT',
+                errorMessage: 'Not requested — Peach float was short',
+                terminalAt: now,
+              },
+            })
+            .catch(() => undefined);
+          await releaseSellerChargeRecoveries(this.prisma, c.txId);
+          collected.skipped.push({
+            kind: 'PAYOUT',
+            ref: c.orderReference ?? c.txId,
+            reason: `Peach float has R${(available / 100).toFixed(2)} available but R${(requiredCents / 100).toFixed(2)} is due — top up the float (auto-reload) and run the batch again; nothing was requested`,
+          });
+        }
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'PEACH_PAYOUT_FLOAT_SHORTAGE',
+              referenceId: `float-${new Date().toISOString().slice(0, 10)}`,
+              urgent: false,
+              context: `Payout run skipped ${candidates.length} Peach payout(s): float has R${(available / 100).toFixed(2)}, R${(requiredCents / 100).toFixed(2)} due. No requests were sent and every row is still due. Top up (auto-reload) and run again.`,
+            },
+          })
+          .catch(() => undefined);
+        this.logger.warn(
+          `Peach payout run skipped: float short (R${(available / 100).toFixed(2)} available, R${(requiredCents / 100).toFixed(2)} due)`,
+        );
+        return empty;
+      }
+    }
+
     let res: Awaited<ReturnType<PeachService['createPayout']>>;
     try {
       res = await this.peach!.createPayout(candidates);
@@ -640,6 +696,7 @@ export class ManualPaymentsService {
     const byId = new Map(candidates.map((c) => [c.payoutId, c]));
     let accepted = 0;
     let totalCents = 0;
+    let floatShortage = false;
     const failures: string[] = [];
     for (const result of res.results) {
       const c = byId.get(result.payoutId);
@@ -647,6 +704,11 @@ export class ManualPaymentsService {
       const status = result.status.toLowerCase();
       const isAccepted = ['pending', 'processing', 'successful', 'success'].includes(status);
       if (!isAccepted) {
+        // A float/funds code is transient — the operator tops the float up from
+        // the payments side, so the row must stay DUE rather than held.
+        const floatShort =
+          this.peach?.isFloatShortageCode(result.code) ?? false;
+        if (floatShort) floatShortage = true;
         await this.prisma.peachPayoutAttempt.update({
           where: { payoutId: c.payoutId },
           data: {
@@ -658,11 +720,20 @@ export class ManualPaymentsService {
         });
         await this.prisma.transaction.updateMany({
           where: { id: c.txId, paidOutAt: null },
-          data: {
-            payoutHeldAt: now,
-            payoutHoldReason: `Peach payout rejected: ${result.error ?? result.code ?? result.status}`.slice(0, 500),
-            payoutHeldById: null,
-          },
+          data: floatShort
+            ? {
+                paidOutAt: null,
+                payoutRequestedAt: null,
+                gatewayPayoutId: null,
+                payoutHeldAt: null,
+                payoutHoldReason: null,
+                payoutHeldById: null,
+              }
+            : {
+                payoutHeldAt: now,
+                payoutHoldReason: `Peach payout rejected: ${result.error ?? result.code ?? result.status}`.slice(0, 500),
+                payoutHeldById: null,
+              },
         });
         await releaseSellerChargeRecoveries(this.prisma, c.txId);
         failures.push(`${c.txId.slice(0, 8)}: ${result.error ?? result.code ?? result.status}`);
@@ -731,10 +802,14 @@ export class ManualPaymentsService {
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'PEACH_PAYOUT_PARTIAL',
+            type: floatShortage
+              ? 'PEACH_PAYOUT_FLOAT_SHORTAGE'
+              : 'PEACH_PAYOUT_PARTIAL',
             referenceId: res.requestId ?? `peach-${new Date().toISOString().slice(0, 10)}`,
-            urgent: true,
-            context: `Peach payout run: ${accepted}/${candidates.length} accepted, ${failed} not accepted. ${failures.join('; ')} ${res.message ?? ''}`.trim(),
+            urgent: !floatShortage,
+            context: floatShortage
+              ? `Peach payout run: ${accepted}/${candidates.length} accepted; ${failed} failed on a FLOAT SHORTAGE and were left DUE (not held) — nothing was disbursed for them. Top up the float (auto-reload) and run the batch again. ${failures.join('; ')} ${res.message ?? ''}`.trim()
+              : `Peach payout run: ${accepted}/${candidates.length} accepted, ${failed} not accepted. ${failures.join('; ')} ${res.message ?? ''}`.trim(),
           },
         })
         .catch(() => undefined);

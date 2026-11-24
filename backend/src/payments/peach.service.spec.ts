@@ -224,6 +224,66 @@ describe('PeachService live HTTP contracts (fetch mocked)', () => {
     return svc as PeachService;
   }
 
+  it('reads the ZAR float from the balance endpoint (payout preflight)', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        currency: 'ZAR',
+        availableBalance: 32123,
+        balances: [
+          {
+            payoutMethod: 'realtime-eft',
+            countryCode: 'ZA',
+            currency: 'ZAR',
+            availableBalance: 32123,
+          },
+        ],
+      }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const svc = liveService();
+    await expect(svc.getAvailableBalanceCents()).resolves.toBe(32123);
+    const [url, init] = fetchMock.mock.calls[0] as [string, any];
+    expect(url).toBe(
+      `https://payouts.example/api/merchants/${'m'.repeat(32)}/balance`,
+    );
+    expect(init.headers.Authorization).toBe('Bearer ptok');
+  });
+
+  it('treats a 404 balance (no deposit ever allocated) as zero float', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => 'No last balance available',
+    }) as unknown as typeof fetch;
+
+    await expect(liveService().getAvailableBalanceCents()).resolves.toBe(0);
+  });
+
+  it('falls back to the balances array when there is no top-level balance', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        balances: [
+          { payoutMethod: 'realtime-eft', currency: 'ZAR', availableBalance: 500 },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    await expect(liveService().getAvailableBalanceCents()).resolves.toBe(500);
+  });
+
+  it('classifies the 2900.002 float-shortage family (transient, retry after top-up)', () => {
+    const svc = liveService();
+    expect(svc.isFloatShortageCode('2900.002.000')).toBe(true);
+    expect(svc.isFloatShortageCode('2900.002.001')).toBe(true);
+    expect(svc.isFloatShortageCode('2001.002.106')).toBe(false);
+    expect(svc.isFloatShortageCode(undefined)).toBe(false);
+  });
+
   it('creates a Checkout V2 checkout with a FLAT DOTTED entity key + decimal ZAR amount', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
@@ -273,8 +333,7 @@ describe('PeachService live HTTP contracts (fetch mocked)', () => {
     expect(body.merchantTransactionId.length).toBeLessThanOrEqual(16);
   });
 
-  it('refunds with FORM-ENCODED flat fields + a signature over those fields', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
+  it('refunds with FORM-ENCODED flat fields + a signature over those fields', async () => {    const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({

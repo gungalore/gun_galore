@@ -40,6 +40,7 @@ function makeService() {
       update: userUpdate,
     },
     adminAlert: { create: alertCreate },
+    sellerChargeRecovery: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 
@@ -54,6 +55,8 @@ function makeService() {
     getPayoutStatus: jest.fn().mockResolvedValue(null),
     getBankVerificationResult: jest.fn().mockResolvedValue(null),
     verifyPayoutWebhookSignature: jest.fn(),
+    isFloatShortageCode: (code: string | undefined) =>
+      /^2900\.002\./.test(code ?? ''),
   };
 
   const svc = Object.create(TransactionsService.prototype) as Record<string, any>;
@@ -111,5 +114,61 @@ describe('Peach payout/BANV webhook trust model', () => {
     const { svc, userUpdate } = makeService();
     await svc.handlePeachBanvWebhook({ status: 'successful' });
     expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it('leaves a float-shortage failure DUE, not held (retry after top-up)', async () => {
+    const { svc, peach, updateMany, attemptUpdate, prisma } = makeService();
+    peach.parsePayoutWebhook.mockReturnValue({
+      payoutId: 'payout-1',
+      status: 'failed',
+      code: '2900.002.000',
+    });
+    peach.getPayoutStatus.mockResolvedValue({
+      status: 'failed',
+      resultCode: '2900.002.000',
+      error: 'Load more funds and try again or try a lower amount',
+    });
+
+    await svc.handlePeachPayoutWebhook({ payoutId: 'payout-1' });
+
+    expect(attemptUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'failed', terminalAt: expect.any(Date) }),
+      }),
+    );
+    // Held rows are excluded from the due queue — a float shortage must not
+    // stop tomorrow's run from paying.
+    const txWrite = updateMany.mock.calls[updateMany.mock.calls.length - 1][0];
+    expect(txWrite.data).toMatchObject({
+      payoutHeldAt: null,
+      payoutHoldReason: null,
+      payoutRequestedAt: null,
+      gatewayPayoutId: null,
+    });
+    expect(prisma.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'PEACH_PAYOUT_FLOAT_SHORTAGE' }),
+      }),
+    );
+  });
+
+  it('still HOLDS a genuine payout rejection (bad account is not retried blindly)', async () => {
+    const { svc, peach, updateMany } = makeService();
+    peach.parsePayoutWebhook.mockReturnValue({
+      payoutId: 'payout-1',
+      status: 'failed',
+      code: '2001.002.106',
+    });
+    peach.getPayoutStatus.mockResolvedValue({
+      status: 'failed',
+      resultCode: '2001.002.106',
+      error: 'There is no account associated with the account number',
+    });
+
+    await svc.handlePeachPayoutWebhook({ payoutId: 'payout-1' });
+
+    const txWrite = updateMany.mock.calls[updateMany.mock.calls.length - 1][0];
+    expect(txWrite.data.payoutHeldAt).toEqual(expect.any(Date));
+    expect(txWrite.data.payoutHoldReason).toContain('no account associated');
   });
 });

@@ -726,6 +726,56 @@ export class PeachService {
   }
 
   /**
+   * Available ZAR float in cents, or null when Peach cannot tell us.
+   *
+   * ⚠️ THIS IS THE PREFLIGHT FOR A PAYOUT RUN. The float is topped up from the
+   * payments side (auto-reload); when it is short Peach answers
+   * `2900.002.000 "Load more funds and try again or try a lower amount"` and
+   * the payout is created only to fail. Live 2026-11-24 the one R100 payout did
+   * exactly that. Reading the balance first lets the run say "float short by
+   * R X" instead of burning an attempt.
+   *
+   * 404 means Peach has no last balance on file (no deposit ever allocated) —
+   * treated as 0. Any other error is thrown so the caller can decide.
+   */
+  async getAvailableBalanceCents(): Promise<number | null> {
+    if (!this.payoutsConfigured) return null;
+    const res = await fetch(
+      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.payoutMerchantId)}/balance`,
+      {
+        headers: {
+          accept: 'application/json',
+          Authorization: `Bearer ${await this.getPayoutToken()}`,
+        },
+      },
+    );
+    if (res.status === 404) return 0;
+    if (!res.ok) {
+      throw new Error(`Peach balance ${res.status}: ${await res.text()}`);
+    }
+    const j = (await res.json()) as {
+      availableBalance?: unknown;
+      balances?: Array<{
+        payoutMethod?: string;
+        currency?: string;
+        availableBalance?: unknown;
+      }>;
+    };
+    const topLevel = Number(j.availableBalance);
+    if (Number.isFinite(topLevel)) return Math.max(0, Math.round(topLevel));
+    const zar = (j.balances ?? []).find(
+      (b) => b.payoutMethod === 'realtime-eft' && b.currency === 'ZAR',
+    );
+    const fromEntry = Number(zar?.availableBalance);
+    return Number.isFinite(fromEntry) ? Math.max(0, Math.round(fromEntry)) : null;
+  }
+
+  /** 2900.002.xxx is Peach's float/funds family: transient, retry after top-up. */
+  isFloatShortageCode(code: string | null | undefined): boolean {
+    return typeof code === 'string' && /^2900\.002\./.test(code);
+  }
+
+  /**
    * Normalise the BANV webhook body.
    *
    * ⚠️ DO NOT ASSUME THE DOCUMENTED SHAPE ARRIVES. The Payouts docs document a

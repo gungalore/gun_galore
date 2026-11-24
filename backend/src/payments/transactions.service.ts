@@ -2537,16 +2537,24 @@ export class TransactionsService {
         },
       });
       if (existing > 0) return;
+      // Payout/BANV deliveries are processed as UNVERIFIED HINTS: the handlers
+      // re-read the result from Peach, so a bad signature cannot move money and
+      // nothing stalls. Only the Checkout rails are fail-closed. The copy says
+      // which of the two just happened — it used to claim "dropped" for every
+      // source, which misreported a working payout path as broken.
+      const asHint =
+        source.startsWith('peach-payout') || source.startsWith('peach-banv');
       await this.prisma.adminAlert.create({
         data: {
           type: 'WEBHOOK_SIGNATURE_INVALID',
           referenceId: source,
           urgent: true,
-          context:
-            `Incoming "${source}" webhook FAILED signature verification and was dropped. ` +
-            `If this repeats, the signing secret is wrong or the raw-body pipeline broke — ` +
-            `${source.startsWith('ozow') ? 'payments/verifications/payouts will silently stall' : 'user provisioning will silently stall'}. ` +
-            `Check the webhook secret + endpoint config. This alert fires once per source until resolved.`,
+          context: asHint
+            ? `Incoming "${source}" webhook FAILED signature verification. It was processed as an UNVERIFIED HINT only — the result is re-read from the Peach Payouts API, so no money moved on the body and nothing stalls. Set PEACH_PAYOUT_WEBHOOK_SECRET to the Payouts webhook signing key to silence this. This alert fires once per source until resolved.`
+            : `Incoming "${source}" webhook FAILED signature verification and was dropped. ` +
+              `If this repeats, the signing secret is wrong or the raw-body pipeline broke — ` +
+              `${source.startsWith('ozow') ? 'payments/verifications/payouts will silently stall' : 'user provisioning will silently stall'}. ` +
+              `Check the webhook secret + endpoint config. This alert fires once per source until resolved.`,
         },
       });
       this.logger.error(`Webhook signature failure alert raised for "${source}"`);
@@ -2907,6 +2915,52 @@ export class TransactionsService {
 
     // failed | cancelled | reversed — the money did not stick (or came back).
     const reversed = status === 'reversed';
+    // ⚠️ FLOAT SHORTAGE IS TRANSIENT, NOT A FAILURE TO REVIEW. Peach answers a
+    // short float with 2900.002.000 "Load more funds and try again". The float
+    // is topped up from the payments side (auto-reload), so the row must stay
+    // DUE and retry on the next payout run — holding it means tomorrow's batch
+    // finds nothing, which is exactly what happened live on 2026-11-24. Hold is
+    // reserved for failures that need a human (bad account, reversal, unknown).
+    if (this.peach.isFloatShortageCode(resultCode)) {
+      await this.prisma.$transaction([
+        this.prisma.peachPayoutAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: remote.status,
+            resultCode,
+            errorMessage: errorText ?? status,
+            lastStatusCheckedAt: now,
+            terminalAt: now,
+          },
+        }),
+        this.prisma.transaction.updateMany({
+          where: { id: attempt.transactionId },
+          data: {
+            paidOutAt: null,
+            payoutRequestedAt: null,
+            gatewayPayoutId: null,
+            payoutHeldAt: null,
+            payoutHoldReason: null,
+            payoutHeldById: null,
+          },
+        }),
+      ]);
+      await releaseSellerChargeRecoveries(this.prisma, attempt.transactionId);
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_FLOAT_SHORTAGE',
+            referenceId: attempt.transactionId,
+            urgent: false,
+            context: `Peach float short for payout ${attempt.payoutId} of ${attempt.transactionId} (${resultCode}: ${errorText ?? ''}). Nothing was disbursed; the row is still due and retries on the next payout run once the float is topped up.`,
+          },
+        })
+        .catch(() => undefined);
+      this.logger.warn(
+        `Peach payout ${attempt.transactionId} hit a float shortage (${resultCode}) — left due for the next run`,
+      );
+      return;
+    }
     await this.prisma.$transaction([
       this.prisma.peachPayoutAttempt.update({
         where: { id: attempt.id },
