@@ -3,7 +3,8 @@
 **Status:** LIVE for money-in as of 2026-10-10 (checkout open). Money-out
 **verified end-to-end on 2026-10-28**: a real R10 Investec payout completed and
 the funds landed.
-**Last updated:** 2026-10-28.
+**Last updated:** 2026-11-24 (Peach readiness audit + adapter fixes; see the
+Peach section).
 
 > ⚠️ **This runbook covers the MARKETPLACE rails only (Ozow + Peach).** The
 > R295 motivation paygate moved to **Yoco Checkout** on 2026-11-22 and shares
@@ -174,6 +175,47 @@ Peach is a second rail, **not a replacement**. The buyer chooses Ozow or Peach;
 `Transaction.paymentProvider` is locked at checkout and the refund + seller
 payout use that same provider. There is no cross-rail fallback.
 
+### Status — 2026-11-24 audit (read this before enabling)
+
+Both flags are still **OFF** and there are **zero `PEACH` transactions** in
+production: buyers cannot reach the card rail. What the audit established
+against the live gateway:
+
+- ✅ OAuth works for the checkout client pair **and** the payouts pair.
+- ✅ The Payouts/BANV APIs answer correctly (authenticated 404s for unknown
+  ids), and the payout/BANV webhook URLs are registered at Peach
+  (`/api/payments/webhook/peach-payout`, `/peach-banv`, with payout-status and
+  float-allocation updates on).
+- ✅ Checkout webhooks already arrive and verify (a real R2 live payment on
+  2026-11-24 was accepted; it was a dashboard test, not an app checkout).
+- ❌ `POST /v2/checkout` with the configured `PEACH_ENTITY_ID` returns
+  `404 {"message":"Channel not found."}`, and
+  `GET /v2/channels/{entity}/payment-methods` says the same — **the entity on
+  the box is not a live Checkout channel for this merchant.**
+- ❌ The classic secret on the box fails signature validation: checkout create
+  answers "Invalid signature" and refund answers `800.900.300 invalid
+  authentication information`. **`PEACH_ENTITY_ID` + `PEACH_SECRET` are not a
+  valid live pair** (re-copy both from Dashboard → Checkout → API keys).
+- 🔧 Fixed in code (deployed 2026-11-24): Checkout V2 now sends the **flat
+  dotted** `authentication.entityId` (a nested object is not parsed); refunds
+  now post **form-urlencoded flat fields** (the old nested JSON was rejected as
+  `authentication.entityId may not be null`) and read the **flat dotted
+  `result.code`** response, so a successful refund is no longer classified as a
+  failure; the BANV payout hold now applies only while
+  `peach_payouts_enabled` is ON, so configured-but-dark Peach credentials no
+  longer freeze the live Ozow payout queue.
+
+**Operator action before any flag flip:** copy the live **Hosted Checkout
+entity ID and secret token** from Dashboard → Checkout → API keys, confirm the
+entity is enabled for Checkout (V2/Orchestration) and that `alloutdoor.co.za`
+is allowlisted, then run the probe below until it prints `READY`.
+
+```
+cd backend
+npm run peach:smoke              # read-only; no money moves
+npm run peach:smoke -- --create  # also mints an unpaid R1 checkout
+```
+
 Peach checkout creation validates the storefront `Origin` / `Referer` against
 its allowlisted domains. The backend forwards the origin of the shopper result
 URL, so the frontend hostname must be allowlisted in Peach. Production uses
@@ -184,24 +226,31 @@ URL, so the frontend hostname must be allowlisted in Peach. Production uses
 
 ### Before enabling
 
-1. Peach Dashboard → Payouts → Settings: confirm the Payouts product is
+1. Peach Dashboard → Checkout → API keys: copy the **live** entity ID + secret
+   token into `PEACH_ENTITY_ID` / `PEACH_SECRET`; confirm the domain allowlist.
+2. Peach Dashboard → Payouts → Settings: confirm the Payouts product is
    enabled and copy its API client id/secret/merchant id (these may differ from
-   Checkout's pair).
-2. Request the Payouts webhook signing secret from Peach support and register
-   the production URLs:
+   Checkout's pair). Fetch the Payouts webhook signing secret from Peach
+   support as well (the code falls back to `PEACH_SECRET`, and unsigned
+   deliveries are re-confirmed via the Payouts API, but a signed delivery with
+   the wrong secret is rejected and alerted).
+3. Register/confirm the production webhook URLs:
    - `/api/payments/webhook/peach`
    - `/api/payments/webhook/peach-payout`
    - `/api/payments/webhook/peach-banv`
    - `/api/payments/webhook/peach-dispute`
-3. Fund the Peach payout float separately from Ozow. Do not commingle floats.
-4. Set `PEACH_ENV=live` plus the checkout and payout credentials / secrets on
-   the box, and reload.
-5. Verify boot has no Peach "incomplete credentials" or "secret not set"
+4. Fund the Peach payout float separately from Ozow. Do not commingle floats.
+5. Set `PEACH_ENV=live` plus the checkout and payout credentials / secrets on
+   the box, reload, and run `npm run peach:smoke` — it must print `READY`.
+6. Verify boot has no Peach "incomplete credentials" or signature-secret
    warnings.
 
 ### Sandbox acceptance (must pass before live)
 
-- Peach pay-in: success, decline, cancel, status query, webhook, refund.
+- `npm run peach:smoke -- --create` mints an unpaid checkout (channel, entity,
+  allowlist, body shape).
+- Paid pay-in: success, decline, cancel, status query, webhook, **refund**
+  (refunds are the classic V1 form-encoded surface — test one for real).
 - BANV: pass, mismatch, failure; confirm the webhook stamps/clears
   `User.bankVerifiedAt`.
 - Peach Payouts: pending, processing, successful, failed, reversed; confirm
@@ -218,12 +267,16 @@ URL, so the frontend hostname must be allowlisted in Peach. Production uses
 1. Deploy schema + backend + frontend with `peach_payin_enabled=false` and
    `peach_payouts_enabled=false`. Confirm Ozow checkout/refund/payout is
    unchanged.
-2. Turn on `peach_payin_enabled`. Run one small live Peach payment + refund.
-   Confirm the transaction row says `PEACH` and the payout-due preview shows it
-   under the Peach bucket.
-3. Turn on `peach_payouts_enabled`. Run a small payout batch and confirm the
+2. Turn on `peach_payin_enabled`. Run one small live Peach payment + refund
+   (`npm run peach:smoke` first). Confirm the transaction row says `PEACH` and
+   the payout-due preview shows it under the Peach bucket.
+3. Before turning on `peach_payouts_enabled`: get every seller with due money
+   BANV-verified (re-save banking details or `POST /admin/users/:id/verify-bank`)
+   — while the payouts flag is ON, both rails' payouts are held for any seller
+   without `bankVerifiedAt`.
+4. Turn on `peach_payouts_enabled`. Run a small payout batch and confirm the
    Peach webhook settles it.
-4. Leave auto payouts OFF until both rails have completed a full settlement
+5. Leave auto payouts OFF until both rails have completed a full settlement
    cycle.
 
 ### Rollback

@@ -485,7 +485,9 @@ stats, news clippings, complaints, the reloading corpus, Warden.
   checkout credentials are configured. Ozow remains the default rail.
 - **Peach payouts** — hidden until `peach_payouts_enabled` is ON and the Peach
   Payouts product is configured. A Peach-paid sale is never routed to Ozow.
-- **BANV** — runs once Peach Payouts credentials exist. It verifies the
+- **BANV** — requests run once Peach Payouts credentials exist, but the payout
+  HOLD on `bankVerifiedAt` only applies while `peach_payouts_enabled` is ON.
+  Configured-but-dark must not gate the live Ozow payout queue. It verifies the
   destination bank for both rails (account exists/open + SA-ID ownership).
   Do not claim automated verification in user-facing copy before the product is
   configured and the first checks pass.
@@ -651,10 +653,22 @@ picks the rail at checkout; Ozow is the default.
 - **BANV:** every bank-details save requests Peach BANV when the user has an
   SA ID on file. The result webhook stamps `User.bankVerifiedAt` on a pass;
   mismatch/failure clears it, raises an alert and notifies the seller. Seller
-  payouts on **both** rails are gated on `bankVerifiedAt` once BANV is
-  configured. Buyer refunds are not gated. Users without an SA ID (buyer-only
-  banking) are skipped until their profile supplies one. `POST
-  /admin/users/:id/verify-bank` re-runs the check from the dossier.
+  payouts on **both** rails are held on `bankVerifiedAt` only while
+  `peach_payouts_enabled` is ON — configuring the Payouts product is not a
+  go-live switch, so it must not freeze the live Ozow queue. Buyer refunds are
+  not gated. Users without an SA ID (buyer-only banking) are skipped until
+  their profile supplies one. `POST /admin/users/:id/verify-bank` re-runs the
+  check from the dossier.
+- **Peach wire formats (do not "simplify" these):** Checkout V2 is Bearer +
+  JSON with the FLAT DOTTED key `authentication.entityId` (a nested
+  `authentication:{entityId}` object is not parsed and surfaces as
+  `404 Channel not found`). The refund endpoint is the classic (V1) surface:
+  **form-urlencoded flat fields** (`authentication.entityId=…&amount=…&id=…&
+  paymentType=RF&signature=…`) signed with `PEACH_SECRET` (HMAC-SHA256 over the
+  sorted `key+value` concatenation), and its JSON **responses use flat dotted
+  keys** (`"result.code"`), unlike the nested V2 status response. `npm run
+  peach:smoke` probes the real gateway (OAuth, channel, refund-signature,
+  Payouts/BANV, webhook registration) without moving money.
 - **Peach bank vocabulary:** `peach-banks.ts` maps free-text bank names to
   Peach's strict enum and universal branch codes. An unmappable bank skips the
   Peach payout with a "re-pick your bank" reason; it is never guessed and never

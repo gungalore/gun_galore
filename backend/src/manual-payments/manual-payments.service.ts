@@ -1084,8 +1084,9 @@ export class ManualPaymentsService {
             // KYC VERIFIED). collectDue skips sellers failing it.
             kycStatus: true,
             profileCompletedAt: true,
-            // BANV hard gate once Peach's Payouts/BANV product is configured:
-            // collectDue skips a seller without this on both rails.
+            // BANV gate input. collectDue only HOLDS on it while
+            // peach_payouts_enabled is ON (configuring the Payouts product is
+            // not a go-live switch), and applies it to both rails.
             bankVerifiedAt: true,
           },
         },
@@ -1184,6 +1185,17 @@ export class ManualPaymentsService {
     const childrenSum = (c?: { buyerTotal: number }[] | null) =>
       (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
 
+    // BANV holds a payout ONLY while Peach payouts are actually switched on.
+    // Merely having the Payouts credentials configured must NOT gate the live
+    // Ozow queue: credentials are staged days before launch, and every seller
+    // without a `bankVerifiedAt` (i.e. nearly all of them) would otherwise be
+    // held on a rail that is not live yet — including Ozow-paid sales the
+    // operator is trying to pay today. `peach_payouts_enabled` is the
+    // deliberate go-live switch, so the hold rides on that flag.
+    const banvHoldApplies =
+      !!this.peach?.isBanvEnabled() &&
+      (await this.settings.get(FLAGS.peachPayoutsEnabled));
+
     for (const p of payouts) {
       // P0.3 — dock the seller ONLY for refund slices actually being paid to
       // the buyer (minted children). Legacy pre-deploy refundedAmount without
@@ -1234,11 +1246,11 @@ export class ManualPaymentsService {
         });
         continue;
       }
-      // BANV hard gate. Once Peach BANV is configured it verifies the same
-      // destination bank for BOTH rails (it checks account existence + SA-ID
+      // BANV hard gate — only once Peach payouts are switched on. It verifies
+      // the same destination bank for BOTH rails (account existence + SA-ID
       // ownership, not the gateway). A seller who has not passed stays held;
       // buyer refunds below are deliberately not gated.
-      if (this.peach?.isBanvEnabled() && !p.seller.bankVerifiedAt) {
+      if (banvHoldApplies && !p.seller.bankVerifiedAt) {
         skipped.push({
           kind: 'PAYOUT',
           ref: p.orderReference ?? p.id,

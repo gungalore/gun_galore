@@ -128,9 +128,17 @@ function assertProductionConfig() {
         '⚠️  Peach Payouts credentials are incomplete (PEACH_PAYOUT_CLIENT_ID / PEACH_PAYOUT_CLIENT_SECRET / PEACH_PAYOUT_MERCHANT_ID) — payouts fall back to the checkout OAuth pair. Keep the Peach payouts admin flag OFF until the Payouts product is verified.',
       );
     }
-    if (!process.env.PEACH_PAYOUT_WEBHOOK_SECRET && !process.env.PEACH_SECRET) {
-      log.error(
-        '⚠️  PEACH_PAYOUT_WEBHOOK_SECRET is not set — Peach payout/BANV webhooks will be REJECTED (fail-closed).',
+    if (!process.env.PEACH_PAYOUT_WEBHOOK_SECRET) {
+      // Payout/BANV deliveries are handled differently from checkout: an
+      // unsigned body is a HINT that is re-confirmed against the Payouts API,
+      // but a delivery that CARRIES a signature is verified against
+      // PEACH_PAYOUT_WEBHOOK_SECRET (falling back to PEACH_SECRET) and is
+      // rejected when that fails. So the real risk is a mis-keyed signature,
+      // not "nothing arrives".
+      log.warn(
+        process.env.PEACH_SECRET
+          ? '⚠️  PEACH_PAYOUT_WEBHOOK_SECRET is not set — payout/BANV webhook signatures are verified against PEACH_SECRET instead. Unsigned deliveries are accepted as hints and re-confirmed via the Payouts API; signed ones fail verification (and alert) if PEACH_SECRET is not the Payouts signing secret.'
+          : '⚠️  PEACH_PAYOUT_WEBHOOK_SECRET / PEACH_SECRET is not set — signed Peach payout/BANV webhooks are REJECTED; unsigned deliveries are accepted as hints and re-confirmed via the Payouts API. Set the Payouts signing secret before turning Peach payouts ON.',
       );
     }
   }

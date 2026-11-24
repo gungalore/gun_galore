@@ -30,17 +30,25 @@ import {
  *   Checkout V2 (host live https://secure.peachpayments.com,
  *                     sbx  https://testsecure.peachpayments.com):
  *     POST {checkout}/v2/checkout  (Bearer)
- *       body: authentication.entityId, merchantTransactionId(8-16),
- *             amount(DECIMAL string, dot), currency, nonce, shopperResultUrl,
- *             notificationUrl?, cancelUrl?, defaultPaymentMethod?, signature
+ *       body (application/json, FLAT DOTTED keys — Peach's OpenAPI JSON
+ *       example is {"authentication.entityId": "…"}; a nested
+ *       {"authentication":{"entityId":…}} object is NOT parsed):
+ *             authentication.entityId, merchantTransactionId(8-16),
+ *             amount(DECIMAL ZAR number), currency, nonce, shopperResultUrl,
+ *             notificationUrl?, cancelUrl?, defaultPaymentMethod?
  *       → { checkoutId, redirectUrl }   (redirect the buyer to redirectUrl)
  *     GET  {checkout}/v2/checkout/{checkoutId}/status  (Bearer)
  *     Result POST to shopperResultUrl == webhook shape (signed).
  *   Refund (host live https://api.peachpayments.com,
  *                sbx  https://testapi.peachpayments.com):
- *     POST {refund}/v1/checkout/refund  (signed)
- *       body: authentication.entityId, amount(decimal), currency,
- *             id(original payment id), paymentType=RF, signature
+ *     POST {refund}/v1/checkout/refund  (SIGNED, form-urlencoded)
+ *       body: authentication.entityId=…&amount=…&currency=ZAR&
+ *             id=<original payment id>&paymentType=RF&signature=…
+ *       ⚠️ The refund API is the classic (V1) surface: it takes flat dotted
+ *       form fields, NOT a nested JSON `authentication` object — a nested body
+ *       is answered "authentication.entityId may not be null". Its JSON
+ *       RESPONSES also use flat dotted keys ("result.code"), unlike the nested
+ *       V2 status response, so both shapes are read.
  *   Payouts (host live https://payouts.peachpayments.com,
  *                 sbx  https://sandbox-payouts.peachpayments.com):
  *     POST {payouts}/api/merchants/{merchantId}/payouts (Bearer) — batch
@@ -272,6 +280,30 @@ export class PeachService {
     return Math.round(parseFloat(String(amount ?? '0')) * 100);
   }
 
+  /**
+   * Peach's TWO response dialects, in one place.
+   *
+   * V2 (Bearer/JSON) nests its result: { result: { code, description } }.
+   * V1 (classic, signed) returns FLAT dotted keys: { "result.code": "…" }.
+   * Reading only one shape silently classifies the other as "rejected" —
+   * which is how a successful refund could be reported as a failure.
+   */
+  private resultField(
+    json: Record<string, unknown>,
+    field: 'code' | 'description',
+  ): string | undefined {
+    const flat = json[`result.${field}`];
+    if (typeof flat === 'string') return flat;
+    const nested = json.result;
+    if (nested && typeof nested === 'object') {
+      const v = (nested as Record<string, unknown>)[field];
+      if (typeof v === 'string') return v;
+    }
+    // Some V1 error bodies put the code at the top level.
+    const top = json[field];
+    return typeof top === 'string' ? top : undefined;
+  }
+
   /** 8–16 char unique merchant reference (Peach's merchantTransactionId
    *  constraint). "GG" + base36 millis + 4 random-ish chars from the index
    *  of the tx id keeps it unique without leaking the 25-char cuid. */
@@ -312,15 +344,17 @@ export class PeachService {
       };
     }
 
-    // Checkout V2 authenticates with the OAuth Bearer token. The request body
-    // is NOT signed (the classic Hosted Checkout form is). Sending a
-    // `signature` field makes the V2 API reject the request as an unknown
-    // field.
+    // Checkout V2 authenticates with the OAuth Bearer token. Per Peach's
+    // OpenAPI, the JSON body uses FLAT DOTTED keys ("authentication.entityId");
+    // a nested authentication object is not read, which surfaces as a 404
+    // "Channel not found" (their documented response for an invalid entity).
+    // `amount` is DECIMAL ZAR (number), not cents.
     const body: Record<string, unknown> = {
-      authentication: { entityId: this.entityId },
+      'authentication.entityId': this.entityId,
       merchantTransactionId: merchantReference,
-      amount: this.centsToDecimal(params.amountZarCents),
+      amount: Math.round(params.amountZarCents) / 100,
       currency: 'ZAR',
+      paymentType: 'DB',
       nonce: this.nonce(),
       shopperResultUrl: params.shopperResultUrl,
     };
@@ -399,7 +433,7 @@ export class PeachService {
       amount?: string | number;
       result?: { code?: string; description?: string };
     };
-    const code = json.result?.code;
+    const code = this.resultField(json as Record<string, unknown>, 'code');
     const bucket = classifyResultCode(code);
     return {
       // The refundable payment id is `id`; fall back to the checkoutId.
@@ -422,33 +456,43 @@ export class PeachService {
       );
       return { success: true, resultCode: 'MOCK_REFUND' };
     }
-    const body: Record<string, unknown> = {
-      authentication: { entityId: this.entityId },
+    // ⚠️ FORM-ENCODED FLAT DOTTED FIELDS — this is the classic (V1) refund
+    // endpoint, not a V2/Bearer JSON endpoint. Posting nested JSON
+    // {"authentication":{"entityId":…}} is answered 400
+    // "authentication.entityId may not be null" (confirmed against the live
+    // API on 2026-11-24 — the old body shape would have failed every refund).
+    const params: Record<string, string> = {
+      'authentication.entityId': this.entityId,
       amount: this.centsToDecimal(amountZarCents),
       currency: 'ZAR',
       id: paymentId,
       paymentType: 'RF',
     };
-    body.signature = signParams(body, this.secret);
+    params.signature = signParams(params, this.secret);
     const res = await fetch(`${this.refundHost}/v1/checkout/refund`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params).toString(),
     });
-    const json = (await res.json().catch(() => ({}))) as {
-      result?: { code?: string; description?: string };
-    };
-    const code = json.result?.code;
+    const json = (await res.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    // V1 refunds answer with FLAT dotted keys ("result.code"), unlike the
+    // nested V2 status response. Read both; otherwise a successful refund is
+    // classified as a failure and the money is reported as not returned.
+    const code = this.resultField(json, 'code');
+    const description = this.resultField(json, 'description');
     const ok = res.ok && classifyResultCode(code) !== 'rejected';
     if (!ok) {
       this.logger.warn(
-        `Peach refund ${paymentId} failed (${res.status}, code ${code ?? '?'}): ${json.result?.description ?? ''}`,
+        `Peach refund ${paymentId} failed (${res.status}, code ${code ?? '?'}): ${description ?? ''}`,
       );
     }
     return {
       success: ok,
       resultCode: code ?? String(res.status),
-      message: json.result?.description,
+      message: description,
     };
   }
 

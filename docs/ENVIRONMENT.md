@@ -612,7 +612,21 @@ when they differ from Checkout.
 | `PEACH_SECRET` | For refunds | Classic Hosted Checkout secret token used to sign refunds. |
 | `PEACH_WEBHOOK_SECRET` | **FAILS CLOSED** | Checkout V2 webhook signing secret from Dashboard -> Checkout -> Enable webhook signing. |
 | `PEACH_PAYOUT_CLIENT_ID` / `PEACH_PAYOUT_CLIENT_SECRET` / `PEACH_PAYOUT_MERCHANT_ID` | For Peach payouts | Payouts product credentials; fall back to the checkout pair when blank. |
-| `PEACH_PAYOUT_WEBHOOK_SECRET` | **FAILS CLOSED** | Payout/BANV signing secret; falls back to `PEACH_SECRET`. |
+| `PEACH_PAYOUT_WEBHOOK_SECRET` | Optional | Payout/BANV signing secret; falls back to `PEACH_SECRET`. Payout/BANV deliveries without a signature are accepted as a HINT and re-confirmed against the Payouts API; a delivery that carries a bad signature is rejected and alerted. |
+
+⚠️ **Refunds do not use the V2/Bearer API.** `POST /v1/checkout/refund` takes
+form-urlencoded flat fields (`authentication.entityId=…&amount=…&id=…
+&paymentType=RF&signature=…`), signed with `PEACH_SECRET`, and answers with
+FLAT dotted result keys (`"result.code"`). Posting nested JSON is rejected as
+`authentication.entityId may not be null`; reading only a nested `result` object
+would mis-classify a successful refund as failed.
+
+Readiness probe (from `backend/` on the target box):
+
+```
+npm run peach:smoke              # read-only: OAuth, channel, refund signature, Payouts/BANV, webhooks
+npm run peach:smoke -- --create  # also mints an unpaid R1 checkout
+```
 
 Runtime flags (admin settings, not env):
 `peach_payin_enabled` controls whether buyers see Peach; `peach_payouts_enabled`

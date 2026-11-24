@@ -18,7 +18,9 @@ const registration = {
   addEventListener: vi.fn(),
 };
 const serviceWorker = {
-  controller: {},
+  // `null` models the first-install state the component must ignore, so the
+  // fixture type has to admit it (vitest does not typecheck, `tsc` does).
+  controller: {} as Record<string, unknown> | null,
   getRegistration: vi.fn(async () => registration),
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
