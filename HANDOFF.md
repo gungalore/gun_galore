@@ -7,6 +7,17 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — UI CONTRAST PASS SHIPPED: QUIET CONTROLS GET A VISIBLE EDGE
+
+Operator: *"There are a lot of options and buttons on the website and PWA that is the same color as the theme and is hard to spot. … make me a list of which ones makes sense to give them color"* → then ***"apply all your suggestions"***.
+
+- **Audit first** ([docs/history/UI-CONTRAST-AUDIT-2026-11.md](docs/history/UI-CONTRAST-AUDIT-2026-11.md)): 629 member-app buttons across 199 files; **461 (73%)** had a transparent/surface fill or only a `--border` hairline. Measured: `--border` 1.31:1 on white, `--bg-inset` 1.18:1, `--border-hover` 1.54:1, PWA tab ink `--text-faint` 2.58:1, all below AA's 3:1 control-boundary rule. One real defect: the decline/withdraw confirm CTA was **white text on `--bg-inset` (1.18:1)** — unreadable.
+- **Deployed `e4e7beb3` (frontend-only)** at 21:16 SAST, rollback `alloutdoor-20261124-211606.dump`; frontend 200 ×2, public 200 ×2. Checks: frontend typecheck clean, **186 files / 2,084 tests passed** (1 skipped), foreground production build clean (theme-sync gate included). No backend/prisma changes; backend kept its uptime.
+- **Token layer:** `--border-visible` (`#9C8F76` light = 3.18:1 white / 3.00:1 page; `#756D63` dark = 3.41:1 card) for every control edge, and `--action-soft` for quiet-but-actionable fills. **Card edges keep `--border`.** `DESIGN.md` §3/§8/§11 updated with the 3:1 non-text rule, the new accent-outline button variant, and the "never white on a surface fill" rule.
+- **Shared components:** `.chip` rails, `pill.tsx`, payment rail options, delivery options + cart delivery picker, saved-address cards, checkout address tiles, add-to-cart (accent outline), photo dropzone (soft accent fill + 1px dashed red), PWA bottom-tab inactive ink raised to `--text-tertiary`/`--text-secondary`, quick actions + Armory tiles + "Shop by category" + search field + bug FAB visible edges, feed/notification `Load more`, category `Try again`, saved-search `Pause/Resume`, comments/`⋯`/Reply, OTP recovery links.
+- **Accent-outline / danger-outline** applied to important secondaries: offer entries/decline/withdraw, `Edit these details`, receipt download, licence consent, handover-dispute (danger outline). The offer confirm CTA now uses a red destructive fill.
+- **Deliberately unchanged:** all existing red/success filled primaries, dismiss/close/icon/tertiary controls, the one-primary-per-view rule, and the quiet `Cancel`/`Remove`/`Delete` family.
+
 ## 2026-11-24 — ADMIN ALERTS SPLIT: MONEY/ACCOUNTS SEPARATED FROM CRON NOISE
 
 Operator: *"Check the admin panel. The thing is full of cron errors and other things. do not mix those with money and account notifications."*

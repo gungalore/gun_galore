@@ -12,6 +12,16 @@ either no border or a `--border` hairline. Most of those 461 are deliberately
 quiet icon/dismiss/tertiary controls; this report separates the ones where quiet
 styling costs the user.
 
+**Status: IMPLEMENTED 2026-11-24, deployed `e4e7beb3` (frontend-only).** Two
+tokens were added (`--border-visible`, `--action-soft`, both themes); the shared
+components (`.chip`, pills, payment rail, delivery + address pickers, photo
+dropzone, PWA tab bar, quick actions, bug FAB, search field) and the A/B lists
+below were changed; the C list was left quiet. `DESIGN.md` §3/§8/§11 now carry
+the rules (3:1 control boundary, accent-outline variant, never white on a
+surface fill). Remaining work, if wanted later: the rest of the B rows marked
+`B-lite` (offers list row actions, licence pack `View`, saved-search delete
+confirmation) and a visual pass on a physical phone for the PWA chrome.
+
 Every token below is measured against `--bg-card: #FFFFFF` (cards) and
 `--bg: #FAF8F3` (page). WCAG asks **3:1 for non-text UI boundaries/components**
 (1.4.11) and **4.5:1 for normal text** (1.4.3).
