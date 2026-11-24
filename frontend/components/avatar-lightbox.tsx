@@ -126,7 +126,7 @@ export function ClickableAvatar({
         overflow: 'hidden',
         flexShrink: 0,
         padding: 0,
-        border: '0.5px solid var(--border)',
+        border: '1px solid var(--border-visible)',
         background: 'var(--action-primary-bg)',
         color: '#fff',
         display: 'inline-flex',

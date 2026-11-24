@@ -89,7 +89,7 @@ export function BidStepper({
             height: btnSize,
             borderRadius: '50%',
             background: canDecrement ? 'var(--bg-card)' : 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: canDecrement
               ? 'var(--text-primary)'
               : 'var(--text-tertiary)',
@@ -125,7 +125,7 @@ export function BidStepper({
             height: btnSize,
             borderRadius: '50%',
             background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: 'var(--text-primary)',
             cursor: 'pointer',
             fontWeight: 500,

@@ -450,7 +450,7 @@ export function QuestionsPanel({
                   className="text-[11px] px-2 py-1 rounded-[4px]"
                   style={{
                     background: 'transparent',
-                    border: '0.5px solid var(--border)',
+                    border: '1px solid var(--border-visible)',
                     color: 'var(--text-secondary)',
                     cursor: sending ? 'not-allowed' : 'pointer',
                     opacity: sending ? 0.5 : 1,

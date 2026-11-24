@@ -126,7 +126,7 @@ export default function NotificationsPage() {
           style={{
             background: 'transparent',
             color: showResolved ? 'var(--text-primary)' : 'var(--text-tertiary)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             padding: '5px 10px',
             borderRadius: 6,
             fontSize: 12,

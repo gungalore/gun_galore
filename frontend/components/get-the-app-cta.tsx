@@ -55,7 +55,7 @@ export function GetTheAppCta() {
         fontWeight: 500,
         color: 'var(--text-primary)',
         background: 'var(--bg-inset)',
-        border: '0.5px solid var(--border)',
+        border: '1px solid var(--border-visible)',
         borderRadius: 6,
         padding: '8px 14px',
         cursor: 'pointer',

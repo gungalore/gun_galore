@@ -314,7 +314,7 @@ export function ListingInterest({
               className="text-xs px-3 py-1.5 rounded-[6px]"
               style={{
                 background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
+                border: '1px solid var(--border-visible)',
                 color: 'var(--text-primary)',
                 cursor: 'pointer',
               }}
@@ -438,7 +438,7 @@ export function ListingInterest({
           padding: '4px 7px',
           borderRadius: 6,
           background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
+          border: '1px solid var(--border-visible)',
           color: 'var(--text-secondary)',
           fontSize: 11,
           fontWeight: 500,

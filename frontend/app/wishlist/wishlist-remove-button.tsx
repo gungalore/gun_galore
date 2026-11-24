@@ -43,7 +43,7 @@ export function WishlistRemoveButton({ listingId }: { listingId: string }) {
         padding: '6px 10px',
         borderRadius: 6,
         background: 'transparent',
-        border: '0.5px solid var(--border)',
+        border: '1px solid var(--border-visible)',
         color: 'var(--text-tertiary)',
         fontSize: 12,
         cursor: busy ? 'wait' : 'pointer',

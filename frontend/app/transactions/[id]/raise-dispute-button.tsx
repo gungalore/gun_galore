@@ -193,7 +193,7 @@ export function RaiseDisputeModal({
             style={{
               background: 'var(--bg-inset)',
               color: 'var(--text-secondary)',
-              border: '0.5px solid var(--border)',
+              border: '1px solid var(--border-visible)',
               cursor: 'pointer',
             }}
           >

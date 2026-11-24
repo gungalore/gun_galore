@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, SignInButton } from '../../lib/auth';
 import {
@@ -104,6 +104,16 @@ export default function CartPage() {
   // In-flight listingId for "Save for later" — disables only that row's
   // button for the duration of its own request.
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // ── Delivery block collapse — PRESENTATION ONLY ─────────────────────
+  // Address/quote state above is untouched. Open on first load; auto-collapses
+  // ONCE once a saved address has priced every parcel; a manual toggle or an
+  // address change leaves/re-opens it (a new destination needs a new quote).
+  const [deliveryOpen, setDeliveryOpen] = useState(true);
+  const [savedAddressPicked, setSavedAddressPicked] = useState(false);
+  const deliveryUserToggledRef = useRef(false);
+  const deliveryAutoCollapsedRef = useRef(false);
+  const addrTouchedRef = useRef(false);
 
   // cart-store's read() already normalises quantity to a whole number >= 1, so
   // this is belt-and-braces for the optional TYPE rather than a real case.
@@ -342,9 +352,59 @@ export default function CartPage() {
 
   // Changing the address invalidates every price already chosen against the
   // old one. Clearing here stops a stale figure surviving into the payload.
+  // It also re-opens the delivery picker (a new quote is needed) — except on
+  // the first run, where the block starts open anyway.
   useEffect(() => {
     setChosenDelivery({});
+    if (addrTouchedRef.current) setDeliveryOpen(true);
+    else addrTouchedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addr.street, addr.suburb, addr.city, addr.postalCode, addr.province]);
+
+  // The one place the sidebar CTA and the mobile sticky bar agree on state.
+  const checkoutDisabled = !shippingReady || submitting;
+  const checkoutLabel = submitting
+    ? 'Creating your order…'
+    : shippingReady
+      ? 'Continue to payment'
+      : soldOutItems.length > 0
+        ? 'Remove the sold-out item to continue'
+        : collectionItems.length > 0
+          ? 'Remove the collection-only item to continue'
+          : !addrComplete
+            ? 'Enter a delivery address to continue'
+            : 'Delivery isn’t available for this address';
+  const cartTotalCents = itemsSubtotal + deliveryTotalCents;
+  const deliveryDestination = addrComplete
+    ? [addr.building.trim(), addr.street.trim(), addr.suburb.trim()]
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(', ')
+    : null;
+  const everyParcelChosen =
+    deliveryGroups.length > 0 &&
+    deliveryGroups.every(
+      (g) => !g.unavailableReason && !!chosenDelivery[g.groupKey],
+    );
+
+  // Auto-collapse ONCE: a saved address is present and every parcel has a
+  // priced choice, so the picker no longer needs to occupy the screen. A
+  // manual toggle (ref) wins; the address effect re-opens it on a change.
+  useEffect(() => {
+    if (
+      deliveryAutoCollapsedRef.current ||
+      deliveryUserToggledRef.current ||
+      !deliveryOpen ||
+      !savedAddressPicked ||
+      shippableItems.length === 0 ||
+      !everyParcelChosen
+    ) {
+      return;
+    }
+    deliveryAutoCollapsedRef.current = true;
+    setDeliveryOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryOpen, savedAddressPicked, shippableItems.length, everyParcelChosen]);
 
   async function checkout() {
     if (!shippingReady || items.length === 0) return;
@@ -821,54 +881,112 @@ export default function CartPage() {
           accepted at sign-up; the payload below still carries the consent
           flag the backend requires. */}
 
-      {/* Delivery — courier picker only when there ARE shippable (non-firearm)
-          items. A firearm-only cart hides this entirely. */}
+      {/* Delivery — compact header + collapsible picker. Courier picker only
+          when there ARE shippable (non-firearm) items; a firearm-only cart
+          hides this entirely. Presentation only: the address/quote state that
+          feeds checkout is unchanged. */}
       {shippableItems.length > 0 && (
         <>
-          <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-            Delivery
-          </h2>
-          {/* Address FIRST — nothing can be priced without it. Bob Go is the
-              only courier rail, so there is no carrier to choose. */}
-          <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-            Where should we deliver? Delivery is priced once we have your
-            address.
-          </p>
-          <div className="mb-4">
-            {/* UX-3 — saved-address picker (2+ book addresses only).
-                Picking one fills the same `addr` state the payload reads. */}
-            <SavedAddressPicker
-              minToShow={1}
-              onSelect={(a: Address) =>
-                setAddr({
-                  building: a.building ?? '',
-                  street: a.street,
-                  address2: a.address2 ?? '',
-                  suburb: a.suburb ?? '',
-                  city: a.city,
-                  postalCode: a.postalCode,
-                  province: a.province,
-                })
-              }
-            />
-            <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="min-w-0">
+              <h2 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Delivery
+              </h2>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {deliveryDestination
+                  ? `Deliver to ${deliveryDestination}`
+                  : 'Add a delivery address'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                deliveryUserToggledRef.current = true;
+                setDeliveryOpen((open) => !open);
+              }}
+              className="text-xs px-3 py-1.5 rounded-[6px] flex-shrink-0"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border-visible)',
+                color: 'var(--text-primary)',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {deliveryOpen ? 'Hide' : 'Change'}
+            </button>
           </div>
 
-          <div className="mb-5">
-            <CartDeliveryPicker
-              lines={shippableItems.map((i) => ({
-                listingId: i.listingId,
-                quantity: qtyOf(i.quantity),
-              }))}
-              deliveryAddress={pickerAddress}
-              chosen={chosenDelivery}
-              onChoose={(groupKey, option) =>
-                setChosenDelivery((prev) => ({ ...prev, [groupKey]: option }))
-              }
-              onGroups={setDeliveryGroups}
-              getToken={getToken}
-            />
-          </div>
+          {deliveryOpen ? (
+            <>
+              <div className="mb-4">
+                {/* UX-3 — saved-address picker (2+ book addresses only).
+                    Picking one fills the same `addr` state the payload reads. */}
+                <SavedAddressPicker
+                  minToShow={1}
+                  onSelect={(a: Address) => {
+                    setSavedAddressPicked(true);
+                    setAddr({
+                      building: a.building ?? '',
+                      street: a.street,
+                      address2: a.address2 ?? '',
+                      suburb: a.suburb ?? '',
+                      city: a.city,
+                      postalCode: a.postalCode,
+                      province: a.province,
+                    });
+                  }}
+                />
+                <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+              </div>
+
+              <div className="mb-5">
+                <CartDeliveryPicker
+                  lines={shippableItems.map((i) => ({
+                    listingId: i.listingId,
+                    quantity: qtyOf(i.quantity),
+                  }))}
+                  deliveryAddress={pickerAddress}
+                  chosen={chosenDelivery}
+                  onChoose={(groupKey, option) =>
+                    setChosenDelivery((prev) => ({ ...prev, [groupKey]: option }))
+                  }
+                  onGroups={setDeliveryGroups}
+                  getToken={getToken}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="mb-4 space-y-1">
+              {deliveryGroups.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Add a delivery address to see delivery options.
+                </p>
+              ) : (
+                deliveryGroups.map((group) => {
+                  const chosen = chosenDelivery[group.groupKey];
+                  const sellerName =
+                    items.find((i) =>
+                      group.listingIds.includes(i.listingId),
+                    )?.sellerUsername ?? 'Seller';
+                  return (
+                    <p
+                      key={group.groupKey}
+                      className="text-xs"
+                      style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+                    >
+                      {sellerName} ·{' '}
+                      {group.unavailableReason
+                        ? group.unavailableReason
+                        : chosen
+                          ? `${chosen.label} — ${formatPrice(chosen.priceCents)}`
+                          : 'Choose a delivery option'}
+                    </p>
+                  );
+                })
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -981,11 +1099,6 @@ export default function CartPage() {
                 : 'Calculating…'}
           </span>
         </div>
-        <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-          Delivery is one figure — nothing is added on top. Items that ship
-          together count once. Firearms move through a licensed dealer or are
-          arranged in person, and carry no courier charge.
-        </p>
       </div>
 
       {error && (
@@ -997,27 +1110,17 @@ export default function CartPage() {
 
       <button
         type="button"
-        disabled={!shippingReady || submitting}
+        disabled={checkoutDisabled}
         onClick={checkout}
         className="block w-full py-3 rounded-[6px] text-sm text-center"
         style={{
-          background: !shippingReady || submitting ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
-          color: !shippingReady || submitting ? 'var(--text-tertiary)' : '#fff',
+          background: checkoutDisabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
+          color: checkoutDisabled ? 'var(--text-tertiary)' : '#fff',
           fontWeight: 500,
-          cursor: !shippingReady || submitting ? 'not-allowed' : 'pointer',
+          cursor: checkoutDisabled ? 'not-allowed' : 'pointer',
         }}
       >
-        {submitting
-          ? 'Creating your order…'
-          : shippingReady
-            ? 'Continue to payment'
-            : soldOutItems.length > 0
-              ? 'Remove the sold-out item to continue'
-              : collectionItems.length > 0
-                  ? 'Remove the collection-only item to continue'
-                  : !addrComplete
-                    ? 'Enter a delivery address to continue'
-                    : 'Delivery isn’t available for this address'}
+        {checkoutLabel}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
         The seller is only paid once you confirm delivery.
@@ -1035,6 +1138,57 @@ export default function CartPage() {
 
       </div>
       </div>
+
+      {/* Mobile sticky checkout bar. /cart is a PUSH route — lib/shell-routes.ts
+          does not include it in TAB_EXACT/TAB_PREFIXES, so the PWA bottom tab
+          bar is not rendered here and the bar sits flush at the bottom with
+          safe-area padding (like the listing buy bar). The lg sidebar above is
+          unchanged. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 lg:hidden"
+        style={{
+          background: 'var(--bg-deep)',
+          borderTop: '1px solid var(--border)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        <div className="max-w-[var(--content-max)] mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="min-w-0">
+            <p
+              className="text-[11px] uppercase"
+              style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
+            >
+              Total
+            </p>
+            <p
+              className="text-sm font-semibold"
+              style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}
+            >
+              {formatPrice(cartTotalCents)}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={checkoutDisabled}
+            onClick={checkout}
+            className="flex-1 py-3 rounded-[6px] text-sm text-center"
+            style={{
+              background: checkoutDisabled ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
+              color: checkoutDisabled ? 'var(--text-tertiary)' : '#fff',
+              fontWeight: 500,
+              cursor: checkoutDisabled ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {checkoutLabel}
+          </button>
+        </div>
+      </div>
+      {/* Spacer so the fixed bar never covers the last content/sidebar row. */}
+      <div
+        className="lg:hidden"
+        aria-hidden
+        style={{ height: 'calc(78px + env(safe-area-inset-bottom))' }}
+      />
     </main>
   );
 }

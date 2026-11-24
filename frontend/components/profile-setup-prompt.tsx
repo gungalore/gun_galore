@@ -272,7 +272,7 @@ export function ProfileSetupPrompt() {
             alignItems: 'center',
             justifyContent: 'center',
             background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             borderRadius: 8,
             color: 'var(--text-secondary)',
             cursor: 'pointer',
@@ -450,7 +450,7 @@ export function ProfileSetupPrompt() {
             style={{
               background: 'var(--bg-inset)',
               color: 'var(--text-secondary)',
-              border: '0.5px solid var(--border)',
+              border: '1px solid var(--border-visible)',
               borderRadius: 9,
               padding: '11px 16px',
               fontSize: 14,

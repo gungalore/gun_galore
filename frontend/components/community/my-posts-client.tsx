@@ -367,7 +367,7 @@ export function MyPostsClient() {
           className="gg-press mx-auto px-5 py-2.5 rounded-[6px] text-[13px]"
           style={{
             background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: 'var(--text-secondary)',
           }}
         >

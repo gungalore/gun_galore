@@ -63,7 +63,7 @@ export default function RenewButton({
         className="px-2.5 py-1 rounded text-xs"
         style={{
           color: 'var(--text-primary)',
-          border: '0.5px solid var(--border)',
+          border: '1px solid var(--border-visible)',
           background: 'var(--bg-inset)',
           cursor: busy ? 'not-allowed' : 'pointer',
         }}

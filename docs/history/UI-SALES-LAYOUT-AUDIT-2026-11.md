@@ -213,3 +213,48 @@ needed (specs, description) lives below the buy box or behind a disclosure.
   collection copy, own-listing controls, auction (delivery box under the bid
   panel), Take-a-Shot primary offer, payment-pending banner, sold-out state,
   `#buy-panel` and `#faq-<id>` anchors, sticky bar overlay rules.
+
+---
+
+## 6. Shipped: phases 2–4 (2026-11-25)
+
+### Cart (phase 2 remainder)
+
+- Delivery is now a **compact block**: a header row (`Delivery` · destination ·
+  **Hide/Change**) and, when collapsed, **one line per parcel**
+  (`{seller} · {option.label} — {price}`, or "Choose a delivery option"). It
+  opens by default, auto-collapses **once** when a saved address was picked and
+  every parcel is priced, and re-opens on any address change. The saved-address
+  picker, manual fields, quote state and checkout payload are untouched.
+- The totals prose ("Delivery is one figure — nothing is added on top…") and
+  the old "Where should we deliver?" paragraph are gone.
+- **Mobile sticky total + Continue bar** (`lg:hidden`, `/cart` is a push route
+  so it sits flush with safe-area padding); the CTA label/disabled state is
+  shared with the unchanged desktop sidebar so both always agree.
+- Files: [cart/page.tsx](../../frontend/app/cart/page.tsx).
+
+### Sell wizard (phase 3)
+
+- **Sticky action footer**: Back/Continue (and the final step's Preview/Publish
+  block) stay visible while a step scrolls. Solid page background, hairline top
+  border, z-index below modals; `/listings/new` is a push route so no tab-bar
+  offset. Complete-grey → T1-red logic and every handler unchanged.
+- Compacted the step header/page spacing and the amber "still needed" list;
+  five verbose helper paragraphs trimmed (tidied-wording notice, specifications,
+  collection-only and courier step descriptions, pickup hint) with all required
+  warnings/validation copy kept verbatim.
+- Files: [wizard-footer.tsx](../../frontend/components/wizard-footer.tsx),
+  [listings/new/page.tsx](../../frontend/app/listings/new/page.tsx).
+
+### Offers / auctions / listings (phase 4) and the quiet-button finish
+
+- Auction bid help trimmed to one compact line (Place Bid = one exact amount;
+  Auto Bid = private maximum, kept in front).
+- The remaining honour-quiet button boundaries from the contrast audit were
+  finished: **52 controls across 42 files** whose only edge was a 0.5px
+  `--border` hairline now use the visible `--border-visible` control edge
+  (share, questions, load-more, remove/renew, dispatch secondaries, sheets,
+  nav rows, feed controls). Dismiss/close/cancel controls stay deliberately
+  quiet.
+- My-listings is already the compact 2-column card grid introduced in the
+  earlier sales audits, so no density change was needed there.

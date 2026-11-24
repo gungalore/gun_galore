@@ -2732,7 +2732,7 @@ export default function NewListingPage() {
 
   return (
     <main
-      className="relative max-w-[var(--page-max)] mx-auto px-4 py-8 sm:py-12"
+      className="relative max-w-[var(--page-max)] mx-auto px-4 py-6 sm:py-8"
     >
       {/* The house step rail, and — since 2026-08-28 — the ONLY step display
           on this page. Desktop only; below md the shell header shows the
@@ -2764,12 +2764,12 @@ export default function NewListingPage() {
         current={activePanel}
         mobile="shell"
         onJump={goToStep}
-        className="-mx-4 mb-8"
+        className="-mx-4 mb-5"
       />
 
       <PageReveal variant="slide-up">
       {/* Page header */}
-      <header data-reveal className="mb-8 max-w-[760px]">
+      <header data-reveal className="mb-5 max-w-[760px]">
         <p
           className="text-xs uppercase mb-2"
           style={{
@@ -2885,7 +2885,7 @@ export default function NewListingPage() {
         }`}
       >
         {/* ───── Form column ───── */}
-        <div className="space-y-3 max-w-[820px]">
+        <div className="space-y-3 max-w-[820px] pb-2">
           {/* Step 1 — Photos. Photos first so the AI "Help me describe
               this" button can pre-fill the other steps (title, category,
               condition, description) before the seller types anything. */}
@@ -3161,8 +3161,7 @@ export default function NewListingPage() {
                     className="text-xs"
                     style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
                   >
-                    Tidied wording applied above. Same facts you wrote, nothing
-                    added — read it over, or revert to your original.
+                    Tidied wording applied above — read it over, or revert.
                   </p>
                   <button
                     type="button"
@@ -3205,8 +3204,7 @@ export default function NewListingPage() {
                   className="text-xs mb-3"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
-                  Structured details for this category. Buyers filter and
-                  compare on these.
+                  Buyers filter and compare on these.
                 </p>
                 <div className="space-y-4">
                   {attrDefs.map((def) => (
@@ -3677,10 +3675,10 @@ export default function NewListingPage() {
             }
             description={
               effectiveCollectionOnly
-                ? 'Buyers collect this one from you — in person, or with a transporter they arrange themselves. No courier. Add your pickup address so buyers know where they’re collecting from.'
+                ? 'Buyers collect this in person or via their own transporter — no courier. Add your pickup address.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
-                : 'Add the parcel size and the address a courier collects it from. Buyers can pay for courier delivery, or arrange a private handover if you offer it.'
+                : 'Add the parcel size and the address a courier collects from. Buyers can also arrange a private handover if you offer it.'
             }
           >
             {/* Parcel info — required so Bob Go can quote the door rate.
@@ -4438,7 +4436,7 @@ export default function NewListingPage() {
               required
               hint={
                 isCourierListing
-                  ? 'Search for your address, then check the details below. A courier collects the parcel from here between 08:00 and 17:00, so it has to be an address someone can reach you at.'
+                  ? 'Search for your address, then check the details below. A courier collects here between 08:00 and 17:00.'
                   : 'Search for your address, then check the details below.'
               }
             >
@@ -4513,6 +4511,28 @@ export default function NewListingPage() {
           </FormSection>
           )}
 
+          {/* ⚠️ THE STEP ACTION NEVER SCROLLS AWAY. Back/Continue — and, on the
+              final step, the Preview/Publish block below — live in a sticky
+              action area so a seller reading a long step (photos, delivery
+              options) always has the next move in reach. /listings/new is a
+              PUSH shell route (lib/shell-routes.ts), so the PWA bottom tab bar
+              is NOT rendered here: the footer sits flush at the bottom and only
+              pads for the home-indicator safe area. z-20 keeps it under every
+              modal (preview/publish modals are z-100+). The solid --bg
+              background stops content showing through the stuck bar.
+              The WizardFooter's own mt-3 was removed — this wrapper owns the
+              spacing now. */}
+          <div
+            className="sticky bottom-0 z-20 pt-3"
+            style={{
+              background: 'var(--bg)',
+              borderTop: '1px solid var(--border)',
+              // The shell owns the home-indicator inset: `.gg-shell-pane`
+              // already pads itself for safe-area on tab-less routes (and the
+              // sell flow is one), so adding env() here would double-pad.
+              paddingBottom: 10,
+            }}
+          >
           {/* What is still outstanding in THIS step, then Back / Continue.
               The button is grey until the step is genuinely finished and red
               the moment it is (operator: "it needs to be completed before the
@@ -4613,6 +4633,7 @@ export default function NewListingPage() {
               </div>
             );
           })()}
+          </div>
         </div>
 
         {/* ───── Sidebar ───── */}

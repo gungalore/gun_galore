@@ -1058,7 +1058,7 @@ function InstallHelpModal({
                   flex: '0 0 auto',
                   background: 'transparent',
                   color: 'var(--text-secondary)',
-                  border: '0.5px solid var(--border)',
+                  border: '1px solid var(--border-visible)',
                   padding: '11px 14px',
                   borderRadius: 8,
                   fontSize: 14,

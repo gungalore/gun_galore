@@ -459,7 +459,7 @@ export function RouteMap({
             style={{
               background: is3D ? 'var(--action-primary-bg)' : 'var(--bg-card)',
               color: is3D ? '#fff' : 'var(--text-primary)',
-              border: '0.5px solid var(--border)',
+              border: '1px solid var(--border-visible)',
             }}
           >
             {is3D ? '2D map' : '3D terrain'}

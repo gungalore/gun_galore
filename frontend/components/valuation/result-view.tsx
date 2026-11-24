@@ -165,7 +165,7 @@ export function ResultView({
           type="button"
           onClick={onStartAnother}
           className="rounded-[8px] px-4 py-3 text-sm"
-          style={{ background: 'transparent', border: '0.5px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
+          style={{ background: 'transparent', border: '1px solid var(--border-visible)', color: 'var(--text-primary)', cursor: 'pointer' }}
         >
           Start another valuation
         </button>

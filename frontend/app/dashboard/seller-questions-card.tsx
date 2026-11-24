@@ -513,7 +513,7 @@ export function SellerQuestionsCard({
                   }
                   className="text-[11px] px-2 py-1 rounded-[4px]"
                   style={{
-                    border: '0.5px solid var(--border)',
+                    border: '1px solid var(--border-visible)',
                     background: 'transparent',
                     color: 'var(--text-secondary)',
                     cursor:
@@ -614,7 +614,7 @@ export function SellerQuestionsCard({
                         q.role === 'SELLER'
                           ? 'var(--warning)'
                           : 'var(--text-tertiary)',
-                      border: '0.5px solid var(--border)',
+                      border: '1px solid var(--border-visible)',
                       letterSpacing: '0.05em',
                     }}
                   >

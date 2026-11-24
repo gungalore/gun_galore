@@ -36,10 +36,10 @@ export function WizardFooter({
   const isLast = stepNumber >= totalSteps;
 
   return (
-    <div className="mt-3">
+    <div>
       {!complete && (
         <div
-          className="rounded-[8px] px-4 py-3.5 mb-3"
+          className="rounded-[8px] px-3.5 py-2.5 mb-2"
           style={{
             // Amber, not red. Red is the brand's "act now" colour and is about
             // to appear on the Continue button itself; using it here too would
@@ -61,7 +61,7 @@ export function WizardFooter({
             {isLast ? 'Still needed before you can publish' : 'Still needed to continue'}
           </p>
           <ul
-            className="text-sm mt-2"
+            className="text-sm mt-1.5"
             style={{
               color: 'var(--text-secondary)',
               margin: 0,
@@ -70,7 +70,7 @@ export function WizardFooter({
             }}
           >
             {missing.map((m) => (
-              <li key={m} style={{ marginTop: 2 }}>
+              <li key={m} style={{ marginTop: 1 }}>
                 {m}
               </li>
             ))}

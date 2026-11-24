@@ -45,7 +45,7 @@ export function AdPreviewCard({
         type="button"
         onClick={copy}
         className="mt-4 rounded-[6px] px-3 py-1.5 text-xs font-medium"
-        style={{ background: 'var(--bg-inset)', color: 'var(--text-primary)', border: '0.5px solid var(--border)', cursor: 'pointer' }}
+        style={{ background: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-visible)', cursor: 'pointer' }}
       >
         {copied ? 'Copied' : 'Copy ad text'}
       </button>

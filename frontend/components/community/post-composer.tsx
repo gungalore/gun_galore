@@ -891,7 +891,7 @@ export function PostComposer({
           className="gg-press px-3 py-1.5 rounded-[6px] text-[12px]"
           style={{
             background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: 'var(--text-secondary)',
           }}
         >

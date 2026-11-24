@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuctionOdometer } from '@/components/auction-odometer';
@@ -625,11 +625,10 @@ export default function AuctionPanel({
             */}
           </div>
           <HelpText>
-            <strong style={{ color: 'var(--text-secondary)' }}>Place Bid</strong> sets one
-            exact amount; if outbid, come back and bid again.{' '}
-            <strong style={{ color: 'var(--text-secondary)' }}>Auto Bid</strong> sets your
-            maximum and we keep you in front automatically up to that
-            ceiling — your max stays private.
+            <strong style={{ color: 'var(--text-secondary)' }}>Place Bid</strong>{' '}
+            sets one exact amount.{' '}
+            <strong style={{ color: 'var(--text-secondary)' }}>Auto Bid</strong>{' '}
+            sets a private maximum — we keep you in front up to it.
           </HelpText>
 
           {error && (

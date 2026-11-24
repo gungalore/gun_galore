@@ -104,7 +104,7 @@ export function FeedPreferencesClient() {
           style={{
             background: prefs.feedShowAvatar ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
             color: prefs.feedShowAvatar ? '#fff' : 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
           }}
         >
           {prefs.feedShowAvatar ? 'On' : 'Off'}
@@ -132,7 +132,7 @@ export function FeedPreferencesClient() {
           style={{
             background: prefs.feedShowGraphic ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
             color: prefs.feedShowGraphic ? '#fff' : 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
           }}
         >
           {prefs.feedShowGraphic ? 'On' : 'Off'}

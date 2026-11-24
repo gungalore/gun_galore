@@ -826,7 +826,7 @@ function StepperButton({
         height: 56,
         borderRadius: '50%',
         background: disabled ? 'var(--bg-inset)' : 'var(--bg-inset)',
-        border: '0.5px solid var(--border)',
+        border: '1px solid var(--border-visible)',
         color: disabled ? 'var(--text-tertiary)' : 'var(--text-primary)',
         fontSize: 28,
         fontWeight: 400,

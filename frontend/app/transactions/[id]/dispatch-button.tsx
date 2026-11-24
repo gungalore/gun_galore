@@ -454,7 +454,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
         <button
           onClick={() => setConfirmOpen(true)}
           className="w-full py-2.5 rounded-[6px] text-sm"
-          style={{ background: 'var(--bg-inset)', color: 'var(--text-primary)', border: '0.5px solid var(--border)', cursor: 'pointer', fontWeight: 500 }}
+          style={{ background: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-visible)', cursor: 'pointer', fontWeight: 500 }}
         >
           I’ve handed it to the courier
         </button>

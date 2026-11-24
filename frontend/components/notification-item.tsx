@@ -311,7 +311,7 @@ export function NotificationItem({
             alignItems: 'center',
             gap: 5,
             background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             borderRadius: 8,
             color: 'var(--text-secondary)',
             fontSize: 12,

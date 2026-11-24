@@ -580,7 +580,7 @@ export function FeedClient() {
           className="gg-press inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-medium"
           style={{
             background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: 'var(--text-secondary)',
             opacity: loading || refreshing ? 0.6 : 1,
           }}

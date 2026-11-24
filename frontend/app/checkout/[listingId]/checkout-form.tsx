@@ -1629,7 +1629,7 @@ export function CheckoutForm({
               className="w-9 h-9 rounded-[6px] text-base"
               style={{
                 background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
+                border: '1px solid var(--border-visible)',
                 color:
                   quantity <= 1
                     ? 'var(--text-tertiary)'
@@ -1652,7 +1652,7 @@ export function CheckoutForm({
               className="w-9 h-9 rounded-[6px] text-base"
               style={{
                 background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
+                border: '1px solid var(--border-visible)',
                 color:
                   quantity >= maxQty
                     ? 'var(--text-tertiary)'

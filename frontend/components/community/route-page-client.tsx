@@ -300,7 +300,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
           type="button"
           onClick={() => void load()}
           className="gg-press mt-3 rounded-[6px] px-4 py-2 text-[13px] font-medium"
-          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-visible)', color: 'var(--text-primary)' }}
         >
           Retry
         </button>

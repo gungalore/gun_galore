@@ -268,7 +268,7 @@ export function Nav() {
                 flexShrink: 0,
                 borderRadius: 6,
                 background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
+                border: '1px solid var(--border-visible)',
                 color: 'var(--text-secondary)',
                 cursor: 'pointer',
                 lineHeight: 0,
@@ -461,7 +461,7 @@ export function Nav() {
                       className="text-sm px-3 py-1.5 rounded-[6px]"
                       style={{
                         color: 'var(--text-secondary)',
-                        border: '0.5px solid var(--border)',
+                        border: '1px solid var(--border-visible)',
                       }}
                     >
                       Sign in
@@ -522,7 +522,7 @@ export function Nav() {
                 className="md:hidden p-2 rounded-[6px] inline-flex items-center justify-center"
                 style={{
                   color: 'var(--text-secondary)',
-                  border: '0.5px solid var(--border)',
+                  border: '1px solid var(--border-visible)',
                   // 44x44 minimum — see CartButton. This is the only way into
                   // navigation on a phone, so it is the last control that
                   // should be fiddly to hit.

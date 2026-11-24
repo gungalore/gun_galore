@@ -178,7 +178,7 @@ export function AddedToCartDrawer() {
             className="block w-full py-2.5 rounded-[6px] text-sm text-center"
             style={{
               background: 'transparent',
-              border: '0.5px solid var(--border)',
+              border: '1px solid var(--border-visible)',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
             }}

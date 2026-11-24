@@ -304,7 +304,7 @@ export default function NewComplaintPage() {
             }}
             style={{
               background: 'transparent',
-              border: '0.5px solid var(--border)',
+              border: '1px solid var(--border-visible)',
               color: 'var(--text-primary)',
               padding: '8px 14px',
               borderRadius: 6,

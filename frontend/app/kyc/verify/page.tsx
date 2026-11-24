@@ -650,7 +650,7 @@ function HandOff({
           className="text-xs py-2"
           style={{
             background: 'none',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             borderRadius: 6,
             color: cooldown > 0 ? 'var(--text-faint)' : 'var(--text-secondary)',
           }}

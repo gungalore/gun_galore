@@ -108,7 +108,7 @@ export function ShareListingButton({ title, text, url }: Props) {
           padding: '10px 16px',
           borderRadius: 8,
           background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
+          border: '1px solid var(--border-visible)',
           color: 'var(--text-secondary)',
           fontSize: 14,
           fontWeight: 500,

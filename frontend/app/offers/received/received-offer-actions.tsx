@@ -313,7 +313,7 @@ export default function ReceivedOfferActions({
           className="flex-1 py-2 rounded-[6px] text-sm"
           style={{
             background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
+            border: '1px solid var(--border-visible)',
             color: loading === 'reject' ? 'var(--text-tertiary)' : 'var(--text-secondary)',
           }}
         >
