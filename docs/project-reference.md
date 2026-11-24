@@ -939,6 +939,27 @@ server-side auto-mask first so a clean re-screen turns it into an approval.
 `screenImage` is the per-photo seam; `screenedImageBytes` refuses ONLY a
 `REJECT`.
 
+⚠️ **A photo upload is bounded twice: bytes in, and time out.** Listing/feed/
+inquiry photos are re-encoded server-side before Cloudinary
+(`common/image-optimize.ts`): longest edge **1920px**, JPEG q82, alpha PNGs stay
+PNG, anything sharp cannot read is passed through unchanged. On 2026-11-24 a
+12 MP seller photo made Cloudinary's received/processed asset take **~106 s**,
+which is longer than nginx's 95 s `/api` `proxy_read_timeout` (Cloudflare cuts
+at ~100 s): the seller's publish request 504'd after 95 s and the sell form
+rolled the half-built listing back, while the backend finished the upload 13 s
+later and wrote an image row onto the CANCELLED listing. Therefore:
+`CloudinaryService.uploadImage`/`uploadRaw` pass `options.timeout` (**25 s**
+socket inactivity) and log bytes + duration; a provider timeout rejects with a
+retriable **503** ("taking too long — please try again"), never a silent
+request held open to the proxy timeout. `listings.service.addImage` /
+`replaceImage` re-check the listing status AFTER the await and delete the
+just-stored asset when the listing is already CANCELLED/EXPIRED/SOLD, so no
+orphan media is written. The sell form retries a 5xx/network photo upload once
+before rolling anything back. Do NOT raise `proxy_read_timeout` to hide a slow
+provider — the edge limit makes it pointless; make the call fail fast instead.
+Video uploads are still one long synchronous request and remain the known
+follow-up for the same reason.
+
 ---
 
 ## Notifications

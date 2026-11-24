@@ -17,6 +17,7 @@ import {
 } from '@prisma/client';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { BRAND_NAME } from '../common/brand';
+import { optimizePhotoForUpload } from '../common/image-optimize';
 import { boundedImageUrl, IMAGE_EDGE, optimizedVideoUrl } from '../common/image-url';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { maskBadLanguage } from '../moderation/bad-language';
@@ -1293,7 +1294,10 @@ export class FeedService {
         });
         if (!masked) continue;
 
-        const uploaded = await this.cloudinary.uploadImage(masked, 'feed');
+        const uploaded = await this.cloudinary.uploadImage(
+          await optimizePhotoForUpload(masked),
+          'feed',
+        );
         await this.prisma.postImage.update({
           where: { id: image.id },
           data: { url: uploaded.url, publicId: uploaded.publicId },
@@ -1407,7 +1411,7 @@ export class FeedService {
       );
     }
     const { url, publicId } = await this.cloudinary.uploadImage(
-      file.buffer,
+      await optimizePhotoForUpload(file.buffer),
       'feed',
     );
     const image = await this.prisma.postImage.create({

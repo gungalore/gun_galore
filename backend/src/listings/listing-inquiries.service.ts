@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { LlmService } from '../common/llm/llm.service';
+import { optimizePhotoForUpload } from '../common/image-optimize';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ListingModerationService } from '../moderation/listing-moderation.service';
@@ -368,7 +369,10 @@ export class ListingInquiriesService {
     try {
       for (const file of images) {
         uploadedImages.push(
-          await this.cloudinary.uploadImage(file.buffer, 'inquiries'),
+          await this.cloudinary.uploadImage(
+            await optimizePhotoForUpload(file.buffer),
+            'inquiries',
+          ),
         );
       }
       if (files.video) {

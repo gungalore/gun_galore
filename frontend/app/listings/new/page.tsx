@@ -2408,48 +2408,70 @@ export default function NewListingPage() {
       // 4xx/5xx silently and still redirected, leaving the seller on
       // a photo-less listing. Track which file failed so the error
       // message points at the right one.
-      let uploaded = 0;
-      for (const file of images) {
+      //
+      // ⚠️ RETRY ONCE BEFORE ROLLING BACK. The listing only exists because the
+      // seller committed to it; a transient 5xx (photo storage busy, a proxy
+      // timeout) must not delete it and force the seller to re-select every
+      // photo. 4xx is final (the moderator refused the photo, the listing was
+      // closed, the file is invalid), so only 5xx/network are retried.
+      const uploadOnePhoto = async (file: File, position: number): Promise<void> => {
+        const MAX_ATTEMPTS = 2;
+        let lastDetail = 'the server did not respond';
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+          // Fresh token per attempt — a slow upload on mobile can outlive a
+          // short-lived session token, and reusing an expired one would fail
+          // the retry too.
+          const upToken = await getToken();
+          const fd = new FormData();
+          // IMPORTANT: backend FileInterceptor expects the multipart
+          // field name `image` (see backend ListingsController).
+          fd.append('image', file);
+          let up: Response;
+          try {
+            up = await fetch(`${API_URL}/listings/${listing.id}/images`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${upToken}` },
+              body: fd,
+            });
+          } catch {
+            lastDetail = 'the connection dropped';
+            if (attempt < MAX_ATTEMPTS) {
+              await new Promise((r) => setTimeout(r, 1200));
+              continue;
+            }
+            break;
+          }
+          if (up.ok) return;
+          const errBody = await up.json().catch(() => ({}));
+          lastDetail =
+            (errBody && (errBody as { message?: string }).message) ||
+            `${up.status}`;
+          // 4xx is the server's final answer — asking again cannot help.
+          if (up.status < 500 || attempt >= MAX_ATTEMPTS) break;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        throw new Error(
+          `Photo ${position} of ${images.length} (${file.name}) ` +
+            `failed to upload — ${lastDetail}.`,
+        );
+      };
+
+      for (let index = 0; index < images.length; index += 1) {
+        const file = images[index];
         // Narrate BEFORE the request, not after — the seller needs to see
         // "photo 3 of 6" while photo 3 is actually in flight.
         setPublishProgress({
-          label: `Uploading photo ${uploaded + 1} of ${images.length}…`,
-          done: uploaded,
+          label: `Uploading photo ${index + 1} of ${images.length}…`,
+          done: index,
           total: images.length,
         });
-        const fd = new FormData();
-        // IMPORTANT: backend FileInterceptor expects the multipart
-        // field name `image` (see backend ListingsController). The
-        // old code sent `file` which Multer silently dropped — the
-        // request 200'd as an empty upload and listings published
-        // with zero photos.
-        fd.append('image', file);
-        // Fresh token per upload — a multi-photo upload on a slow mobile
-        // connection can easily outlive a single 60s token, so refresh
-        // before each one rather than reusing the create-time token.
-        const upToken = await getToken();
-        const up = await fetch(`${API_URL}/listings/${listing.id}/images`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${upToken}` },
-          body: fd,
-        });
-        if (!up.ok) {
-          const errBody = await up.json().catch(() => ({}));
-          const detail =
-            (errBody && (errBody as { message?: string }).message) ||
-            `${up.status}`;
-          throw new Error(
-            `Photo ${uploaded + 1} of ${images.length} (${file.name}) ` +
-              `failed to upload — ${detail}.`,
-          );
-        }
-        uploaded += 1;
+        await uploadOnePhoto(file, index + 1);
         setPublishProgress({
           label:
-            uploaded === images.length
+            index + 1 === images.length
               ? 'Photos uploaded — finishing up…'
-              : `Uploading photo ${uploaded + 1} of ${images.length}…`,
-          done: uploaded,
+              : `Uploading photo ${index + 2} of ${images.length}…`,
+          done: index + 1,
           total: images.length,
         });
       }

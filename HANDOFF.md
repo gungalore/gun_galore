@@ -7,6 +7,19 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — PHOTO UPLOAD HANG HARDENED (CLOUDINARY TIMEOUT + DOWNSCALE)
+
+Operator: *"harden it, we can't have issues on launch."*
+
+- **What happened:** ruanda's publish (`UM000016`, listing `cmwusha99000cxdvnuxcuygiz`) created at 16:27:45, its photo screened by JEV in **672 ms** at 16:28:11, then Cloudinary spent **~106 s** receiving/processing that one 12 MP photo. nginx's 95 s `/api` timeout fired first → **504**, the sell form deleted the listing (16:29:45), and the backend finished the upload **13 s later** and wrote a `ListingImage` row onto the CANCELLED listing (orphan media + asset).
+- **Ruled out:** moderation (0.45–0.7 s per photo all afternoon), bandwidth (box uplink 154–331 Mbps), file size (stored asset 1,005,588 bytes / 3024×4032), Cloudinary reachability (1 MB to the real upload endpoint in 2.3 s). The slowness was provider-side upload/processing, and the app had **no timeout, no logging** around it — so the request silently ran to the proxy timeout.
+- **Fix (this commit):**
+  - `common/image-optimize.ts` — listing/feed/inquiry photos are re-encoded before Cloudinary: **1920px longest edge, JPEG q82**, alpha PNGs stay PNG, EXIF dropped (GPS privacy), unreadable bytes pass through unchanged. A 12 MP phone photo goes from ~2–3 MB to ~250–500 KB of provider work.
+  - `CloudinaryService.uploadImage`/`uploadRaw` — Cloudinary SDK `options.timeout` = **25 s** socket inactivity, bytes + duration logged, provider timeout → retriable **503** instead of a request left open to nginx's 95 s wall.
+  - `listings.service.addImage`/`replaceImage` — re-check listing status **after** the await; if CANCELLED/EXPIRED/SOLD (or gone), delete the just-stored asset and refuse, so no image row lands on a dead listing.
+  - Sell form ([listings/new/page.tsx](frontend/app/listings/new/page.tsx)) — retries a 5xx/network photo upload **once** before rolling the listing back.
+- **Docs:** `docs/project-reference.md` carries the rule (bounded bytes + bounded time, never raise `proxy_read_timeout`). Video uploads stay a long synchronous request — known follow-up if a 64 MB clip ever 504s.
+
 ## 2026-11-24 — PHOTOS FAIL OPEN; SCREEN FITS THE JEV BUDGET (DEPLOYED `5a5df537`)
 
 Operator: *"if the moderator is down the pictures should be approved. Pictures only denied if the moderator says they are denied. Also make sure the token cap is enough so we don't sit with the same issue again."*

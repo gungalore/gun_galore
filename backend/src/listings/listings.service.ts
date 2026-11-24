@@ -23,6 +23,7 @@ import {
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { optimizePhotoForUpload } from '../common/image-optimize';
 import { haversineKm, roundKm } from '../common/geo';
 import { assertAccountNotClosed } from '../common/account-standing';
 import { assertContactVerified } from '../common/contact-verification';
@@ -327,6 +328,19 @@ const HAS_CARD_MEDIA: Prisma.ListingWhereInput = {
 // must be omitted, not required.
 const PRICELESS_LISTING_TYPES = new Set<ListingType>([
   ListingType.TAKE_A_SHOT,
+]);
+
+/**
+ * Statuses that mean the seller can no longer be attaching photos. A photo
+ * upload awaits the moderation screen and Cloudinary (seconds, under load tens
+ * of seconds), and the sell form deletes a half-built listing when that
+ * request fails — so the row can be CANCELLED before the upload finishes.
+ * Checked after the long await, before any image row is written.
+ */
+const CLOSED_LISTING_STATUSES = new Set<ListingStatus>([
+  ListingStatus.CANCELLED,
+  ListingStatus.EXPIRED,
+  ListingStatus.SOLD,
 ]);
 
 // ─── Auction length ↔ minimum item value ───────────────────────────────
@@ -4143,10 +4157,38 @@ export class ListingsService {
     }
 
     const bytes = await this.screenedImageBytes(file);
+    // Downscale BEFORE Cloudinary sees it. A seller's 12 MP phone photo is
+    // seconds of upload + provider processing for a 1920px page; the shrunk
+    // JPEG is what kept a real upload from stalling past nginx's 95 s wall
+    // (2026-11-24). See common/image-optimize.ts.
+    const optimized = await optimizePhotoForUpload(bytes);
     const { url, publicId } = await this.cloudinary.uploadImage(
-      bytes,
+      optimized,
       'listings',
     );
+
+    // ⚠️ THE SELLER MAY HAVE DELETED THE LISTING WHILE THIS WAS IN FLIGHT.
+    // The sell form rolls a half-built listing back when a photo upload fails
+    // or times out, and the upload can still finish afterwards — live, an
+    // image row was written onto a CANCELLED listing 13 s after the client had
+    // deleted it. Re-check before writing, and bin the just-stored asset so no
+    // orphan media is left behind.
+    const current = await this.prisma.listing.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!current || CLOSED_LISTING_STATUSES.has(current.status)) {
+      await this.cloudinary
+        .deleteImage(publicId)
+        .catch((err) =>
+          this.logger.warn(
+            `Could not delete photo ${publicId} for a closed listing ${id}: ${(err as Error).message}`,
+          ),
+        );
+      throw new BadRequestException(
+        'That listing was closed while the photo was uploading. Start a new listing.',
+      );
+    }
 
     const image = await this.prisma.listingImage.create({
       data: {
@@ -4191,10 +4233,32 @@ export class ListingsService {
     if (!image) throw new NotFoundException('Image not found');
 
     const bytes = await this.screenedImageBytes(file);
+    const optimized = await optimizePhotoForUpload(bytes);
     const { url, publicId } = await this.cloudinary.uploadImage(
-      bytes,
+      optimized,
       'listings',
     );
+
+    // Same closed-listing guard as addImage: the seller may have deleted the
+    // listing while the replacement photo was screening/uploading. Bin the new
+    // asset and leave the existing row untouched.
+    const current = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { status: true },
+    });
+    if (!current || CLOSED_LISTING_STATUSES.has(current.status)) {
+      await this.cloudinary
+        .deleteImage(publicId)
+        .catch((err) =>
+          this.logger.warn(
+            `Could not delete replacement photo ${publicId} for a closed listing ${listingId}: ${(err as Error).message}`,
+          ),
+        );
+      throw new BadRequestException(
+        'That listing was closed while the photo was uploading. Start a new listing.',
+      );
+    }
+
     const updated = await this.prisma.listingImage.update({
       where: { id: imageId },
       data: { url, publicId },

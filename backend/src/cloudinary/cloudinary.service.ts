@@ -1,5 +1,31 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
+
+/**
+ * Hard ceiling for ONE image/file upload, measured as socket inactivity by the
+ * Cloudinary SDK (`options.timeout`).
+ *
+ * ⚠️ THE CEILING BELOW MATTERS. nginx cuts `/api` at 95 s and Cloudflare at
+ * ~100 s, so a flat request that waits on Cloudinary for 106 s (seen live on
+ * 2026-11-24: a 12 MP listing photo whose upload sat for ~106 s) is a 504 the
+ * seller cannot act on, with the listing rolled back underneath them. A
+ * stalled provider must fail as a fast, retriable error well under both limits.
+ */
+const IMAGE_UPLOAD_TIMEOUT_MS = 25_000;
+
+/** Uploads are logged with bytes + duration so a slow provider is visible
+ *  instead of leaving the request silent until nginx times it out. */
+function uploadErrorTimeoutMs(err: unknown): boolean {
+  const e = err as { name?: string; http_code?: number; message?: string } | null;
+  if (!e) return false;
+  if (e.name === 'TimeoutError' || e.http_code === 499) return true;
+  return typeof e.message === 'string' && /timeout/i.test(e.message);
+}
 
 @Injectable()
 export class CloudinaryService implements OnModuleInit {
@@ -32,12 +58,36 @@ export class CloudinaryService implements OnModuleInit {
         folder: `gun-galore/${folder}`,
         resource_type: 'image',
         transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+        timeout: IMAGE_UPLOAD_TIMEOUT_MS,
       };
       if (publicId) options.public_id = publicId;
 
+      const started = Date.now();
+      let settled = false;
       cloudinary.uploader
         .upload_stream(options, (error, result: UploadApiResponse | undefined) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'));
+          if (settled) return;
+          settled = true;
+          const ms = Date.now() - started;
+          if (error || !result) {
+            if (uploadErrorTimeoutMs(error)) {
+              this.logger.error(
+                `Cloudinary image upload TIMED OUT after ${ms}ms (${fileBuffer.length} bytes, folder ${folder})`,
+              );
+              return reject(
+                new ServiceUnavailableException(
+                  'Uploading the photo is taking too long right now — please try again.',
+                ),
+              );
+            }
+            this.logger.error(
+              `Cloudinary image upload failed after ${ms}ms (${fileBuffer.length} bytes, folder ${folder}): ${(error as { message?: string } | null)?.message ?? 'unknown error'}`,
+            );
+            return reject(error ?? new Error('Upload failed'));
+          }
+          this.logger.log(
+            `Cloudinary image upload ok: ${fileBuffer.length} bytes in ${ms}ms (folder ${folder})`,
+          );
           resolve({ url: result.secure_url, publicId: result.public_id });
         })
         .end(fileBuffer);
@@ -58,12 +108,33 @@ export class CloudinaryService implements OnModuleInit {
       const options: Record<string, unknown> = {
         folder: `gun-galore/${folder}`,
         resource_type: 'raw',
+        timeout: IMAGE_UPLOAD_TIMEOUT_MS,
       };
       if (publicId) options.public_id = publicId;
 
+      const started = Date.now();
+      let settled = false;
       cloudinary.uploader
         .upload_stream(options, (error, result: UploadApiResponse | undefined) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'));
+          if (settled) return;
+          settled = true;
+          const ms = Date.now() - started;
+          if (error || !result) {
+            if (uploadErrorTimeoutMs(error)) {
+              this.logger.error(
+                `Cloudinary raw upload TIMED OUT after ${ms}ms (${fileBuffer.length} bytes, folder ${folder})`,
+              );
+              return reject(
+                new ServiceUnavailableException(
+                  'Uploading the file is taking too long right now — please try again.',
+                ),
+              );
+            }
+            return reject(error ?? new Error('Upload failed'));
+          }
+          this.logger.log(
+            `Cloudinary raw upload ok: ${fileBuffer.length} bytes in ${ms}ms (folder ${folder})`,
+          );
           resolve({ url: result.secure_url, publicId: result.public_id });
         })
         .end(fileBuffer);
