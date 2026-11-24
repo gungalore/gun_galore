@@ -207,7 +207,11 @@ export function PostCard({
             aria-label="Post options"
             onClick={() => setMenuOpen((v) => !v)}
             className="gg-press px-2 py-1 rounded"
-            style={{ color: 'var(--text-tertiary)' }}
+            style={{
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-visible)',
+              borderRadius: 6,
+            }}
           >
             ⋯
           </button>
@@ -567,7 +571,7 @@ export function PostCard({
           type="button"
           onClick={() => onOpen?.(post)}
           className="gg-press flex items-center gap-1.5 px-3 py-2 rounded text-[13px]"
-          style={{ color: 'var(--text-tertiary)' }}
+          style={{ color: 'var(--text-secondary)' }}
           aria-label={`Comments (${post.commentCount})`}
         >
           💬 {post.commentCount}

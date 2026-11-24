@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pargoDistanceLabel, pargoOptionLabel } from '@/lib/pargo-pickup';
@@ -294,7 +294,7 @@ export function CartDeliveryPicker({
                   className="flex w-full items-center gap-3 rounded-[8px] p-3 text-left"
                   style={{
                     background: active ? 'var(--red-wash)' : 'var(--bg-card)',
-                    border: `0.5px solid ${active ? 'var(--red)' : 'var(--border)'}`,
+                    border: `1px solid ${active ? 'var(--red)' : 'var(--border-visible)'}`,
                   }}
                 >
                   <span className="flex-1 min-w-0">

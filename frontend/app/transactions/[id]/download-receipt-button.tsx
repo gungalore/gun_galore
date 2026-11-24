@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { useAuth } from '../../../lib/auth';
@@ -57,9 +57,9 @@ export function DownloadReceiptButton({
         disabled={busy}
         className="w-full py-2 rounded-[6px] text-sm"
         style={{
-          background: 'var(--bg-inset)',
-          color: 'var(--text-secondary)',
-          border: '0.5px solid var(--border)',
+          background: 'transparent',
+          color: 'var(--red)',
+          border: '1px solid var(--red)',
           cursor: busy ? 'default' : 'pointer',
         }}
       >

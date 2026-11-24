@@ -741,13 +741,16 @@ export function BottomTabBar() {
             const active = tab.isActive(pathname, searchParams);
             // Active is INK, not the action accent (operator, 2026-11-23):
             // blue is reserved for the one primary CTA, and the only primary
-            // CTA in this row is the raised Sell button. Sell's label is
-            // --text-tertiary; every other inactive tab is --text-faint.
+            // CTA in this row is the raised Sell button. Contrast fix
+            // 2026-11-24: inactive ink is --text-tertiary (4.74:1 on white) —
+            // --text-faint (2.58:1 at 10px) made four primary destinations the
+            // faintest text on the screen. Sell (prominent) uses
+            // --text-secondary (7.63:1).
             const color = active
               ? 'var(--text-primary)'
               : tab.prominent
-                ? 'var(--text-tertiary)'
-                : 'var(--text-faint)';
+                ? 'var(--text-secondary)'
+                : 'var(--text-tertiary)';
 
             const inner = (
               <span

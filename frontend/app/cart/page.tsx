@@ -625,7 +625,9 @@ export default function CartPage() {
                                 ? 'var(--red)'
                                 : 'var(--bg-inset)',
                               color: active ? '#fff' : 'var(--text-secondary)',
-                              border: '0.5px solid var(--border)',
+                              border: active
+                                ? '1px solid var(--red)'
+                                : '1px solid var(--border-visible)',
                               fontWeight: 500,
                             }}
                           >
@@ -904,7 +906,10 @@ export default function CartPage() {
                         style={{
                           background: s.route === route ? 'var(--red)' : 'var(--bg-inset)',
                           color: s.route === route ? '#fff' : 'var(--text-secondary)',
-                          border: '0.5px solid var(--border)',
+                          border:
+                            s.route === route
+                              ? '1px solid var(--red)'
+                              : '1px solid var(--border-visible)',
                           fontWeight: 500,
                           lineHeight: 1.4,
                         }}

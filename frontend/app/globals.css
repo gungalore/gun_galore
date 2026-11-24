@@ -133,6 +133,18 @@
    --border-hover: #D8CFC0;
    --border-divider: #F0EAE0;
 
+   /* ⚠️ INTERACTIVE BOUNDARY, SEPARATE FROM THE CARD HAIRLINE (2026-11-24).
+      --border is a CARD edge: 1.31:1 on white, below the 3:1 WCAG 1.4.11
+      threshold for a component boundary. It must never be the ONLY cue of a
+      control. Any control edge (chip, option card, picker, input, quiet
+      secondary button) uses THIS token instead. Measured: #9C8F76 is 3.18:1
+      on white and 3.00:1 on --bg. Cards keep --border. */
+   --border-visible: #9C8F76;
+
+   /* Soft accent fill for a quiet-but-actionable control (dropzone, floating
+      affordances). --red ink on it measures 4.64:1. */
+   --action-soft: rgba(180, 83, 9, 0.06);
+
    /* Brand — the light-mode accent is veld ochre, the warm contrast to the
       dark-mode electric blue. The logo keeps its own red artwork. */
    --red:         #B45309;
@@ -360,6 +372,12 @@
    --border:      #2E2B27;
    --border-hover: #3D3935;
    --border-divider: #242220;
+
+   /* Interactive boundary — 3.41:1 on --bg-card #1C1A18, 3.70:1 on --bg
+      #131110. See the light-theme note: --border stays for card edges only. */
+   --border-visible: #756D63;
+   /* Soft accent fill (night-sky blue in dark); --accent-text on it is 6.4:1. */
+   --action-soft: rgba(9, 103, 245, 0.14);
 
    /* Night-sky blue replaces the red accent in dark mode. The logo keeps
       its own red artwork; this token drives primary actions and links. */
@@ -2039,7 +2057,10 @@ canvas,
   height: var(--chip-h);
   padding: 0 var(--chip-px);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
+  /* ⚠️ --border-visible, not --border: a chip is a control, and its pill edge
+     is the only thing saying "button" when the label is a single word.
+     --border (1.31:1) made whole filter rows read as plain text (2026-11-24). */
+  border: 1px solid var(--border-visible);
   background: var(--surface);
   color: var(--text-2);
   font: 600 var(--chip-fs)/1 var(--font-body);
@@ -2050,7 +2071,9 @@ canvas,
               background-color var(--dur-2) var(--ease-out), transform var(--dur-1) var(--ease-out);
 }
 @media (hover: hover) {
-  .chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--stone-25); }
+  /* Border deliberately unchanged on hover — it is already the visible one;
+     darkening it here used to LOWER contrast (--border-hover is lighter). */
+  .chip:hover { color: var(--text); background: var(--stone-25); }
 }
 .chip:active { transform: scale(0.96); }
 .chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -2229,7 +2252,8 @@ canvas,
   gap: 6px;
   min-height: 38px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  /* A control, not a card: visible boundary (see --border-visible). */
+  border: 1px solid var(--border-visible);
   border-radius: 8px;
   background: var(--bg-card);
   color: var(--text-primary);
@@ -2255,7 +2279,7 @@ canvas,
 @media (hover: hover) and (pointer: fine) {
   .gg-quick-action:hover {
     background: var(--bg-card-hover);
-    border-color: var(--border-hover);
+    border-color: var(--red);
   }
 }
 .gg-quick-action:focus-visible {
@@ -2264,7 +2288,7 @@ canvas,
 }
 .gg-quick-action[aria-expanded='true'] {
   background: var(--bg-card-hover);
-  border-color: var(--border-hover);
+  border-color: var(--red);
 }
 
 /* The PWA keeps Motivation Creator next to Armory; desktop/tablet gets it
@@ -2293,8 +2317,10 @@ canvas,
   gap: 6px;
   padding: 9px 14px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  /* A persistent floating control must not rely on its shadow alone to be
+     found: soft accent fill + a visible boundary. */
+  border: 1px solid var(--border-visible);
+  background: var(--action-soft);
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: 13px;
@@ -2322,7 +2348,9 @@ html[data-standalone='true'] .gg-bug-fab {
   gap: 2px;
   min-height: 56px;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  /* Interactive control (an Armory destination), so a visible boundary, not
+     the card hairline. */
+  border: 1px solid var(--border-visible);
   border-radius: 8px;
   background: var(--bg-card);
   text-decoration: none;
@@ -2345,7 +2373,7 @@ html[data-standalone='true'] .gg-bug-fab {
 @media (hover: hover) and (pointer: fine) {
   .gg-armory-action:hover {
     background: var(--bg-card-hover);
-    border-color: var(--border-hover);
+    border-color: var(--red);
   }
 }
 .gg-armory-action:focus-visible {

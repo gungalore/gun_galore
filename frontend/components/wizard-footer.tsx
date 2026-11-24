@@ -86,7 +86,7 @@ export function WizardFooter({
             className="px-5 py-2.5 rounded-[6px] text-sm gg-press"
             style={{
               background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--border-visible)',
               color: 'var(--text-secondary)',
               fontWeight: 500,
               cursor: 'pointer',

@@ -136,10 +136,10 @@ export function PhotoDropzone({
         className="rounded-[8px] text-center transition-colors cursor-pointer"
         style={{
           padding: '36px 16px',
-          background: dragOverDrop ? 'rgba(227,6,19,0.06)' : 'var(--bg-inset)',
+          background: dragOverDrop ? 'rgba(227,6,19,0.06)' : 'var(--action-soft)',
           border: dragOverDrop
             ? '0.5px dashed var(--red)'
-            : '0.5px dashed var(--border-hover)',
+            : '1px dashed var(--red)',
         }}
       >
         <div

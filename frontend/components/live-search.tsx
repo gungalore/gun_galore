@@ -50,7 +50,7 @@ interface BrowseResponse {
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
+  border: '1px solid var(--border-visible)',
   color: 'var(--text-primary)',
   borderRadius: 6,
   padding: '7px 12px',

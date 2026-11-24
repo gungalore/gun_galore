@@ -1084,7 +1084,7 @@ export default function IntakeInterviewPage() {
                 </label>
                 <label
                   className="cursor-pointer rounded-lg border px-3 py-2 text-[12.5px] font-medium"
-                  style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                  style={{ borderColor: 'var(--border-visible)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
                 >
                   Scan
                   <input
@@ -1111,7 +1111,7 @@ export default function IntakeInterviewPage() {
                     )
                   }
                   className="rounded-lg border px-3 py-2 text-[12.5px] font-medium disabled:opacity-50"
-                  style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                  style={{ borderColor: 'var(--red)', background: 'var(--bg-card)', color: 'var(--red)' }}
                 >
                   Send seller consent form
                 </button>

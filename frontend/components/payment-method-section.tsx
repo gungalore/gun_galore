@@ -50,8 +50,8 @@ export function PaymentMethodSection({
               key={method.provider}
               className="flex gap-3 items-start rounded-[8px] p-4 cursor-pointer"
               style={{
-                background: 'var(--bg-card)',
-                border: `0.5px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
+                background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
+                border: `1px solid ${selected ? 'var(--red)' : 'var(--border-visible)'}`,
                 opacity: disabled ? 0.6 : 1,
               }}
             >

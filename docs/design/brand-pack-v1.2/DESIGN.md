@@ -45,12 +45,14 @@ Use role tokens (`--text`, `--surface`, `--accent`...) in components. Scales are
 | Page background | `--bg` (#F7F6F3) | `body` |
 | Card / panel | `--surface` (#FFF) | cards, header, dropdowns |
 | Sunken | `--surface-sunken` | input fills, table stripes, skeletons |
-| Border | `--border` | 1px hairlines, only where shadow isn't enough |
+| Border | `--border` | 1px hairlines, only where shadow isn't enough. **Card edges only — never the sole cue of a control.** |
+| Interactive boundary | `--border-visible` | any control edge: chips, pills, option cards, pickers, inputs, quiet secondary buttons. ≥3:1 on card and page (light `#9C8F76`, dark `#756D63`). |
 | Text | `--text` (#1A1A1A) | headings, body. Never pure #000 for text |
 | Secondary text | `--text-2` | descriptions, meta |
-| Muted text | `--text-3` | placeholders, timestamps |
+| Muted text | `--text-3` | placeholders, timestamps; the minimum for an interactive label |
 | Primary action | `--accent` (#E30613) | one primary button per view |
 | Accent tint | `--accent-soft` | selected rows, active chips, icon wells |
+| Soft action fill | `--action-soft` | quiet-but-actionable controls that need presence without a full outline (dropzone, floating affordance) |
 
 Rules:
 - Red text on light: use `--red-700` for body-size text, `--red-500` only at 14px+ semibold.
@@ -58,6 +60,8 @@ Rules:
 - Error states use `--danger` plus an icon plus text. Never colour alone.
 - Success/warning/info only for status, never decoration.
 - Dark sections (hero, footer, live auction panel): wrap in `.surface-dark`, tokens flip automatically.
+- ⚠️ **A control's boundary must reach 3:1**, so an interactive edge is `--border-visible`, never `--border` (which is a 1.3:1 card hairline). Never style a required choice (category, condition, shipping, payment rail, delivery rate, address) as a ghost or as a white-on-white "secondary".
+- ⚠️ **Never put white text on `--surface-sunken`/`--surface`.** A filled confirmation is white on `--accent`/`--danger`; a quiet one is accent text on a transparent/accent-soft fill.
 
 ## 4. Typography
 
@@ -147,20 +151,21 @@ animate the logo, exceed 500ms on anything interactive, or ignore `prefers-reduc
 | Variant | Look |
 |---|---|
 | Primary | Pill, `--accent` bg, white 600 text, height 44px (40px in header), padding 0 22px. Subtle top highlight. Hover: `--accent-hover`, `--shadow-red`, `translateY(-1px)`. Press: `--accent-press`, scale 0.97. |
-| Secondary | Pill, `--surface` bg, `--text`, 1px `--border-strong`. Hover: `--surface-sunken` bg. |
-| Ghost | No bg. Hover: `--surface-sunken` pill bg fades in. |
+| Secondary | Pill, `--surface` bg, `--text`, 1px `--border-visible`. Hover: `--surface-sunken` bg. |
+| **Accent outline** (important secondary) | Pill/rounded, transparent or `--surface` bg, 1px `--accent` border, `--accent` 600 text. Use for the second money/decision action on a view (Add to cart, Decline/Counter, handover dispute, recovery actions) when the filled primary must stay the only red fill. |
+| Ghost | No bg. Hover: `--surface-sunken` pill bg fades in. **Tertiary/dismiss only — never a required choice or a second money action.** |
 | Dark (on photos/hero) | Pill, white bg, `--stone-900` text. Or primary red. |
 | Icon button | 40px circle, ghost style, 20px icon, tooltip on hover (400ms delay). |
-| Destructive | Secondary shape with `--danger` text; confirm via modal. |
+| Destructive | Accent-outline shape with `--danger` text and `--danger` border; confirm via modal; the modal's confirm CTA is a filled `--danger`. |
 
-- One primary button per view. Everything else secondary or ghost.
+- One primary button per view. Everything else secondary, accent-outline or ghost.
 - Buttons with arrows: the arrow nudges `translateX(3px)` on hover.
 - Loading: keep width, swap label for a 16px spinner, disable pointer events.
 - Focus: `box-shadow: var(--focus-ring)` on `:focus-visible` for every interactive element. Never remove outlines without this.
 - Min touch target 44x44px.
 
 ### Inputs and search
-- Height 44px, `--radius-sm` (search bar: pill), `--surface-sunken` fill, no border at rest.
+- Height 44px, `--radius-sm` (search bar: pill), `--surface-sunken` fill. A standalone field that must be found (header search, filter input) also carries a 1px `--border-visible` edge — the sunken fill alone is only 1.18:1 against a white card.
 - Focus: fill turns `--surface`, 1px `--accent` border, `--focus-ring`. 200ms.
 - Header search: pill, 44px, leading search icon, category dropdown joined inside the pill on the left.
   On focus it widens slightly (max 40px) using a transform-free flex change animated by motion `layout`.
@@ -195,8 +200,8 @@ search refinements, calibre/cartridge pickers, group tabs. Do not build one-off 
 - **Arrow buttons:** 32px white circles with `--shadow-md`, only on pointer devices, only on the side
   that can scroll, fade in/out. Click scrolls 80% of the visible width, smooth.
 - **Touch:** swipe with `scroll-snap-type: x proximity`, no arrows.
-- **Chip:** 38px tall (32px `sm`), pill, 13px 600 Montserrat, `--surface` with 1px `--border`,
-  `--text-2`. Hover: `--text`, `--border-strong`. Press: scale 0.96.
+- **Chip:** 38px tall (32px `sm`), pill, 13px 600 Montserrat, `--surface` with 1px `--border-visible`,
+  `--text-2`. Hover: `--text`, background `--stone-25`. Press: scale 0.96. (The pill edge is the only cue that it is a control; `--border` at 1.31:1 made filter rows read as plain text — fixed 2026-11-24.)
 - **Single-select active:** dark ink pill (`--stone-900`, white text) that slides between chips
   (motion `layoutId`, spring). Red is not used here; red stays for the primary action on the page.
 - **Multi-select active:** `--accent-soft` fill, `--red-700` text, check icon.
@@ -312,7 +317,9 @@ category: icon well, "No posts in Fishing yet", button "Be the first to post". E
 
 ## 11. Accessibility (non-negotiable)
 
-- Text contrast 4.5:1 minimum (tokens are pre-checked; stay on them).
+- Text contrast 4.5:1 minimum (tokens are pre-checked; stay on them). The minimum for an interactive label is `--text-3`.
+- **Non-text contrast 3:1 minimum for anything a user must recognise as a control** — button boundaries, chips, checkboxes, pickers, input borders. An interactive edge is `--border-visible`; `--border` is a card hairline and may never be the only cue of a control.
+- Never white text on `--surface`/`--surface-sunken`; white labels belong on `--accent`/`--danger` fills only.
 - Visible `:focus-visible` ring on everything interactive.
 - Icon-only buttons need `aria-label`. Decorative icons `aria-hidden`.
 - Animations respect `prefers-reduced-motion`.

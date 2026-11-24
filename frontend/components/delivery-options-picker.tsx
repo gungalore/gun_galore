@@ -280,7 +280,7 @@ export function DeliveryOptionsPicker({
             aria-pressed={Boolean(selected)}
             className="flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left"
             style={{
-              borderColor: selected ? 'var(--red)' : 'var(--border)',
+              borderColor: selected ? 'var(--red)' : 'var(--border-visible)',
               background: selected ? 'var(--red-wash)' : 'var(--bg-card)',
               color: 'var(--text-primary)',
             }}

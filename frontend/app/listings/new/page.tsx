@@ -4265,8 +4265,9 @@ export default function NewListingPage() {
                               className="text-xs mt-2"
                               style={{
                                 background: 'transparent',
-                                border: 'none',
-                                padding: 0,
+                                border: '1px solid var(--red)',
+                                padding: '5px 10px',
+                                borderRadius: 6,
                                 color: 'var(--red)',
                                 cursor: 'pointer',
                                 fontWeight: 600,

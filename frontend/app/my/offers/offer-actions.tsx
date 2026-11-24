@@ -95,9 +95,9 @@ export default function OfferActions({
             disabled={!!loading}
             className="flex-1 py-2 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              color: loading === 'reject' ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+              background: 'transparent',
+              border: '1px solid var(--red)',
+              color: loading === 'reject' ? 'var(--text-tertiary)' : 'var(--red)',
             }}
           >
             {loading === 'reject' ? 'Declining…' : 'Decline'}
@@ -111,7 +111,10 @@ export default function OfferActions({
           onClick={() => setConfirm('withdraw')}
           disabled={!!loading}
           className="text-xs"
-          style={{ color: loading ? 'var(--text-tertiary)' : 'var(--text-tertiary)' }}
+          style={{
+            color: loading ? 'var(--text-tertiary)' : 'var(--red)',
+            textDecoration: 'underline',
+          }}
         >
           {loading ? 'Withdrawing…' : 'Withdraw offer'}
         </button>
@@ -195,8 +198,8 @@ export default function OfferActions({
                 disabled={!!loading}
                 className="flex-1 py-2 rounded text-sm font-medium"
                 style={{
-                  background: loading ? 'var(--bg-inset)' : 'var(--bg-inset)',
-                  color: loading ? 'var(--text-tertiary)' : '#fff',
+                  background: loading ? 'var(--bg-inset)' : 'var(--red)',
+                  color: loading ? 'var(--text-secondary)' : '#fff',
                   border: 'none',
                   cursor: loading ? 'not-allowed' : 'pointer',
                 }}

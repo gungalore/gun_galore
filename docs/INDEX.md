@@ -74,6 +74,7 @@ within each group. Dates are the dates printed in the documents.
 
 | Document | Date | What it covered / where it stands |
 |---|---|---|
+| [`UI-CONTRAST-AUDIT-2026-11.md`](history/UI-CONTRAST-AUDIT-2026-11.md) | 2026-11-24 | Audit of buttons and options whose fill matches the theme surface: 629 buttons across the member app, 461 (73%) carrying a transparent/surface fill or no visible boundary. Names the measured contrast of the quiet tokens (`--border` 1.31:1, `--bg-inset` 1.18:1, PWA tab ink 2.58:1), one unreadable-label defect, a proposed accent-outline/visible-border token set, and the ranked list of which controls deserve colour. Not implemented yet. |
 | [`UX-AUTOMATION-AUDIT-2026-07.md`](history/UX-AUTOMATION-AUDIT-2026-07.md) | 2026-07-24 | Whole-site UX and automation sweep, 110 confirmed findings, with a shipped-log at the top. Almost everything shipped; what is left is operator decisions. The closest thing the repo has to a recent product backlog. |
 | [`ADMIN-AUDIT-REPORT.md`](history/ADMIN-AUDIT-REPORT.md) | 2026-07-09 | Six-agent audit of the admin surface for a sole non-coder operator running real money. A separate wiring pass shipped the alerts inbox and cron monitoring; the ADM batches themselves were **not** implemented. |
 | [`TAKEALOT-UX-PARITY-REPORT.md`](history/TAKEALOT-UX-PARITY-REPORT.md) | 2026-07-05 | Gap analysis of the shopper journey against Takealot, batch by batch (UX-1…UX-8). Shipped. Read it if you want to know why a particular shop surface looks the way it does. |

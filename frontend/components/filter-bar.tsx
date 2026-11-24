@@ -111,7 +111,7 @@ const chipStyle: React.CSSProperties = {
   gap: '6px',
   maxWidth: '100%',
   background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
+  border: '1px solid var(--border-visible)',
   color: 'var(--text-secondary)',
   borderRadius: '999px',
   padding: '5px 10px',
@@ -1005,7 +1005,7 @@ export function FilterBar({
           style={{
             background: activeCount > 0 ? 'var(--red)' : 'var(--bg-inset)',
             color: activeCount > 0 ? '#fff' : 'var(--text-secondary)',
-            border: `0.5px solid ${activeCount > 0 ? 'var(--red)' : 'var(--border)'}`,
+            border: `1px solid ${activeCount > 0 ? 'var(--red)' : 'var(--border-visible)'}`,
             padding: '9px 14px',
             fontSize: '13px',
             fontWeight: 500,

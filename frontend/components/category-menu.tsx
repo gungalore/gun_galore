@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 // UX-5 — "Shop by Category" desktop nav flyout.
 //
@@ -274,7 +274,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
                 style={{
                   background: 'var(--bg-inset)',
                   color: 'var(--text-secondary)',
-                  border: '0.5px solid var(--border)',
+                  border: '1px solid var(--border-visible)',
                   cursor: 'pointer',
                   font: 'inherit',
                   fontSize: 13,

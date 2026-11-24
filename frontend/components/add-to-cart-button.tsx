@@ -57,7 +57,7 @@ export function AddToCartButton({ item }: { item: CartItem }) {
       // replaces block+text-center so the icon sits on the text baseline
       // instead of just floating inline before it.
       className="flex w-full items-center justify-center gap-1.5 py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-3"
-      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'var(--font-head)', fontWeight: 700 }}
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--red)', color: 'var(--red)', fontFamily: 'var(--font-head)', fontWeight: 700 }}
     >
       <svg
         aria-hidden

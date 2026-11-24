@@ -1257,7 +1257,7 @@ export function CheckoutForm({
                 style={{
                   borderColor: !useDifferentAddress
                     ? 'var(--red)'
-                    : 'var(--border)',
+                    : 'var(--border-visible)',
                   background: !useDifferentAddress
                     ? 'var(--red-wash)'
                     : 'var(--bg-card)',
@@ -1274,7 +1274,7 @@ export function CheckoutForm({
                 style={{
                   borderColor: useDifferentAddress
                     ? 'var(--red)'
-                    : 'var(--border)',
+                    : 'var(--border-visible)',
                   background: useDifferentAddress
                     ? 'var(--red-wash)'
                     : 'var(--bg-card)',

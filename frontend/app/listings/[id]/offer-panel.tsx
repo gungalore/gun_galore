@@ -313,9 +313,9 @@ export default function OfferPanel({
           }}
           className="block w-full py-2.5 rounded-[6px] text-sm text-center"
           style={{
-            background: 'var(--bg-inset)',
-            color: 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            background: 'transparent',
+            color: 'var(--red)',
+            border: '1px solid var(--red)',
             cursor: 'pointer',
           }}
         >
@@ -428,9 +428,9 @@ export default function OfferPanel({
             onClick={() => setShowForm(true)}
             className="block w-full py-2.5 rounded-[6px] text-sm text-center"
             style={{
-              background: 'var(--bg-inset)',
-              color: 'var(--text-secondary)',
-              border: '0.5px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--red)',
+              border: '1px solid var(--red)',
               cursor: 'pointer',
             }}
           >
@@ -453,9 +453,9 @@ export default function OfferPanel({
           onClick={() => setExpanded(true)}
           className="w-full py-2.5 rounded-[6px] text-sm text-center"
           style={{
-            background: 'var(--bg-inset)',
-            color: 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            background: 'transparent',
+            color: 'var(--red)',
+            border: '1px solid var(--red)',
             cursor: 'pointer',
           }}
         >
@@ -597,9 +597,9 @@ function ExistingOfferCard({
   const settled = offer.counterAmount ?? offer.offerAmount;
 
   const secondary: React.CSSProperties = {
-    background: 'var(--bg-inset)',
-    color: 'var(--text-secondary)',
-    border: '0.5px solid var(--border)',
+    background: 'transparent',
+    color: 'var(--red)',
+    border: '1px solid var(--red)',
     cursor: acting ? 'not-allowed' : 'pointer',
     opacity: acting ? 0.6 : 1,
   };

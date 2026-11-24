@@ -127,7 +127,7 @@ export function RatingWidget({
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                color: n <= display ? 'var(--warning)' : 'var(--border)',
+                color: n <= display ? 'var(--warning)' : 'var(--text-tertiary)',
                 padding: '0 2px',
                 lineHeight: 1,
               }}

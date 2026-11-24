@@ -117,7 +117,7 @@ function SecondaryButton({
       style={{
         background: 'transparent',
         color: 'var(--text-secondary)',
-        border: '0.5px solid var(--border)',
+        border: '1px solid var(--border-visible)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}
@@ -1341,7 +1341,9 @@ export default function EditProfilePage() {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: 'var(--text-tertiary)',
+                  color: 'var(--red)',
+                  fontWeight: 600,
+                  textDecoration: 'underline',
                   cursor: phoneBusy ? 'not-allowed' : 'pointer',
                 }}
               >

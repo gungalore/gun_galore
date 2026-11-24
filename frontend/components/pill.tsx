@@ -55,7 +55,7 @@ export function Pill({
         color: selected ? '#fff' : 'var(--text-secondary)',
         border: selected
           ? 'none'
-          : '0.5px solid var(--border)',
+          : '1px solid var(--border-visible)',
         fontWeight: selected ? 600 : 400,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.45 : 1,

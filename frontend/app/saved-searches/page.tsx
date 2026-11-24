@@ -196,7 +196,7 @@ export default function SavedSearchesPage() {
                   className="text-[12px] rounded-[6px] px-2.5 py-1"
                   style={{
                     background: 'var(--bg-inset)',
-                    border: '0.5px solid var(--border)',
+                    border: '1px solid var(--border-visible)',
                     color: 'var(--text-secondary)',
                   }}
                 >

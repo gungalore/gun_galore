@@ -132,7 +132,11 @@ export default function PrivateArrangePanel({
             onClick={() => setAsk('dispute')}
             disabled={busy !== null}
             className="text-sm px-3 py-1.5 rounded-md border text-[var(--text-secondary)] disabled:opacity-50"
-            style={{ borderColor: 'var(--border)' }}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--red)',
+              color: 'var(--red)',
+            }}
           >
             {busy === 'dispute' ? 'Reporting…' : 'Handover did not happen'}
           </button>

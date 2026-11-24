@@ -460,7 +460,7 @@ function CommentRow({
             type="button"
             onClick={() => onReply(comment)}
             className="gg-press font-medium"
-            style={{ color: 'var(--text-tertiary)' }}
+            style={{ color: 'var(--text-secondary)' }}
           >
             Reply
           </button>

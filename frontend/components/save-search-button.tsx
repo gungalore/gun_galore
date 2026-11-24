@@ -125,7 +125,7 @@ export function SaveSearchButton({ params }: { params: Params }) {
         className="flex items-center gap-1.5 text-[13px] rounded-[6px] px-3 py-1.5"
         style={{
           background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
+          border: '1px solid var(--border-visible)',
           color: 'var(--text-secondary)',
         }}
       >
@@ -142,9 +142,9 @@ export function SaveSearchButton({ params }: { params: Params }) {
         disabled={state === 'saving'}
         className="flex items-center gap-1.5 text-[13px] rounded-[6px] px-3 py-1.5 transition-opacity"
         style={{
-          background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
-          color: 'var(--text-primary)',
+          background: 'var(--red)',
+          border: 'none',
+          color: '#fff',
           opacity: state === 'saving' ? 0.6 : 1,
           fontWeight: 500,
         }}
