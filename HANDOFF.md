@@ -7,6 +7,18 @@ overwritten.
 
 Last updated: **2026-11-24**.
 
+## 2026-11-24 — HERO ACTIONS, PUBLIC BUG REPORTS, NO DRAFTS (DEPLOYED)
+
+Operator: *"Make the pill transparent blue/brown. Explore Gear should open all listing and not just Marketplace. Remove the draft keeping in the create a listing. Armory tab should not be displayed when logged out to avoid meta flagging. Remove sell your gear next to the motivation creator. Move Motivation Creator next to Explore Gear on the hero as a button. Bring back Report a Bug as a hovering unit at the right bottom corner (Always visible for logged in and out users) Add Simple spam and bot protection when logged out."*
+
+- **Pill:** the active Marketplace/Auction/Community segment is now a translucent theme accent (`color-mix` at 22%) — electric blue in dark mode, ochre/brown in light. The track stays dark and the indicator still measures the real label width.
+- **Explore Gear:** opens `/?sort=newest` (all listings), not the fixed-price Marketplace surface.
+- **Motivation Creator:** desktop/tablet hero button beside Explore Gear; on the PWA it sits next to Armory in the quick actions strip. Signed out, the PWA strip shows Motivation Creator only; desktop signed-out hides the empty strip. The strip’s Sell button is gone (the nav Sell CTA remains), and Armory is absent signed out.
+- **Create listing:** all localStorage draft autosave, restore, “Draft restored” notice and Discard control removed. Reload starts clean; relist prefill (`?relistFrom=`) still works.
+- **Report a bug:** floating control is back for signed-in and signed-out users, positioned above the PWA tab bar and safe area. Public submissions use optional auth, an optional reply email, a hidden honeypot, a 1.5 s minimum fill time and a 5-per-10-minute per-IP throttle. Members still get handle + motivation activity attached; guests get no account timeline.
+- **Deployed `887f32ea` (full)**, rollback point `alloutdoor-20261124-081751.dump` (39,110,639 bytes). No pending migrations; backend + frontend builds, backend/frontend health ×2, warden reloaded and online, public 200 ×2; all three PM2 services online.
+- **Checks:** backend **438 suites / 6,492 passed** (8 skipped); frontend **184 files / 2,079 passed** (1 skipped); typechecks and production builds clean. Live HTML: signed-out home has Motivation Creator, the FAB and `/?sort=newest`, with no Armory and no strip Sell; `/community` keeps the toggle/search/bottom tabs and the FAB.
+
 ## 2026-11-24 — MARKETPLACE EVERYWHERE + COMMUNITY TOPBAR (DEPLOYED)
 
 Operator: *"Buy Now should be changed everywhere to Marketplace. When selecting the community pill it must keep the topbar so users can still search and select between the main screens in the PWA. Also remove the profile pill in the pwa at the top right as it does the same as the account selection on the bottom."*
