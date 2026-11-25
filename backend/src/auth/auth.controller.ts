@@ -10,12 +10,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Request, Response, CookieOptions } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { SessionService, IssuedSession } from './session.service';
 import { ACCESS_COOKIE, REFRESH_COOKIE } from './extract-token';
+import { sessionCookieBase } from './cookie-options';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -32,20 +33,6 @@ import {
  * A shared cache holding one is somebody else's session.
  */
 const NoStore = () => Header('Cache-Control', 'private, no-store');
-
-/**
- * `secure` must follow the scheme, not be hardcoded true: a Secure cookie is
- * silently dropped by the browser over plain http, so hardcoding it makes
- * local development look like a broken login with nothing in any log.
- * Production is https end to end (nginx sends X-Forwarded-Proto https).
- */
-const isProd = () => process.env.NODE_ENV === 'production';
-
-const baseCookie = (): CookieOptions => ({
-  httpOnly: true,
-  secure: isProd(),
-  sameSite: 'lax',
-});
 
 @Controller('auth')
 export class AuthController {
@@ -68,12 +55,12 @@ export class AuthController {
    */
   private issue(res: Response, issued: IssuedSession) {
     res.cookie(ACCESS_COOKIE, issued.accessToken, {
-      ...baseCookie(),
+      ...sessionCookieBase(),
       path: '/',
       expires: issued.accessExpiresAt,
     });
     res.cookie(REFRESH_COOKIE, issued.refreshToken, {
-      ...baseCookie(),
+      ...sessionCookieBase(),
       // Scoped so the refresh token is not attached to every ordinary API
       // call. The fewer requests carry it, the fewer places it can leak.
       path: '/api/auth',
@@ -87,8 +74,8 @@ export class AuthController {
   }
 
   private clear(res: Response) {
-    res.clearCookie(ACCESS_COOKIE, { ...baseCookie(), path: '/' });
-    res.clearCookie(REFRESH_COOKIE, { ...baseCookie(), path: '/api/auth' });
+    res.clearCookie(ACCESS_COOKIE, { ...sessionCookieBase(), path: '/' });
+    res.clearCookie(REFRESH_COOKIE, { ...sessionCookieBase(), path: '/api/auth' });
   }
 
   // ── Sign-up ──────────────────────────────────────────────────────────

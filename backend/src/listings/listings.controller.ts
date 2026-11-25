@@ -32,6 +32,7 @@ import { CrossSellDto } from './dto/cross-sell.dto';
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('listings')
@@ -52,7 +53,7 @@ export class ListingsController {
   @SkipThrottle()
   // OptionalAuthGuard so search-insight events can attribute the searcher
   // when signed in; anonymous browse is unaffected (guard never rejects).
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   browse(@Query() dto: BrowseListingsDto, @CurrentUser() userId?: string) {
     return this.listingsService.browse(dto, userId);
   }
@@ -62,7 +63,7 @@ export class ListingsController {
   // browse (SSR fans these out from one IP).
   @Get('cross-sell')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   crossSell(@Query() dto: CrossSellDto, @CurrentUser() userId?: string) {
     return this.listingsService.crossSell(dto, userId);
   }
@@ -72,17 +73,9 @@ export class ListingsController {
   // SkipThrottle like browse (SSR fans these out from one IP).
   @Get('brands')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   brands(@CurrentUser() userId?: string) {
     return this.listingsService.listBrands(60, userId);
-  }
-
-  // ACTIVE listing ids + lastModified for the XML sitemap. MUST stay above
-  // @Get(':id'). Public read → SkipThrottle.
-  @Get('sitemap')
-  @SkipThrottle()
-  sitemap() {
-    return this.listingsService.sitemapEntries();
   }
 
   // Public marketplace config the sell form needs to mirror server-side
@@ -100,7 +93,7 @@ export class ListingsController {
   // these out from one IP) → SkipThrottle like browse.
   @Get('facets')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   facets(@Query() dto: BrowseListingsDto, @CurrentUser() userId?: string) {
     return this.listingsService.facets(dto, userId);
   }
@@ -110,7 +103,7 @@ export class ListingsController {
   // a minimum sale count. MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('sold-comps')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   soldComps(
     @Query() dto: { categorySlug?: string; categoryId?: string },
     @CurrentUser() userId?: string,
@@ -122,7 +115,7 @@ export class ListingsController {
   // MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('brand-index')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   brandIndex(@CurrentUser() userId?: string) {
     return this.listingsService.listBrandsWithCounts(undefined, userId);
   }
@@ -133,7 +126,7 @@ export class ListingsController {
   // segments so it can't shadow @Get(':id'), but kept here for clarity.
   @Get('brand/:slug')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   async brandBySlug(
     @Param('slug') slug: string,
     @CurrentUser() userId?: string,
@@ -167,7 +160,7 @@ export class ListingsController {
   @Get('live-version')
   @SkipThrottle()
   @Header('Cache-Control', 'private, no-store')
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   liveVersion(@CurrentUser() userId?: string) {
     return this.listingsService.liveVersion(userId);
   }
@@ -177,7 +170,7 @@ export class ListingsController {
   @Get(':id/stats')
   @SkipThrottle()
   @Header('Cache-Control', 'private, no-store')
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   stats(@Param('id') id: string, @CurrentUser() userId?: string) {
     return this.listingsService.stats(id, userId);
   }
@@ -198,6 +191,7 @@ export class ListingsController {
   // @Get(':id') so 'distance' isn't captured as an id.
   @Get(':id/distance')
   @SkipThrottle()
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   distance(
     @Param('id') id: string,
     @Query('lat') lat?: string,
@@ -227,7 +221,7 @@ export class ListingsController {
   // because the seller-consent page is public; the throttle keeps a public
   // paid-API proxy from being farmed.
   @Get('place-autocomplete')
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async placeAutocomplete(
     @Query('input') input?: string,
@@ -243,7 +237,7 @@ export class ListingsController {
   // address field needs components + coordinates, and the browser key cannot
   // ask Places API (New) directly.
   @Get('place/:placeId')
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async placeAddress(@Param('placeId') placeId: string) {
     return { place: await this.googlePlaces.address(placeId) };
@@ -267,7 +261,7 @@ export class ListingsController {
   // public projection. See ListingsService.PUBLIC_LISTING_SELECT.
   @Get(':id')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   findOne(@Param('id') id: string, @CurrentUser() userId?: string) {
     return this.listingsService.findById(id, userId);
   }

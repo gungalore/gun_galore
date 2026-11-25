@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { RatingsService } from './ratings.service';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import {
   RatingsController,
   RatingsAdminController,
@@ -25,6 +26,7 @@ import { AdminAuditService } from '../admin/admin-audit.service';
     AdminJwtGuard,
     AdminAuditService,
     OptionalAuthGuard,
+    ContentAccessGuard,
   ],
   controllers: [
     RatingsController,

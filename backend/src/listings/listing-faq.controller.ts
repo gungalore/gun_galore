@@ -1,5 +1,7 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { ListingFaqService } from './listing-faq.service';
 
 /**
@@ -19,6 +21,7 @@ export class ListingFaqController {
 
   @Get(':id/faq')
   @SkipThrottle()
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   list(@Param('id') listingId: string) {
     return this.faq.listPublic(listingId);
   }

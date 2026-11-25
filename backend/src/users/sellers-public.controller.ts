@@ -1,6 +1,14 @@
-﻿import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+﻿import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 
 /**
  * Public seller profile endpoint — powers the /sellers/[userId]
@@ -24,6 +32,10 @@ import { PrismaService } from '../prisma/prisma.service';
  * for admin and law-enforcement use only.
  */
 @Controller('sellers')
+// The seller storefront is content: behind the 18+ gate, identical for a
+// declared visitor and a member. Without the content guard this endpoint was
+// a side door around the gate for anyone who could type a URL.
+@UseGuards(OptionalAuthGuard, ContentAccessGuard)
 export class SellersPublicController {
   constructor(private readonly prisma: PrismaService) {}
 

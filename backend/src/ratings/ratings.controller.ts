@@ -13,6 +13,7 @@ import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RatingsService } from './ratings.service';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CreateRatingDto } from './dto/create-rating.dto';
 
 @Controller('transactions/:transactionId/rating')
@@ -88,7 +89,7 @@ export class RatingsDashboardController {
 // title, so signed-out callers get only reviews on publicly-visible listings.
 // Used by /sellers/[userId] (SSR) and the listing page.
 @Controller('ratings')
-@UseGuards(OptionalAuthGuard)
+@UseGuards(OptionalAuthGuard, ContentAccessGuard)
 export class RatingsPublicController {
   constructor(private readonly ratingsService: RatingsService) {}
 

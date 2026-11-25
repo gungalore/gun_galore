@@ -45,6 +45,7 @@ The live product is **Marketplace** (Buy Now listings with offers), **Auctions**
 | [`docs/design/the-bench/SPEC-BUILD.md`](design/the-bench/SPEC-BUILD.md) | You are building or changing **The Bench**, the reverse load finder for reloaders. |
 | [`docs/design/licence-centre/SPEC-BUILD.md`](design/licence-centre/SPEC-BUILD.md) | You are building the **`/licence-centre` review sheet** (Motivation Centre). |
 | [`docs/design/community-feed/spec.md`](design/community-feed/spec.md) | You are working on the members-only community feed. |
+| [`docs/design/catalogue-gate/spec.md`](design/catalogue-gate/spec.md) | You are changing anything a signed-out visitor can reach: the 18+ age gate, the route classes, the `ao_cat` declaration and the backend `ContentAccessGuard`. |
 | [`docs/design/brand-pack-v1.2/`](design/brand-pack-v1.2/) | You need the official ALL-Outdoor Brand Pack v1.2 tokens, components and assets. See `SOURCE.md` inside for provenance. |
 | [`docs/SESSION-LOG.md`](SESSION-LOG.md) | You want what a recent session actually did: edits, root causes, traps and open items, newest entry first. |
 

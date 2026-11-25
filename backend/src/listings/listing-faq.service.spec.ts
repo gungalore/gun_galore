@@ -119,14 +119,16 @@ describe('ListingFaqService.listPublic', () => {
     expect(out.sellerReply.sampleSize).toBe(3);
   });
 
-  it('404s a missing or non-public listing rather than confirming the id', async () => {
+  it('404s a missing or non-public listing, but serves a gated one', async () => {
     await expect(makeService({ listing: null }).svc.listPublic('L1')).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       makeService({ listing: { status: 'DRAFT', publicVisible: true, sellerId: 'S1' } }).svc.listPublic('L1'),
     ).rejects.toBeInstanceOf(NotFoundException);
+    // The 18+ gate is ContentAccessGuard's job: a members-only listing's Q&A
+    // is served by the service to anyone who got past it.
     await expect(
       makeService({ listing: { status: 'ACTIVE', publicVisible: false, sellerId: 'S1' } }).svc.listPublic('L1'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).resolves.toBeTruthy();
   });
 
   it('says the reply time is unknown on a thin sample', async () => {

@@ -1,4 +1,6 @@
 import { Module, Global } from '@nestjs/common';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { UsersService } from './users.service';
 import { VaultConsentService } from './vault-consent.service';
 import { AccountClosureService } from './account-closure.service';
@@ -47,6 +49,10 @@ import { KycModule } from '../kyc/kyc.module';
   // cannot own it without a cycle. This module is @Global and the columns it
   // reads are on User, so from here it reaches both with no new edge.
   providers: [
+    // The public seller-storefront controller mounts these two guards; Nest
+    // resolves @UseGuards classes in the controller's OWN module.
+    OptionalAuthGuard,
+    ContentAccessGuard,
     UsersService,
     SellerToolsService,
     VaultConsentService,

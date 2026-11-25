@@ -164,14 +164,11 @@ export class AuctionsService {
     if (listing.listingType !== 'AUCTION') {
       throw new BadRequestException('Not an auction');
     }
-    // Same visibility contract as the listing detail endpoint: a hidden or
-    // unapproved auction is indistinguishable from a missing one, and a
-    // members-only auction needs a signed-in caller. Without this the public
-    // auction endpoint was a side door around the public/members split.
+    // Same status contract as the listing detail endpoint: a hidden or
+    // unapproved auction is indistinguishable from a missing one. Access
+    // (18+ declaration or member session) is enforced by ContentAccessGuard
+    // before the handler, not here — content no longer varies by sign-in.
     if (!AUCTION_PUBLIC_STATUSES.includes(listing.status)) {
-      throw new NotFoundException('Listing not found');
-    }
-    if (!userId && !listing.publicVisible) {
       throw new NotFoundException('Listing not found');
     }
 

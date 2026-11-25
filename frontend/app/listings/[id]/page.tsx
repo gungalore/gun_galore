@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
+import { viewerFetch } from '@/lib/api-viewer';
 import { BRAND_NAME } from '@/lib/brand';
 import {
   Listing,
@@ -11,6 +12,7 @@ import {
   ShippingMethod,
 } from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
+import { BuyNowCta } from '@/components/buy-now-cta';
 import {
   formatPrice,
   CONDITION_LABELS,
@@ -80,31 +82,14 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  // Forward the seller's token so their own not-yet-public listing still
-  // resolves a real title (the owner-aware endpoint 404s non-public statuses
-  // for everyone else). Anonymous callers send no token → public projection.
-  const { getToken } = await auth();
-  const token = await getToken().catch(() => null);
-  const listing = await apiFetch<Listing>(`/listings/${id}`, {
-    cache: 'no-store',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }).catch(() => null);
+  // viewerFetch forwards BOTH the member token (owner-aware fields) and the
+  // 18+ declaration cookie, so a declared visitor gets the real title here.
+  // Crawlers never reach this route: middleware redirects them to /gate.
+  const listing = await viewerFetch<Listing>(`/listings/${id}`).catch(
+    () => null,
+  );
   if (!listing) return { title: `Listing not found — ${BRAND_NAME}` };
   const url = `/listings/${id}`;
-
-  // Members-only stock. An ANONYMOUS caller never reaches this branch — the
-  // API 404s the listing and `listing` is null above — so getting here means a
-  // signed-in member is viewing it. Emit nothing indexable anyway: this is the
-  // page whose OG tags used to publish the seller's raw title, 160 characters
-  // of their description and the photograph of the item itself to anything
-  // that fetched the URL. Defence in depth costs one branch.
-  if (listing.publicVisible === false) {
-    return {
-      title: `Members-only listing — ${BRAND_NAME}`,
-      robots: { index: false, follow: false },
-      alternates: { canonical: url },
-    };
-  }
 
   const title = `${listing.title} — ${BRAND_NAME}`;
   const description = listing.description.slice(0, 160);
@@ -167,13 +152,12 @@ export default async function ListingDetailPage({
   // payload and the section renders its required empty state instead. The
   // listing itself has no such fallback — a missing listing is still a 404.
   const [listing, faq] = await Promise.all([
-    apiFetch<Listing>(`/listings/${id}`, {
-      cache: 'no-store',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    }).catch(() => null),
-    apiFetch<ListingFaqPayload>(`/listings/${encodeURIComponent(id)}/faq`, {
-      cache: 'no-store',
-    }).catch((): ListingFaqPayload => ({ entries: [], sellerReply: null })),
+    viewerFetch<Listing>(`/listings/${id}`).catch(() => null),
+    viewerFetch<ListingFaqPayload>(
+      `/listings/${encodeURIComponent(id)}/faq`,
+    ).catch(
+      (): ListingFaqPayload => ({ entries: [], sellerReply: null }),
+    ),
   ]);
 
   if (!listing) return notFound();
@@ -408,9 +392,8 @@ export default async function ListingDetailPage({
   const listingAttrs = listing.attributes ?? null;
   const specRows: { label: string; display: string }[] = [];
   if (listingAttrs && Object.keys(listingAttrs).length > 0) {
-    const attrDefs = await apiFetch<CategoryAttributeDef[]>(
+    const attrDefs = await viewerFetch<CategoryAttributeDef[]>(
       `/categories/${listing.category.id}/attributes`,
-      { cache: 'no-store' },
     ).catch(() => [] as CategoryAttributeDef[]);
     for (const def of attrDefs) {
       const raw = listingAttrs[def.key];
@@ -970,8 +953,8 @@ export default async function ListingDetailPage({
                     to render at; matches the treatment now also applied to
                     AddToCartButton. Appearance only — href/behaviour
                     untouched. */}
-                <Link
-                  href={`/checkout/${listing.id}`}
+                <BuyNowCta
+                  listingId={listing.id}
                   className="block w-full py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-2"
                   style={{
                     background: 'var(--action-primary-bg)',
@@ -982,7 +965,7 @@ export default async function ListingDetailPage({
                   }}
                 >
                   Buy on Marketplace — {formatPrice(listing.price!)}
-                </Link>
+                </BuyNowCta>
                 {/* Add to cart — firearm BUY_NOW listings are now
                     allowed too; they branch to a dealer-transfer /
                     in-person route + 18+ attestation in the cart.
@@ -1410,8 +1393,8 @@ export default async function ListingDetailPage({
                 Edit listing
               </Link>
             ) : listing.listingType === 'BUY_NOW' ? (
-              <Link
-                href={`/checkout/${listing.id}`}
+              <BuyNowCta
+                listingId={listing.id}
                 className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
                 style={{
                   background: 'var(--action-primary-bg)',
@@ -1421,7 +1404,7 @@ export default async function ListingDetailPage({
                 }}
               >
                 {buyBarLabel}
-              </Link>
+              </BuyNowCta>
             ) : (
               /* Plain in-page anchor — no JS, works with keyboard and with
                  the router untouched. The panel it lands on is the single

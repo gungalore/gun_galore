@@ -9,6 +9,7 @@ import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { FilterBar } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
 import { viewerFetch } from '@/lib/api-viewer';
+import { catalogueDeclarationToken } from '@/lib/catalogue-access';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
 import { CatalogLiveRefresh } from '@/components/catalog-live-refresh';
@@ -88,8 +89,10 @@ export default async function SellerProfilePage({
   if (sp.attrs) qs.set('attrs', sp.attrs);
   qs.set('limit', '24');
 
-  // Forwarded to the reviews call below so a member still sees every review.
+  // Forwarded to the reviews call below so a declared 18+ visitor or a member
+  // sees every review (the API's ContentAccessGuard needs one of the two).
   const viewerToken = await (await auth()).getToken().catch(() => null);
+  const catalogueDeclaration = await catalogueDeclarationToken();
 
   const [profileRes, ratingsRes, browse, categories, brands, facetData] =
     await Promise.all([
@@ -97,15 +100,19 @@ export default async function SellerProfilePage({
       // is the canonical "no such seller" so we propagate it to the
       // page's notFound() below.
       fetch(`${API_URL}/sellers/${userId}`, { cache: 'no-store' }),
-      // Reviews embed the listing TITLE, so this response varies by viewer:
-      // signed out, reviews on members-only listings are withheld. Raw fetch
-      // (not viewerFetch) because the page needs the Response to distinguish
-      // a 404 seller from an empty review list.
+      // Reviews embed the listing TITLE. Content no longer varies by sign-in,
+      // but the read still sits behind the 18+ gate: forward whichever
+      // credential this viewer holds. Raw fetch (not viewerFetch) because the
+      // page needs the Response to distinguish a 404 seller from an empty
+      // review list.
       fetch(`${API_URL}/ratings/seller/${userId}`, {
         cache: 'no-store',
-        headers: viewerToken
-          ? { Authorization: `Bearer ${viewerToken}` }
-          : undefined,
+        headers: {
+          ...(viewerToken ? { Authorization: `Bearer ${viewerToken}` } : {}),
+          ...(catalogueDeclaration
+            ? { Cookie: `ao_cat=${catalogueDeclaration}` }
+            : {}),
+        },
       }),
       // Scope by sellerId + the active filters. Same browse assembly the
       // homepage uses (24/page). The backend routes sellerId to the

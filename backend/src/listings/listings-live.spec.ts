@@ -51,12 +51,6 @@ const VISIBLE = {
   _count: { wishlistedBy: 4 },
 };
 
-const PUBLIC_GATE = {
-  status: 'ACTIVE',
-  isDealListing: false,
-  publicVisible: true,
-};
-
 describe('ListingsService - saved-count projection', () => {
   it('asks Prisma for the wishlist count on the browse grid', async () => {
     const { service, prisma } = makeService();
@@ -71,17 +65,21 @@ describe('ListingsService - saved-count projection', () => {
 });
 
 describe('ListingsService - live version token', () => {
-  it('scopes the token to public listings for an anonymous caller', async () => {
+  // Content no longer varies by sign-in: the 18+ gate is enforced by
+  // ContentAccessGuard before the handler, so the poll token is identical
+  // for every viewer who got this far. A publicVisible gate here would make
+  // a declared visitor's grids refresh-only-when-tents-change.
+  it('has no publicVisible gate for any viewer', async () => {
     const { service, prisma } = makeService();
     const out = await service.liveVersion();
     expect(out.v).toBe('3:1792490400000:7');
 
-    const catalogWhere: unknown = expect.objectContaining(PUBLIC_GATE);
+    const catalogWhere: unknown = expect.not.objectContaining({
+      publicVisible: true,
+    });
     expect(prisma.listing.aggregate).toHaveBeenCalledWith(
       expect.objectContaining({ where: catalogWhere }),
     );
-    // The saved-count half must use the same gate, or an anonymous poller
-    // could infer saves on members-only stock from a moving number.
     expect(prisma.watchedListing.count).toHaveBeenCalledWith({
       where: { listing: catalogWhere },
     });
@@ -119,11 +117,16 @@ describe('ListingsService - live PDP stats', () => {
     });
   });
 
-  it('404s a members-only listing for an anonymous caller', async () => {
+  // Access is ContentAccessGuard's job; the service serves the row and the
+  // STATUS gate below is the only visibility rule left here.
+  it('serves stats for a members-only listing at the service level', async () => {
     const { service } = makeService({
       listing: { ...VISIBLE, publicVisible: false },
     });
-    await expect(service.stats('l1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.stats('l1')).resolves.toEqual({
+      status: 'ACTIVE',
+      wishlistCount: 4,
+    });
   });
 
   it('404s a non-public status for a non-owner member', async () => {

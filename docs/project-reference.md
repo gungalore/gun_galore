@@ -81,57 +81,69 @@ see Public vs Members.
 
 ---
 
-## Public vs Members — read before changing any public read path
+## The 18+ gate — read before changing any content read path
 
-Meta restricted the site twice for regulated goods. Regulated stock now sits
-behind the login. Signed in, nothing changed.
+The site's front door is a one-tap **18+ declaration**, not a login. Meta
+restricted the site twice for regulated goods; every content page now sits
+behind the age gate so a crawler only ever receives the neutral gate page.
+Signed in or out, the CATALOGUE IS THE SAME.
 
-**This is an auth wall, NOT cloaking.** Every signed-out visitor gets identical
-content regardless of user-agent. Never branch on user-agent; never special-case a
-crawler. Serving a crawler something different from a logged-out human is what
-turns a block into a ban.
+**This is an age gate, NOT cloaking.** Every visitor without a declaration gets
+identical content regardless of user-agent. Never branch on user-agent; never
+special-case a crawler. The mechanism is that a crawler does not click; adding
+a user-agent branch would turn this into exactly the cloak that gets a site
+banned.
 
-**The mechanism.** `Category.publicVisible` (source of truth) and
-`Listing.publicVisible` (snapshot, set at create, re-snapshotted on category
-change). Both `@default(false)` — an **allowlist**. A category added later is
-invisible until someone publishes it, so the failure mode is "we forgot to show
-the tents", never "we leaked the rifles".
+**The three classes** (`frontend/lib/route-gate.ts`; middleware + backend
+enforce them):
 
-**Public roots:** camping-outdoor, overlanding, fishing, optics, knives, hunting,
-archery-bowhunting, paintball, cleaning-equipment, outdoor-clothing-footwear.
-**Members-only roots:** firearms, gun-smithing-parts, reloading-components,
-reloading-equipment, air-rifles, self-defence, shooting-accessories, ammo.
-**Carve-outs** (`membersOnly: true` under a public parent):
-archery--crossbows, optics--{rifle,handgun,rimfire-rifle,rangefinding-rifle,
-air-rifle}-scopes, hunting--shooting-sticks-and-bipods.
+| Class | Needs | Examples |
+|---|---|---|
+| `gate-exempt` | nothing | `/gate`, `/api/*`, `/admin/*`, sign-in/up, `/robots.txt`, credential links (`/a/*`, `/t/*`, `/witness`, `/consent`, `/dealer-portal`, print/book), `/data-deletion` and `/paia` (statutory/Meta carve-outs) |
+| `member-only` | a signed-in session | account/settings/messages/orders/my-*, cart/checkout, seller tools, the Document Library (`/documents`, `/licence-centre` + applications/review/pack), saved trackers, community me/settings |
+| `content` (default) | the 18+ declaration OR a session | catalogue, categories, brands, sellers, community, The Bench, Application Tracker root, all legal/info pages |
+
+**The enforcement, not the UX.** `frontend/middleware.ts` redirects an
+undeclared visitor to `/gate`; the backend's `ContentAccessGuard` 404s any
+content API call from a caller with neither a session nor a valid `ao_cat`
+declaration. Both read only the signed cookies — never a header or UA.
+`OptionalAuthGuard` stamps `request.catalogueDeclared`; `ContentAccessGuard`
+decides access. A service-level 404 based on `publicVisible` is WRONG now: it
+would hide half the catalogue from a declared visitor.
+
+**The declaration token.** `ao_cat` is a JWT with audience + purpose
+`catalogue-gate`, 30 days, signed with `JWT_MEMBER_SECRET`, no `sub`. It can
+never authenticate and a session can never be used as a declaration. Minting
+and clearing live in `backend/src/auth/catalogue.controller.ts`.
+
+**Legacy `publicVisible`.** `Category.publicVisible` and
+`Listing.publicVisible` remain in the database (and the 2026-08 gating data is
+untouched) but no longer decide display. Do not add new read-path filters on
+it. `publicVisible` stays in Meilisearch's filterable attributes only because
+documents still carry the field.
 
 **Rules when touching this:**
 
-- Anonymity comes from `OptionalAuthGuard` (never rejects, stamps
-  `request.userId`). A public read path with **no guard at all** is a leak.
-- Every public read path goes through the same gate. Grep `publicOnly(` in
-  `listings.service.ts`. ⚠️ Remember the non-obvious ones: seller reviews (they
-  embed listing titles), and **the public seller storefront** —
-  `GET /api/sellers/:id` + `/sellers/[id]` is anonymous-reachable and
-  renders that seller's listings, so its browse call must stay behind
-  `publicOnly()`.
-- `findById` returns **404**, never 403 and never "sign in to view" — that would
-  confirm the item exists.
-- **Never `revalidate`/`force-cache` a fetch whose result varies by viewer.**
-  Next's data cache is SHARED and the browser cache keys on URL, not on the auth
-  header. Use `viewerFetch` / `useViewerFetch` (both force `no-store`).
-- `sitemap.ts` stays **anonymous and uncached** (`force-dynamic`). A token there
-  republishes the firearm taxonomy; `revalidate` there also survives a rebuild in
-  `.next/cache` and prerenders from a pre-deploy snapshot.
-- **No weapon word in a public category name or slug.** A gate that hides Firearms
-  but publishes `optics--handgun-scopes` has not done its job — the scanner reads
-  the URL. `assertNoWeaponWordInPublic` in `prisma/seed.ts` fails the seed. To
-  publish something it matches, rename the category; never weaken the pattern.
-- `publicVisible` must stay in `STATIC_LISTING_FILTERABLE_ATTRIBUTES` or Meili
-  rejects the anonymous query outright.
+- A content controller needs `@UseGuards(OptionalAuthGuard, ContentAccessGuard)`
+  and BOTH guards provided in its own module (Nest resolves `@UseGuards` in the
+  controller's module). A content read path with no guard is a gate-bypass API.
+- Never `revalidate`/`force-cache` a fetch whose result varies by viewer. Use
+  `viewerFetch` (server) / `useViewerFetch` (client) — `viewerFetch` forwards
+  the session token AND the `ao_cat` declaration.
+- `findById` still returns **404**, never 403 and never "sign in to view".
+- Status gates are NOT the content gate: DRAFT / PENDING / EXPIRED listings
+  still 404 for everyone but the owner.
+- **No weapon word in a crawler-reachable string.** The gate page is the only
+  page a crawler sees and its copy is deliberately neutral. The old
+  `assertNoWeaponWordInPublic` seed guard stays as defence in depth.
+- SEO of content is intentionally off (`robots.txt` disallows `/`; no content
+  sitemap). The gate is the protection; a sitemap of gated URLs would only be
+  a list of soft-404s.
 
-`backend/src/listings/public-visibility.spec.ts` locks all of this. If a change
-makes those tests fail, the change is wrong.
+`backend/src/listings/content-visibility.spec.ts`,
+`backend/src/auth/content-access.spec.ts` and
+`frontend/lib/route-gate.spec.ts` lock this. If a change makes them fail, the
+change is wrong.
 
 **`gungalore.co.za` is retired.** Its hosts no longer answer (Cloudflare returns
 522). ⚠️ **The DNS zone must stay up** — the MX records carry the operator's

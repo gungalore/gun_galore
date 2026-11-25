@@ -27,7 +27,13 @@
 // detailed application stays behind auth.
 // ────────────────────────────────────────────────────────────────────
 
-export const CHROMELESS_PREFIXES = ['/witness', '/consent', '/motivation'];
+export const CHROMELESS_PREFIXES = [
+  // The 18+ gate: a standalone age confirmation, not a page of the shop.
+  '/gate',
+  '/witness',
+  '/consent',
+  '/motivation',
+];
 
 /** True when the page must render without any marketplace chrome. */
 export function isChromelessRoute(pathname: string | null): boolean {

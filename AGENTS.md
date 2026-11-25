@@ -36,10 +36,13 @@ These were removed from the product. Do not reintroduce them, document them as l
 - Every firearm listing must offer `DEALER_TRANSFER`; `PRIVATE_ARRANGE` requires the existing consent flow.
 - Air rifles are not firearms and use the `air-rifles` category.
 - Live ammunition, primers, and propellant are banned. Empty or once-fired brass and projectiles are allowed.
-- Preserve the public/member auth wall. Never branch public content by user-agent or crawler identity.
-- Public viewer-varying reads require the existing optional auth and visibility gates, must not be shared-cached, and must use `no-store` viewer fetches where applicable.
-- A hidden listing/category must return 404 rather than confirm its existence.
-- Do not weaken public weapon-word checks or remove `publicVisible` from Meilisearch filterable attributes.
+- Preserve the 18+ content gate. Content sits behind the one-tap age declaration (`/gate`, `ao_cat`), NOT behind a login; signed-in state changes actions and private data only. A content controller must mount `OptionalAuthGuard` + `ContentAccessGuard`, with both guards provided in its own module.
+- Never branch content by user-agent or crawler identity. A crawler gets the same neutral gate page as an un-declared human; that is the mechanism, and a UA branch is cloaking.
+- Viewer-varying reads must not be shared-cached and must use `no-store` viewer fetches; server fetches must forward BOTH the session token and the `ao_cat` declaration (`viewerFetch`).
+- A hidden listing/category must return 404 rather than confirm its existence; a content API call with neither a session nor a declaration also 404s.
+- Do not weaken public weapon-word checks (crawler-reachable copy — the gate page above all — stays neutral) or remove `publicVisible` from Meilisearch filterable attributes.
+- `Category.publicVisible` / `Listing.publicVisible` are legacy data: do not reintroduce them as display filters and do not delete the 2026-08 gating data.
+- `robots.txt` disallows the site and there is no content sitemap. Do not add one; gated URLs are not crawlable content.
 
 ## Engineering Traps
 

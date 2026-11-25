@@ -8,6 +8,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { CategoriesService } from './categories.service';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 // Every route here is OptionalAuthGuard, not because the data is private —
@@ -18,7 +19,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 // OptionalAuthGuard NEVER rejects, so anonymous browse is unaffected and a
 // stale token degrades to anonymous rather than 401-ing a public page.
 @Controller('categories')
-@UseGuards(OptionalAuthGuard)
+@UseGuards(OptionalAuthGuard, ContentAccessGuard)
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 

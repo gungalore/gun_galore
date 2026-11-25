@@ -96,13 +96,9 @@ export class ListingFaqService {
   }> {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
-      select: { status: true, publicVisible: true, sellerId: true },
+      select: { status: true, sellerId: true },
     });
-    if (
-      !listing ||
-      !PUBLICLY_VISIBLE_STATUSES.includes(listing.status) ||
-      !listing.publicVisible
-    ) {
+    if (!listing || !PUBLICLY_VISIBLE_STATUSES.includes(listing.status)) {
       throw new NotFoundException('Listing not found');
     }
 

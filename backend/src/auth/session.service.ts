@@ -3,6 +3,12 @@ import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { memberJwtSecret } from './member-jwt-secret';
+import {
+  CATALOGUE_AUDIENCE,
+  CATALOGUE_PURPOSE,
+  CATALOGUE_TTL_SECONDS,
+  type CatalogueDeclaration,
+} from './catalogue-access';
 
 /** How long an access token is good for. Short, because it is not revocable. */
 export const ACCESS_TTL_SECONDS = 15 * 60;
@@ -63,6 +69,51 @@ export class SessionService {
     });
     if (!payload?.sub) throw new UnauthorizedException();
     return payload;
+  }
+
+  /**
+   * Mint the 18+ catalogue declaration for the gate's POST endpoint.
+   *
+   * ⚠️ NOT A SESSION. No `sub`, no `sid`; the audience and purpose claims are
+   * the whole point — see catalogue-access.ts. The cookie is set by the
+   * controller, never here.
+   */
+  async mintCatalogueDeclaration(): Promise<{
+    token: string;
+    expiresAt: Date;
+  }> {
+    const payload: CatalogueDeclaration = {
+      purpose: CATALOGUE_PURPOSE,
+      v: 1,
+    };
+    const token = await this.jwt.signAsync(payload, {
+      secret: memberJwtSecret(),
+      audience: CATALOGUE_AUDIENCE,
+      expiresIn: CATALOGUE_TTL_SECONDS,
+    });
+    return {
+      token,
+      expiresAt: new Date(Date.now() + CATALOGUE_TTL_SECONDS * 1000),
+    };
+  }
+
+  /**
+   * Verify an `ao_cat` declaration. Returns false for anything that is not a
+   * live, unexpired declaration — including a member session token.
+   *
+   * Fails soft on purpose: the guard treats a false as "signed-out visitor",
+   * which shows the gate page, never more content.
+   */
+  async verifyCatalogueDeclaration(token: string): Promise<boolean> {
+    try {
+      const payload = await this.jwt.verifyAsync<CatalogueDeclaration>(token, {
+        secret: memberJwtSecret(),
+        audience: CATALOGUE_AUDIENCE,
+      });
+      return payload?.purpose === CATALOGUE_PURPOSE && payload?.v === 1;
+    } catch {
+      return false;
+    }
   }
 
   private hash(token: string): string {

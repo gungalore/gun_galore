@@ -6,20 +6,9 @@ import { Category, CategoryAttribute } from '@prisma/client';
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * THE VISIBILITY GATE (mirror of ListingsService.publicOnly). A signed-out
-   * caller only sees categories marked publicVisible; members see the whole
-   * tree. Without this, GET /categories hands the entire firearm taxonomy —
-   * names, slugs and all — to any anonymous request, which is what put 111
-   * weapon-adjacent URLs in the sitemap.
-   */
-  private publicOnly(userId?: string): { publicVisible?: true } {
-    return userId ? {} : { publicVisible: true };
-  }
-
   async findAll(userId?: string): Promise<Category[]> {
     return this.prisma.category.findMany({
-      where: { isActive: true, ...this.publicOnly(userId) },
+      where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   }
@@ -43,7 +32,7 @@ export class CategoriesService {
   > {
     const [categories, grouped] = await Promise.all([
       this.prisma.category.findMany({
-        where: { isActive: true, ...this.publicOnly(userId) },
+        where: { isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
       this.prisma.listing.groupBy({
@@ -55,7 +44,6 @@ export class CategoriesService {
         where: {
           status: 'ACTIVE',
           isDealListing: false,
-          ...this.publicOnly(userId),
         },
         _count: { _all: true },
       }),
@@ -103,7 +91,6 @@ export class CategoriesService {
     // Anonymous callers must not be able to confirm a members-only category
     // exists by probing its slug — same null a bad slug returns.
     if (!category) return null;
-    if (!userId && !category.publicVisible) return null;
     return category;
   }
 
@@ -125,7 +112,6 @@ export class CategoriesService {
     // /category/firearms is a live, unauthenticated, un-throttled endpoint
     // today that returns all ten firearm children. Null (→ 404) for anyone
     // without a session.
-    if (!userId && !category.publicVisible) return null;
     const [parent, children] = await Promise.all([
       category.parentId
         ? this.prisma.category.findUnique({ where: { id: category.parentId } })
@@ -134,15 +120,13 @@ export class CategoriesService {
         where: {
           parentId: category.id,
           isActive: true,
-          ...this.publicOnly(userId),
         },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
     ]);
     // A members-only parent (e.g. Crossbows' parent Archery is public, but the
     // reverse case exists) must not leak through the breadcrumb either.
-    const safeParent =
-      parent && (userId || parent.publicVisible) ? parent : null;
+    const safeParent = parent;
     return { category, parent: safeParent, children };
   }
 

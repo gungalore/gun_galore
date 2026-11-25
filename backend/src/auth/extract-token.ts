@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { CATALOGUE_COOKIE } from './catalogue-access';
 
 /**
  * The access-token cookie. Set by the auth controller, sent automatically by
@@ -47,5 +48,22 @@ export function extractRefreshToken(request: Request): string | undefined {
 
   // App shells have no cookie jar for our origin, so they hand the refresh
   // token back in the body instead. Read by the controller, not here.
+  return undefined;
+}
+
+/**
+ * The 18+ catalogue declaration cookie, if present.
+ *
+ * ⚠️ PRESENCE IS NOT VALIDITY. This only extracts the raw value; the
+ * signature/audience check lives in SessionService.verifyCatalogueDeclaration
+ * and is the only thing allowed to decide whether the declaration counts.
+ */
+export function extractCatalogueDeclaration(
+  request: Request,
+): string | undefined {
+  const cookies = (request as Request & { cookies?: Record<string, string> })
+    .cookies;
+  const fromCookie = cookies?.[CATALOGUE_COOKIE];
+  if (typeof fromCookie === 'string' && fromCookie.length > 0) return fromCookie;
   return undefined;
 }

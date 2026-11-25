@@ -12,6 +12,7 @@ import { OptionalAuthGuard } from './optional-auth.guard';
 import { AuthOrTokenGuard } from './auth-or-token.guard';
 import { KycOrTokenGuard } from './kyc-or-token.guard';
 import { ScanHandoffGuard } from './scan-handoff.guard';
+import { ContentAccessGuard } from './content-access.guard';
 
 // ⚠️ THIS SPEC EXISTS BECAUSE A MISSING LOCAL PROVIDER CRASH-LOOPS THE BOX
 // WHILE tsc AND EVERY UNIT TEST STAY GREEN. Nest resolves a controller's
@@ -52,6 +53,7 @@ describe('AuthModule', () => {
     expect(mod.get(AuthOrTokenGuard)).toBeInstanceOf(AuthOrTokenGuard);
     expect(mod.get(KycOrTokenGuard)).toBeInstanceOf(KycOrTokenGuard);
     expect(mod.get(ScanHandoffGuard)).toBeInstanceOf(ScanHandoffGuard);
+    expect(mod.get(ContentAccessGuard)).toBeInstanceOf(ContentAccessGuard);
 
     await mod.close();
   });

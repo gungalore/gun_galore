@@ -2046,21 +2046,6 @@ export class ListingsService {
     await this.kyc.offerAtListingLive(sellerId);
   }
 
-  /**
-   * THE VISIBILITY GATE. A signed-out caller only ever sees listings whose
-   * category is marked publicVisible; a signed-in member sees everything, as
-   * before. Spread into every public-discovery Prisma `where` alongside the
-   * `isDealListing: false` chokepoint.
-   *
-   * Anonymity is decided ONLY by the presence of a verified the identity provider id supplied
-   * by OptionalAuthGuard — never by a header, a query param or a user-agent.
-   * Serving different content to a crawler than to a logged-out human is
-   * cloaking; this returns the same thing to both.
-   */
-  private publicOnly(userId?: string): { publicVisible?: true } {
-    return userId ? {} : { publicVisible: true };
-  }
-
   async browse(dto: BrowseListingsDto, userId?: string) {
     const { q, sellerId, ids } = dto;
 
@@ -2118,7 +2103,6 @@ export class ListingsService {
       status: ListingStatus.ACTIVE,
       isDealListing: false,
       ...HAS_CARD_MEDIA,
-      ...this.publicOnly(userId),
     };
     const [catalog, saves] = await Promise.all([
       this.prisma.listing.aggregate({
@@ -2164,9 +2148,6 @@ export class ListingsService {
     const isOwner = !!userId && listing.sellerId === userId;
     if (!isOwner) {
       if (!PUBLICLY_VISIBLE_STATUSES.includes(listing.status)) {
-        throw new NotFoundException('Listing not found');
-      }
-      if (!userId && !listing.publicVisible) {
         throw new NotFoundException('Listing not found');
       }
     }
@@ -2339,7 +2320,6 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(userId),
       },
       _count: { make: true },
       orderBy: { _count: { make: 'desc' } },
@@ -2368,7 +2348,6 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(userId),
       },
       _count: { make: true },
     });
@@ -2424,7 +2403,6 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         make: { not: null },
-        ...this.publicOnly(userId),
       },
       _count: { make: true },
     });
@@ -2479,7 +2457,6 @@ export class ListingsService {
           category: categoryFilter,
           // ?categorySlug=firearms would otherwise hand realised firearm sale
           // prices to an anonymous caller.
-          ...this.publicOnly(userId),
         },
       },
       select: { listingPrice: true, quantity: true },
@@ -2523,23 +2500,6 @@ export class ListingsService {
       FLAGS.dgLithiumWhThreshold,
     );
     return { dgLithiumWhThreshold };
-  }
-
-  /**
-   * Lightweight feed for the XML sitemap — every ACTIVE listing's id +
-   * last-modified, newest first, capped so the sitemap stays bounded.
-   */
-  async sitemapEntries(
-    limit = 5000,
-  ): Promise<{ id: string; updatedAt: Date }[]> {
-    return this.prisma.listing.findMany({
-      // publicVisible unconditionally — a sitemap is BY DEFINITION read by
-      // crawlers, so there is no signed-in variant of this feed.
-      where: { status: 'ACTIVE', isDealListing: false, publicVisible: true },
-      select: { id: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-      take: limit,
-    });
   }
 
   /**
@@ -2760,7 +2720,6 @@ export class ListingsService {
         // A members-only listing must not come back through the
         // recently-viewed rail either - the client holds the ids in
         // localStorage, which survives sign-out.
-        ...this.publicOnly(userId),
       },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
@@ -2834,11 +2793,6 @@ export class ListingsService {
     // public search/facets. Requires 'isDealListing' in
     // STATIC_LISTING_FILTERABLE_ATTRIBUTES (search.service.ts) + on the Meili doc.
     const filterParts: string[] = ['status = "ACTIVE"', 'isDealListing = false'];
-    // Signed-out search must not reach members-only stock. `calibre` and
-    // `categoryName` are searchable attributes, so without this a plain
-    // ?q=glock returns firearm rows to anyone. Requires 'publicVisible' in
-    // STATIC_LISTING_FILTERABLE_ATTRIBUTES + on the indexed document.
-    if (!userId) filterParts.push('publicVisible = true');
     // Parent-category rollup (mirrors browseViaPrisma): a parent id/slug
     // must match its own leaf listings OR any child's, via the indexed
     // parentId/parentSlug. Wrapped in parens so the outer AND-join stays
@@ -3051,7 +3005,6 @@ export class ListingsService {
         status: 'ACTIVE',
         isDealListing: false,
         ...HAS_CARD_MEDIA,
-        ...this.publicOnly(userId),
       },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
@@ -3123,7 +3076,6 @@ export class ListingsService {
       ...HAS_CARD_MEDIA,
       // .and publicVisible for signed-out callers: the same chokepoint, one
       // audience narrower. Regulated stock stays fully functional for members.
-      ...this.publicOnly(userId),
     };
     // P5.7 — brand landing page. Fold the slug back to its stored `make`
     // variants and filter to all of them. An unknown/too-thin slug resolves
@@ -3347,10 +3299,6 @@ export class ListingsService {
     // 404 page carries the friendly "some listings are members-only" line
     // instead. Note this is keyed on having ANY verified session, not on
     // ownership — every signed-in member sees the full catalogue.
-    if (!userId && !listing.publicVisible) {
-      throw new NotFoundException('Listing not found');
-    }
-
     return enriched;
   }
 

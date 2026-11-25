@@ -11,6 +11,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { AuctionsService } from './auctions.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PlaceBidDto } from './dto/place-bid.dto';
 
@@ -24,7 +25,7 @@ export class AuctionsController {
   // SkipThrottle: called from listing detail SSR/polling, would trip the IP bucket.
   @Get(':listingId')
   @SkipThrottle()
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   state(
     @Param('listingId') listingId: string,
     @CurrentUser() userId?: string,

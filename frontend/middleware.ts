@@ -6,11 +6,22 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jwtVerify } from 'jose/jwt/verify';
 import { routeMatcher } from './lib/route-matcher';
 import { isSessionFreeKycLanding } from './lib/kyc-return';
+import { routeGate } from './lib/route-gate';
 
-// ⚠️ The matcher lives in lib/route-matcher.ts WITH A SPEC, not inline here.
-// It decides which pages a signed-out visitor can see, and the failure that
-// matters — a pattern matching too much — makes a members-only page public
-// without anything going wrong on screen. See the spec for what is locked.
+// ─────────────────────────────────────────────────────────────────────
+// THE 18+ GATE (2026-11). Read lib/route-gate.ts first.
+//
+// Content is no longer split into "public storefront" and "members-only".
+// Every content page sits behind a one-tap age declaration; a signed-in
+// account is required only for actions (buy/bid/motivate) and private data.
+// A declared visitor and a member see the same catalogue.
+//
+// This middleware is the UX half: un-declared visitors are redirected to
+// /gate. The BACKEND is the enforcement half — ContentAccessGuard 404s any
+// content API call from a caller carrying neither a session nor a valid
+// declaration. Neither half branches on user-agent.
+// ─────────────────────────────────────────────────────────────────────
+
 const createRouteMatcher = (patterns: string[]) => {
   const match = routeMatcher(patterns);
   return (req: NextRequest) => match(req.nextUrl.pathname);
@@ -19,6 +30,10 @@ const createRouteMatcher = (patterns: string[]) => {
 /** Must match ACCESS_COOKIE / REFRESH_COOKIE in the backend. */
 const ACCESS_COOKIE = 'ao_at';
 const REFRESH_COOKIE = 'ao_rt';
+/** Must match CATALOGUE_COOKIE in backend/src/auth/catalogue-access.ts. */
+const CATALOGUE_COOKIE = 'ao_cat';
+/** Must match CATALOGUE_AUDIENCE + the purpose claim there. */
+const CATALOGUE_AUDIENCE = 'catalogue-gate';
 
 let cachedKey: Uint8Array | null = null;
 function memberSecret(): Uint8Array {
@@ -58,137 +73,52 @@ async function hasSession(request: NextRequest): Promise<boolean> {
   return !!request.cookies.get(REFRESH_COOKIE)?.value;
 }
 
-const isPublicRoute = createRouteMatcher([
-  // Backend API requests are authenticated by Nest's own guards. Keeping them
-  // out of the frontend member-session redirect is required for tunneled local
-  // SMS links and same-origin API proxying.
-  ...(process.env.LOCAL_API_PROXY === 'true' ? ['/api/(.*)'] : []),
-  // The phone's half of the desktop QR handoff. ⚠️ IT MUST BE PUBLIC: the
-  // whole point is that the phone is NOT signed in, and the ?t= token is what
-  // authorises it. See app/scan/handoff/page.tsx.
-  '/scan/handoff(.*)',
-  // The scanner's self-test: loads the detector with no camera and prints
-  // exactly why it did or did not start. Public because the phone that needs
-  // it is the signed-out one on the handoff page, and it touches no data.
-  '/scan/selftest',
-  // The WhatsApp deep-link redirect table (`/t/<code>`). ⚠️ IT MUST BE
-  // PUBLIC, but for a narrower reason than the routes around it: this route
-  // never renders anything of its own, it only 307s to the real destination,
-  // and that destination keeps its own auth wall. A signed-out tap on a
-  // WhatsApp button still lands on sign-in — carrying the real path as the
-  // redirect target — so it reaches the right screen once they log in
-  // instead of dead-ending on the short link itself.
-  '/t/(.*)',
-  // A CHARACTER WITNESS completing a statement. ⚠️ IT MUST BE PUBLIC, and for
-  // a stronger reason than the handoff above: this person is not our member
-  // and never will be. They received an SMS from somebody applying for a
-  // firearm licence. A 307 to sign-in here does not read as "please log in",
-  // it reads as a suspicious link — and they simply close it.
-  //
-  // The token in the path is the credential, and a code sent to the number the
-  // applicant nominated is the second half of it. See
-  // backend/src/motivations/motivation-witness.service.ts.
-  '/witness(.*)',
-  // The previous owner opening a consent link. Same reasoning as /witness:
-  // they are not a member and cannot be sent to a sign-in page.
-  '/consent(.*)',
-  // A nominated DEALER confirming the firearm is stocked with them. Same
-  // reasoning again: the dealer is not a member, and the token in the URL is
-  // the credential. Signed-out is the NORMAL case here.
-  '/dealer-portal(.*)',
-  '/',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  // Auth completion pages. A member who has not finished signing in is by
-  // definition signed out here, and the code/link in the page is the
-  // credential. Bouncing these to /sign-in dead-ends the flow.
-  '/verify-email(.*)',
-  '/forgot-password(.*)',
-  '/reset-password(.*)',
-  '/marketplace(.*)',
-  '/listings(.*)',
-  '/auctions(.*)',
-  '/about(.*)',
-  '/buy-and-sell(.*)',
-  '/welcome(.*)',
-  '/sellers(.*)', // public seller profiles
-  '/category(.*)', // public category landing/browse pages
-  '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
-                   // pages (/brand/[slug]); SEO surfaces, must be crawlable
-                   // without auth (mirrors /category above).
-  '/community(.*)', // Community feed + post permalinks + profiles. PUBLIC so a
-                   // SHARED LINK renders the designed join gate instead of
-                   // 307ing to a bare sign-in. The pages do their own
-                   // server-side auth check and show no member content signed
-                   // out — the auth wall, not cloaking.
-  '/motivation',   // Public, deliberately neutral licence-application entry.
-                   // The detailed application stays behind auth at
-                   // /licence-centre/applications. No crawler branch: this page
-                   // is neutral for every visitor (Meta/WhatsApp safety).
-  '/faq',          // public help/FAQ page
-  '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
-  '/condition-guide', // public grading rubric — linked from the sell form and
-                   // every listing's condition chip, and it is the definition
-                   // buyers are held to, so it must be readable signed-out
-                   // (and crawlable) rather than 307ing to sign-in.
-  // /how-payments-work is NOT here: it was retired and now answers with a
-  // config redirect (308) to /terms#payments. Config redirects run before
-  // middleware, so anonymity is not a question.
-  '/contact',      // public contact page
-  '/support',      // public support page
-  '/complaints',   // public complaints-handling page
-  '/paia',         // public PAIA manual / access-to-information page
-  '/regulated-categories', // public statutory schedule naming the particular
-                   // legislation we keep regulated-category records under.
-                   // MUST be reachable signed-out: POPIA s 18(1)(f) requires
-                   // the data subject to be told the particular law, and PAIA
-                   // s 51 requires the manual to be complete and free to ANY
-                   // requester — a journalist, a regulator or a non-account
-                   // holder cannot read the members-only annex. The page
-                   // itself carries robots noindex/nofollow and is NOT in
-                   // app/sitemap.ts, so it is reachable without being indexed.
-  '/fees',         // public fees schedule
-  '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
-  '/robots.txt',   // excluded by the matcher, so it hits this middleware)
-  '/.well-known/(.*)', // static well-known files (e.g. security.txt) — must
-                       // be reachable without auth for crawlers/researchers
-  '/security.txt', // security-contact file at the site root
-  '/admin(.*)',   // admin uses its own JWT auth, not Clerk
-  '/offline',     // PWA offline fallback — must be reachable without auth
-                  // because the service worker serves it whenever the
-                  // network is unreachable, including for signed-out users.
-  '/sw.js',       // compiled service worker — must be reachable without
-                  // Clerk's protect-rewrite interfering with the install.
-  '/terms',              // legal pages — must be reachable from sign-up
-  '/privacy',            // checkbox links (and from anywhere) without auth
-  '/aml-policy',
-  '/acceptable-use',
-  '/refund-policy',
-  // /buyer-protection is NOT here: it was retired and now answers with a
-  // config redirect (308) to /terms#buyer-protection.
-  '/data-deletion',      // data-deletion instructions — Meta/POPIA require a
-                         // public, sign-in-free page.
-  // '/firearms-compliance' is members-only now and lives at
-  // /members/regulated-items. The old path still exists as a 308 for
-  // indexed/bookmarked links, but it is gated so an anonymous follower lands
-  // on /sign-in rather than the document.
-  '/cookies',
-  '/legal',              // index of all legal docs + ECT § 43 disclosures
-  '/community-guidelines', // public feed rules — reachable from a shared link
-                         // and from the join gate, so it must not 307 to
-                         // sign-in.
-  '/a/(.*)',             // SMS-link action pages — token in the URL IS the
-                         // auth credential. Each /a/<token> page resolves
-                         // server-side via /api/actions/:token and shows a
-                         // scoped UI for one single action. Never requires
-                         // a Clerk session.
-  // Print-desk one-click booking. The operator is not necessarily signed in to
-  // a member account, and the token in the path is the credential. Without this
-  // the email button 307s to /sign-in and the collection is never booked.
-  '/licence-centre/print/book/(.*)',
-  '/coming-soon',        // pre-launch holding page
-  '/preview',            // bypass-cookie setter for the coming-soon gate
-]);
+/**
+ * Did this visitor accept the 18+ gate?
+ *
+ * ⚠️ THIS COOKIE IS NOT A SESSION and must never be treated as one. The token
+ * carries no `sub`; the backend verifies the same audience/purpose before it
+ * lets the declaration open anything. A tampered or expired declaration is
+ * simply "not declared" — the visitor sees the gate, never a 401.
+ */
+async function hasCatalogueDeclaration(request: NextRequest): Promise<boolean> {
+  const value = request.cookies.get(CATALOGUE_COOKIE)?.value;
+  if (!value) return false;
+  try {
+    const { payload } = await jwtVerify(value, memberSecret(), {
+      audience: CATALOGUE_AUDIENCE,
+    });
+    return payload.purpose === CATALOGUE_AUDIENCE && payload.v === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The origin a redirect is built on.
+ *
+ * Pinned to NEXT_PUBLIC_APP_URL, never the inbound Host header, so a spoofed
+ * Host cannot turn the gate/sign-in bounce into an open redirect. Local
+ * development falls back to the browser's own host so a stale tunnel hostname
+ * in .env doesn't break local flows.
+ */
+function publicBase(request: NextRequest): string {
+  const configuredBase =
+    process.env.NEXT_PUBLIC_APP_URL || 'https://alloutdoor.co.za';
+  const host = request.headers.get('host') ?? '';
+  const isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+  return process.env.NODE_ENV !== 'production' && isLocalHost
+    ? `http://${host}`
+    : configuredBase;
+}
+
+/** A relative, same-origin next target — never an open redirect. */
+function safeNextPath(value: string | null | undefined): string {
+  if (typeof value !== 'string') return '/';
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value.length > 2000) return '/';
+  return value;
+}
 
 // Routes that ALWAYS pass through the coming-soon gate, even without
 // the preview cookie:
@@ -211,52 +141,18 @@ const isComingSoonBypassRoute = createRouteMatcher([
 const COMING_SOON_COOKIE = 'gg-preview';
 
 export default async function middleware(request: NextRequest) {
-  // ── No middleware-level admin auth gate ────────────────────────────
-  //
-  // Cookie-based gating proved unreliable across browsers (some configs
-  // silently drop the admin session cookie regardless of attrs). Admin
-  // pages are now client components that read a JWT from localStorage
-  // via lib/admin-auth and bounce themselves to /admin/login if it's
-  // missing. Middleware just gets out of the way.
+  const url = request.nextUrl;
 
-  // ── Coming-soon gate (runs BEFORE the auth check) ─────────────────
+  // ── Coming-soon gate (runs BEFORE the age gate) ───────────────────
   //
-  // Three conditions let a request through to the real site:
-  //   1) Gate is off (COMING_SOON_GATE !== 'on')
-  //   2) Path is always-allowed (SMS links, API, admin, etc.)
-  //   3) Visitor has the bypass cookie matching the server secret
-  //
-  // SMS-link checkout (/checkout/...?t=<token>) is also always-allowed
-  // because buyers paying via SMS link have no other auth.
-  //
-  // Otherwise: rewrite to /coming-soon. We use rewrite (not redirect)
-  // so the URL the user typed stays in the address bar.
+  // Unchanged from before: when COMING_SOON_GATE=on, everything except the
+  // always-allowed routes and token-authed pages is rewritten to
+  // /coming-soon with X-Robots-Tag: noindex. The preview cookie bypasses.
   if (process.env.COMING_SOON_GATE === 'on') {
-    const url = request.nextUrl;
-    // Token-authed pages (SMS one-tap): /checkout/*?t= and /kyc/verify?t=
-    // are authorised by the action token in the URL, not by a session — let
-    // them through the coming-soon gate the same way.
-    //
-    // /checkout/complete is allowed UNCONDITIONALLY: it's where the
-    // payment gateway redirects the buyer after paying, and that return
-    // URL carries NO token or session (the txId rides back via
-    // localStorage / the webhook). Gating it would swallow the
-    // post-payment verification for any buyer without the preview
-    // cookie. The page itself is harmless — it only calls the public,
-    // amount-bound verify-result API.
-    //
-    // /kyc/verify?returned=1 is the identity equivalent: Didit returns the
-    // member here from its hosted page, in a browser context that may hold no
-    // session at all (an installed PWA opens Didit in Safari, which does not
-    // share the app's cookies). See the matching Clerk exemption below.
     const isTokenAuthedPage =
       url.pathname === '/checkout/complete' ||
       isSessionFreeKycLanding(url.pathname, url.searchParams) ||
       ((url.pathname.startsWith('/checkout/') ||
-        // ⚠️ THE HANDOFF NEEDS BOTH LISTS. Public-route alone gets the phone
-        // past Clerk and then straight into a rewrite to /coming-soon, which
-        // reads as the QR code being broken. Same trap the KYC verify page
-        // sat in.
         url.pathname === '/scan/handoff') &&
         url.searchParams.has('t'));
     const cookieVal = request.cookies.get(COMING_SOON_COOKIE)?.value;
@@ -270,112 +166,73 @@ export default async function middleware(request: NextRequest) {
 
     if (!allowed) {
       const res = NextResponse.rewrite(new URL('/coming-soon', request.url));
-      // M31 — prevent Googlebot indexing the coming-soon page as the
-      // homepage. Without this, every gated route currently returns
-      // 200 + content with no robots directive, so the search index
-      // will record "Coming Soon" as the canonical site for every URL
-      // — only repaired after a post-launch recrawl.
       res.headers.set('X-Robots-Tag', 'noindex, nofollow');
       return res;
     }
   }
 
-  if (isPublicRoute(request)) return;
-
-  // SMS-link token pages: /checkout/*?t= (buyer pays) and /kyc/verify?t=
-  // (seller verifies identity) are auth'd by the action token, not Clerk.
-  // The page + the backend's ClerkOrTokenGuard / KycOrTokenGuard handle
-  // the token. We just bypass Clerk middleware here so an unauthenticated
-  // tap-from-SMS doesn't get bounced to the sign-in page.
+  // ── Credential flows bypass BOTH walls ─────────────────────────────
   //
-  // /checkout/complete bypasses Clerk unconditionally: the payment
-  // gateway redirects the buyer here with no token and possibly no
-  // session (SMS-token buyers are never signed in; on iOS the return
-  // can land in a separate browser context). Bouncing them to sign-in
-  // would skip payment verification entirely. The page only calls the
-  // public verify-result API, which binds on txId + amount server-side.
-  // ⚠️ /kyc/verify?returned=1 JOINS /checkout/complete IN BYPASSING CLERK
-  // UNCONDITIONALLY, for the same reason: Didit returns the member from its
-  // hosted page in whatever browser context opened it, and on an installed PWA
-  // that is Safari — a separate cookie store with no session. Bouncing them to
-  // sign-in there dead-ends the identity verification they just completed. The
-  // page reads no members data while signed out (see the landed-return branch
-  // in app/kyc/verify/page.tsx); every API behind it still enforces auth.
+  // /checkout/complete — the gateway return URL, no token and possibly no
+  // session (SMS-token buyers; iOS can return in a different browser context).
+  // /kyc/verify?returned=1 — Didit's return landing, also session-free.
+  // /checkout/<id>?t=<token> — the SMS pay link; the token is the credential.
+  // Bouncing any of these to the gate or to sign-in dead-ends the flow.
   if (
-    request.nextUrl.pathname === '/checkout/complete' ||
-    isSessionFreeKycLanding(
-      request.nextUrl.pathname,
-      request.nextUrl.searchParams,
-    ) ||
-    (request.nextUrl.pathname.startsWith('/checkout/') &&
-      request.nextUrl.searchParams.has('t'))
+    url.pathname === '/checkout/complete' ||
+    isSessionFreeKycLanding(url.pathname, url.searchParams) ||
+    (url.pathname.startsWith('/checkout/') && url.searchParams.has('t'))
   ) {
     return;
   }
 
-  // The auth check. See hasSession() above for why an expired access token
-  // with a live refresh cookie is treated as signed in.
-  if (!(await hasSession(request))) {
-    // Pin the redirect base to a CONFIGURED public URL rather than the
-    // inbound Host header — a spoofed Host must never be able to turn this
-    // sign-in bounce into an off-site (open) redirect. request.url reflects
-    // the localhost socket Next.js listens on, not the public hostname, so we
-    // can't use it either.
-    const configuredBase =
-      process.env.NEXT_PUBLIC_APP_URL || 'https://alloutdoor.co.za';
-    // Local development: NEXT_PUBLIC_APP_URL is often a stale tunnel
-    // hostname. Only for localhost in non-production, bounce back to the
-    // host the browser actually used. Production keeps the configured base
-    // so a spoofed Host header cannot turn this into an open redirect.
-    const host = request.headers.get('host') ?? '';
-    const isLocalHost =
-      /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
-    const publicBase =
-      process.env.NODE_ENV !== 'production' && isLocalHost
-        ? `http://${host}`
-        : configuredBase;
-    const currentPath =
-      request.nextUrl.pathname + request.nextUrl.search;
+  const kind = routeGate(url.pathname);
+  if (kind === 'gate-exempt') return;
 
-    const signInUrl = new URL('/sign-in', publicBase);
-    // Relative redirect target only — never embed a host (defence-in-depth
-    // with the sign-in/sign-up forms, which also reject non-relative values).
+  const session = await hasSession(request);
+
+  if (kind === 'member-only') {
+    if (session) return;
+    // A declared visitor is NOT signed in. Private data and actions need the
+    // account, so send them straight to sign-in with a return path — the same
+    // behaviour as before the gate existed.
+    const signInUrl = new URL('/sign-in', publicBase(request));
+    const currentPath = url.pathname + url.search;
     signInUrl.searchParams.set('redirect_url', currentPath);
-    // Kept as NextResponse.redirect. The original reason — a bare Web-API
-    // Response.redirect returns IMMUTABLE headers, and the wrapping middleware
-    // threw `TypeError: immutable` trying to decorate it — no longer applies
-    // now that there is no wrapper. It is still the right call: NextResponse
-    // is what the rest of this file returns, and mixing the two is how the
-    // trap gets re-set by someone adding a header later.
     return NextResponse.redirect(signInUrl);
   }
+
+  // ── Content ───────────────────────────────────────────────────────
+  if (session) return;
+  if (await hasCatalogueDeclaration(request)) return;
+
+  // Neither a member nor a declared 18+ visitor. The URL is preserved so the
+  // gate page can send them straight to what they clicked after accepting.
+  const next = safeNextPath(url.pathname + url.search);
+  const gateUrl = new URL('/gate', publicBase(request));
+  gateUrl.searchParams.set('next', next);
+  return NextResponse.redirect(gateUrl);
 }
 
 // ⚠️ wasm AND ort ARE IN THE EXCLUSION LIST FOR A REASON. Without them the
-// on-device model's runtime and weights go through this middleware, which
-// 307s an unauthenticated request to sign-in. ORT then receives an HTML
-// redirect body where it expected a binary and fails with
-// "expected magic word 00 61 73 6d, found 3c 21 44 4f" — that is `<!DO`, the
-// first bytes of the sign-in page. Both phones reported the detector as
-// unavailable and it read as a broken model rather than as a 307.
+// on-device model's runtime and weights go through this middleware, which 307s
+// an unauthenticated request to sign-in. ORT then receives an HTML redirect
+// body where it expected a binary and fails with "expected magic word 00 61 73
+// 6d, found 3c 21 44 4f" — that is `<!DO`, the first bytes of the sign-in page.
+// Both phones reported the detector as unavailable and it read as a broken
+// model rather than as a 307.
 //
 // Any future binary asset served from public/ needs its extension here too.
 //
-// ⚠️ AND mjs, SINCE ORT WEB 1.19+. The runtime no longer ships a plain
-// .wasm: it loads `ort-wasm-simd-threaded.mjs` from wasmPaths first and that
-// glue fetches the .wasm. `js(?!on)` does not match `.mjs` — the alternation
-// must start right after the dot — so without `mjs` here the glue is 307'd
-// to sign-in on a signed-out phone (the handoff page), and the model fails
-// with a JavaScript syntax error on `<!DOCTYPE` instead of the magic-word
-// message above. Same trap, one extension over.
-// ⚠️ AND onnx, FOR THE NEW SCANNER (2026-09-06). Its model is
-// /scan/v3/docaligner-lcnet100.onnx. Without the extension here the file was
-// 307'd to sign-in on the handoff phone, and the new scanner opened with a
-// manual shutter and no outline: the same trap as ort and mjs, one file over.
-// ⚠️ AND mp4/webm, FOR THE HERO VIDEO (2026-10-29). /hero-video.mp4 is the
-// landing page's motion plate. Without these the browser got a 307 to sign-in
-// where it expected a video, the <video> ended in NETWORK_NO_SOURCE, and the
-// hero silently fell back to its poster on the one page every visitor sees.
+// ⚠️ AND mjs, SINCE ORT WEB 1.19+. The runtime no longer ships a plain .wasm:
+// it loads `ort-wasm-simd-threaded.mjs` from wasmPaths first and that glue
+// fetches the .wasm. `js(?!on)` does not match `.mjs` — the alternation must
+// start right after the dot — so without `mjs` here the glue is 307'd to
+// sign-in on a signed-out phone (the handoff page), and the model fails with a
+// JavaScript syntax error on `<!DOCTYPE` instead of the magic-word message.
+// Same trap, one extension over.
+// ⚠️ AND onnx, FOR THE NEW SCANNER (2026-09-06).
+// ⚠️ AND mp4/webm, FOR THE HERO VIDEO (2026-10-29).
 export const config = {
   matcher: [
     '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|mp4|webm|wasm|ort|onnx)).*)',

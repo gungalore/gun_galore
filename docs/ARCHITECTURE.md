@@ -322,149 +322,90 @@ is no session there. Forcing a sign-in at that moment loses the action.
 
 ---
 
-## 3. The public/members split — the most important invariant
+## 3. The 18+ gate — the most important invariant
 
 Read this before you touch anything a signed-out visitor can reach.
 
 ### Why it exists
 
-Meta's crawlers and moderators were blocking the site, which killed the
-operator's WhatsApp Business communications. The fix was to put regulated stock
-(firearms, ammunition components, air rifles, self-defence, gunsmithing) behind
-the login and present a plain outdoor store to the world. Signed in, nothing
-changed.
+Meta restricted the site twice for regulated goods. The old answer was a
+public/members split: a narrow four-root outdoor storefront to the world, the
+rest behind login. That split is **retired** (2026-11): the catalogue now
+sits behind a one-tap **18+ declaration**, and signed-in state no longer
+changes what content a visitor can see.
 
-**This is an auth wall, not cloaking.** Every signed-out visitor gets identical
-content regardless of user-agent. **Never branch on user-agent. Never
-special-case a crawler.** Serving a crawler something different from a
-logged-out human is what turns a temporary block into a permanent ban.
+### Three classes, one enforcement
 
-### The mechanism
+`frontend/lib/route-gate.ts` classifies every route (and has a spec):
 
-Two Prisma columns, both `@default(false)`:
+- **gate-exempt** — the gate page itself, auth flows, `/api`, `/admin`,
+  credential links (`/a/*`, `/t/*`, `/witness`, `/consent`, `/dealer-portal`,
+  print/book), and two statutory/Meta carve-outs: `/data-deletion` and
+  `/paia`.
+- **member-only** — private data and actions: account surfaces, messages,
+  orders, cart/checkout, seller tools, the Document Library, saved trackers.
+  Needs a session.
+- **content** (default) — catalogue, categories, brands, sellers, community,
+  The Bench, the Application Tracker root, all legal/info pages (Terms
+  included). Needs the declaration OR a member session.
 
-- **`Category.publicVisible`** — the source of truth.
-- **`Listing.publicVisible`** — a snapshot, set when the listing is created and
-  re-snapshotted if the listing's category changes
-  (`listings.service.ts`, `nextPublicVisible`).
+`frontend/middleware.ts` handles the UX: an undeclared visitor is redirected
+to `/gate?next=…`; a member-only route redirects to sign-in. The backend is
+the authority: `OptionalAuthGuard` stamps `request.catalogueDeclared`, and
+**`ContentAccessGuard` 404s** any content API call from a caller with neither
+a session nor a valid declaration. Both read signed cookies only.
 
-Defaulting to `false` makes this an **allowlist**. A category added later is
-invisible to the public until someone deliberately publishes it. The failure
-mode is "we forgot to show the tents", never "we leaked the rifles". Keep it
-that way — a `@default(true)` here would invert the safety property of the
-entire feature.
+### The declaration token
 
-Carve-outs — a members-only child under a public parent (rifle scopes under
-Optics, crossbows under Archery) — are expressed as `membersOnly: true` on the
-sub-category in `backend/prisma/seed.ts`.
+`ao_cat` is a JWT signed with `JWT_MEMBER_SECRET`, audience + purpose
+`catalogue-gate`, 30 days, **no `sub`**. It must never authenticate anything;
+a session token must never satisfy the gate. See
+`backend/src/auth/catalogue-access.ts` and `catalogue.controller.ts` (mint /
+clear). `frontend/lib/catalogue-access.ts` reads it server-side;
+`viewerFetch` forwards it to the API.
 
-**`membersOnly` is NOT a database column.** Grepping the schema for it finds
-nothing. It is a seed-file-only TypeScript flag (`SubCat`, seed.ts:145) that the
-seed resolves at build time into `publicVisible: false` on that child:
+### What this deliberately does NOT do
 
-```ts
-// backend/prisma/seed.ts:594
-const publicVisible = child.membersOnly ? false : parent.publicVisible;
-```
+- **No user-agent, IP or device branch.** A crawler gets the same neutral
+  gate page as an undeclared human. That is the whole mechanism; a UA branch
+  would turn the age gate into cloaking, which is what turns a temporary
+  platform block into a permanent ban.
+- **No content sitemap and no SEO of content.** `robots.txt` disallows the
+  site; gated URLs are not advertised. Organic indexing of listings is the
+  price of the gate.
+- **No `publicVisible` read filters.** The columns remain (the 2026-08 data is
+  untouched) but no longer decide display. A service-level filter would hide
+  half the catalogue from a declared visitor.
 
-Visibility inherits DOWN. `membersOnly` can only pull a child OUT of a public
-tree; it can never push one into a members-only tree. At runtime there is only
-`publicVisible`.
+### Cache traps (unchanged, and still sharp)
 
-Every public read path funnels through the same helper:
+Next's data cache is shared across users and the browser HTTP cache keys on
+URL, not on the Authorization header. Use `viewerFetch` (server) and
+`useViewerFetch` (client); both force `no-store`. `viewerFetch` forwards BOTH
+the session token and the declaration cookie. A server-to-server fetch carries
+no cookie jar, so forgetting the declaration serves a declared visitor an
+empty catalogue (the backend 404s).
 
-```ts
-// listings.service.ts (and the identical twin in categories.service.ts)
-private publicOnly(userId?: string): { publicVisible?: true } {
-  return userId ? {} : { publicVisible: true };
-}
-```
+`frontend/next.config.mjs` still sets `Cache-Control: private, no-cache,
+must-revalidate` on non-static routes, so Cloudflare cannot hold one viewer's
+snapshot.
 
-Grep `publicOnly(` before adding a read path. The non-obvious sites are the
-ones that bite: **seller reviews** (they embed listing titles), the **sitemap**
-and the **brand rollups**.
+### Rules when touching this
 
-`findById` returns **404**, not 403 and not a "sign in to view" interstitial.
-403 confirms the item exists, which is exactly the disclosure the wall prevents.
+- Every content controller needs `@UseGuards(OptionalAuthGuard,
+  ContentAccessGuard)` **and both guards provided in its own module** (Nest
+  resolves `@UseGuards` in the controller's module; a missing provider
+  crash-loops at boot while tsc and unit tests stay green).
+- Status gates are separate: DRAFT / PENDING / EXPIRED listings still 404 for
+  everyone but the owner. Never weaken those.
+- `findById` returns 404, never 403.
+- Nothing crawler-reachable may carry weapon vocabulary. The gate page copy is
+  neutral and deliberately so.
 
-`backend/src/listings/public-visibility.spec.ts` locks all of this down. If a
-change makes those tests fail, the change is wrong.
-
-### The two cache traps
-
-Both of these will serve one audience's catalogue to the other. Both have
-happened.
-
-**Trap 1 — Next.js's data cache is shared across all users.** Marking a fetch
-`next: { revalidate: n }` or `cache: 'force-cache'` puts the response in a
-process-wide cache with no notion of a viewer. One member's fetch is then
-replayed to anonymous visitors (leaking members-only stock), or an anonymous
-fetch is replayed to members (hiding their own catalogue).
-
-**Trap 2 — the browser HTTP cache keys on URL, not on the `Authorization`
-header.** A member's response cached under `/api/categories` is replayed to the
-*same browser* after sign-out.
-
-The fix for both is to use the two helpers and nothing else:
-
-| Context | Helper | What it does |
-|---|---|---|
-| Server Component | `viewerFetch()` — `frontend/lib/api-viewer.ts` | Reads the `ao_at` cookie via `serverAuth()` (`lib/auth-server.ts`), forwards it as a bearer, forces `cache: 'no-store'` and **ignores any caller-supplied cache option**. |
-| Client Component | `useViewerFetch()` — `frontend/lib/use-viewer-fetch.ts` | Same, from `useAuth()`. Any module-level memo cache must be keyed on signed-in state. |
-
-Both fail *soft*: if the token cannot be read, they proceed anonymously, which
-shows **less**, never more.
-
-`frontend/next.config.mjs` backs this up at the HTTP layer — every non-static
-route is served `Cache-Control: private, no-cache, must-revalidate`. `private`
-forbids any shared cache (Cloudflare) from holding a snapshot, so the leak
-cannot be reintroduced by a "Cache Everything" CDN rule. Fingerprinted assets
-under `/_next/static/*` are matched last and keep their immutable caching.
-
-`app/sitemap.ts` must stay **anonymous and `force-dynamic`**. Adding a token
-there republishes the entire firearm taxonomy. `revalidate` is wrong there for
-a second reason too: Next's fetch cache lives in `.next/cache` and survives a
-rebuild, so a deploy would prerender the sitemap from a pre-deploy snapshot.
-
-### Two more rules in the same family
-
-- **`publicVisible` must stay in `STATIC_LISTING_FILTERABLE_ATTRIBUTES`**
-  (`search/search.service.ts`) or Meilisearch rejects the anonymous query
-  outright — see section 6.
-- **No weapon word may appear in a public category name or slug.** A gate that
-  hides the Firearms tree but publishes `optics--handgun-scopes` has not done
-  its job; the scanner reads the URL, not the intent.
-  `assertNoWeaponWordInPublic` in `prisma/seed.ts` fails the seed if you try.
-  To publish something the pattern matches, rename the category to what it
-  actually is. Do not weaken the pattern.
-
-### The frontend half
-
-`frontend/middleware.ts` holds `isPublicRoute` — the allowlist of paths a
-signed-out visitor may load at all. Everything else redirects to `/sign-in`.
-
-The pattern matching behind it lives in `frontend/lib/route-matcher.ts`, **with
-a spec**, rather than inline: `(.*)` is the only wildcard and every other
-character is literal, so `.` matches a dot — without that, `/sw.js` would also
-publish `/swXjs`. A pattern matching too *little* 307s a public page and someone
-notices within the hour; a pattern matching too *much* makes a members-only page
-public and nobody notices at all.
-
-**Any new public page must be added there**, or it 307s to sign-in.
-
-Two implementation details in that file are load-bearing and commented as such:
-
-- The redirect uses `NextResponse.redirect`, **not** the Web-API
-  `Response.redirect`. The latter returns immutable headers, and decorating them
-  throws `TypeError: immutable`. Use `NextResponse` throughout — mixing the two
-  is how that trap gets re-set by whoever adds a header next.
-- The redirect base is pinned to `NEXT_PUBLIC_APP_URL`, never the inbound
-  `Host` header, so a spoofed Host cannot turn the sign-in bounce into an open
-  redirect.
-
-There is also a `COMING_SOON_GATE` env switch that rewrites everything to
-`/coming-soon` (with `X-Robots-Tag: noindex`) except API, admin, and
-token-authed pages.
+`backend/src/auth/content-access.spec.ts`,
+`backend/src/listings/content-visibility.spec.ts` and
+`frontend/lib/route-gate.spec.ts` lock all of this. If a change makes them
+fail, the change is wrong.
 
 ---
 
@@ -892,14 +833,16 @@ and disburse other people's money in South Africa.
 
 Things that look like tidying and are not.
 
-1. **`Category.publicVisible` and `Listing.publicVisible` default to `false`.**
-   Allowlist, not blocklist. Never flip the default. Never add a public read
-   path that skips `publicOnly()`.
+1. **The 18+ gate is the only content front door.** Every content controller
+   mounts `OptionalAuthGuard` + `ContentAccessGuard` (provided locally in its
+   module). `publicVisible` is legacy data and must never decide display
+   again; a crawler gets `/gate` and nothing else.
 2. **Never `revalidate` or `force-cache` a fetch whose result varies by
    viewer.** Use `viewerFetch` / `useViewerFetch`. `sitemap.ts` stays anonymous
    and `force-dynamic`.
-3. **Never branch on user-agent.** An auth wall is legitimate; showing a crawler
-   something different from a logged-out human is cloaking.
+3. **Never branch on user-agent.** An age gate is legitimate; showing a crawler
+   something different from a logged-out human is cloaking. The gate works
+   because a crawler does not click — not because we detect it.
 4. **A module with an `AdminJwtGuard` controller imports
    `JwtModule.register({})` and provides the guard.** Otherwise the app
    crash-loops at boot while `tsc` stays happy.

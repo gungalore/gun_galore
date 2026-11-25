@@ -21,6 +21,7 @@ import { CategoriesModule } from '../categories/categories.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 import { KycModule } from '../kyc/kyc.module';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 
 @Module({
   // CategoriesModule exports CategoriesService — used by ListingsService to
@@ -55,6 +56,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
     GooglePlacesService,
     // Optional-auth guard for the public-but-owner-aware GET /listings/:id.
     OptionalAuthGuard,
+    ContentAccessGuard,
   ],
   exports: [ListingsService, ListingQuestionsService, PriceEstimateService],
 })

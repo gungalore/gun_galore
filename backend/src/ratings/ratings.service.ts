@@ -224,21 +224,12 @@ export class RatingsService {
     const rows = await this.prisma.rating.findMany({
       where: {
         ratedId: user.id,
-        // A review embeds the listing TITLE ("Great seller - Glock 19 arrived
-        // fast") and the reviewer's free-text comment, so a seller profile was
-        // a back door onto members-only stock. Signed out, drop reviews that
-        // belong to a members-only listing entirely rather than blanking the
-        // title — the comment is user-authored and would leak the same thing.
-        //
-        // Consequence, accepted deliberately: the public review LIST can be
-        // shorter than the cached averageRating was computed over. A rating
-        // count that differs from a star average is a cosmetic inconsistency;
-        // a firearm model name on a public page is the thing we are fixing.
-        // Rating.transaction is a REQUIRED relation, so every rating has one —
-        // no null branch needed.
-        ...(userId
-          ? {}
-          : { transaction: { listing: { publicVisible: true } } }),
+        // A review embeds the listing TITLE and the reviewer's free-text
+        // comment. Content no longer varies by signed-in state: a declared
+        // 18+ visitor (or a member) sees the whole catalogue, and
+        // ContentAccessGuard has already refused anyone else before this
+        // handler runs. Do not reintroduce a publicVisible filter here — it
+        // is what made a seller profile a back door onto hidden stock.
       },
       orderBy: { createdAt: 'desc' },
       include: {

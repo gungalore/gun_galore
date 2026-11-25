@@ -3,41 +3,49 @@
 // reads next/headers and throws if pulled into a client bundle.
 import { serverAuth } from './auth-server';
 import { apiFetch } from './api';
+import { catalogueDeclarationToken } from './catalogue-access';
 
 /**
- * Server-side fetch for catalogue data whose CONTENT DEPENDS ON WHO IS ASKING.
+ * Server-side fetch for catalogue data whose ACCESS depends on who is asking.
  *
- * Since the members-only gate landed, the same URL returns two different
- * catalogues: signed-out callers get publicly-visible categories only (the
- * outdoor storefront), signed-in members get everything. The backend decides
- * that from the session token, so every server component reading listings,
- * categories, brands or facets has to forward it — otherwise a signed-in
- * member browsing the homepage would be served the cut-down public catalogue,
- * because the SSR fetch is anonymous even when the visitor is not.
+ * The site has two viewer states behind the 18+ gate:
  *
- * TWO RULES, both load-bearing:
+ *   - a member session (`ao_at`) — signed in, sees everything;
+ *   - a declared visitor (`ao_cat`) — accepted the 18+ gate, sees the same
+ *     catalogue as a member.
+ *
+ * The backend decides which one applies from those cookies, so every server
+ * component reading listings, categories, brands, community or tools has to
+ * forward them — a server-to-server fetch carries no cookie jar. Without the
+ * declaration, a declared visitor's SSR fetch is anonymous and the backend
+ * 404s content (ContentAccessGuard).
+ *
+ * THREE RULES, all load-bearing:
  *
  * 1. NEVER shared-cache the result. `next: { revalidate: n }` puts the
  *    response in Next's data cache, which is shared across ALL users — one
- *    member's fetch would then be replayed to anonymous visitors (leaking
- *    members-only stock) or an anonymous fetch replayed to members (hiding
- *    their own catalogue). This helper forces `cache: 'no-store'` and ignores
- *    any caller-supplied cache option. The pages using it are already dynamic.
+ *    member's fetch would then be replayed to anonymous visitors (leaking the
+ *    full catalogue) or an anonymous fetch replayed to members (hiding it).
+ *    This helper forces `cache: 'no-store'` and ignores any caller-supplied
+ *    cache option. The pages using it are already dynamic.
  *
- * 2. Identity comes ONLY from the verified session cookie. Never a header, a
- *    query param or a user-agent. Serving a crawler different content from a
- *    logged-out human is cloaking; this returns identical content to both.
+ * 2. Identity comes ONLY from the signed cookies. Never a header, a query
+ *    param or a user-agent. Serving a crawler different content from a
+ *    logged-out human is cloaking; a crawler simply never clicks the gate.
  *
- * Failure is soft: if the token can't be read we fall through anonymously,
- * which shows LESS, never more.
+ * 3. Failure is soft: if the cookies can't be read we fall through
+ *    anonymously, which shows LESS, never more.
  */
 export async function viewerFetch<T>(
   path: string,
   init?: Omit<RequestInit, 'cache'>,
 ): Promise<T> {
-  // A server-to-server fetch carries no cookie jar, so the token the browser
-  // sent us has to be forwarded explicitly as a header.
-  const { token } = await serverAuth();
+  // A server-to-server fetch carries no cookie jar, so the cookies the browser
+  // sent us have to be forwarded explicitly.
+  const [{ token }, declaration] = await Promise.all([
+    serverAuth(),
+    catalogueDeclarationToken(),
+  ]);
 
   return apiFetch<T>(path, {
     ...init,
@@ -45,6 +53,7 @@ export async function viewerFetch<T>(
     headers: {
       ...(init?.headers ?? {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(declaration ? { Cookie: `ao_cat=${declaration}` } : {}),
     },
   });
 }

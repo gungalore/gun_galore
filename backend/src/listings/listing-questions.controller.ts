@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ListingQuestionsService } from './listing-questions.service';
 
@@ -21,6 +23,7 @@ export class ListingQuestionsController {
   // SkipThrottle: SSR call from same IP would otherwise trip the bucket.
   @Get(':id/questions')
   @SkipThrottle()
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   list(@Param('id') listingId: string) {
     return this.qa.listPublic(listingId);
   }

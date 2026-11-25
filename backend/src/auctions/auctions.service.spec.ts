@@ -536,26 +536,20 @@ describe('getAuctionState visibility', () => {
     );
   });
 
-  it('404s a members-only auction to an anonymous caller', async () => {
+  // Content no longer varies by sign-in: a declared 18+ visitor sees the
+  // whole catalogue. Access is ContentAccessGuard's job, and the status gate
+  // above is the only row-level rule left in this service.
+  it('serves a members-only auction at the service level', async () => {
     const { service, prisma } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue({
       ...activeListing(),
       publicVisible: false,
     });
 
-    await expect(service.getAuctionState('L1')).rejects.toThrow(
-      'Listing not found',
-    );
-  });
+    const anonymous = await service.getAuctionState('L1');
+    expect(anonymous.id).toBe('L1');
 
-  it('serves a members-only auction to a signed-in caller', async () => {
-    const { service, prisma } = makeMocks();
-    prisma.listing.findUnique.mockResolvedValue({
-      ...activeListing(),
-      publicVisible: false,
-    });
-
-    const state = await service.getAuctionState('L1', 'U1');
-    expect(state.id).toBe('L1');
+    const member = await service.getAuctionState('L1', 'U1');
+    expect(member.id).toBe('L1');
   });
 });

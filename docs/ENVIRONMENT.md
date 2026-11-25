@@ -1002,6 +1002,26 @@ variable.
 Unset while the gate is on → nobody can bypass, including you. Rotate by
 changing the value and re-issuing the cookie through `/preview`.
 
+## The 18+ content gate
+
+There is no separate env variable. The gate reuses **`JWT_MEMBER_SECRET`** to
+sign the `ao_cat` declaration JWT (audience + purpose `catalogue-gate`, 30
+days, no `sub`), so the frontend middleware and the backend verify it with the
+secret both already hold.
+
+- A member session also passes the gate; the session and the declaration are
+  different tokens and cannot be used as each other.
+- `POST`/`DELETE /api/auth/catalogue-declare` mint/clear it (throttled; the
+  cookie is HttpOnly, Secure in production, SameSite=Lax, Path=/).
+- The route classes live in `frontend/lib/route-gate.ts`; enforcement is
+  `frontend/middleware.ts` (redirect to `/gate`) plus the backend
+  `ContentAccessGuard` (404 on content APIs without a session or declaration).
+- `/data-deletion` and `/paia` stay outside the gate for Meta/PAIA reasons;
+  everything else content-shaped, Terms included, is gated.
+- `robots.txt` disallows the site and there is no content sitemap — organic
+  indexing of content ends by design. See
+  `docs/design/catalogue-gate/spec.md`.
+
 ## Feature flags and build-time switches
 
 ### `NEXT_PUBLIC_ASKGG_CONTEXT`

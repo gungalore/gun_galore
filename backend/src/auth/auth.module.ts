@@ -8,6 +8,8 @@ import { ScanHandoffGuard } from './scan-handoff.guard';
 import { SessionService } from './session.service';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { CatalogueController } from './catalogue.controller';
+import { ContentAccessGuard } from './content-access.guard';
 
 /**
  * Global so any controller can `@UseGuards(AuthGuard)` (or one of the dual-auth
@@ -33,7 +35,7 @@ import { AuthController } from './auth.controller';
 @Global()
 @Module({
   imports: [JwtModule.register({})],
-  controllers: [AuthController],
+  controllers: [AuthController, CatalogueController],
   providers: [
     SessionService,
     AuthService,
@@ -42,6 +44,7 @@ import { AuthController } from './auth.controller';
     AuthOrTokenGuard,
     KycOrTokenGuard,
     ScanHandoffGuard,
+    ContentAccessGuard,
   ],
   exports: [
     SessionService,
@@ -51,6 +54,7 @@ import { AuthController } from './auth.controller';
     AuthOrTokenGuard,
     KycOrTokenGuard,
     ScanHandoffGuard,
+    ContentAccessGuard,
   ],
 })
 export class AuthModule {}
