@@ -5,6 +5,7 @@ import {
   AddressAutocomplete,
   type ParsedAddressComponents,
 } from '@/components/address-autocomplete';
+import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import {
   ManualAddressFields,
   emptyManualAddress,
@@ -81,6 +82,27 @@ function toApiAddress(v: ManualAddressValue): MotivationPrintAddress | null {
   };
 }
 
+/**
+ * True when every address part matches the prefilled profile address.
+ *
+ * Used only to keep the summary label honest — "Deliver to my default address"
+ * while the current address still IS that default, "Deliver to" once the
+ * seller has chosen/typed an alternative. The quote payload is built from the
+ * address itself either way, so nothing about pricing depends on this.
+ */
+function sameAddress(a: ManualAddressValue, b: ManualAddressValue): boolean {
+  const parts: Array<keyof ManualAddressValue> = [
+    'building',
+    'street',
+    'address2',
+    'suburb',
+    'city',
+    'postalCode',
+    'province',
+  ];
+  return parts.every((p) => (a[p] ?? '').trim() === (b[p] ?? '').trim());
+}
+
 export default function PrintDelivery({
   motivationId,
   token,
@@ -98,6 +120,15 @@ export default function PrintDelivery({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
+  // The default-address pattern (2026-11-25 operator: every delivery surface
+  // shows the default address + one control to change it). `profileAddress` is
+  // the address exactly as it was prefilled from the profile — the "default"
+  // the summary label and the reset button refer to; `addressEditing` opens
+  // the editor (address book + manual fields).
+  const [profileAddress, setProfileAddress] = useState<ManualAddressValue | null>(
+    null,
+  );
+  const [addressEditing, setAddressEditing] = useState(false);
   const seq = useRef(0);
 
   // The member's saved address is the starting point, but every field stays
@@ -123,7 +154,7 @@ export default function PrintDelivery({
         };
         if (!live) return;
         if (me.addrStreet || me.addrCity) {
-          setAddress({
+          const saved: ManualAddressValue = {
             building: '',
             street: me.addrStreet ?? '',
             address2: me.addrAddress2 ?? '',
@@ -131,7 +162,9 @@ export default function PrintDelivery({
             city: me.addrCity ?? '',
             postalCode: me.addrPostalCode ?? '',
             province: (me.addrProvince as ManualAddressValue['province']) ?? '',
-          });
+          };
+          setAddress(saved);
+          setProfileAddress(saved);
         }
         setPrefilled(true);
       } catch {
@@ -144,6 +177,32 @@ export default function PrintDelivery({
   }, [prefilled]);
 
   const apiAddress = useMemo(() => toApiAddress(address), [address]);
+
+  // ── Collapsed default-address summary ────────────────────────────────
+  // The prefilled profile address is what the summary shows; an alternative
+  // (picked from the book or typed) keeps the same label but drops the
+  // "my default address" wording once it no longer equals the profile one.
+  const hasSavedAddress = profileAddress !== null;
+  // Single display line: building, street, address2, suburb, city, postal.
+  // Province is required for the quote payload but is not part of the line.
+  const addressLine = [
+    address.building,
+    address.street,
+    address.address2,
+    address.suburb,
+    address.city,
+    address.postalCode,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(', ');
+  const addressIncomplete =
+    !address.street.trim() ||
+    !address.suburb.trim() ||
+    !address.city.trim() ||
+    !address.postalCode.trim();
+  const addressIsDefault =
+    profileAddress !== null && sameAddress(address, profileAddress);
 
   // Quote whenever the complete address changes. A stale answer is discarded by
   // the sequence number, not by hoping the requests finish in order.
@@ -218,6 +277,15 @@ export default function PrintDelivery({
       province: a.province as ManualAddressValue['province'],
     });
     setPrefilled(true);
+    // Picking from the book is a choice, not an edit session: close the editor
+    // so the chosen address collapses straight back into the summary row.
+    setAddressEditing(false);
+  }
+
+  /** Reset to the prefilled profile address and collapse the editor. */
+  function useDefaultAddress() {
+    if (profileAddress) setAddress({ ...profileAddress });
+    setAddressEditing(false);
   }
 
   async function saveToBook() {
@@ -306,46 +374,96 @@ export default function PrintDelivery({
 
       {mode === 'DELIVER' ? (
         <div className="mt-4">
-          <SavedAddressPicker onSelect={(a) => void pickSaved(a)} />
-          <div className="mt-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
-            <p className="m-0 mb-2 text-[12px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
-              Delivery address
-            </p>
-            <AddressAutocomplete
-              value={
-                address.street
-                  ? `${address.street}${address.suburb ? `, ${address.suburb}` : ''}`
-                  : ''
+          {hasSavedAddress && !addressEditing ? (
+            <DeliveryAddressSummary
+              label={
+                addressIsDefault ? 'Deliver to my default address' : 'Deliver to'
               }
-              onChange={(v) => {
-                setAddress((p) => ({ ...p, street: v }));
-              }}
-              onComponents={handleComponents}
+              address={addressLine}
+              incomplete={addressIncomplete}
+              onChange={() => setAddressEditing(true)}
             />
-            <div className="mt-2">
-              <ManualAddressFields
-                value={address}
-                onChange={setAddress}
-                idPrefix="print"
-              />
-            </div>
-            {apiAddress ? (
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void saveToBook()}
-                  disabled={saving || saved}
-                  className="text-[12px] font-medium text-[var(--red)] underline disabled:opacity-60"
-                >
-                  {saved
-                    ? 'Saved to your address book'
-                    : saving
-                      ? 'Saving…'
-                      : 'Save this address to my address book'}
-                </button>
+          ) : (
+            <div className="mt-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <p className="m-0 mb-2 text-[12px] uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                  Delivery address
+                </p>
+                {hasSavedAddress ? (
+                  <button
+                    type="button"
+                    onClick={useDefaultAddress}
+                    className="text-[12px]"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Use my default address
+                  </button>
+                ) : null}
               </div>
-            ) : null}
-          </div>
+              <SavedAddressPicker onSelect={(a) => void pickSaved(a)} />
+              <AddressAutocomplete
+                value={
+                  address.street
+                    ? `${address.street}${address.suburb ? `, ${address.suburb}` : ''}`
+                    : ''
+                }
+                onChange={(v) => {
+                  setAddress((p) => ({ ...p, street: v }));
+                }}
+                onComponents={handleComponents}
+              />
+              <div className="mt-2">
+                <ManualAddressFields
+                  value={address}
+                  onChange={setAddress}
+                  idPrefix="print"
+                />
+              </div>
+              {apiAddress ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void saveToBook()}
+                    disabled={saving || saved}
+                    className="text-[12px] font-medium text-[var(--red)] underline disabled:opacity-60"
+                  >
+                    {saved
+                      ? 'Saved to your address book'
+                      : saving
+                        ? 'Saving…'
+                        : 'Save this address to my address book'}
+                  </button>
+                </div>
+              ) : null}
+              {hasSavedAddress ? (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAddressEditing(false)}
+                    disabled={!apiAddress}
+                    className="px-4 py-2 rounded-[6px] text-sm"
+                    style={{
+                      background: 'var(--action-primary-bg)',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 500,
+                      cursor: apiAddress ? 'pointer' : 'not-allowed',
+                      opacity: apiAddress ? 1 : 0.5,
+                    }}
+                  >
+                    Use this address
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {quoting ? (
             <p className="m-0 mt-2 text-[12px] text-[var(--text-tertiary)]">

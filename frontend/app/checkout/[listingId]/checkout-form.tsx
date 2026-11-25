@@ -17,6 +17,7 @@ import { formatPrice } from '@/lib/utils';
 import { platformFeeForCents } from '@/lib/platform-fee';
 import { useCountdown } from '@/lib/use-countdown';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { usePaymentMethods } from '@/lib/payment-methods';
@@ -1377,64 +1378,20 @@ export function CheckoutForm({
               Loading your address…
             </p>
           ) : hasSavedAddress && !addressEditing ? (
-            <div
-              className="rounded-[6px] px-3 py-2.5"
-              style={{
-                background: 'var(--bg-card)',
-                border: deliverSummaryIncomplete
-                  ? '1px solid var(--warning)'
-                  : '1px solid var(--border-visible)',
+            <DeliveryAddressSummary
+              label={
+                deliverSummaryIsDefault
+                  ? 'Deliver to my default address'
+                  : 'Deliver to'
+              }
+              address={deliverSummaryLine}
+              incomplete={deliverSummaryIncomplete}
+              onChange={() => {
+                setUseDifferentAddress(true);
+                setAddressEditing(true);
               }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="text-xs"
-                    style={{ color: 'var(--text-tertiary)', fontWeight: 600 }}
-                  >
-                    {deliverSummaryIsDefault
-                      ? 'Deliver to my default address'
-                      : 'Deliver to'}
-                  </p>
-                  <p
-                    className="text-sm mt-0.5"
-                    style={{
-                      color: 'var(--text-primary)',
-                      lineHeight: 1.45,
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {deliverSummaryLine || 'No address on file'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUseDifferentAddress(true);
-                    setAddressEditing(true);
-                  }}
-                  className="flex-shrink-0 px-3 py-2 rounded-[6px] text-xs"
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border-visible)',
-                    color: 'var(--text-primary)',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Select a different address
-                </button>
-              </div>
-              {deliverSummaryIncomplete && (
-                <p
-                  className="text-[11px] mt-1.5"
-                  style={{ color: 'var(--warning)', lineHeight: 1.4 }}
-                >
-                  Your saved address looks incomplete — select a different
-                  address so the parcel reaches you.
-                </p>
-              )}
-            </div>
+            />
+
           ) : (
             <div
               className="rounded-[6px] p-3 space-y-3"

@@ -13,6 +13,7 @@ import {
   type DeliveryOption,
 } from '@/components/delivery-options-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -42,6 +43,25 @@ const inputStyle: React.CSSProperties = {
   padding: '8px 12px',
   fontSize: '14px',
 };
+
+// Only the pieces this form needs from GET /users/me: the profile's default
+// delivery address and the contact identity used to prefill the editor. Typed
+// locally (not imported from the marketplace checkout) so the two forms stay
+// independent.
+interface ProfileMe {
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  addrBuilding?: string | null;
+  addrStreet?: string | null;
+  addrAddress2?: string | null;
+  addrSuburb?: string | null;
+  addrCity?: string | null;
+  addrPostalCode?: string | null;
+  addrProvince?: string | null;
+  addrLat?: number | null;
+  addrLng?: number | null;
+}
 
 // ─── What the buyer pays on an accepted offer ────────────────────────────
 // Operator 2026-10: an offer on a Marketplace listing uses the marketplace
@@ -133,6 +153,14 @@ export function OfferCheckoutForm({
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [saveAddressToBook, setSaveAddressToBook] = useState(true);
   const [makeAddressDefault, setMakeAddressDefault] = useState(false);
+  // Profile default address + identity (GET /users/me). This is the checkout's
+  // resting address — the collapsed summary shows it, and it prefills the
+  // editor fields. The payload builder below is unchanged.
+  const [profile, setProfile] = useState<ProfileMe | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  // The editor is closed by default: the buyer sees the default address and
+  // one "Select a different address" control (operator, 2026-11-25).
+  const [addressEditing, setAddressEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +184,74 @@ export function OfferCheckoutForm({
       cancelled = true;
     };
   }, [getToken]);
+
+  // Profile default address — the resting address this checkout uses unless
+  // the buyer changes it. Fetched separately from the address book because it
+  // is the profile's own default, not an address-book row. Non-fatal: if the
+  // read fails the editor still starts empty and checkout works as before.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/users/me`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as ProfileMe;
+        if (cancelled) return;
+        setProfile(data);
+        // Prefill only an untouched form — a field the buyer already typed, or
+        // an address-book pick, must never be overwritten by this late read.
+        setDeliveryAddress((prev) => {
+          const hasAddress =
+            prev.streetAddress.trim() ||
+            prev.suburb.trim() ||
+            prev.city.trim() ||
+            prev.province ||
+            prev.postalCode.trim();
+          if (hasAddress) return prev;
+          const contactName = [data.firstName, data.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          return {
+            ...prev,
+            streetAddress: data.addrStreet ?? '',
+            suburb: data.addrSuburb ?? '',
+            city: data.addrCity ?? '',
+            province: data.addrProvince ?? '',
+            postalCode: data.addrPostalCode ?? '',
+            contactName: prev.contactName || contactName,
+            contactPhone: prev.contactPhone || (data.phone ?? ''),
+          };
+        });
+      } catch {
+        // Non-fatal — the buyer can still type a delivery address by hand.
+      } finally {
+        if (!cancelled) setProfileLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  // Reset the editor fields to the profile default (used by "Use my default
+  // address", which also closes the editor).
+  function applyProfileAddress(p: ProfileMe) {
+    setDeliveryAddress({
+      streetAddress: p.addrStreet ?? '',
+      suburb: p.addrSuburb ?? '',
+      city: p.addrCity ?? '',
+      province: p.addrProvince ?? '',
+      postalCode: p.addrPostalCode ?? '',
+      contactName: [p.firstName, p.lastName].filter(Boolean).join(' ').trim(),
+      contactPhone: p.phone ?? '',
+    });
+  }
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase-1 payment gate — card payments aren't live yet, so a checkout POST
@@ -200,6 +296,43 @@ export function OfferCheckoutForm({
     : undefined;
   const showDefaultPrompt =
     addressComplete && (!matchingSavedAddress || !matchingSavedAddress.isDefault);
+
+  // Profile-default summary (operator, 2026-11-25): the resting state is the
+  // profile address + one control to change it. `profileHasAddress` decides
+  // summary vs editor; a partial profile address is still shown, flagged
+  // `incomplete`, so the amber warning is reachable before Pay.
+  const profileHasAddress = Boolean(
+    profile?.addrStreet?.trim() ||
+      profile?.addrSuburb?.trim() ||
+      profile?.addrCity?.trim() ||
+      profile?.addrPostalCode?.trim(),
+  );
+  const profileAddressIncomplete = Boolean(
+    profile &&
+      (!profile.addrStreet?.trim() ||
+        !profile.addrSuburb?.trim() ||
+        !profile.addrCity?.trim() ||
+        (profile.addrPostalCode ?? '').trim().length < 4),
+  );
+  const effectiveAddressKey = addrKey(deliveryAddress);
+  const profileAddressKey = addrKey({
+    street: profile?.addrStreet ?? '',
+    suburb: profile?.addrSuburb ?? '',
+    city: profile?.addrCity ?? '',
+    postalCode: profile?.addrPostalCode ?? '',
+  });
+  const summaryMatchesProfile =
+    profileHasAddress &&
+    !!effectiveAddressKey &&
+    effectiveAddressKey === profileAddressKey;
+  const summaryAddress = [
+    deliveryAddress.streetAddress,
+    deliveryAddress.suburb,
+    deliveryAddress.city,
+    deliveryAddress.postalCode,
+  ]
+    .filter((v) => v.trim())
+    .join(', ');
 
   // A price quoted against the old address must never survive an edit.
   useEffect(() => {
@@ -352,22 +485,80 @@ export function OfferCheckoutForm({
       {method === 'COURIER' && (
         <div className="space-y-3">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Delivery address</p>
-          {/* UX-3 — saved-address picker (2+ book addresses only). Fills the
-              address fields; contact name/phone stay for the buyer. */}
-          <SavedAddressPicker
-            minToShow={1}
-            onSelect={(a: Address) =>
-              setDeliveryAddress((prev) => ({
-                ...prev,
-                streetAddress: a.street,
-                suburb: a.suburb ?? '',
-                city: a.city,
-                province: a.province,
-                postalCode: a.postalCode,
-              }))
-            }
-          />
-          <div className="grid grid-cols-1 gap-3">
+          {!profileLoaded ? (
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Loading your address…
+            </p>
+          ) : profileHasAddress && !addressEditing ? (
+            <DeliveryAddressSummary
+              label={
+                summaryMatchesProfile
+                  ? 'Deliver to my default address'
+                  : 'Deliver to'
+              }
+              address={summaryAddress}
+              incomplete={summaryMatchesProfile && profileAddressIncomplete}
+              onChange={() => setAddressEditing(true)}
+            />
+          ) : (
+            <div
+              className="rounded-[6px] p-3 space-y-3"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '1px solid var(--border-visible)',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.08em',
+                    fontWeight: 600,
+                  }}
+                >
+                  {profileHasAddress
+                    ? 'Select a different address'
+                    : 'Your delivery address'}
+                </p>
+                {profileHasAddress && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (profile) applyProfileAddress(profile);
+                      setAddressEditing(false);
+                    }}
+                    className="text-xs whitespace-nowrap"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0,
+                    }}
+                  >
+                    Use my default address
+                  </button>
+                )}
+              </div>
+              {/* UX-3 — saved-address picker (2+ book addresses only). Picking
+                  one fills the same fields, then closes the editor. */}
+              <SavedAddressPicker
+                minToShow={1}
+                onSelect={(a: Address) => {
+                  setDeliveryAddress((prev) => ({
+                    ...prev,
+                    streetAddress: a.street,
+                    suburb: a.suburb ?? '',
+                    city: a.city,
+                    province: a.province,
+                    postalCode: a.postalCode,
+                  }));
+                  setAddressEditing(false);
+                }}
+              />
+              <div className="grid grid-cols-1 gap-3">
             {(
               [
                 ['streetAddress', 'Street address'],
@@ -447,6 +638,34 @@ export function OfferCheckoutForm({
                   />
                   <span>Make this my default delivery address</span>
                 </label>
+              )}
+            </div>
+          )}
+
+              {/* Close the editor only once the address is complete; the
+                  payload's own readiness gate still applies to Pay. Only
+                  rendered when there IS a summary to close back to — a
+                  member with no profile address stays in the editor (current
+                  behaviour). */}
+              {profileHasAddress && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAddressEditing(false)}
+                    disabled={!addressComplete}
+                    className="px-4 py-2 rounded-[6px] text-sm"
+                    style={{
+                      background: 'var(--action-primary-bg)',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 500,
+                      cursor: addressComplete ? 'pointer' : 'not-allowed',
+                      opacity: addressComplete ? 1 : 0.5,
+                    }}
+                  >
+                    Use this address
+                  </button>
+                </div>
               )}
             </div>
           )}
