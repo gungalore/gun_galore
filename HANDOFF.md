@@ -7,6 +7,15 @@ overwritten.
 
 Last updated: **2026-11-25**.
 
+## 2026-11-25 — PRICES ARE THE PRICE: NO "+X% PLATFORM FEE" BESIDE THEM (FRONTEND-ONLY DEPLOY)
+
+Operator: *"+ 100% Platform Fee remove that from the prices. All prices must just be the price, extra cost comes on checkout."* Shipped `cd1d47b7` (frontend-only, 18:44 SAST); rollback `alloutdoor-20261125-184448.dump`; frontend health ×2 OK; public gate checks 307→/gate + gate 200; backend untouched. Checks: frontend typecheck, **191 files / 2,186 tests**, production build clean.
+
+- **Root cause of the "+100%":** the effective-percentage badge on the listing page used the R10 *minimum* Platform Fee, so a R10 listing showed "+ 100% Platform Fee". It read as part of the price.
+- **Removed** the `+X% Platform Fee` suffix beside the listing price entirely ([listings/[id]/page.tsx](frontend/app/listings/[id]/page.tsx)); the price is the item price and nothing else. The buyer-paid Platform Fee and delivery remain their own lines at checkout (unchanged), and the buy-mode explainer still says the extra cost is added at checkout.
+- **Rule for future price surfaces:** never annotate a pre-checkout price with a fee — not a percentage, not an amount. Fee/delivery belong to the checkout summary only.
+- **Live verification:** a declared visitor's listing HTML now contains **zero** `% Platform Fee` matches and renders the plain price; gate still 307→/gate and /gate 200.
+
 ## 2026-11-25 — PHASE 2: COMMUNITY, THE BENCH AND THE APPLICATION TRACKER OPEN TO DECLARED VISITORS (FULL DEPLOY)
 
 Second half of the same operator request (18+ gate replaces the signed-in/signed-out split). Shipped `aec2aeb3` (full deploy, 18:30 SAST); rollback `alloutdoor-20261125-183031.dump`; no migrations; all three PM2 services online; backend health ×2 OK; **deploy.sh now expects the gate**: public `/` must 307 to `/gate?next=…` AND `/gate` must answer 200 (it previously required 200 on `/`). Full gate: backend **451 suites / 6,625 tests**, frontend **191 files / 2,186 tests**, both typechecks clean, production build green.
