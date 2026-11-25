@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-11-25**.
 
+## 2026-11-25 — DEFAULT ADDRESS + "SELECT A DIFFERENT ADDRESS" ON EVERY DELIVERY SURFACE
+
+Operator: *"change this for all delivery on checkouts, autction, motivations and offers."* Shipped `32c852a3` (frontend-only, 10:21); rollback `alloutdoor-20261125-102122.dump`; frontend 200 ×2, public 200 ×2, new copy present in the checkout / offer-checkout / licence-pack bundles, no new error lines; frontend 2,092 tests + typecheck + build clean.
+
+- New shared [delivery-address-summary.tsx](frontend/components/delivery-address-summary.tsx): the collapsed row with the address, optional incomplete warning, and one **Select a different address** button.
+- **Standard checkout + auction-win checkout** (same form): refactored onto the shared row; editor keeps Use my default address / Use this address.
+- **Accepted-offer / auction-offer checkout** ([offer-checkout-form.tsx](frontend/app/checkout/offer/[offerId]/offer-checkout-form.tsx)): fetches the profile default (`GET /users/me`), prefills the address + contact fields when empty, shows the default row, and opens the address book + manual fields via the button; picking a saved address closes the editor. Quote/payload/Pay readiness unchanged.
+- **Motivation print-delivery** ([print-delivery.tsx](frontend/components/licence-centre/print-delivery.tsx)): the prefilled profile address is collapsed behind the same row; editor (address book + fields + save-to-book) opens on "Select a different address"; Use my default address / Use this address added. Server quote/totals/payload unchanged; spec updated (8/8).
+- Not changed: cart address (cart is not a checkout; its delivery block already collapses) and seller-side pickup addresses in the sell/edit forms.
+
 ## 2026-11-25 — CHECKOUT ADDRESS SIMPLIFIED: DEFAULT + ONE "SELECT A DIFFERENT ADDRESS"
 
 Operator: *"there should only be the default address and select different address on the checkout."* Fixed in `31ebaefa` (frontend-only, 09:27), rollback `alloutdoor-20261125-092736.dump`; frontend 200 ×2, public 200 ×2, new copy in the deployed chunk, no new error lines; 2,088 frontend tests + build clean.
