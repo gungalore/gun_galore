@@ -403,6 +403,10 @@ export function CheckoutForm({
   // from captureAddr instead of `me`. Reset on shipping-method change so
   // the override doesn't silently leak between methods.
   const [useDifferentAddress, setUseDifferentAddress] = useState(false);
+  // The address editor is closed by default: the buyer sees the DEFAULT
+  // address and one "Select a different address" control (operator,
+  // 2026-11-25). Opening it reveals the address book + manual fields.
+  const [addressEditing, setAddressEditing] = useState(false);
   useEffect(() => {
     // On the picker path `method` is a CONSEQUENCE of the buyer's delivery
     // choice, not a choice of its own — resetting here would throw away the
@@ -519,6 +523,32 @@ export function CheckoutForm({
     captureAddressComplete &&
     (!matchingSavedAddress || !matchingSavedAddress.isDefault) &&
     !useDifferentAddress;
+
+  // One-line summary for the collapsed address row. When the buyer picked a
+  // different address it is the capture values; otherwise the profile default.
+  const deliverSummaryLine = (
+    useDifferentAddress && captureAddr.street.trim()
+      ? [
+          captureAddr.building,
+          captureAddr.street,
+          captureAddr.suburb,
+          captureAddr.city,
+          captureAddr.postalCode,
+        ]
+      : [
+          me?.addrBuilding,
+          me?.addrStreet,
+          me?.addrSuburb,
+          me?.addrCity,
+          me?.addrPostalCode,
+        ]
+  )
+    .filter(Boolean)
+    .join(', ');
+  const deliverSummaryIncomplete =
+    !useDifferentAddress &&
+    (!me?.addrStreet || !me?.addrSuburb || !me?.addrCity || !me?.addrPostalCode);
+  const deliverSummaryIsDefault = !useDifferentAddress;
 
   // UX-3 — a picked address-book entry drives the SAME capture state a typed
   // address does, so the checkout payload is byte-identical to typing it. We
@@ -1330,128 +1360,107 @@ export function CheckoutForm({
         />
       )}
 
-      {/* Delivery address — captured BEFORE the options below, because the
-          options depend on it. Every collection point offered is one near
-          THIS address and every price is for this exact parcel to it, so
-          there is nothing honest to show until the address exists. The
-          picker renders its own "enter your address" state; this block's job
-          is to sit above it. */}
+      {/* Delivery address — DEFAULT first, one control to change it
+          (operator, 2026-11-25). The old block rendered the address book, two
+          choice tiles and the default-address chip together, which is the bulk
+          the sales audit kept finding. Address/quote/payload logic is
+          unchanged: the editor writes the same capture state a pick or a typed
+          address always did. */}
       {usesDeliveryPicker && (
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
             Delivery address
           </p>
-          {/* UX-3 — saved-address picker (renders only for 2+ book addresses).
-              Picking one drives the same capture state a typed address does. */}
-          <SavedAddressPicker onSelect={handlePickSavedAddress} />
-          {/*
-            ⚠️ THE CHOICE IS VISIBLE, NOT HIDDEN BEHIND A LINK. The buyer has
-            always been able to override the saved address, but only by finding
-            a small "Ship to a different address →" under the chip. Operator,
-            2026-11-22: the checkout must offer the address input "along with
-            the current saved address if it's available". Two explicit options,
-            same state and payload as before.
-          */}
-          {meLoaded && hasSavedAddress ? (
-            <div className="mb-2 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                aria-pressed={!useDifferentAddress}
-                onClick={() => setUseDifferentAddress(false)}
-                className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
-                style={{
-                  background: !useDifferentAddress
-                    ? 'var(--action-option-selected-bg)'
-                    : 'transparent',
-                  border: `1.5px solid ${
-                    !useDifferentAddress
-                      ? 'var(--action-option-selected-edge)'
-                      : 'var(--action-option-edge)'
-                  }`,
-                  color: !useDifferentAddress
-                    ? 'var(--action-option-selected-ink)'
-                    : 'var(--text-primary)',
-                }}
-              >
-                Use my saved address
-              </button>
-              <button
-                type="button"
-                aria-pressed={useDifferentAddress}
-                onClick={() => setUseDifferentAddress(true)}
-                className="rounded-[6px] border px-3 py-2 text-left text-[12px]"
-                style={{
-                  background: useDifferentAddress
-                    ? 'var(--action-option-selected-bg)'
-                    : 'transparent',
-                  border: `1.5px solid ${
-                    useDifferentAddress
-                      ? 'var(--action-option-selected-edge)'
-                      : 'var(--action-option-edge)'
-                  }`,
-                  color: useDifferentAddress
-                    ? 'var(--action-option-selected-ink)'
-                    : 'var(--text-primary)',
-                }}
-              >
-                Deliver to a different address
-              </button>
-            </div>
-          ) : null}
+
           {!meLoaded ? (
-            <p
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Loading your address…
             </p>
-          ) : hasSavedAddress && !useDifferentAddress ? (
-            // Saved-address confirmation chip with a "Ship to a
-            // different address" toggle right under it. Clicking
-            // the toggle flips useDifferentAddress and replaces
-            // this chip with the inline capture form below.
-            <DeliveringToChip
-              me={me}
-              onUseDifferent={() => setUseDifferentAddress(true)}
-            />
+          ) : hasSavedAddress && !addressEditing ? (
+            <div
+              className="rounded-[6px] px-3 py-2.5"
+              style={{
+                background: 'var(--bg-card)',
+                border: deliverSummaryIncomplete
+                  ? '1px solid var(--warning)'
+                  : '1px solid var(--border-visible)',
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="text-xs"
+                    style={{ color: 'var(--text-tertiary)', fontWeight: 600 }}
+                  >
+                    {deliverSummaryIsDefault
+                      ? 'Deliver to my default address'
+                      : 'Deliver to'}
+                  </p>
+                  <p
+                    className="text-sm mt-0.5"
+                    style={{
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.45,
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {deliverSummaryLine || 'No address on file'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseDifferentAddress(true);
+                    setAddressEditing(true);
+                  }}
+                  className="flex-shrink-0 px-3 py-2 rounded-[6px] text-xs"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-visible)',
+                    color: 'var(--text-primary)',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Select a different address
+                </button>
+              </div>
+              {deliverSummaryIncomplete && (
+                <p
+                  className="text-[11px] mt-1.5"
+                  style={{ color: 'var(--warning)', lineHeight: 1.4 }}
+                >
+                  Your saved address looks incomplete — select a different
+                  address so the parcel reaches you.
+                </p>
+              )}
+            </div>
           ) : (
             <div
-              className="rounded-[6px] p-4 space-y-3"
+              className="rounded-[6px] p-3 space-y-3"
               style={{
                 background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
+                border: '1px solid var(--border-visible)',
               }}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p
-                    className="text-xs uppercase mb-2"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      letterSpacing: '0.08em',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {useDifferentAddress
-                      ? 'Different delivery address for this order'
-                      : 'Your delivery address'}
-                  </p>
-                  <p
-                    className="text-xs"
-                    style={{
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {useDifferentAddress
-                      ? "We won't save this to your profile — it only applies to this purchase. Contact name + phone still come from your account."
-                      : "We'll save this to your profile so you don't have to enter it again. Your contact name and phone are pulled from your account."}
-                  </p>
-                </div>
-                {useDifferentAddress && (
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.08em',
+                    fontWeight: 600,
+                  }}
+                >
+                  {hasSavedAddress ? 'Select a different address' : 'Your delivery address'}
+                </p>
+                {hasSavedAddress && (
                   <button
                     type="button"
-                    onClick={() => setUseDifferentAddress(false)}
+                    onClick={() => {
+                      setUseDifferentAddress(false);
+                      setAddressEditing(false);
+                    }}
                     className="text-xs whitespace-nowrap"
                     style={{
                       color: 'var(--text-tertiary)',
@@ -1459,12 +1468,21 @@ export function CheckoutForm({
                       border: 'none',
                       cursor: 'pointer',
                       textDecoration: 'underline',
+                      padding: 0,
                     }}
                   >
-                    ← Use saved address
+                    Use my default address
                   </button>
                 )}
               </div>
+              {/* Address book — picking one fills the same capture state a
+                  typed address does, then closes the editor. */}
+              <SavedAddressPicker
+                onSelect={(a: Address) => {
+                  handlePickSavedAddress(a);
+                  setAddressEditing(false);
+                }}
+              />
               <AddressAutocomplete
                 value={
                   captureAddr.street
@@ -1489,9 +1507,7 @@ export function CheckoutForm({
                 </p>
               )}
               {/* Save-to-profile only when this is the buyer's first
-                  address. One-off overrides MUST NOT touch the
-                  saved profile. The options below read LIVE from these
-                  inputs either way — no Save step needed to see prices. */}
+                  address. One-off overrides MUST NOT touch the saved profile. */}
               {!useDifferentAddress && captureAddressComplete && (
                 <div className="space-y-2">
                   <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
@@ -1558,14 +1574,42 @@ export function CheckoutForm({
                 </button>
               )}
               {captureLat == null && (
-                <p
-                  className="text-xs"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  Tip: pick a result from the address suggestions so we
-                  can capture coordinates — door delivery needs them to
-                  price and route the drop-off.
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Tip: pick a result from the address suggestions so we can
+                  capture coordinates — door delivery needs them to price and
+                  route the drop-off.
                 </p>
+              )}
+              {hasSavedAddress && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAddressEditing(false)}
+                    disabled={
+                      !captureAddr.street.trim() ||
+                      !captureAddr.city.trim() ||
+                      captureLat == null ||
+                      captureLng == null
+                    }
+                    className="px-4 py-2 rounded-[6px] text-sm"
+                    style={{
+                      background: 'var(--action-primary-bg)',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      opacity:
+                        !captureAddr.street.trim() ||
+                        !captureAddr.city.trim() ||
+                        captureLat == null ||
+                        captureLng == null
+                          ? 0.5
+                          : 1,
+                    }}
+                  >
+                    Use this address
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1987,98 +2031,6 @@ function BreakdownLine({
 
 // Shared "Delivering to <name> · address …" chip used on the courier
 // checkout path when the buyer has a saved address on file.
-// Below the address line we surface:
-//   - "Wrong address? Edit in your profile" — sends the buyer to
-//     /profile/edit to update their persistent address (affects
-//     future orders too).
-//   - "Ship to a different address" — flips the parent's
-//     useDifferentAddress toggle so they can override JUST this
-//     order without touching their profile.
-function DeliveringToChip({
-  me,
-  onUseDifferent,
-}: {
-  me: Me | null;
-  onUseDifferent: () => void;
-}) {
-  const name =
-    [me?.firstName, me?.lastName].filter(Boolean).join(' ') || 'you';
-  const addr = [
-    me?.addrBuilding,
-    me?.addrStreet,
-    me?.addrSuburb,
-    me?.addrCity,
-    me?.addrPostalCode,
-  ]
-    .filter(Boolean)
-    .join(', ');
-  // Confidence check — the saved-profile path is the most common
-  // source of mis-delivery (people move and forget to update). If
-  // the obvious "completeness" markers (street, suburb, city, postal
-  // code) aren't all set, the address is suspect even if some parts
-  // are filled in. Surface an amber callout asking the buyer to
-  // confirm before they hand R5k+ to the courier.
-  const incomplete =
-    !me?.addrStreet || !me?.addrSuburb || !me?.addrCity || !me?.addrPostalCode;
-  return (
-    <div
-      className="rounded-[6px] p-3 text-sm"
-      style={{
-        background: incomplete
-          ? 'var(--warning-wash)'
-          : 'var(--success-wash)',
-        border: `0.5px solid ${incomplete ? 'var(--warning)' : 'var(--success-wash)'}`,
-        color: 'var(--text-primary)',
-      }}
-    >
-      <p style={{ fontWeight: 500, marginBottom: 4 }}>Delivering to {name}</p>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{addr || '(no address on file)'}</p>
-      {incomplete && (
-        <p
-          style={{
-            color: 'var(--warning)',
-            fontSize: 12,
-            marginTop: 6,
-            fontWeight: 500,
-          }}
-        >
-          ⚠ Your saved address looks incomplete. Confirm it&apos;s correct or use a different address — wrong delivery details mean wrong delivery.
-        </p>
-      )}
-      <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-1"
-        style={{ marginTop: 6 }}
-      >
-        <a
-          href="/profile/edit"
-          style={{
-            color: 'var(--text-secondary)',
-            fontSize: 12,
-            textDecoration: 'underline',
-          }}
-        >
-          Wrong address? Edit in your profile →
-        </a>
-        <button
-          type="button"
-          onClick={onUseDifferent}
-          style={{
-            color: 'var(--text-secondary)',
-            fontSize: 12,
-            textDecoration: 'underline',
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-          }}
-        >
-          Ship to a different address →
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function CollectionPapersAck({
   accepted,
   onChange,
