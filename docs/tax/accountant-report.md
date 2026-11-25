@@ -21,6 +21,11 @@ the transaction flow from a buyer payment to a seller payout.
   a liability (Client Funds Payable), not ALL Outdoor revenue or VAT turnover.
 - ALL Outdoor's own marketplace supplies are the **platform fee, commission and
   delivery handling margin**.
+- Every Zoho document line states its capacity on its face: `*` marks an
+  **agent collection** (money ALL Outdoor collects for the seller or courier)
+  and `**` marks a **principal supply** (ALL Outdoor's own fee). The document
+  notes carry the legend, so the split is readable without the chart of
+  accounts.
 - **Motivation** is the only **PRINCIPAL** product. Its paygate went live on
   20 November 2026 at **R295 per motivation**: the full price is ALL Outdoor
   revenue, invoiced to the member and posted to **Motivation Revenue**.
@@ -49,6 +54,16 @@ Consequences:
 3. On VAT registration, item and delivery must not carry ALL Outdoor output VAT.
 4. A tax invoice for the item remains the seller's responsibility; ALL Outdoor's
    invoice covers its agent supply.
+
+The capacity is marked on every document line:
+
+| Marker | Meaning | Lines |
+|---|---|---|
+| `*` | Agent collection — collected for a third party, posted to Client Funds Payable, never revenue | Item, Delivery |
+| `**` | Principal supply — ALL Outdoor's own supply, posted to revenue | Platform Fee / commission |
+
+Both markers are explained in the notes block of every buyer invoice, seller
+invoice and credit note.
 
 ## 4. Zoho Books organisation and accounts
 
@@ -87,12 +102,12 @@ Required accounts:
 | Step | Debit | Credit | Notes |
 |---|---|---|---|
 | Buyer pays | Bank | Buyer / Accounts Receivable | Full buyer total received |
-| Buyer invoice | Accounts Receivable | Client Funds Payable (item + delivery) | Agent collection |
-| Buyer invoice | Accounts Receivable | Platform Fee Revenue | Agent supply |
+| Buyer invoice | Accounts Receivable | Client Funds Payable (item + delivery) | `*` Agent collection |
+| Buyer invoice | Accounts Receivable | Platform Fee Revenue | `**` Principal supply (ALL Outdoor's own fee) |
 | Handling margin journal | Client Funds Payable | Shipping Handling Revenue | Delivery margin only |
 | Carrier freight journal | Client Funds Payable | Bank | Courier freight paid |
 | Seller payout | Client Funds Payable | Bank | Net amount sent to seller |
-| Commission invoice | Seller / Accounts Receivable | Commission Revenue | Agent commission |
+| Commission invoice | Seller / Accounts Receivable | Commission Revenue | `**` Principal supply (ALL Outdoor's own fee) |
 | Commission settlement | Client Funds Payable | Seller / Accounts Receivable | Clears commission from held money |
 
 The seller payout journal is a required part of the books; without it Client Funds

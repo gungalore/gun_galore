@@ -148,24 +148,26 @@ describe('ZohoBooksService buyer paperwork', () => {
     const body = JSON.parse(String(invoicePost?.init?.body));
     expect(body.reference_number).toBeUndefined();
     expect(body.notes).toContain('Agent collections');
-    expect(body.notes).toContain('Agent supply — ALL Outdoor Platform Fee');
+    expect(body.notes).toContain('Principal supply');
     expect(body.notes).toContain('not ALL Outdoor supplies');
     expect(body.notes).toContain('Ref: GG-BN-1234');
     expect(body.line_items).toHaveLength(3);
-    // Item price and the whole delivery figure are third-party money.
+    // The * marker says "collected on behalf of someone else". Item price and
+    // the whole delivery figure are third-party money.
     expect(body.line_items[0]).toMatchObject({
-      name: 'Test item — agent collection',
+      name: 'Test item *',
       description: '',
       rate: 1_000,
       account_id: 'acc-trust',
     });
     expect(body.line_items[1]).toMatchObject({
-      name: 'Delivery — agent collection',
+      name: 'Delivery *',
       description: '',
       rate: 159.5,
       account_id: 'acc-trust',
     });
-    // Only our platform fee is revenue.
+    // The ** marker says "ALL Outdoor's own supply". Only our platform fee is
+    // revenue.
     expect(body.line_items[2]).toMatchObject({
       name: 'Platform Fee **',
       description: '',
@@ -424,6 +426,81 @@ describe('ZohoBooksService buyer paperwork', () => {
     // Their paperwork is the remittance advice issued at payout.
     expect(calls).toHaveLength(0);
     expect(db.transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("marks the seller's fee as a principal supply on their invoice", async () => {
+    const calls: FetchCall[] = [];
+    const tx = {
+      id: 'tx-fee',
+      sellerId: 'seller1',
+      seller: {
+        id: 'seller1',
+        email: 'seller@example.com',
+        username: 'scope_seller',
+      },
+      listing: { title: 'Test item', referenceNumber: 'GG-1' },
+      commissionZar: 5_000,
+      listingPrice: 100_000,
+      sellerPayout: 95_000,
+      zohoCommissionInvoiceId: null,
+      zohoSellerInvoiceEmailedAt: null,
+    };
+    const db = {
+      transaction: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(tx)
+          .mockResolvedValue({ ...tx, zohoCommissionInvoiceId: 'inv-fee' }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'seller1', zohoContactId: 'contact-seller' }),
+        update: jest.fn(),
+      },
+    };
+
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u.includes('/oauth/v2/token')) {
+        return response({ access_token: 'token', expires_in: 3600 });
+      }
+      if (u.includes('/chartofaccounts')) {
+        return response({ chartofaccounts: ACCOUNTS });
+      }
+      if (/\/invoices(\?|$)/.test(u) && init?.method === 'POST') {
+        return response({
+          invoice: { invoice_id: 'inv-fee', invoice_number: 'INV-9' },
+        });
+      }
+      if (u.includes('/status/sent')) {
+        return response({ code: 0 });
+      }
+      if (u.includes('/invoices/inv-fee/email') && init?.method === 'POST') {
+        return response({ code: 0 });
+      }
+      throw new Error(`unexpected ${init?.method ?? 'GET'} ${u}`);
+    }) as unknown as typeof fetch;
+
+    const svc = new ZohoBooksService(db as never);
+    await svc.createCommissionInvoice('tx-fee');
+
+    const invoicePost = calls.find(
+      (c) => /\/invoices(\?|$)/.test(c.url) && c.init?.method === 'POST',
+    );
+    const body = JSON.parse(String(invoicePost?.init?.body));
+    // Only a principal supply lands on a seller invoice: ALL Outdoor's own fee.
+    expect(body.line_items).toEqual([
+      expect.objectContaining({
+        name: 'Platform Fee **',
+        description: 'All Outdoor principal supply',
+        rate: 50,
+      }),
+    ]);
+    expect(body.notes).toContain('Principal supply');
+    expect(body.notes).toContain('ALL Outdoor transaction reference: GG-1');
   });
 
   it('emails the seller their document once', async () => {

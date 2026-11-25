@@ -9,6 +9,9 @@
   enters the registration date and changes `vat_registered` deliberately.
 - While unregistered, no VAT is charged on any invoice.
 - The agent/principal rules are in `docs/tax/accountant-report.md`.
+- Every Zoho document line is marked `*` (agent collection — money collected for
+  the seller or courier) or `**` (principal supply — ALL Outdoor's own fee), and
+  the document notes carry the legend.
 
 ## Micro-business turnover tax
 
