@@ -239,11 +239,37 @@ if [ "$MODE" != "--frontend-only" ]; then
 fi
 
 # ── 6. from outside ─────────────────────────────────────────────────
+#
+# ⚠️ "200" IS NO LONGER THE HEALTHY PUBLIC ANSWER. Since the site-wide 18+
+# gate (2026-11), `/` must answer 307 to `/gate?next=%2F` for a visitor with no
+# declaration cookie — that redirect IS the front door. A 200 on `/` with the
+# gate code deployed would mean the gate is off, and a 307 to anywhere else is
+# a broken redirect. The gate page itself must render 200.
 say "public"
 for i in 1 2; do
-  code=$(curl -s -o /dev/null -w '%{http_code}' https://alloutdoor.co.za/)
-  echo "  site: $code"
-  [ "$code" = "200" ] || die "public site returned $code"
+  out=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' https://alloutdoor.co.za/)
+  code=${out%% *}
+  location=${out#* }
+  echo "  site: $code ${location:-(no redirect)}"
+  case "$code" in
+    307)
+      case "$location" in
+        *"/gate?next="*) ;;
+        *) die "public redirect is not the 18+ gate: $location" ;;
+      esac
+      ;;
+    200)
+      # Only legitimate while the gate is deliberately off (e.g. a
+      # gate-exempt fix staged before the frontend reload).
+      echo "  NOTE: / answered 200 — the 18+ gate is NOT redirecting"
+      ;;
+    *)
+      die "public site returned $code"
+      ;;
+  esac
+  gate=$(curl -s -o /dev/null -w '%{http_code}' https://alloutdoor.co.za/gate)
+  echo "  gate page: $gate"
+  [ "$gate" = "200" ] || die "public gate page returned $gate"
   sleep 3
 done
 
