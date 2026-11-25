@@ -28,8 +28,10 @@ import {
 } from '@/components/manual-address-fields';
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import type { Address } from '@/lib/types';
+import type { Me } from '@/lib/types';
 
 // Two-crumb trail — Breadcrumbs renders nothing for fewer than two, so this
 // is the shortest trail that still shows. Same on every state below (empty,
@@ -114,6 +116,13 @@ export default function CartPage() {
   const deliveryUserToggledRef = useRef(false);
   const deliveryAutoCollapsedRef = useRef(false);
   const addrTouchedRef = useRef(false);
+  // Default-address pattern (2026-11-25): the cart matches every checkout —
+  // show the member's default address and one "Select a different address"
+  // control instead of always-open pickers.
+  const [profileAddr, setProfileAddr] = useState<ManualAddressValue | null>(null);
+  const [addressEditing, setAddressEditing] = useState(false);
+  const profilePrefilledRef = useRef(false);
+  const profileFetchedRef = useRef(false);
 
   // cart-store's read() already normalises quantity to a whole number >= 1, so
   // this is belt-and-braces for the optional TYPE rather than a real case.
@@ -299,6 +308,53 @@ export default function CartPage() {
       .values(),
   );
 
+  // Fetch the member's default address once so the cart can open on it. A
+  // failure is non-fatal: the manual fields are the fallback.
+  useEffect(() => {
+    if (profileFetchedRef.current) return;
+    profileFetchedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const res = await fetch(`${API_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const me = (await res.json()) as Me;
+        if (cancelled) return;
+        if (!me?.addrStreet && !me?.addrCity) return;
+        const defaultAddr: ManualAddressValue = {
+          building: me.addrBuilding ?? '',
+          street: me.addrStreet ?? '',
+          address2: me.addrAddress2 ?? '',
+          suburb: me.addrSuburb ?? '',
+          city: me.addrCity ?? '',
+          postalCode: me.addrPostalCode ?? '',
+          province: (me.addrProvince as ManualAddressValue['province']) ?? '',
+        };
+        setProfileAddr(defaultAddr);
+        // Prefill only when the buyer has not typed anything yet, and never
+        // after a saved-address pick.
+        if (!profilePrefilledRef.current && !savedAddressPicked) {
+          profilePrefilledRef.current = true;
+          setAddr((prev) =>
+            prev.street.trim() || prev.city.trim() ? prev : defaultAddr,
+          );
+          setSavedAddressPicked(true);
+        }
+      } catch {
+        // Non-fatal — the manual fields remain.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const addrComplete =
     addr.street.trim() &&
     addr.suburb.trim() &&
@@ -381,6 +437,32 @@ export default function CartPage() {
         .slice(0, 2)
         .join(', ')
     : null;
+  const addressLine = [
+    addr.building.trim(),
+    addr.street.trim(),
+    addr.address2.trim(),
+    addr.suburb.trim(),
+    addr.city.trim(),
+    addr.postalCode.trim(),
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const addressIsDefault = !!(
+    profileAddr &&
+    ['building', 'street', 'address2', 'suburb', 'city', 'postalCode', 'province']
+      .every((k) =>
+        String(addr[k as keyof ManualAddressValue] ?? '').trim() ===
+        String(profileAddr[k as keyof ManualAddressValue] ?? '').trim(),
+      )
+  );
+  const profileAddressIncomplete = !!(
+    profileAddr &&
+    (!profileAddr.street.trim() ||
+      !profileAddr.suburb.trim() ||
+      !profileAddr.city.trim() ||
+      !profileAddr.postalCode.trim())
+  );
+
   const everyParcelChosen =
     deliveryGroups.length > 0 &&
     deliveryGroups.every(
@@ -893,9 +975,11 @@ export default function CartPage() {
                 Delivery
               </h2>
               <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {deliveryDestination
-                  ? `Deliver to ${deliveryDestination}`
-                  : 'Add a delivery address'}
+                {deliveryOpen
+                  ? 'Choose the address and speed'
+                  : deliveryDestination
+                    ? `Deliver to ${deliveryDestination}`
+                    : 'Add a delivery address'}
               </p>
             </div>
             <button
@@ -920,24 +1004,83 @@ export default function CartPage() {
           {deliveryOpen ? (
             <>
               <div className="mb-4">
-                {/* UX-3 — saved-address picker (2+ book addresses only).
-                    Picking one fills the same `addr` state the payload reads. */}
-                <SavedAddressPicker
-                  minToShow={1}
-                  onSelect={(a: Address) => {
-                    setSavedAddressPicked(true);
-                    setAddr({
-                      building: a.building ?? '',
-                      street: a.street,
-                      address2: a.address2 ?? '',
-                      suburb: a.suburb ?? '',
-                      city: a.city,
-                      postalCode: a.postalCode,
-                      province: a.province,
-                    });
-                  }}
-                />
-                <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+                {profileAddr && !addressEditing ? (
+                  <DeliveryAddressSummary
+                    label={
+                      addressIsDefault
+                        ? 'Deliver to my default address'
+                        : 'Deliver to'
+                    }
+                    address={addressLine}
+                    incomplete={profileAddressIncomplete && addressIsDefault}
+                    onChange={() => setAddressEditing(true)}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {profileAddr && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddr(profileAddr);
+                            setSavedAddressPicked(true);
+                            setAddressEditing(false);
+                          }}
+                          className="text-xs"
+                          style={{
+                            color: 'var(--text-tertiary)',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          Use my default address
+                        </button>
+                      </div>
+                    )}
+                    {/* UX-3 — saved-address picker (2+ book addresses only).
+                        Picking one fills the same `addr` state the payload reads. */}
+                    <SavedAddressPicker
+                      minToShow={1}
+                      onSelect={(a: Address) => {
+                        setSavedAddressPicked(true);
+                        setAddr({
+                          building: a.building ?? '',
+                          street: a.street,
+                          address2: a.address2 ?? '',
+                          suburb: a.suburb ?? '',
+                          city: a.city,
+                          postalCode: a.postalCode,
+                          province: a.province,
+                        });
+                        setAddressEditing(false);
+                      }}
+                    />
+                    <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+                    {profileAddr && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setAddressEditing(false)}
+                          disabled={!addrComplete}
+                          className="px-4 py-2 rounded-[6px] text-sm"
+                          style={{
+                            background: 'var(--action-primary-bg)',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 500,
+                            cursor: addrComplete ? 'pointer' : 'not-allowed',
+                            opacity: addrComplete ? 1 : 0.5,
+                          }}
+                        >
+                          Use this address
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mb-5">
