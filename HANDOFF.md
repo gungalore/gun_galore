@@ -7,6 +7,14 @@ overwritten.
 
 Last updated: **2026-11-25**.
 
+## 2026-11-25 — CHECKOUT ADDRESS SIMPLIFIED: DEFAULT + ONE "SELECT A DIFFERENT ADDRESS"
+
+Operator: *"there should only be the default address and select different address on the checkout."* Fixed in `31ebaefa` (frontend-only, 09:27), rollback `alloutdoor-20261125-092736.dump`; frontend 200 ×2, public 200 ×2, new copy in the deployed chunk, no new error lines; 2,088 frontend tests + build clean.
+
+- The delivery-address block no longer shows the address book, the two choice tiles and the default-address chip together. **Collapsed default:** one row — "Deliver to my default address" + the address + a single **Select a different address** button (incomplete-default warning kept).
+- Opening it shows the address book and manual fields, plus **Use my default address** and **Use this address** (enabled once coordinates are captured). Picking an address-book entry fills the same capture state as before and closes the editor.
+- Save-to-profile checkboxes/button, quote pricing and the checkout payload are unchanged; the now-unused `DeliveringToChip` component was deleted (net −48 lines in [checkout-form.tsx](frontend/app/checkout/[listingId]/checkout-form.tsx)).
+
 ## 2026-11-25 — SALES-SIDE PHASES 2–4 FINISHED (cart, sell wizard, auctions, quiet buttons)
 
 Operator: **"finish everything"** (after the checkout-recovery deploy). This closes every remaining item from [docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md](docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md).
