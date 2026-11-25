@@ -134,16 +134,11 @@ function renderGraphic(
   );
 }
 
-describe('PostCard — the graphic-content gate follows the member preference', () => {  it('skips the gate when the member chose to always show graphic content', () => {
+describe('PostCard — graphic media is always blurred, always revealable', () => {
+  it('gates FIELD content even when the member pref says show graphic', async () => {
+    // Operator 2026-11-25: blur must always be active in the feed; the member
+    // preference no longer skips it.
     renderGraphic({ showGraphic: true });
-    expect(screen.queryByText('Graphic content')).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: 'Tap to reveal' }),
-    ).toBeNull();
-  });
-
-  it('gates graphic content when the member turned it off, and reveals on tap', async () => {
-    renderGraphic({ showGraphic: false });
     expect(screen.getByText('Graphic content')).toBeTruthy();
     await userEvent.click(
       screen.getByRole('button', { name: 'Tap to reveal' }),
@@ -151,14 +146,20 @@ describe('PostCard — the graphic-content gate follows the member preference', 
     expect(screen.queryByText('Graphic content')).toBeNull();
   });
 
-  it('force-hides extreme content with no reveal button', () => {
+  it('gates EXTREME content and still offers reveal', async () => {
     renderGraphic({
       post: { ...graphicPost, graphicTier: 'EXTREME' },
       forceBlur: true,
       showGraphic: true,
     });
     expect(screen.getByText('Graphic content')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Show image' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Show image' }));
+    expect(screen.queryByText('Graphic content')).toBeNull();
+  });
+
+  it('does not gate a non-graphic post', () => {
+    renderCard();
+    expect(screen.queryByText('Graphic content')).toBeNull();
   });
 });
 

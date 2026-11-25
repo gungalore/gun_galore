@@ -119,24 +119,10 @@ export function FeedPreferencesClient() {
           Graphic content
         </h2>
         <p className="text-[13px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          Show graphic content (hunting, fishing, etc.) in your feed. On by
-          default — turn it off to blur all graphic posts.
+          Photos of hunting, fishing and field dressing are always blurred in
+          the feed. Tap an image to reveal it. There is no setting to turn the
+          blur off.
         </p>
-        <button
-          type="button"
-          onClick={() =>
-            void persist({ ...prefs, feedShowGraphic: !prefs.feedShowGraphic })
-          }
-          aria-pressed={prefs.feedShowGraphic}
-          className="gg-press px-4 py-2 rounded-full text-[12px] font-medium"
-          style={{
-            background: prefs.feedShowGraphic ? 'var(--action-primary-bg)' : 'var(--bg-inset)',
-            color: prefs.feedShowGraphic ? '#fff' : 'var(--text-secondary)',
-            border: '1px solid var(--border-visible)',
-          }}
-        >
-          {prefs.feedShowGraphic ? 'On' : 'Off'}
-        </button>
       </section>
 
       <section>

@@ -26,9 +26,17 @@ interface PostCardProps {
   onEditPost?: (post: FeedPost) => void;
   onDeletePost?: (post: FeedPost) => void;
   showMuted?: boolean;
-  /** Operator policy: keep graphic content hidden, no tap-to-reveal. */
+  /**
+   * @deprecated Ignored. Graphic media is ALWAYS blurred in the community feed
+   * (operator 2026-11-25: "blur must always be active... users can still click
+   * to reveal"); the reveal control is always offered. Kept so existing call
+   * sites keep compiling until they are tidied.
+   */
   forceBlur?: boolean;
-  /** Member preference: show graphic content. Default true. */
+  /**
+   * @deprecated Ignored — see forceBlur. The member's "show graphic content"
+   * preference no longer skips the blur gate.
+   */
   showGraphic?: boolean;
 }
 
@@ -70,8 +78,6 @@ export function PostCard({
   onEditPost,
   onDeletePost,
   showMuted,
-  forceBlur,
-  showGraphic = true,
 }: PostCardProps) {
   const [revealed, setRevealed] = useState(post.graphicTier === 'NONE');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -104,17 +110,22 @@ export function PostCard({
   }
 
   const graphic = post.graphicTier !== 'NONE';
-  const isExtreme = post.graphicTier === 'EXTREME';
-  // Only EXTREME content is ever force-hidden: the operator's policy flag, or a
-  // member who turned graphic content off. FIELD (normal hunting/fishing field
-  // photos) is only ever tap-to-reveal — forceBlur must not make an ordinary
-  // field photo permanently invisible.
-  const hiddenForever = graphic && isExtreme && (!!forceBlur || !showGraphic);
-  // The gate is shown for graphic media UNLESS the member chose "always show
-  // graphic content" (their preference skips it entirely), except for extreme
-  // content the operator has forced shut. See brand-pack DESIGN.md ("A per-user
-  // setting skips the gate").
-  const gated = graphic && (!showGraphic || (isExtreme && !!forceBlur));
+  // ⚠️ BLUR IS ALWAYS ON FOR GRAPHIC MEDIA IN THE COMMUNITY FEED.
+  //
+  // Operator 2026-11-25: "blur must always be active on public listings (users
+  // can still click to reveal)". Two older policies are therefore retired here:
+  //   - the member's "show graphic content" preference no longer skips the
+  //     gate (the feed is public behind the 18+ gate, so the default image is
+  //     always the blurred one);
+  //   - the operator force flag no longer makes extreme content permanently
+  //     invisible — every tier starts blurred and every tier keeps the
+  //     tap-to-reveal control.
+  //
+  // The preference/flag plumbing still exists for other surfaces, but this
+  // card ignores both props on purpose. Do not reintroduce a path that renders
+  // graphic media unblurred in the feed.
+  const hiddenForever = false;
+  const gated = graphic;
 
   async function share() {
     const url = `${window.location.origin}/community/p/${post.id}`;
