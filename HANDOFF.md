@@ -7,6 +7,15 @@ overwritten.
 
 Last updated: **2026-11-25**.
 
+## 2026-11-25 — CART ADDRESS MATCHES EVERY CHECKOUT (DEFAULT + "SELECT A DIFFERENT ADDRESS")
+
+Operator: *"everything should match, including the cart."* Shipped `3cbdcaf7` (frontend-only, 10:30); rollback `alloutdoor-20261125-102952.dump`; frontend 200 ×2, public 200 ×2, cart bundle carries the new address row, no new error lines; 2,092 frontend tests + typecheck + build clean.
+
+- [cart/page.tsx](frontend/app/cart/page.tsx) now fetches the member's default address (`GET /users/me`) once and prefills it when the buyer hasn't typed anything; the courier quote prices against it.
+- Expanded delivery shows the same shared `DeliveryAddressSummary` row: default address + incomplete warning + one **Select a different address** control. Opening it reveals the address book + manual fields with **Use my default address** / **Use this address**; picking a saved address fills the fields and closes the editor.
+- The outer delivery collapse (one line per parcel, Hide/Change) and all address/quote/checkout payload logic are unchanged.
+- Delivery address now matches on **every** buyer surface: cart, standard checkout, auction-win checkout, accepted-offer/auction-offer checkout and motivation print-delivery.
+
 ## 2026-11-25 — DEFAULT ADDRESS + "SELECT A DIFFERENT ADDRESS" ON EVERY DELIVERY SURFACE
 
 Operator: *"change this for all delivery on checkouts, autction, motivations and offers."* Shipped `32c852a3` (frontend-only, 10:21); rollback `alloutdoor-20261125-102122.dump`; frontend 200 ×2, public 200 ×2, new copy present in the checkout / offer-checkout / licence-pack bundles, no new error lines; frontend 2,092 tests + typecheck + build clean.
