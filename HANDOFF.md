@@ -7,6 +7,16 @@ overwritten.
 
 Last updated: **2026-11-25**.
 
+## 2026-11-25 — COMMUNITY FEED: BLUR ALWAYS ACTIVE, CLICK TO REVEAL (FRONTEND-ONLY DEPLOY)
+
+Operator: *"On the community feed, blur must always be active on public listings (users can still click click to reveal)."* Shipped `86ccf0b6` (frontend-only, 18:59 SAST); rollback `alloutdoor-20261125-185928.dump`; frontend health ×2 OK; gate checks 307→/gate + gate 200; backend untouched. Checks: frontend typecheck, **191 files / 2,186 tests**, production build clean.
+
+- **`PostCard` now gates every graphic-tier post unconditionally** ([post-card.tsx](frontend/components/community/post-card.tsx)): FIELD and EXTREME media always render blurred with the "Graphic content" overlay. Two older bypasses are retired — the member "show graphic content" preference no longer skips the gate, and the operator force flag no longer makes extreme content permanently invisible.
+- **Reveal always remains available.** Both tiers show the reveal control ("Tap to reveal" / "Show image") and clicking unblurs the media for that post.
+- **Preference UI no longer lies:** the "Show graphic content" toggle is removed from `/community/settings`; the section now states that hunting/fishing/field media is always blurred and tap-to-reveal is the only control. The stored `feedShowGraphic` field is left in place (unused by the feed), so no migration or API change.
+- `forceBlur` / `showGraphic` props on `PostCard` are marked `@deprecated` and ignored; existing call sites (feed, post modal/detail, profile) compile unchanged.
+- Specs updated: `post-card.spec.tsx` now asserts FIELD is gated even with `showGraphic: true`, EXTREME is revealable, and a NONE post is not gated. Live feed currently carries one FIELD post with images; the overlay is client-rendered after the feed fetch (SSR HTML is the shell), and the unit spec covers the render path.
+
 ## 2026-11-25 — PRICES ARE THE PRICE: NO "+X% PLATFORM FEE" BESIDE THEM (FRONTEND-ONLY DEPLOY)
 
 Operator: *"+ 100% Platform Fee remove that from the prices. All prices must just be the price, extra cost comes on checkout."* Shipped `cd1d47b7` (frontend-only, 18:44 SAST); rollback `alloutdoor-20261125-184448.dump`; frontend health ×2 OK; public gate checks 307→/gate + gate 200; backend untouched. Checks: frontend typecheck, **191 files / 2,186 tests**, production build clean.
