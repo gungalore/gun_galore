@@ -20,7 +20,6 @@ import {
   LISTING_TYPE_LABELS,
   discountPercent,
 } from '@/lib/utils';
-import { platformFeePctOfItem } from '@/lib/platform-fee';
 import { vicinityLabel } from '@/lib/vicinity';
 import ListingDistance from '@/components/listing-distance';
 import SellerControls from './seller-controls';
@@ -324,13 +323,13 @@ export default async function ListingDetailPage({
       ? discountPercent(listing.price, listing.compareAtPriceZarCents)
       : null;
 
-  // The buyer pays the Platform Fee on top at checkout. Show the effective
-  // rate on the item beside the price; delivery is quoted later and the fee is
-  // charged on that too.
-  const platformFeePct =
-    listing.listingType === 'BUY_NOW' && listing.price
-      ? platformFeePctOfItem(listing.price)
-      : null;
+  // ⚠️ NO PLATFORM FEE IS SHOWN BESIDE A PRICE. Operator 2026-11-25: "All
+  // prices must just be the price, extra cost comes on checkout." The listing
+  // price is the item price, full stop; the buyer sees the Platform Fee (and
+  // delivery) as separate lines at checkout. The old "+X% Platform Fee" suffix
+  // read as "+100%" on a R10 item because the R10 minimum fee applied, which
+  // made the price look wrong. Do not reintroduce a fee annotation on any
+  // pre-checkout price surface.
 
   // Product/Offer structured data so Google can show rich price/availability
   // results. Only emit an Offer when there's a fixed price (BUY_NOW /
@@ -791,18 +790,6 @@ export default async function ListingDetailPage({
                 >
                   {formatPrice(listing.price)}
                 </span>
-                {platformFeePct != null && (
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--text-tertiary)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    + {platformFeePct.toFixed(platformFeePct % 1 === 0 ? 0 : 1)}%
-                    Platform Fee
-                  </span>
-                )}
               </div>
               {/* UX-7 — "% off" chip + seller-stated disclaimer. */}
               {compareAtPct != null && (
