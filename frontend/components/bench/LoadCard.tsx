@@ -20,6 +20,7 @@
 import { useMemo } from 'react';
 
 import { SAFETY_LINE, projectileName, type LoadCardProps } from './contract';
+import GuestPrompt from './GuestPrompt';
 import { Btn, IconX, OverlayShell, Tag, type BenchSize, usePhone } from './primitives';
 import CartridgeThumb from './CartridgeThumb';
 import CoalGauge from './CoalGauge';
@@ -271,9 +272,20 @@ export function LoadCard({
 
   const actions = (
     <>
-      <Btn red size={size} onClick={onLog} style={phone ? { flex: 1 } : undefined}>
-        Log this load
-      </Btn>
+      {/*
+        ⚠️ NO onLog MEANS NO LOG BUTTON — SEE LoadCardProps.onLog. A declared
+        visitor can read this load but the log is a member's own record and
+        POST /bench/log 401s without a session, so the prompt takes the red
+        button's place rather than a control that can only fail. The spec card
+        beside it stays: it is a content read, and guests may have it.
+      */}
+      {onLog ? (
+        <Btn red size={size} onClick={onLog} style={phone ? { flex: 1 } : undefined}>
+          Log this load
+        </Btn>
+      ) : (
+        <GuestPrompt style={phone ? { flex: 1 } : { maxWidth: 240 }} />
+      )}
       <Btn size={size} onClick={onSpec} style={phone ? { flex: 1 } : undefined}>
         Cartridge spec
       </Btn>

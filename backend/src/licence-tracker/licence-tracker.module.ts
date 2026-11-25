@@ -7,6 +7,8 @@ import { LicenceTrackerController } from './licence-tracker.controller';
 import { LicenceTrackerService } from './licence-tracker.service';
 import { LicenceTrackerSweepService } from './licence-tracker-sweep.service';
 import { SapsEnquiryClient } from './saps-enquiry.client';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 
 /**
  * The SAPS application tracker.
@@ -34,6 +36,10 @@ import { SapsEnquiryClient } from './saps-enquiry.client';
     LicenceTrackerSweepService,
     SapsEnquiryClient,
     AdminJwtGuard,
+    // The guest check route mounts these; Nest resolves @UseGuards in this
+    // controller's own module.
+    OptionalAuthGuard,
+    ContentAccessGuard,
   ],
   exports: [LicenceTrackerService],
 })

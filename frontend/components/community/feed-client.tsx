@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth, useUser } from '../../lib/auth';
+import { SignInButton, useAuth, useUser } from '../../lib/auth';
 import {
   CommunityApiError,
   type FeedAd,
@@ -150,8 +150,9 @@ export function FeedClient() {
       // place and leaves the existing posts on screen.
       if (!silent) setLoading(true);
       try {
-        const token = await getToken();
-        if (!token) return;
+        // Reads are content: a declared signed-out visitor sends no token and
+        // the API authenticates them by the 18+ gate cookie instead.
+        const token = isSignedIn ? await getToken() : null;
         if (!silent) {
           const cfg = await fetchConfig(token).catch(() => null);
           if (cfg) setForceBlur(cfg.graphicBlurForced);
@@ -182,7 +183,7 @@ export function FeedClient() {
         if (!silent && currentRequest === requestId.current) setLoading(false);
       }
     },
-    [getToken, filterType, includeFiltered, searchQuery],
+    [getToken, isSignedIn, filterType, includeFiltered, searchQuery],
   );
 
   const loadPrefs = useCallback(async () => {
@@ -198,10 +199,10 @@ export function FeedClient() {
 
   useEffect(() => {
     if (!isLoaded) return;
-    if (!isSignedIn) return;
+    // The feed itself is readable by a declared visitor with no session.
     void loadFirst();
-    // Load preferences
-    void loadPrefs();
+    // Preferences are the member's own — a guest has none to load.
+    if (isSignedIn) void loadPrefs();
   }, [isLoaded, isSignedIn, loadFirst, loadPrefs]);
 
   // The composer now lives in the "My" panel (Create Post), so tell the feed to
@@ -240,8 +241,8 @@ export function FeedClient() {
       if (document.visibilityState !== 'visible') return;
       const ids = postIdsRef.current;
       if (!ids.length) return;
-      const token = await getToken();
-      if (!token) return;
+      // Counts are a public read; a guest polls them too (no token).
+      const token = isSignedIn ? await getToken() : null;
       try {
         const { counts } = await fetchPostCounts(token, ids);
         if (cancelled || !counts.length) return;
@@ -279,7 +280,7 @@ export function FeedClient() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [getToken]);
+  }, [getToken, isSignedIn]);
 
   // Restore the member's scroll position once the first page is on screen,
   // topping up any extra pages they had loaded so the position is reachable.
@@ -359,8 +360,7 @@ export function FeedClient() {
     const currentRequest = requestId.current;
     setLoadingMore(true);
     try {
-      const token = await getToken();
-      if (!token) return;
+      const token = isSignedIn ? await getToken() : null;
       const query = {
         before: nextBefore,
         type: filterType || undefined,
@@ -540,6 +540,35 @@ export function FeedClient() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* A declared visitor has no session: reads work, actions do not. The
+          copy is the sign-in prompt; PostCard disables its member controls. */}
+      {isLoaded && !isSignedIn && (
+        <div
+          role="note"
+          className="rounded-[8px] px-4 py-3 flex flex-wrap items-center gap-3"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p
+            className="text-[13px] flex-1 min-w-[200px]"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            You&apos;re browsing the community as a visitor. Sign in to post,
+            like, comment and follow.
+          </p>
+          <SignInButton mode="modal">
+            <span
+              className="gg-press inline-block px-4 py-2 rounded-[6px] text-[13px] font-medium"
+              style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
+            >
+              Sign in
+            </span>
+          </SignInButton>
+        </div>
+      )}
+
       <ChipRail
         items={FEED_FILTERS}
         value={filterType}
@@ -621,7 +650,9 @@ export function FeedClient() {
         >
           {searchQuery
             ? `No posts found for “${searchQuery}”.`
-            : 'Nothing here yet. Be the first to post.'}
+            : isSignedIn
+              ? 'Nothing here yet. Be the first to post.'
+              : 'Nothing here yet.'}
         </p>
       )}
 

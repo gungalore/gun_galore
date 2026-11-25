@@ -59,6 +59,24 @@ exact behaviour the 2026-08 gating avoided after two Meta restrictions.)
   legacy data (the 2026-08 gating data is untouched) but no longer decide
   display.
 
+## Phase 2 — the member tools opened to declared visitors (Deploy 2)
+
+Announced with Phase 1; shipped in the same architecture as a second deploy:
+
+- **Community** reads (feed, posts, profiles, search, counts, leaderboard,
+  route summaries) work for a declared signed-out visitor. Writes — post,
+  react, comment, follow, report, message, preferences — remain signed-in-only,
+  and the client swaps those controls for sign-in prompts.
+- **The Bench** works read-only for a declared visitor (SPEC §10 guest shelf:
+  `powders[]` / `bullets[]` / `cartridges[]` query). Saved bench, log, CSV and
+  share-creation remain signed-in-only.
+- **SAPS Application Tracker**: the index is now content, with a one-off
+  `POST /api/licence-centre/tracking/check` guest route (throttled, shared
+  parser/classifier, nothing persisted). A saved tracker's detail page stays
+  member-only.
+- Route classification: `/licence-centre/tracking` is an exact content
+  exception; `/licence-centre` and deeper tracking paths stay member-only.
+
 ## Tests that lock it
 
 - `backend/src/auth/content-access.spec.ts` — the 404 boundary.

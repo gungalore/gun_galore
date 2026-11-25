@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { FeedPost } from '../../lib/community-api';
+
+// Signed-in by default; the guest test flips this to prove the declared
+// signed-out read path (no token, no preferences, sign-in prompt).
+const authState = vi.hoisted(() => ({ signedIn: true }));
 
 const mocks = vi.hoisted(() => ({
   fetchFeed: vi.fn(),
@@ -18,8 +23,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ getToken: async () => 'test-token' }),
-  useUser: () => ({ isLoaded: true, isSignedIn: true }),
+  useAuth: () => ({
+    getToken: async () => (authState.signedIn ? 'test-token' : null),
+  }),
+  useUser: () => ({ isLoaded: true, isSignedIn: authState.signedIn }),
+  SignInButton: ({ children }: { children?: ReactNode }) => (
+    <a href="/sign-in">{children}</a>
+  ),
 }));
 vi.mock('../../lib/community-api', () => ({
   CommunityApiError: class CommunityApiError extends Error {
@@ -90,6 +100,7 @@ const post = {
 describe('Community feed search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.signedIn = true;
     window.sessionStorage.clear();
     mocks.fetchFeed.mockResolvedValue({ posts: [], ads: [], nextBefore: null });
     mocks.searchFeed.mockResolvedValue({ posts: [post], nextBefore: null });
@@ -150,5 +161,28 @@ describe('Community feed search', () => {
         'post-1',
       ]),
     );
+  });
+
+  it('reads the feed for a declared signed-out visitor with no token, and prompts sign-in', async () => {
+    authState.signedIn = false;
+    mocks.fetchFeed.mockResolvedValue({
+      posts: [post],
+      ads: [],
+      nextBefore: null,
+    });
+
+    render(<FeedClient />);
+
+    // The published feed is CONTENT: it loads without a session…
+    expect(await screen.findByText('Search result post')).toBeTruthy();
+    expect(mocks.fetchFeed).toHaveBeenCalledWith(null, {
+      type: undefined,
+      includeFiltered: false,
+    });
+    expect(mocks.fetchConfig).toHaveBeenCalledWith(null);
+    // …but the member's own preferences are never requested.
+    expect(mocks.fetchPreferences).not.toHaveBeenCalled();
+    // And the actions that need a session are replaced by a sign-in prompt.
+    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
   });
 });

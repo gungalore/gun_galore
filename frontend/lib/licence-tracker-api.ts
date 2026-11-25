@@ -85,6 +85,24 @@ export interface CreateTrackerBody {
   submittedOn?: string | null;
 }
 
+/** What a one-off, no-account guest check returns. Nothing is persisted. */
+export interface GuestCheckView {
+  kind: TrackerKind;
+  reference: string;
+  serial: string | null;
+  outcome: 'row' | 'no_records';
+  applicationType: string | null;
+  applicationNumber: string | null;
+  calibre: string | null;
+  make: string | null;
+  serialSeen: string | null;
+  status: string | null;
+  statusDate: string | null;
+  sapsUpdatedOn: string | null;
+  statusDescription: string | null;
+  nextStep: string | null;
+}
+
 export interface AddEventBody {
   title: string;
   status?: string | null;
@@ -193,6 +211,17 @@ export const licenceTrackerApi = {
       `/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
     ),
+
+  /**
+   * One-off check for a visitor with no account (behind the 18+ gate).
+   * Sends no token; the browser's same-origin cookies carry the gate
+   * declaration. Nothing is saved server-side.
+   */
+  guestCheck: (body: CreateTrackerBody) =>
+    request<GuestCheckView>(async () => null, '/check', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   /** Ask SAPS now. Cooldown-gated — a 429 is a TrackerCooldownError. */
   check: (t: TokenGetter, id: string) =>

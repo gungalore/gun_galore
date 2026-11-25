@@ -227,7 +227,34 @@ export class FeedService {
     return u as ViewerRow;
   }
 
-  private postInclude(userId: string) {
+  /**
+   * The viewer row for a CONTENT READ, or null for a declared signed-out
+   * visitor (the 18+ gate's `ao_cat` declaration — not a session; the controller
+   * already refused a caller with neither). A guest has no mute list, no
+   * preferences and no reactions of their own, so every read helper below
+   * treats null as "nothing personal": no mute/follow/like state.
+   *
+   * Writes and private reads never use this — they call {@link viewer} and rely
+   * on AuthGuard having produced a user id.
+   */
+  private async optionalViewer(userId?: string): Promise<ViewerRow | null> {
+    if (!userId) return null;
+    return this.viewer(userId);
+  }
+
+  /**
+   * The viewer's own reaction row on each post. A guest matches nothing —
+   * `id: { in: [] }` — so `liked`/`disliked` come back false without a special
+   * branch in shapePost.
+   */
+  private likesSelect(viewerId?: string) {
+    return {
+      where: viewerId ? { userId: viewerId } : { id: { in: [] as string[] } },
+      select: { id: true, kind: true },
+    };
+  }
+
+  private postInclude(viewerId?: string) {
     return {
       author: { select: PUBLIC_AUTHOR_SELECT },
       images: { orderBy: { order: 'asc' as const } },
@@ -240,7 +267,7 @@ export class FeedService {
           status: true,
         },
       },
-      likes: { where: { userId }, select: { id: true, kind: true } },
+      likes: this.likesSelect(viewerId),
       video: {
         select: {
           id: true,
@@ -256,10 +283,11 @@ export class FeedService {
 
   /** Exclude content the viewer has muted. Feed + search only, never the shop. */
   private filterWhere(
-    v: ViewerRow,
+    v: ViewerRow | null,
     includeFiltered: boolean,
   ): Prisma.PostWhereInput {
-    if (includeFiltered) return {};
+    // A guest has no mute list, and "show filtered" never filters anyway.
+    if (!v || includeFiltered) return {};
     const conditions: Prisma.PostWhereInput[] = [];
     if (v.feedMutedPostTypes.length) {
       conditions.push({ type: { in: v.feedMutedPostTypes as PostType[] } });
@@ -289,7 +317,8 @@ export class FeedService {
     return conditions.length ? { AND: conditions } : {};
   }
 
-  private isMuted(post: Post, v: ViewerRow): boolean {
+  private isMuted(post: Post, v: ViewerRow | null): boolean {
+    if (!v) return false;
     return (
       v.feedMutedPostTypes.includes(post.type) ||
       v.feedMutedAuthorIds.includes(post.authorId) ||
@@ -330,7 +359,11 @@ export class FeedService {
     };
   }
 
-  private shapePost(post: PostWithRelations, v: ViewerRow, includeFiltered: boolean) {
+  private shapePost(
+    post: PostWithRelations,
+    v: ViewerRow | null,
+    includeFiltered: boolean,
+  ) {
     const inFlight =
       post.status === PostStatus.PENDING_MODERATION && !post.moderatedAt;
     const inReview =
@@ -419,9 +452,9 @@ export class FeedService {
   // Reads
   // ─────────────────────────────────────────────────────────────────
 
-  async listFeed(userId: string, q: FeedQueryDto) {
+  async listFeed(viewerId: string | undefined, q: FeedQueryDto) {
     await this.assertEnabled();
-    const v = await this.viewer(userId);
+    const v = await this.optionalViewer(viewerId);
     const limit = Math.min(q.limit ?? FEED_PAGE_DEFAULT, FEED_PAGE_MAX);
     const posts = (await this.prisma.post.findMany({
       where: {
@@ -431,19 +464,22 @@ export class FeedService {
         ...this.detailWhere(q),
         // Published posts for everyone, plus the viewer's OWN posts still in
         // moderation or rejected so the author sees "Processing"/"Blocked".
-        OR: [
-          { status: PostStatus.PUBLISHED },
-          {
-            authorId: userId,
-            status: {
-              in: [PostStatus.PENDING_MODERATION, PostStatus.REJECTED],
-            },
-          },
-        ],
+        // A declared guest has no own-post branch at all.
+        OR: viewerId
+          ? [
+              { status: PostStatus.PUBLISHED },
+              {
+                authorId: viewerId,
+                status: {
+                  in: [PostStatus.PENDING_MODERATION, PostStatus.REJECTED],
+                },
+              },
+            ]
+          : [{ status: PostStatus.PUBLISHED }],
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: this.postInclude(userId),
+      include: this.postInclude(viewerId),
     })) as PostWithRelations[];
 
     return {
@@ -543,9 +579,9 @@ export class FeedService {
     };
   }
 
-  async searchFeed(userId: string, q: FeedSearchDto) {
+  async searchFeed(viewerId: string | undefined, q: FeedSearchDto) {
     await this.assertEnabled();
-    const v = await this.viewer(userId);
+    const v = await this.optionalViewer(viewerId);
     const limit = Math.min(q.limit ?? FEED_PAGE_DEFAULT, FEED_PAGE_MAX);
     const needle = q.q.trim();
     const lowerNeedle = needle.toLowerCase();
@@ -583,7 +619,7 @@ export class FeedService {
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: this.postInclude(userId),
+      include: this.postInclude(viewerId),
     })) as PostWithRelations[];
 
     return {
@@ -596,36 +632,41 @@ export class FeedService {
     };
   }
 
-  async getPost(userId: string, postId: string) {
+  async getPost(viewerId: string | undefined, postId: string) {
     await this.assertEnabled();
-    const v = await this.viewer(userId);
+    const v = await this.optionalViewer(viewerId);
     const post = (await this.prisma.post.findUnique({
       where: { id: postId },
-      include: this.postInclude(userId),
+      include: this.postInclude(viewerId),
     })) as PostWithRelations | null;
     // 404, never 403 — do not confirm the existence of a non-published post.
-    // The author may always see their own (to watch processing / dispute).
-    if (!post || (post.status !== PostStatus.PUBLISHED && post.authorId !== userId)) {
+    // The author may always see their own (to watch processing / dispute); a
+    // guest never has an own-post branch.
+    if (
+      !post ||
+      (post.status !== PostStatus.PUBLISHED &&
+        (!viewerId || post.authorId !== viewerId))
+    ) {
       throw new NotFoundException();
     }
-    const comments = await this.listComments(postId, userId);
+    const comments = await this.listComments(postId, viewerId);
     return { post: this.shapePost(post, v, false), comments };
   }
 
   /**
-   * Members who liked a post, newest like first. Visible to any signed-in
-   * member (operator decision 2026-10-10): the list is public to the member
-   * base, exactly like the like count on the card. Only username + the
-   * privacy-gated avatar are ever exposed — never a real name.
+   * Members who liked a post, newest like first. A content READ: visible to
+   * every declared visitor, exactly like the like count on the card (operator
+   * decision 2026-10-10). Only username + the privacy-gated avatar are ever
+   * exposed — never a real name.
    */
   async listPostLikes(
-    userId: string,
+    viewerId: string | undefined,
     postId: string,
     before?: string,
     kind: ReactionKind = ReactionKind.LIKE,
   ) {
     await this.assertEnabled();
-    await this.viewer(userId);
+    await this.optionalViewer(viewerId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { id: true, status: true },
@@ -672,13 +713,13 @@ export class FeedService {
    * privacy contract as the post list: username + privacy-gated avatar only.
    */
   async listCommentLikes(
-    userId: string,
+    viewerId: string | undefined,
     commentId: string,
     before?: string,
     kind: ReactionKind = ReactionKind.LIKE,
   ) {
     await this.assertEnabled();
-    await this.viewer(userId);
+    await this.optionalViewer(viewerId);
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { id: true, status: true },
@@ -827,9 +868,9 @@ export class FeedService {
    * counts fresh on a poll without re-fetching (and re-ordering) the feed.
    * Only PUBLISHED posts are returned; unknown/non-published ids are dropped.
    */
-  async postCounts(userId: string, ids: string[]) {
+  async postCounts(viewerId: string | undefined, ids: string[]) {
     await this.assertEnabled();
-    await this.viewer(userId);
+    if (viewerId) await this.viewer(viewerId);
     const capped = Array.from(
       new Set(ids.map((id) => id.trim()).filter(Boolean)),
     ).slice(0, 100);
@@ -846,14 +887,14 @@ export class FeedService {
     return { counts };
   }
 
-  private async listComments(postId: string, userId: string) {
+  private async listComments(postId: string, viewerId?: string) {
     const comments = await this.prisma.comment.findMany({
       where: { postId, status: PostStatus.PUBLISHED },
       orderBy: { createdAt: 'asc' },
       take: 500,
       include: {
         author: { select: PUBLIC_AUTHOR_SELECT },
-        likes: { where: { userId }, select: { id: true, kind: true } },
+        likes: this.likesSelect(viewerId),
       },
     });
     return comments.map((c) => ({
@@ -878,9 +919,9 @@ export class FeedService {
     }));
   }
 
-  async getProfile(userId: string, username: string) {
+  async getProfile(viewerId: string | undefined, username: string) {
     await this.assertEnabled();
-    const v = await this.viewer(userId);
+    const v = await this.optionalViewer(viewerId);
     const profile = await this.prisma.user.findUnique({
       where: { usernameLower: username.toLowerCase() },
       select: {
@@ -900,12 +941,18 @@ export class FeedService {
 
     const [following, followerCount, followingCount, social, postCount, commentCount] =
       await Promise.all([
-        this.prisma.follow.findUnique({
-          where: {
-            followerId_followingId: { followerId: userId, followingId: profile.id },
-          },
-          select: { id: true },
-        }),
+        // A declared guest follows nobody: no member row to look up.
+        viewerId
+          ? this.prisma.follow.findUnique({
+              where: {
+                followerId_followingId: {
+                  followerId: viewerId,
+                  followingId: profile.id,
+                },
+              },
+              select: { id: true },
+            })
+          : Promise.resolve(null),
         this.prisma.follow.count({ where: { followingId: profile.id } }),
         this.prisma.follow.count({ where: { followerId: profile.id } }),
         this.prisma.userSocialStats.findUnique({
@@ -939,7 +986,7 @@ export class FeedService {
       },
       orderBy: { createdAt: 'desc' },
       take: FEED_PAGE_DEFAULT,
-      include: this.postInclude(userId),
+      include: this.postInclude(viewerId),
     })) as PostWithRelations[];
 
     const socialPoints = social?.points ?? 0;
@@ -979,11 +1026,12 @@ export class FeedService {
 
   /**
    * Member-facing client config. Read per request so an operator can change
-   * the graphic-blur policy in Settings without a deploy.
+   * the graphic-blur policy in Settings without a deploy. Also served to a
+   * declared guest — the graphic-blur policy applies to everyone.
    */
-  async getConfig(userId: string) {
+  async getConfig(viewerId?: string) {
     await this.assertEnabled();
-    await this.viewer(userId);
+    if (viewerId) await this.viewer(viewerId);
     return {
       graphicBlurForced: await this.settings.get(FLAGS.feedGraphicBlurForced),
       gateEnabled: await this.settings.get(FLAGS.feedGateEnabled),
@@ -1587,7 +1635,7 @@ export class FeedService {
   }
 
   /** Full route points for the route page: published, or the author. */
-  async getRoute(userId: string, postId: string) {
+  async getRoute(viewerId: string | undefined, postId: string) {
     await this.assertEnabled();
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
@@ -1598,7 +1646,10 @@ export class FeedService {
       },
     });
     if (!post || !post.route) throw new NotFoundException();
-    if (post.status !== PostStatus.PUBLISHED && post.authorId !== userId) {
+    if (
+      post.status !== PostStatus.PUBLISHED &&
+      (!viewerId || post.authorId !== viewerId)
+    ) {
       // Fail closed: a post still in moderation must not confirm its route.
       throw new NotFoundException();
     }
@@ -1616,7 +1667,7 @@ export class FeedService {
    * the author must have enabled sharing for anyone but themselves.
    */
   async downloadRouteGpx(
-    userId: string,
+    viewerId: string | undefined,
     postId: string,
   ): Promise<{ body: string; filename: string }> {
     await this.assertEnabled();
@@ -1629,7 +1680,7 @@ export class FeedService {
       },
     });
     if (!post || !post.route) throw new NotFoundException();
-    const isAuthor = post.authorId === userId;
+    const isAuthor = !!viewerId && post.authorId === viewerId;
     if (post.status !== PostStatus.PUBLISHED && !isAuthor) {
       throw new NotFoundException();
     }

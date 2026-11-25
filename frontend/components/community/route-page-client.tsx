@@ -66,8 +66,9 @@ export interface RoutePageClientProps {
  * The full GPX viewer: summary stats, download permission, the map (or its
  * static sketch), the elevation profile and the inspected point.
  *
- * The server page has already passed the CommunityGate; this component still
- * reads the session because every API call carries the member's token.
+ * A content read: a declared signed-out visitor sees a published route (and
+ * can download the .gpx when the author shared it). Only the author's sharing
+ * toggle is member-only. Every call sends no token when there is no session.
  */
 export function RoutePageClient({ postId }: RoutePageClientProps) {
   const { getToken, userId } = useAuth();
@@ -99,11 +100,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
     setPostMissing(false);
     setRouteMissing(false);
     try {
-      const token = await getToken();
-      if (!token) {
-        setLoadError(true);
-        return;
-      }
+      const token = isSignedIn ? await getToken() : null;
       const postData = await fetchPost(token, postId);
       setPost(postData.post);
 
@@ -128,12 +125,12 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, postId]);
+  }, [getToken, postId, isSignedIn]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded) return;
     void load();
-  }, [isLoaded, isSignedIn, load]);
+  }, [isLoaded, load]);
 
   // The stored route stays simplified; densify a display copy only for the
   // map/chart/slider so the inspector moves at ~5 m instead of stepping between
@@ -227,8 +224,7 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
     setActionError(null);
     setDownloading(true);
     try {
-      const token = await getToken();
-      if (!token) throw new Error('No session token');
+      const token = isSignedIn ? await getToken() : null;
       const { blob, filename } = await downloadPostRouteGpx(token, postId);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -271,15 +267,6 @@ export function RoutePageClient({ postId }: RoutePageClientProps) {
     return (
       <p className="text-center text-[14px]" style={{ color: 'var(--text-tertiary)' }}>
         Loading route…
-      </p>
-    );
-  }
-  if (!isSignedIn) {
-    // The server page renders CommunityGate; this is the client-session-lost
-    // case (an expired refresh token while the page sat open).
-    return (
-      <p className="text-center text-[14px]" style={{ color: 'var(--text-tertiary)' }}>
-        Please sign in to view this route.
       </p>
     );
   }

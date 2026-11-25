@@ -31,8 +31,9 @@ export function PostDetailClient({ id }: { id: string }) {
 
   const load = useCallback(async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
+      // A declared signed-out visitor reads the post with no token; the 18+
+      // gate cookie authenticates the request instead.
+      const token = isSignedIn ? await getToken() : null;
       const cfg = await fetchConfig(token).catch(() => null);
       if (cfg) setForceBlur(cfg.graphicBlurForced);
       const data = await fetchPost(token, id);
@@ -44,12 +45,12 @@ export function PostDetailClient({ id }: { id: string }) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, id]);
+  }, [getToken, id, isSignedIn]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded) return;
     void load();
-  }, [isLoaded, isSignedIn, load]);
+  }, [isLoaded, load]);
 
   async function react(kind: 'like' | 'dislike') {
     if (!post) return;

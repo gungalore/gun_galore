@@ -50,7 +50,7 @@ describe('routeGate — the 18+ gate classes', () => {
       '/documents',
       '/licence-centre',
       '/licence-centre/applications',
-      '/licence-centre/tracking',
+      '/licence-centre/tracking/abc',
       '/account',
       '/settings',
       '/profile',
@@ -93,6 +93,9 @@ describe('routeGate — the 18+ gate classes', () => {
       '/community/p/abc',
       '/community/u/someone',
       '/bench',
+      // The trackers index is a public tool behind the gate since Phase 2;
+      // a SAVED tracker's detail page above stays member-only.
+      '/licence-centre/tracking',
       '/motivation',
       '/faq',
       '/terms',

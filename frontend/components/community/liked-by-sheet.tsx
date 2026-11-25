@@ -47,8 +47,8 @@ export function LikedBySheet({
 
   const load = useCallback(
     async (before?: string) => {
+      // A like list is a content read: no token for a declared guest.
       const token = await getTokenRef.current();
-      if (!token) return;
       const res = commentId
         ? await fetchCommentLikes(token, commentId, before, kind)
         : await fetchPostLikes(token, postId ?? '', before, kind);

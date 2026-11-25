@@ -13,6 +13,11 @@
  * rest spread below, exactly as `onToggle` does. Naming it out of the spread
  * to "make it explicit" is how the phone ends up one prop behind the desktop.
  *
+ * ⚠️ AND `signedIn` IS ANSWERED HERE TOO. A declared visitor on a phone gets
+ * the same sheet with the same shelf — it is the save claim that changes, so
+ * the badge becomes the prompt exactly as it does on the rail. Two shells, one
+ * decision: the page passes one flag, not two.
+ *
  * ⚠️ THE DIALOG BEHAVIOUR IS OverlayShell's, NOT THIS FILE'S. Backdrop, the
  * bottom-sheet box, the grab handle, the entrance, Escape (top-most overlay
  * ONLY — §9, and the shared stack in primitives.tsx is the only thing that can
@@ -25,10 +30,11 @@
 
 import { useId } from 'react';
 import type { BenchSheetProps } from './contract';
-import { BENCH_HINT, BenchSections, SavedBadge } from './BenchRail';
+import { BENCH_HINT, BenchSections, GUEST_BENCH_HINT, SavedBadge } from './BenchRail';
+import GuestPrompt from './GuestPrompt';
 import { Btn, IconX, OverlayShell } from './primitives';
 
-export default function BenchSheet({ open, onClose, ...bench }: BenchSheetProps) {
+export default function BenchSheet({ open, onClose, signedIn = true, ...bench }: BenchSheetProps) {
   const uid = useId();
   const titleId = `${uid}-title`;
 
@@ -53,7 +59,13 @@ export default function BenchSheet({ open, onClose, ...bench }: BenchSheetProps)
         <h2 id={titleId} className="head" style={{ flex: 1, margin: 0, fontSize: 18 }}>
           My bench
         </h2>
-        <SavedBadge style={{ marginRight: 8 }} />
+        {/* See BenchRail: the badge is a member's "saved on every change"; a
+            guest's shelf is this sitting's only, so it says so instead. */}
+        {signedIn ? (
+          <SavedBadge style={{ marginRight: 8 }} />
+        ) : (
+          <GuestPrompt compact style={{ marginRight: 8 }} />
+        )}
         <IconX onClick={onClose} label="Close" size="mobile" />
       </div>
 
@@ -62,7 +74,7 @@ export default function BenchSheet({ open, onClose, ...bench }: BenchSheetProps)
           max-height instead of scrolling. */}
       <div className="scroll" style={{ flex: '1 1 auto', minHeight: 0, padding: '0 16px 28px' }}>
         <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-tertiary)' }}>
-          {BENCH_HINT}
+          {signedIn ? BENCH_HINT : GUEST_BENCH_HINT}
         </p>
 
         {/* SPEC §9 tap targets: the phone's 40px chip, from the same primitive

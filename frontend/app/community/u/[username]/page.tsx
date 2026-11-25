@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { serverAuth } from '../../../../lib/auth-server';
 import { BRAND_NAME } from '../../../../lib/brand';
-import { CommunityGate } from '../../../../components/community/community-gate';
 import { ProfileClient } from '../../../../components/community/profile-client';
 
 export const dynamic = 'force-dynamic';
@@ -20,14 +18,16 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * A public profile is CONTENT: behind the 18+ gate (applied by the middleware),
+ * readable by a declared guest. Only following is a member action.
+ */
 export default async function CommunityProfilePage({
   params,
 }: {
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const { userId } = await serverAuth();
-  if (!userId) return <CommunityGate />;
 
   return (
     <main

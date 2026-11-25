@@ -104,8 +104,9 @@ const MEMBER_ONLY = [
   '/community/me',
   '/community/settings',
   // The Document Library + Motivation Writer (review sheet, pack, start,
-  // interview, vault profile). The Application Tracker root moves to content
-  // in Phase 2; a saved tracker's detail page stays private.
+  // interview, vault profile). The Application Tracker INDEX is a content
+  // exception above (public tool behind the gate); a saved tracker's detail
+  // page is personal and stays here.
   '/licence-centre',
   // Selling is an action, not content.
   '/listings/new',
@@ -113,21 +114,26 @@ const MEMBER_ONLY = [
 
 export type RouteGate = 'gate-exempt' | 'member-only' | 'content';
 
+/**
+ * Exact paths that would otherwise match a member-only prefix but are
+ * actually content.
+ *
+ * The SAPS Application Tracker's index is a public tool behind the gate: a
+ * declared visitor may run one-off checks without an account. A SAVED
+ * tracker's detail page (`/licence-centre/tracking/<id>`) is personal data
+ * and stays member-only, so this is an exact match, not a prefix.
+ */
+const CONTENT_EXCEPTIONS = ['/licence-centre/tracking'];
+
 function matches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
-
-/**
- * `/checkout/<id>?t=<ACTION TOKEN>` is the SMS payment link. The token is the
- * credential and the buyer may hold no session at all; it is exempt from BOTH
- * walls. Checked by the middleware, not here, because this function only sees
- * the pathname.
- */
 
 /** Which wall (if any) a pathname sits behind. */
 export function routeGate(pathname: string): RouteGate {
   const path = pathname || '/';
   if (GATE_EXEMPT.some((p) => matches(path, p))) return 'gate-exempt';
+  if (CONTENT_EXCEPTIONS.includes(path)) return 'content';
   if (MEMBER_ONLY.some((p) => matches(path, p))) return 'member-only';
   return 'content';
 }

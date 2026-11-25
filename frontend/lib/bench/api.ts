@@ -1,4 +1,9 @@
 import { safeJson } from '../safe-json';
+// The bench bullet's identity on the wire is the same key the chips use:
+// `calibre|weight`. Imported rather than re-spelled — a second spelling that
+// differs by so much as an empty part leaves a guest's bullet switched off on
+// the screen and live in the query, exactly as it would for a member.
+import { bulletKey } from '@/components/bench/contract';
 
 /**
  * THE BENCH — the client's API.
@@ -105,6 +110,15 @@ async function call<T>(
     cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
+      /**
+       * ⚠️ NO TOKEN MEANS NO Authorization HEADER AT ALL. A signed-out visitor's
+       * reads are the 18+-declared content reads: the browser sends the `ao_cat`
+       * cookie because these calls are same-origin in production (nginx proxies
+       * /api), and fetch's default credentials mode already does that. An empty
+       * `Bearer ` header would instead make the request look like a broken
+       * session to OptionalAuthGuard, and nothing on this module should send
+       * one for a visitor who has no session to present.
+       */
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers ?? {}),
     },
@@ -418,6 +432,26 @@ export interface LogResultsPatch {
 
 /* ── Calls ──────────────────────────────────────────────────────────── */
 
+/**
+ * The shelf a signed-out visitor sends instead of a stored one.
+ *
+ * 🚨 IT IS THE SAME THREE AXES A SAVED BENCH HAS, AND NOTHING ELSE. The Bench
+ * is an AND across powders, bullets and cartridges; a guest has no saved shelf
+ * to read, so the page holds one in state and sends it with every bench-relative
+ * read. The server turns it into the SAME GuestBench a stored shelf becomes —
+ * see BenchController.benchFor — so a guest gets the member's answer, not a
+ * second, thinner projection.
+ *
+ * ⚠️ A GUEST SHELF IS A FILTER, NEVER A WRITE. Nothing on this wire can save it,
+ * and no endpoint on the guest path reads a user row; the page shows the
+ * sign-in prompt because there is nowhere to keep it until they do.
+ */
+export interface GuestShelfQuery {
+  powderIds: string[];
+  bullets: { weightGr: number; calibreIn?: number | null }[];
+  cartridgeKeys: string[];
+}
+
 export interface LoadQuery {
   /**
    * Grains either side of a bench bullet's weight to search. Omitted means
@@ -433,6 +467,14 @@ export interface LoadQuery {
   weight?: string;
   /** Bench entries the member has switched off for this search only. */
   off?: string[];
+  /**
+   * The shelf in the page's state, for a caller with no session.
+   *
+   * ⚠️ ABSENT FOR A MEMBER, DELIBERATELY. A signed-in search is answered from
+   * the stored bench, and sending the query shelf too would leave two answers
+   * about one screen one edit away from disagreeing.
+   */
+  shelf?: GuestShelfQuery;
 }
 
 /**
@@ -460,12 +502,30 @@ function setTolerance(p: URLSearchParams, tolerance: number | undefined): void {
   }
 }
 
+/**
+ * The guest shelf onto a query string.
+ *
+ * 🚨 THE SPELLING IS THE SPEC'S, VERBATIM: `powders[]`, `bullets[]`,
+ * `cartridges[]` (SPEC-BUILD §4). The server reads those keys as repeated
+ * parameters, and a bullet goes over as the chip key — `calibre|weight` — which
+ * is the same identity the results AND on. A comma-joined list here would work
+ * for a powder id and fail for nothing visible; the array form says which axis
+ * each value belongs to without relying on the value's shape.
+ */
+function appendShelf(p: URLSearchParams, shelf: GuestShelfQuery): void {
+  for (const id of shelf.powderIds) p.append('powders[]', id);
+  for (const b of shelf.bullets) p.append('bullets[]', bulletKey(b));
+  for (const key of shelf.cartridgeKeys) p.append('cartridges[]', key);
+}
+
 function query(q: LoadQuery): string {
   const p = new URLSearchParams();
   if (q.cartridge && q.cartridge !== 'all') p.set('cartridge', q.cartridge);
   if (q.weight && q.weight !== 'any') p.set('weight', q.weight);
   setTolerance(p, q.tolerance);
   if (q.off?.length) p.set('off', q.off.join(','));
+  // Only a signed-out caller has this — see LoadQuery.shelf.
+  if (q.shelf) appendShelf(p, q.shelf);
   const s = p.toString();
   return s ? `?${s}` : '';
 }
@@ -508,6 +568,12 @@ export interface BenchScope {
    */
   cartridge?: LoadQuery['cartridge'];
   weight?: LoadQuery['weight'];
+  /**
+   * A signed-out visitor's shelf, so the counts are promises about the shelf
+   * the list beside them was built from. Absent for a member — see
+   * LoadQuery.shelf.
+   */
+  shelf?: GuestShelfQuery;
 }
 
 function scopeParam(scope: BenchScope, extra?: Record<string, string>): string {
@@ -516,6 +582,7 @@ function scopeParam(scope: BenchScope, extra?: Record<string, string>): string {
   if (scope.cartridge && scope.cartridge !== 'all') p.set('cartridge', scope.cartridge);
   if (scope.weight && scope.weight !== 'any') p.set('weight', scope.weight);
   setTolerance(p, scope.tolerance);
+  if (scope.shelf) appendShelf(p, scope.shelf);
   const s = p.toString();
   return s ? `?${s}` : '';
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAuth } from '../../lib/auth';
+import { SignInButton, useAuth } from '../../lib/auth';
 import {
   type FeedComment,
   addComment,
@@ -52,7 +52,10 @@ export function CommentThread({
   pinComposer?: boolean;
   emptyLabel?: string;
 }) {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
+  // Comments are readable by a declared signed-out visitor; writing, reacting
+  // and reporting need a member. The composer becomes a sign-in prompt instead.
+  const signedIn = !!userId;
   const [local, setLocal] = useState<FeedComment[]>(comments);
   const [sort, setSort] = useState<SortMode>(initialSort);
   const [draft, setDraft] = useState('');
@@ -203,7 +206,7 @@ export function CommentThread({
     );
   }
 
-  const composer = (
+  const composer = signedIn ? (
     <div
       className={pinComposer ? 'shrink-0 px-3 py-3' : 'mt-4'}
       style={
@@ -265,6 +268,41 @@ export function CommentThread({
         </button>
       </div>
     </div>
+  ) : (
+    <div
+      className={pinComposer ? 'shrink-0 px-3 py-3' : 'mt-4'}
+      style={
+        pinComposer
+          ? {
+              background: 'var(--bg-card)',
+              borderTop: '0.5px solid var(--border)',
+            }
+          : undefined
+      }
+    >
+      <div
+        className="rounded-[8px] px-3 py-3 flex flex-wrap items-center gap-3"
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+        }}
+      >
+        <p
+          className="text-[13px] flex-1 min-w-[160px]"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          Sign in to join the conversation.
+        </p>
+        <SignInButton mode="modal">
+          <span
+            className="gg-press inline-block px-4 py-2 rounded-[6px] text-[13px] font-medium"
+            style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
+          >
+            Sign in
+          </span>
+        </SignInButton>
+      </div>
+    </div>
   );
 
   return (
@@ -307,6 +345,7 @@ export function CommentThread({
           <div key={c.id}>
             <CommentRow
               comment={c}
+              signedIn={signedIn}
               onReact={react}
               onReply={startReply}
               onReport={report}
@@ -319,6 +358,7 @@ export function CommentThread({
                     key={r.id}
                     comment={r}
                     reply
+                    signedIn={signedIn}
                     onReact={react}
                     onReply={startReply}
                     onReport={report}
@@ -349,6 +389,7 @@ export function CommentThread({
 function CommentRow({
   comment,
   reply,
+  signedIn,
   onReact,
   onReply,
   onReport,
@@ -356,6 +397,7 @@ function CommentRow({
 }: {
   comment: FeedComment;
   reply?: boolean;
+  signedIn: boolean;
   onReact: (comment: FeedComment, kind: 'like' | 'dislike') => void;
   onReply: (comment: FeedComment) => void;
   onReport: (commentId: string) => void;
@@ -412,7 +454,9 @@ function CommentRow({
           </span>
           <button
             type="button"
-            onClick={() => onReact(comment, 'like')}
+            onClick={() => (signedIn ? onReact(comment, 'like') : undefined)}
+            disabled={!signedIn}
+            title={signedIn ? undefined : 'Sign in to like comments'}
             className="gg-press font-medium"
             style={{ color: comment.liked ? 'var(--red)' : 'var(--text-tertiary)' }}
             aria-pressed={comment.liked}
@@ -433,7 +477,9 @@ function CommentRow({
           )}
           <button
             type="button"
-            onClick={() => onReact(comment, 'dislike')}
+            onClick={() => (signedIn ? onReact(comment, 'dislike') : undefined)}
+            disabled={!signedIn}
+            title={signedIn ? undefined : 'Sign in to dislike comments'}
             className="gg-press font-medium"
             style={{
               color: comment.disliked ? 'var(--red)' : 'var(--text-tertiary)',
@@ -456,14 +502,17 @@ function CommentRow({
               {comment.dislikeCount}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => onReply(comment)}
-            className="gg-press font-medium"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            Reply
-          </button>
+          {signedIn && (
+            <button
+              type="button"
+              onClick={() => onReply(comment)}
+              className="gg-press font-medium"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Reply
+            </button>
+          )}
+          {signedIn && (
           <div className="relative">
             <button
               type="button"
@@ -498,6 +547,7 @@ function CommentRow({
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

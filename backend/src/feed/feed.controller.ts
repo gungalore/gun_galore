@@ -22,7 +22,9 @@ import { ReactionKind } from '@prisma/client';
 import { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { AuthGuard } from '../auth/auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { FeedPreferencesDto } from './dto/feed-preferences.dto';
@@ -35,12 +37,18 @@ import { FEED_MAX_ROUTE_BYTES, FEED_MAX_VIDEO_BYTES } from './feed.types';
 import { FeedService } from './feed.service';
 
 /**
- * Member-facing community API. Every method is session-guarded: the public
- * join gate is a FRONTEND concern (a server-side auth check that renders the
- * gate), so the API itself is members-only and leaks nothing signed-out.
+ * Community API. READS are content: a declared 18+ visitor sees the same
+ * published posts as a member (`OptionalAuthGuard` + `ContentAccessGuard`, the
+ * same pair every content controller mounts). WRITES and private data — the
+ * member's own posts, preferences, follows, reports, reactions, feature
+ * toggles — are session-guarded individually, because a declaration is NOT a
+ * session and must never be treated as one.
+ *
+ * ⚠️ A read method here must carry OptionalAuthGuard, and a write method must
+ * carry AuthGuard. Dropping the AuthGuard from a write would let a signed-out
+ * visitor like, comment or post.
  */
 @Controller('community')
-@UseGuards(AuthGuard)
 export class FeedController {
   constructor(private readonly feed: FeedService) {}
 
@@ -48,7 +56,8 @@ export class FeedController {
 
   @Get('feed')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  list(@CurrentUser() userId: string, @Query() q: FeedQueryDto) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  list(@CurrentUser() userId: string | undefined, @Query() q: FeedQueryDto) {
     return this.feed.listFeed(userId, q);
   }
 
@@ -56,11 +65,13 @@ export class FeedController {
   // the generic `posts/:id` route purely for readability; the paths don't clash.
   @Get('me/posts')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   myPosts(@CurrentUser() userId: string, @Query() q: FeedQueryDto) {
     return this.feed.listMyPosts(userId, q);
   }
 
   @Get('me/summary')
+  @UseGuards(AuthGuard)
   mySummary(@CurrentUser() userId: string) {
     return this.feed.mySummary(userId);
   }
@@ -68,19 +79,22 @@ export class FeedController {
   // The member's own follower/following lists, newest first, cursor-paged.
   @Get('me/followers')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   myFollowers(@CurrentUser() userId: string, @Query('before') before?: string) {
     return this.feed.listFollowers(userId, before);
   }
 
   @Get('me/following')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   myFollowing(@CurrentUser() userId: string, @Query('before') before?: string) {
     return this.feed.listFollowing(userId, before);
   }
 
   @Get('search')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  search(@CurrentUser() userId: string, @Query() q: FeedSearchDto) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  search(@CurrentUser() userId: string | undefined, @Query() q: FeedSearchDto) {
     return this.feed.searchFeed(userId, q);
   }
 
@@ -88,73 +102,90 @@ export class FeedController {
   // feed so other members' likes/comments appear without a full refresh.
   @Get('counts')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  counts(@CurrentUser() userId: string, @Query('ids') ids?: string) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  counts(@CurrentUser() userId: string | undefined, @Query('ids') ids?: string) {
     return this.feed.postCounts(userId, (ids ?? '').split(','));
   }
 
   @Get('preferences')
+  @UseGuards(AuthGuard)
   preferences(@CurrentUser() userId: string) {
     return this.feed.getPreferences(userId);
   }
 
   @Get('config')
-  config(@CurrentUser() userId: string) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  config(@CurrentUser() userId: string | undefined) {
     return this.feed.getConfig(userId);
   }
 
   @Get('leaderboard')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   leaderboard() {
     return this.feed.getLeaderboard();
   }
 
+  // A click-through is a visitor action, not a member one: ads are served on
+  // the guest feed too, and the click only increments a counter.
   @Post('ads/:id/click')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   adClick(@Param('id') id: string) {
     return this.feed.recordAdClick(id);
   }
 
   // Seller features one of their own listings in the feed.
   @Get('listings/:id/feature')
+  @UseGuards(AuthGuard)
   featureStatus(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.featureStatus(userId, id);
   }
 
   @Post('listings/:id/feature')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   featureListing(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.featureListing(userId, id);
   }
 
   @Delete('listings/:id/feature')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   unfeatureListing(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unfeatureListing(userId, id);
   }
 
   @Get('users/:username')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  profile(@CurrentUser() userId: string, @Param('username') username: string) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  profile(
+    @CurrentUser() userId: string | undefined,
+    @Param('username') username: string,
+  ) {
     return this.feed.getProfile(userId, username);
   }
 
   @Get('posts/:id')
-  post(@CurrentUser() userId: string, @Param('id') id: string) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  post(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     return this.feed.getPost(userId, id);
   }
 
   // Full GPX route points. Summary-only on the feed; this is the route page.
   @Get('posts/:id/route')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  route(@CurrentUser() userId: string, @Param('id') id: string) {
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  route(@CurrentUser() userId: string | undefined, @Param('id') id: string) {
     return this.feed.getRoute(userId, id);
   }
 
   // The regenerated, metadata-free .gpx. 403 when the author disabled sharing.
   @Get('posts/:id/route.gpx')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   async routeGpx(
-    @CurrentUser() userId: string,
+    @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -168,12 +199,14 @@ export class FeedController {
     return body;
   }
 
-  // Who liked (or disliked) a post. Visible to any signed-in member
-  // (operator 2026-10-10). `kind` selects the reaction; default LIKE.
+  // Who liked (or disliked) a post. A content read: any declared visitor (or
+  // member) may see it — username + privacy-gated avatar only (operator
+  // 2026-10-10). `kind` selects the reaction; default LIKE.
   @Get('posts/:id/likes')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   postLikes(
-    @CurrentUser() userId: string,
+    @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
     @Query('before') before?: string,
     @Query('kind') kind?: string,
@@ -188,8 +221,9 @@ export class FeedController {
 
   @Get('posts/:id/dislikes')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   postDislikes(
-    @CurrentUser() userId: string,
+    @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
     @Query('before') before?: string,
   ) {
@@ -199,8 +233,9 @@ export class FeedController {
   // Who liked (or disliked) a comment.
   @Get('comments/:id/likes')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   commentLikes(
-    @CurrentUser() userId: string,
+    @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
     @Query('before') before?: string,
     @Query('kind') kind?: string,
@@ -215,8 +250,9 @@ export class FeedController {
 
   @Get('comments/:id/dislikes')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
   commentDislikes(
-    @CurrentUser() userId: string,
+    @CurrentUser() userId: string | undefined,
     @Param('id') id: string,
     @Query('before') before?: string,
   ) {
@@ -232,18 +268,21 @@ export class FeedController {
 
   @Post('posts')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   createPost(@CurrentUser() userId: string, @Body() dto: CreatePostDto) {
     return this.feed.createPost(userId, dto);
   }
 
   @Post('posts/:id/submit')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   submitPost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.submitPost(userId, id);
   }
 
   @Patch('posts/:id')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   updatePost(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -253,12 +292,14 @@ export class FeedController {
   }
 
   @Delete('posts/:id')
+  @UseGuards(AuthGuard)
   deletePost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.deletePost(userId, id);
   }
 
   @Post('posts/:id/images')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   uploadImage(
     @CurrentUser() userId: string,
@@ -277,6 +318,7 @@ export class FeedController {
   }
 
   @Delete('posts/:id/images/:imageId')
+  @UseGuards(AuthGuard)
   removeImage(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -287,6 +329,7 @@ export class FeedController {
 
   @Post('posts/:id/video')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('video', { storage: memoryStorage() }))
   uploadVideo(
     @CurrentUser() userId: string,
@@ -305,6 +348,7 @@ export class FeedController {
   }
 
   @Delete('posts/:id/video')
+  @UseGuards(AuthGuard)
   removeVideo(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.removeVideo(userId, id);
   }
@@ -313,6 +357,7 @@ export class FeedController {
 
   @Post('posts/:id/route')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   @UseInterceptors(FileInterceptor('route', { storage: memoryStorage() }))
   uploadRoute(
     @CurrentUser() userId: string,
@@ -336,6 +381,7 @@ export class FeedController {
 
   @Patch('posts/:id/route')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   setRouteGpxShared(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -345,12 +391,14 @@ export class FeedController {
   }
 
   @Delete('posts/:id/route')
+  @UseGuards(AuthGuard)
   removeRoute(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.removeRoute(userId, id);
   }
 
   @Post('posts/:id/comments')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   addComment(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -360,51 +408,61 @@ export class FeedController {
   }
 
   @Post('posts/:id/like')
+  @UseGuards(AuthGuard)
   likePost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.likePost(userId, id);
   }
 
   @Delete('posts/:id/like')
+  @UseGuards(AuthGuard)
   unlikePost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unlikePost(userId, id);
   }
 
   @Post('posts/:id/dislike')
+  @UseGuards(AuthGuard)
   dislikePost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.dislikePost(userId, id);
   }
 
   @Delete('posts/:id/dislike')
+  @UseGuards(AuthGuard)
   undislikePost(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.undislikePost(userId, id);
   }
 
   @Post('comments/:id/like')
+  @UseGuards(AuthGuard)
   likeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.likeComment(userId, id);
   }
 
   @Delete('comments/:id/like')
+  @UseGuards(AuthGuard)
   unlikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unlikeComment(userId, id);
   }
 
   @Post('comments/:id/dislike')
+  @UseGuards(AuthGuard)
   dislikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.dislikeComment(userId, id);
   }
 
   @Delete('comments/:id/dislike')
+  @UseGuards(AuthGuard)
   undislikeComment(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.undislikeComment(userId, id);
   }
 
   @Post('users/:id/follow')
+  @UseGuards(AuthGuard)
   follow(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.follow(userId, id);
   }
 
   @Delete('users/:id/follow')
+  @UseGuards(AuthGuard)
   unfollow(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.unfollow(userId, id);
   }
@@ -412,12 +470,14 @@ export class FeedController {
   // Remove someone from the member's own followers (`:id` is the follower).
   @Delete('me/followers/:id')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   removeFollower(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.feed.removeFollower(userId, id);
   }
 
   @Put('preferences')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   setPreferences(
     @CurrentUser() userId: string,
     @Body() dto: FeedPreferencesDto,
@@ -427,6 +487,7 @@ export class FeedController {
 
   @Post('posts/:id/report')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   reportPost(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -437,6 +498,7 @@ export class FeedController {
 
   @Post('posts/:id/dispute')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   disputePost(
     @CurrentUser() userId: string,
     @Param('id') id: string,
@@ -447,6 +509,7 @@ export class FeedController {
 
   @Post('comments/:id/report')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard)
   reportComment(
     @CurrentUser() userId: string,
     @Param('id') id: string,

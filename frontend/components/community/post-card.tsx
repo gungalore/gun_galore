@@ -84,8 +84,10 @@ export function PostCard({
   const [likersKind, setLikersKind] = useState<'like' | 'dislike'>('like');
 
   // The ⋯ menu carries owner actions only on your own post; everyone else sees
-  // the mute/report options.
+  // the mute/report options. Every one of those is a member action, so a
+  // declared signed-out visitor gets no menu at all.
   const isOwn = !!userId && userId === post.author.id;
+  const signedIn = !!userId;
 
   async function submitDispute() {
     const token = await getToken();
@@ -201,6 +203,7 @@ export function PostCard({
             </span>
           </div>
         </div>
+        {signedIn && (
         <div className="relative">
           <button
             type="button"
@@ -314,6 +317,7 @@ export function PostCard({
             </div>
           )}
         </div>
+        )}
       </header>
 
       {showMuted && post.muted && (
@@ -501,7 +505,9 @@ export function PostCard({
       <footer className="flex items-center gap-1 px-2 py-2 mt-1 flex-wrap">
         <button
           type="button"
-          onClick={() => onToggleLike(post)}
+          onClick={() => (signedIn ? onToggleLike(post) : undefined)}
+          disabled={!signedIn}
+          title={signedIn ? undefined : 'Sign in to like posts'}
           className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
           style={{ color: post.liked ? 'var(--red)' : 'var(--text-tertiary)' }}
           aria-pressed={post.liked}
@@ -533,7 +539,9 @@ export function PostCard({
         )}
         <button
           type="button"
-          onClick={() => onToggleDislike(post)}
+          onClick={() => (signedIn ? onToggleDislike(post) : undefined)}
+          disabled={!signedIn}
+          title={signedIn ? undefined : 'Sign in to dislike posts'}
           className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
           style={{
             color: post.disliked ? 'var(--red)' : 'var(--text-tertiary)',
@@ -585,6 +593,14 @@ export function PostCard({
         >
           Share
         </button>
+        {!signedIn && (
+          <span
+            className="w-full text-center text-[11px] mt-1"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Sign in to react, comment or follow.
+          </span>
+        )}
       </footer>
 
       {viewer !== null && post.images.length > 0 && (

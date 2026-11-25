@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash, createHmac } from 'node:crypto';
 import {
@@ -60,6 +61,24 @@ import {
 const CHECK_DELAY_MS = 700;
 /** How long one unreadable-page alert stays the only one of its kind. */
 const ALERT_DEDUPE_MS = 24 * 60 * 60 * 1000;
+
+/** What a one-off guest check returns. No id, no history, nothing stored. */
+export interface GuestCheckView {
+  kind: TrackedApplicationKind;
+  reference: string;
+  serial: string | null;
+  outcome: 'row' | 'no_records';
+  applicationType: string | null;
+  applicationNumber: string | null;
+  calibre: string | null;
+  make: string | null;
+  serialSeen: string | null;
+  status: string | null;
+  statusDate: Date | null;
+  sapsUpdatedOn: Date | null;
+  statusDescription: string | null;
+  nextStep: string | null;
+}
 
 export const TRACKED_KINDS: TrackedApplicationKind[] = [
   'COMPETENCY',
@@ -280,6 +299,81 @@ export class LicenceTrackerService {
    */
   async status(): Promise<{ enabled: boolean }> {
     return { enabled: await this.settings.get(FLAGS.licenceTrackerEnabled) };
+  }
+
+  /**
+   * A ONE-OFF CHECK FOR A VISITOR WITH NO ACCOUNT.
+   *
+   * The SAPS status enquiry is a public page; the member tracker adds storage,
+   * polling and reminders on top of it. A declared 18+ visitor may ask once
+   * without signing in — nothing is persisted, no reference is stored, and no
+   * unique/cooldown row exists to protect. The throttle on the controller is
+   * the only guard against hammering SAPS.
+   *
+   * ⚠️ THE SAME PARSER AND CLASSIFIER AS THE MEMBER PATH, on purpose. The
+   * safety precedence ("a row beats no-records beats an unreadable page") must
+   * not fork for guests; a guest told "SAPS holds nothing" because the page was
+   * a block page would be a lie about their application.
+   */
+  async checkGuest(input: CreateTrackerInput): Promise<GuestCheckView> {
+    await this.assertEnabled();
+    const kind = this.parseKind(input.kind);
+    const reference = normaliseReference(input.reference);
+    if (!reference) {
+      throw new BadRequestException('Enter the application reference.');
+    }
+    const serial = kind === 'COMPETENCY' ? null : input.serial?.trim() || null;
+
+    let parsed: EnquiryParseResult;
+    try {
+      const { html } = await this.client.fetch(reference, serial);
+      parsed = parseEnquiryResponse(html);
+    } catch (err) {
+      const alert = err instanceof EnquiryHandshakeError;
+      this.logger.warn(
+        `Guest SAPS check failed: ${(err as Error).message}${alert ? ' (handshake)' : ''}`,
+      );
+      throw new ServiceUnavailableException(
+        'The SAPS status enquiry could not be read just now. Please try again shortly.',
+      );
+    }
+
+    const verdict = classifyEnquiry(parsed);
+    if (verdict.outcome === 'error') {
+      throw new ServiceUnavailableException(verdict.message);
+    }
+    const base = {
+      kind,
+      reference,
+      serial,
+      applicationType: null as string | null,
+      applicationNumber: null as string | null,
+      calibre: null as string | null,
+      make: null as string | null,
+      serialSeen: null as string | null,
+      status: null as string | null,
+      statusDate: null as Date | null,
+      sapsUpdatedOn: parseSapsDate(verdict.updatedOn),
+      statusDescription: null as string | null,
+      nextStep: null as string | null,
+    };
+    if (verdict.outcome === 'no_records') {
+      return { ...base, outcome: 'no_records' };
+    }
+    const r = verdict.row;
+    return {
+      ...base,
+      outcome: 'row',
+      applicationType: r.applicationType || null,
+      applicationNumber: r.applicationNumber || null,
+      calibre: r.calibre || null,
+      make: r.make || null,
+      serialSeen: r.serialNumber || null,
+      status: r.status || null,
+      statusDate: parseSapsDate(r.statusDate),
+      statusDescription: r.statusDescription.trim() || null,
+      nextStep: r.nextStep.trim() || null,
+    };
   }
 
   private async assertEnabled(): Promise<void> {

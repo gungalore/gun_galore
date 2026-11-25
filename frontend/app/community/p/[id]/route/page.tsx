@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { serverAuth } from '../../../../../lib/auth-server';
 import { BRAND_NAME } from '../../../../../lib/brand';
-import { CommunityGate } from '../../../../../components/community/community-gate';
 import { RoutePageClient } from '../../../../../components/community/route-page-client';
 
 export const dynamic = 'force-dynamic';
@@ -10,8 +8,8 @@ export const dynamic = 'force-dynamic';
 // ⚠️ GENERIC METADATA ONLY. A route carries a title and a shape that belong to
 // the member who posted it; putting either in the document head would leak it
 // to every anonymous visitor and every crawler that follows a forwarded link.
-// Like the post page, this URL is the same noindex gate for everyone until a
-// session exists.
+// Like the post page, this URL is the same noindex content page for everyone
+// behind the 18+ gate.
 export async function generateMetadata({
   params,
 }: {
@@ -20,7 +18,7 @@ export async function generateMetadata({
   await params;
   return {
     title: 'Community route',
-    description: `A GPX route shared on ${BRAND_NAME}. Sign in to view it.`,
+    description: `A GPX route shared on ${BRAND_NAME}.`,
     robots: { index: false, follow: false },
     openGraph: {
       title: `A GPX route on ${BRAND_NAME}`,
@@ -30,14 +28,17 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * A published route is CONTENT: behind the 18+ gate, readable (and
+ * downloadable when the author shared it) by a declared guest. Only the
+ * author's sharing toggle needs a session.
+ */
 export default async function CommunityRoutePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { userId } = await serverAuth();
-  if (!userId) return <CommunityGate />;
 
   return (
     <main

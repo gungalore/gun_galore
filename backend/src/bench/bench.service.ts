@@ -1522,11 +1522,13 @@ export class BenchService {
    * built from the payload would let anybody who guessed a common bench read
    * back the share, and a sequential one would let them walk the table.
    *
-   * ⚠️ AND IT IS NOT A CAPABILITY. GET /bench/share/:token is behind the same
-   * AuthGuard as everything else on this module: the link is a shortcut for a
-   * member, not a way to publish the catalogue to somebody who cannot see the
-   * page. Spec §10 defers the guest bench, and the auth wall is why this site
-   * is not blocked.
+   * ⚠️ AND IT IS NOT A CAPABILITY. Storing a share is member-only because the
+   * row records whose finder state it was; READING one is content behind the
+   * same 18+ gate as the finder (OptionalAuthGuard + ContentAccessGuard), so a
+   * declared visitor can open a link somebody sent them. What the payload
+   * carries is a set of catalogue names and filter positions — the same thing
+   * any declared visitor can assemble from the public pickers — and never a
+   * shelf of anybody's that they cannot already see.
    */
   async share(userId: string, payload: Record<string, unknown>) {
     await this.resolveUserId(userId);

@@ -201,16 +201,26 @@ export interface FeedPreferences {
   feedShowGraphic: boolean;
 }
 
+/**
+ * The community API. Reads are CONTENT — a declared 18+ visitor has no session
+ * token, so a read call sends no Authorization header and the 18+ gate
+ * declaration (`ao_cat`, a cookie) authenticates it instead. `credentials:
+ * 'include'` keeps that cookie on the request even when NEXT_PUBLIC_API_URL is
+ * an absolute origin (local development); production is same-origin already.
+ *
+ * Writes still require a token: their callers only run for a signed-in member.
+ */
 async function jsonFetch<T>(
   path: string,
-  token: string,
+  token: string | null,
   init?: RequestInit,
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     cache: 'no-store',
@@ -223,7 +233,7 @@ async function jsonFetch<T>(
 }
 
 export function fetchFeed(
-  token: string,
+  token: string | null,
   opts: { before?: string; type?: string; includeFiltered?: boolean } = {},
 ): Promise<FeedPage> {
   const qs = new URLSearchParams();
@@ -236,7 +246,7 @@ export function fetchFeed(
 
 /** Search published feed posts, respecting the viewer's feed filters. */
 export function searchFeed(
-  token: string,
+  token: string | null,
   opts: { q: string; before?: string; type?: string; includeFiltered?: boolean },
 ): Promise<FeedPage> {
   const qs = new URLSearchParams({ q: opts.q });
@@ -247,7 +257,7 @@ export function searchFeed(
 }
 
 export function fetchPost(
-  token: string,
+  token: string | null,
   id: string,
 ): Promise<{ post: FeedPost; comments: FeedComment[] }> {
   return jsonFetch(`/community/posts/${id}`, token);
@@ -264,7 +274,7 @@ export interface FeedLiker {
 
 /** Members who liked a post, newest first. Cursor-paged via `before`. */
 export function fetchPostLikes(
-  token: string,
+  token: string | null,
   id: string,
   before?: string,
   kind: ReactionKind = 'like',
@@ -278,7 +288,7 @@ export function fetchPostLikes(
 
 /** Members who liked or disliked a comment, newest first. */
 export function fetchCommentLikes(
-  token: string,
+  token: string | null,
   commentId: string,
   before?: string,
   kind: ReactionKind = 'like',
@@ -294,7 +304,7 @@ export function fetchCommentLikes(
 }
 
 export function fetchProfile(
-  token: string,
+  token: string | null,
   username: string,
 ): Promise<{
   profile: {
@@ -479,9 +489,9 @@ export function deletePostRoute(
   });
 }
 
-/** Full route points; members-only and subject to post visibility. */
+/** Full route points; subject to post visibility (published, or the author). */
 export function fetchPostRoute(
-  token: string,
+  token: string | null,
   postId: string,
 ): Promise<{ route: FeedRoute }> {
   return jsonFetch(`/community/posts/${postId}/route`, token);
@@ -493,11 +503,12 @@ export function fetchPostRoute(
  * when the summary says it is allowed.
  */
 export async function downloadPostRouteGpx(
-  token: string,
+  token: string | null,
   postId: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch(`${API_URL}/community/posts/${postId}/route.gpx`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -564,7 +575,7 @@ export interface FeedPostCount {
 
 /** Fresh like/comment counts for a set of posts (polled by the feed). */
 export function fetchPostCounts(
-  token: string,
+  token: string | null,
   ids: string[],
 ): Promise<{ counts: FeedPostCount[] }> {
   const q = encodeURIComponent(ids.join(','));
@@ -704,7 +715,7 @@ export interface FeedConfig {
   adsEnabled: boolean;
 }
 
-export function fetchConfig(token: string): Promise<FeedConfig> {
+export function fetchConfig(token: string | null): Promise<FeedConfig> {
   return jsonFetch('/community/config', token);
 }
 

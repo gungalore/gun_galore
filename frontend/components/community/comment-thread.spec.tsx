@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FeedComment } from '../../lib/community-api';
 
+// Signed-in by default: the composer/reaction tests below are the member path.
+// The guest cases flip `auth.userId` and expect a sign-in prompt instead.
+const auth = vi.hoisted(() => ({ userId: 'member-1' as string | null }));
+
 vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ getToken: async () => 't' }),
+  useAuth: () => ({ getToken: async () => 't', userId: auth.userId }),
+  SignInButton: ({ children }: { children?: ReactNode }) => (
+    <a href="/sign-in">{children}</a>
+  ),
 }));
 
 const api = vi.hoisted(() => ({
@@ -141,5 +149,42 @@ describe('CommentThread — sorting and rendering', () => {
   it('shows the empty state', () => {
     renderThread([]);
     expect(screen.getByText('No comments yet.')).toBeTruthy();
+  });
+});
+
+describe('CommentThread — a declared signed-out guest', () => {
+  beforeEach(() => {
+    auth.userId = null;
+  });
+  afterEach(() => {
+    auth.userId = 'member-1';
+  });
+
+  it('replaces the composer with a sign-in prompt', () => {
+    renderThread();
+    expect(screen.queryByLabelText('Write a comment')).toBeNull();
+    expect(screen.getByText('Sign in to join the conversation.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+      'href',
+      '/sign-in',
+    );
+  });
+
+  it('disables comment reactions and hides reply/report', () => {
+    renderThread();
+    expect(
+      screen
+        .getByRole('button', { name: 'Like comment' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole('button', { name: 'Dislike comment' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Comment options' }),
+    ).toBeNull();
   });
 });

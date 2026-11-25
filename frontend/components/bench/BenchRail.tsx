@@ -34,6 +34,7 @@ import { useId, useMemo } from 'react';
 import type { BenchBullet } from '@/lib/bench/api';
 import { CALIBRE_UNKNOWN_SHORT, formatCalibre } from '@/lib/bench/calibre';
 import { bulletKey, type BenchRailProps } from './contract';
+import GuestPrompt from './GuestPrompt';
 import { Chip, type BenchSize } from './primitives';
 
 /**
@@ -46,6 +47,17 @@ import { Chip, type BenchSize } from './primitives';
  */
 export const BENCH_HINT =
   'Tap a chip to take it off the shelf for this search. The × removes it from your bench.';
+
+/**
+ * The signed-out hint, for the one thing that differs on a guest's shelf.
+ *
+ * ⚠️ IT SAYS "NOT SAVED", NOT "SAVED ELSEWHERE". A declared visitor's shelf is
+ * page state: every chip and every Add works exactly as it does for a member,
+ * and closing the tab loses it. The chips' own actions are unchanged, so the
+ * second sentence is not reworded — only the save claim is.
+ */
+export const GUEST_BENCH_HINT =
+  'This shelf is not saved yet. Tap a chip to take it off for this search; the × removes it.';
 
 /* ── Small parts ────────────────────────────────────────────────────── */
 
@@ -328,7 +340,7 @@ export function BenchSections({
 
 /* ── The rail ───────────────────────────────────────────────────────── */
 
-export default function BenchRail(props: BenchRailProps) {
+export default function BenchRail({ signedIn = true, ...props }: BenchRailProps) {
   return (
     /* `bench` is repeated here even though the page root carries it. Every
        control below is styled by a `.bench .x` descendant rule, so a rail
@@ -367,16 +379,20 @@ export default function BenchRail(props: BenchRailProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 8,
             marginBottom: 4,
           }}
         >
           <div className="head" style={{ fontSize: 15 }}>
             My bench
           </div>
-          <SavedBadge />
+          {/* The one control the rail carries that is about saving: a member's
+              bench persists on every change (hence the badge), a guest's does
+              not (hence the prompt). See BenchRailProps.signedIn. */}
+          {signedIn ? <SavedBadge /> : <GuestPrompt compact />}
         </div>
         <p style={{ margin: '0 0 14px', fontSize: 11.5, color: 'var(--text-tertiary)' }}>
-          {BENCH_HINT}
+          {signedIn ? BENCH_HINT : GUEST_BENCH_HINT}
         </p>
 
         <BenchSections {...props} />

@@ -6,6 +6,7 @@ import AddTrackerForm from '@/components/licence-tracker/AddTrackerForm';
 import TrackerCard from '@/components/licence-tracker/TrackerCard';
 import TrackerHistorySheet from '@/components/licence-tracker/TrackerHistorySheet';
 import TrackerJourney from '@/components/licence-tracker/TrackerJourney';
+import { GuestCheckPanel } from '@/components/licence-tracker/GuestCheckPanel';
 import {
   kindLabel,
   licenceTrackerApi,
@@ -31,7 +32,7 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 export default function TrackingPage() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
 
   /** null = we have not asked yet, so nothing that looks like a state is
    *  shown before we know the answer. */
@@ -71,15 +72,24 @@ export default function TrackingPage() {
       const status = await licenceTrackerApi.status(getToken);
       setEnabled(status.enabled);
       if (!status.enabled) return;
+      // A declared but signed-out visitor gets the one-off guest check; the
+      // saved list is a member surface and would 401 here.
+      if (!isSignedIn) {
+        setTrackers([]);
+        return;
+      }
       setTrackers(await licenceTrackerApi.list(getToken));
     } catch (err) {
       setLoadError((err as Error).message);
     }
-  }, [getToken]);
+  }, [getToken, isSignedIn]);
 
   useEffect(() => {
+    // Wait for the session answer: firing before `isLoaded` would call the
+    // member list on a signed-out browser and paint an error on first load.
+    if (!isLoaded) return;
     void load();
-  }, [load]);
+  }, [isLoaded, load]);
 
   const check = useCallback(
     async (id: string) => {
@@ -236,7 +246,9 @@ export default function TrackingPage() {
             </p>
           ) : (
             <>
-              {trackers === null ? (
+              {!isSignedIn ? (
+                <GuestCheckPanel />
+              ) : trackers === null ? (
                 <p className="mt-4 text-[13.5px] text-[var(--text-tertiary)]">
                   Loading…
                 </p>

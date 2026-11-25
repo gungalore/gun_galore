@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth, useUser } from '../../lib/auth';
+import { SignInButton, useAuth, useUser } from '../../lib/auth';
 import {
   type FeedPost,
   dislikePost,
@@ -55,8 +55,9 @@ export function ProfileClient({ username }: { username: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const token = await getToken();
-      if (!token) return;
+      // Public profile + published posts: a declared visitor reads with no
+      // token (the 18+ gate cookie authenticates the request).
+      const token = isSignedIn ? await getToken() : null;
       const cfg = await fetchConfig(token).catch(() => null);
       if (cfg) setForceBlur(cfg.graphicBlurForced);
       setData(await fetchProfile(token, username));
@@ -65,12 +66,12 @@ export function ProfileClient({ username }: { username: string }) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, username]);
+  }, [getToken, username, isSignedIn]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded) return;
     void load();
-  }, [isLoaded, isSignedIn, load]);
+  }, [isLoaded, load]);
 
   async function toggleFollow() {
     if (!data) return;
@@ -200,18 +201,29 @@ export function ProfileClient({ username }: { username: string }) {
             {data.postCount} posts · {data.followerCount} followers
           </div>
         </div>
-        <button
-          type="button"
-          onClick={toggleFollow}
-          className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
-          style={{
-            background: data.isFollowing ? 'var(--bg-card)' : 'var(--action-primary-bg)',
-            color: data.isFollowing ? 'var(--text-secondary)' : '#fff',
-            border: data.isFollowing ? '0.5px solid var(--border)' : 'none',
-          }}
-        >
-          {data.isFollowing ? 'Following' : 'Follow'}
-        </button>
+        {isSignedIn ? (
+          <button
+            type="button"
+            onClick={toggleFollow}
+            className="gg-press px-4 py-2 rounded-[6px] text-[13px] font-medium"
+            style={{
+              background: data.isFollowing ? 'var(--bg-card)' : 'var(--action-primary-bg)',
+              color: data.isFollowing ? 'var(--text-secondary)' : '#fff',
+              border: data.isFollowing ? '0.5px solid var(--border)' : 'none',
+            }}
+          >
+            {data.isFollowing ? 'Following' : 'Follow'}
+          </button>
+        ) : (
+          <SignInButton mode="modal">
+            <span
+              className="gg-press inline-block px-4 py-2 rounded-[6px] text-[13px] font-medium"
+              style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
+            >
+              Sign in to follow
+            </span>
+          </SignInButton>
+        )}
       </div>
 
       {data.posts.length === 0 && (

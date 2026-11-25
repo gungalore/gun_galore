@@ -39,7 +39,10 @@ export function PostModal({
   /** Notify the caller that a count may have changed. */
   onChanged?: () => void;
 }) {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
+  // Post + comments are readable by a declared signed-out visitor; reacting is
+  // not. The overlay loads with no token and disables its member controls.
+  const signedIn = !!userId;
   const [post, setPost] = useState<FeedPost | null>(null);
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,8 +102,7 @@ export function PostModal({
   }, [idx]);
 
   const load = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
+    const token = signedIn ? await getToken() : null;
     try {
       const data = await fetchPost(token, postId);
       setPost(data.post);
@@ -111,7 +113,7 @@ export function PostModal({
     } finally {
       setLoading(false);
     }
-  }, [getToken, postId]);
+  }, [getToken, postId, signedIn]);
 
   useEffect(() => {
     void load();
@@ -236,7 +238,9 @@ export function PostModal({
       >
         <button
           type="button"
-          onClick={() => void react('like')}
+          onClick={() => void (signedIn ? react('like') : undefined)}
+          disabled={!signedIn}
+          title={signedIn ? undefined : 'Sign in to like posts'}
           className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
           style={{ color: post.liked ? 'var(--red)' : 'var(--text-tertiary)' }}
           aria-pressed={post.liked}
@@ -249,7 +253,9 @@ export function PostModal({
         </span>
         <button
           type="button"
-          onClick={() => void react('dislike')}
+          onClick={() => void (signedIn ? react('dislike') : undefined)}
+          disabled={!signedIn}
+          title={signedIn ? undefined : 'Sign in to dislike posts'}
           className="gg-press flex items-center gap-1.5 px-2.5 py-2 rounded text-[13px] font-medium"
           style={{ color: post.disliked ? 'var(--red)' : 'var(--text-tertiary)' }}
           aria-pressed={post.disliked}

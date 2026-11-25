@@ -44,10 +44,11 @@ function makeBench(stored: unknown[]) {
 }
 
 /**
- * ⚠️ A CLERK SUBJECT, NOT A REQUEST. Every route on this controller is behind
- * AuthGuard now — the guest bench is deferred (SPEC-BUILD §10) and the reads
- * were publishing the whole consolidated catalogue to anybody who could type a
- * URL — so the handlers take `@CurrentUser()` like the writes always did.
+ * ⚠️ A MEMBER SUBJECT, NOT A REQUEST. These tests drive the signed-in branch of
+ * every handler — the stored bench, the log, the share write — which is still
+ * AuthGuard-only. The guest half of the controller (reads with no `userId`,
+ * guarded by OptionalAuthGuard + ContentAccessGuard) has its own file:
+ * bench-guest.spec.ts.
  */
 const SIGNED_IN = 'user_1';
 
@@ -120,14 +121,16 @@ describe('The Bench — the calibre survives the controller', () => {
 });
 
 /**
- * 🚨 THE GUEST SHELF IS GONE FROM THIS CONTROLLER, AND THE TESTS FOR IT WITH
- * IT. `?powders=` / `?bullets=` / `?cartridges=` let anybody who could type a
- * URL read the whole consolidated catalogue — every cartridge, every powder,
- * 28 000 charge ranges — from a page that is itself behind the identity provider. The guest
- * bench is deferred (SPEC-BUILD §10); when it is built it gets its own
- * decision, its own route, and its own tests. Deleting the parser rather than
- * leaving it unreachable is deliberate: unreachable code comes back the day
- * somebody relaxes a guard for an unrelated reason.
+ * 🚨 THE GUEST SHELF IS BACK, AND IT HAS ITS OWN FILE. Deferring it (SPEC-BUILD
+ * §10) was right at the time — the reads had been publishing the whole
+ * consolidated catalogue to anybody who could type a URL — but the 18+ gate is
+ * now the deliberate door: the reads take OptionalAuthGuard +
+ * ContentAccessGuard, and a caller with neither a session nor a declaration
+ * still 404s. A signed-out declared visitor sends their shelf in the query
+ * (`powders[]`, `bullets[]`, `cartridges[]`), which the controller turns into
+ * the SAME GuestBench shape a stored bench produces. bench-guest.spec.ts proves
+ * that path, the guard wiring and the no-user-row-read rule; this file keeps
+ * asserting the stored-bench handover down the same door.
  */
 
 /* ── The finder's three controls ────────────────────────────────────── */

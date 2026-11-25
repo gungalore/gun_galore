@@ -482,6 +482,16 @@ export interface BenchRailProps {
   onAddPowder: () => void;
   onAddBullet: () => void;
   onAddCartridge: () => void;
+  /**
+   * Is there a session behind this shelf?
+   *
+   * ⚠️ FALSE SWAPS THE "Saved" BADGE FOR THE SIGN-IN PROMPT, AND NOTHING ELSE.
+   * A declared visitor builds the same shelf in page state and every chip works
+   * the same way; what they do not have is anywhere to keep it — so the badge
+   * must not claim it is saved. Defaults to true so every existing caller keeps
+   * the member's reading without passing anything.
+   */
+  signedIn?: boolean;
 }
 
 export interface BenchSheetProps extends BenchRailProps {
@@ -588,7 +598,15 @@ export interface LoadCardProps extends UnitProps {
   cartridge: LoadGroup['cartridge'];
   weightGr: number;
   onClose: () => void;
-  onLog: () => void;
+  /**
+   * Open the log sheet for this load.
+   *
+   * ⚠️ OPTIONAL, AND ITS ABSENCE IS THE SIGNED-OUT STATE. The log is a member's
+   * own record and POST /bench/log takes AuthGuard, so a declared visitor has
+   * nothing to press: the card draws the sign-in prompt in the button's place
+   * instead of a control that can only 401. A member always passes it.
+   */
+  onLog?: () => void;
   onSpec: () => void;
 }
 

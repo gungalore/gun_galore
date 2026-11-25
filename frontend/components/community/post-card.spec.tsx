@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import type { ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { FeedPost } from '../../lib/community-api';
 
+// Signed-in by default: the member controls below (⋯ menu, reactions) are
+// what these tests were written against. The guest cases flip `auth.userId`.
+const auth = vi.hoisted(() => ({ userId: 'member-1' as string | null }));
+
 vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ getToken: async () => 't', userId: null }),
+  useAuth: () => ({ getToken: async () => 't', userId: auth.userId }),
 }));
 
 // The real card is the route-viewer agent's component; this stub pins the
@@ -130,8 +134,7 @@ function renderGraphic(
   );
 }
 
-describe('PostCard — the graphic-content gate follows the member preference', () => {
-  it('skips the gate when the member chose to always show graphic content', () => {
+describe('PostCard — the graphic-content gate follows the member preference', () => {  it('skips the gate when the member chose to always show graphic content', () => {
     renderGraphic({ showGraphic: true });
     expect(screen.queryByText('Graphic content')).toBeNull();
     expect(
@@ -234,5 +237,31 @@ describe('PostCard — a photo post can also carry a GPX route', () => {
   it('renders no route card when the post has no route', () => {
     renderCard();
     expect(screen.queryByTestId('route-card')).toBeNull();
+  });
+});
+
+describe('PostCard — a declared signed-out guest', () => {
+  beforeEach(() => {
+    auth.userId = null;
+  });
+  afterEach(() => {
+    auth.userId = 'member-1';
+  });
+
+  it('hides the member-only ⋯ menu', () => {
+    renderCard();
+    expect(screen.queryByRole('button', { name: 'Post options' })).toBeNull();
+    expect(screen.queryByText('Report post')).toBeNull();
+  });
+
+  it('disables the reactions and says sign-in is needed', () => {
+    renderCard();
+    expect(
+      screen.getByRole('button', { name: 'Like' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Dislike' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(screen.getByText('Sign in to react, comment or follow.')).toBeTruthy();
   });
 });

@@ -9,7 +9,6 @@
  * filter change, a fetch and an overlay can get out of step.
  */
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../lib/auth';
 import { useStandalone } from '@/lib/use-standalone';
@@ -57,6 +56,9 @@ import { Btn, Seg, cx, usePhone } from '@/components/bench/primitives';
 // match to the chip they just pointed at — see the note on the helper.
 import BenchRail, { benchBulletName } from '@/components/bench/BenchRail';
 import BenchSheet from '@/components/bench/BenchSheet';
+// The signed-out prompt. One sentence, three surfaces — see the note on the
+// constant; the page never retypes it.
+import GuestPrompt from '@/components/bench/GuestPrompt';
 import { ResultsList } from '@/components/bench/ResultsList';
 import { LoadCard } from '@/components/bench/LoadCard';
 import { SpecCard } from '@/components/bench/SpecCard';
@@ -66,6 +68,16 @@ import { PowderPicker } from '@/components/bench/PowderPicker';
 import { BulletPicker } from '@/components/bench/BulletPicker';
 import { CartridgePicker } from '@/components/bench/CartridgePicker';
 import { Toast } from '@/components/bench/Toast';
+import {
+  addGuestBullet,
+  addGuestCartridge,
+  addGuestPowder,
+  emptyGuestShelf,
+  guestHasEntry,
+  guestQuery,
+  guestShelfKey,
+  removeGuestEntry,
+} from '@/lib/bench/guest';
 
 /**
  * How a spec card is put on the screen.
@@ -129,8 +141,44 @@ function BenchFinder() {
 
   const token = useCallback(() => getToken(), [getToken]);
 
+  /**
+   * ⚠️ A GUEST HAS NO TOKEN, AND MUST NOT ASK FOR ONE EITHER. `getToken()` is a
+   * refresh round trip; on a signed-out page every read would fire one, be
+   * refused, and still go out without an Authorization header. Passing a null
+   * getter instead makes the guest's reads exactly what they are — same-origin
+   * content calls carrying the 18+ gate cookie, and no credential at all.
+   *
+   * The writes keep `token`: they are only reachable with a session, where the
+   * two are the same function.
+   */
+  const noToken = useCallback(async () => null, []);
+  const readToken = isSignedIn ? token : noToken;
+
   const [bench, setBench] = useState<BenchView | null>(null);
   const [benchError, setBenchError] = useState<string | null>(null);
+
+  /**
+   * THE SHELF A DECLARED VISITOR PUTS TOGETHER, NEVER SAVED.
+   *
+   * A guest has no row to read, so the page holds their shelf here: the same
+   * three axes, fed by the same public pickers, rendered by the same rail and
+   * sent with every bench-relative read as the query arrays (see
+   * lib/bench/guest.ts and lib/bench/api.ts). It is a filter, not a second
+   * bench — nothing writes it, and the moment there is a session the screen
+   * answers from the stored bench only.
+   */
+  const [guestShelf, setGuestShelf] = useState<BenchView>(() => emptyGuestShelf());
+
+  /**
+   * The shelf this render is describing.
+   *
+   * 🚨 ONE VARIABLE, SO NO SURFACE CAN MIX THE TWO SHELVES. The rail, the empty
+   * state, the cartridge tabs and the search all read this; a surface that
+   * reached for `bench` instead would render a member's stored shelf on a
+   * guest's screen (or nothing at all) while the list beside it answered from
+   * the query. null only while a member's GET /bench/me is still in flight.
+   */
+  const activeBench = isSignedIn ? bench : guestShelf;
 
   /**
    * The bench the next write must build on, and the queue it builds in.
@@ -309,24 +357,27 @@ function BenchFinder() {
   /* ── The permalink ─────────────────────────────────────────────────── */
 
   /**
-   * `/bench?s=<token>` — somebody else's search, on this member's bench.
+   * `/bench?s=<token>` — somebody else's search, applied to the READER'S shelf.
    *
    * 🚨 THE SNAPSHOT IS APPLIED AS `off` CHIPS AND IS NEVER WRITTEN TO THE
-   * BENCH. A link that could add six powders to a stranger's saved shelf is a
+   * SHELF. A link that could add six powders to a stranger's saved shelf is a
    * link nobody can safely open; muting my own chips answers their question on
    * my screen, is visible as chips, and is undone with one tap. See
    * offFromSnapshot in contract.ts.
    *
-   * ⚠️ IT WAITS FOR THE BENCH, because the snapshot can only be compared
-   * against a shelf that has arrived.
+   * ⚠️ IT WAITS FOR THE SHELF — `activeBench`, either one. The snapshot can only
+   * be compared against a shelf that has arrived: a member's stored bench from
+   * GET /bench/me, a guest's page state (which exists immediately). The READ is
+   * a content read behind the 18+ gate, so a declared visitor may open a link
+   * somebody sent them; creating one stays member-only (copyLink).
    */
   useEffect(() => {
-    if (!shareToken || !bench) return;
+    if (!shareToken || !activeBench) return;
     let live = true;
     const ac = new AbortController();
 
     benchApi
-      .getShare(token, shareToken, { signal: ac.signal })
+      .getShare(readToken, shareToken, { signal: ac.signal })
       .then((payload: BenchSharePayload | null) => {
         if (!live) return;
         const f = payload?.filters ?? {};
@@ -345,7 +396,9 @@ function BenchFinder() {
         setCartridge(applied.cartridge);
         setWeight(applied.weight);
         setTolerance(applied.tolerance);
-        setOff(payload?.bench ? offFromSnapshot(bench, payload.bench, applied.off) : applied.off);
+        setOff(
+          payload?.bench ? offFromSnapshot(activeBench, payload.bench, applied.off) : applied.off,
+        );
         setShareToken(null);
       })
       .catch((e: unknown) => {
@@ -361,7 +414,7 @@ function BenchFinder() {
       live = false;
       ac.abort();
     };
-  }, [shareToken, bench, token, fail]);
+  }, [shareToken, activeBench, readToken, fail]);
 
   /**
    * The one door every bench write goes through.
@@ -434,7 +487,10 @@ function BenchFinder() {
   );
 
   const search = useCallback(() => {
-    if (!isLoaded || !isSignedIn) return;
+    // ⚠️ NO SESSION IS NOT "NOT READY". A signed-out declared visitor searches
+    // their query shelf, so only `isLoaded` gates the request now — gating on
+    // `isSignedIn` was the auth wall this task takes down to the writes.
+    if (!isLoaded) return;
     const mine = ++seq.current;
     setLoading(true);
     setError(null);
@@ -442,7 +498,18 @@ function BenchFinder() {
       // ⚠️ THE TOLERANCE IS SENT ON EVERY SEARCH, INCLUDING WHEN IT IS 0.
       // "Exact" is a real choice and an omitted tolerance falls back to the
       // server's default of 5 — see the note in lib/bench/api.ts query().
-      .loads(token, { cartridge, weight, tolerance, off: offList })
+      //
+      // ⚠️ AND A GUEST'S SHELF GOES WITH IT. `shelf` is absent for a member
+      // (the server reads their stored bench), so the signed-in request is
+      // byte-identical to before; for a guest it is the three query arrays the
+      // server turns into the same GuestBench.
+      .loads(readToken, {
+        cartridge,
+        weight,
+        tolerance,
+        off: offList,
+        ...(isSignedIn ? {} : { shelf: guestQuery(guestShelf) }),
+      })
       .then((r) => {
         if (mine !== seq.current) return;
         setResult(r);
@@ -463,33 +530,32 @@ function BenchFinder() {
     // changes; a width left out of the list would change the pill, change the
     // request it would have sent, and never send one — the decorative-filter
     // failure this module has already shipped twice.
-  }, [isLoaded, isSignedIn, token, cartridge, weight, tolerance, offList]);
+  }, [isLoaded, isSignedIn, readToken, cartridge, weight, tolerance, offList, guestShelf]);
 
   /**
    * The shelf as the QUERY sees it — every field the search actually sends,
    * and not one more.
    *
-   * 🚨 IT IS NOT `bench`. The effect below used to key on the bench OBJECT,
-   * and every write replaces that object — so flipping mm/inch, which is a
-   * display preference the server never reads on a search, fired a fresh
-   * results query and repainted the whole list. Adding a powder must re-run
-   * the search; changing the units must not, and only a key built from the
-   * fields the request carries can tell those apart.
+   * 🚨 IT IS NOT THE `activeBench` OBJECT. The effect below used to key on the
+   * bench OBJECT, and every write replaces that object — so flipping mm/inch,
+   * which is a display preference the server never reads on a search, fired a
+   * fresh results query and repainted the whole list. Adding a powder must
+   * re-run the search; changing the units must not, and only a key built from
+   * the fields the request carries can tell those apart.
    *
-   * An empty string means the bench has not arrived yet; an EMPTY BENCH keys
-   * as `||`, which is truthy, so a member with nothing on the shelf still gets
-   * their (empty) answer and the panel that explains it.
+   * ⚠️ THE SAME KEY FOR EITHER SHELF, FROM ONE HELPER. A guest shelf is a
+   * `BenchView` too and its three axes are what the guest request carries, so
+   * guestShelfKey() builds the member's key and the guest's the same way — a
+   * second inline copy here is how the two would come to re-run on different
+   * things.
+   *
+   * An empty string means the member's bench has not arrived yet; an EMPTY
+   * BENCH keys as `||`, which is truthy, so a caller with nothing on the shelf
+   * still gets their (empty) answer and the panel that explains it.
    */
   const shelfKey = useMemo(
-    () =>
-      bench
-        ? [
-            bench.powders.map((p) => p.id).join(','),
-            bench.bullets.map(bulletKey).join(','),
-            bench.cartridges.map((c) => c.key).join(','),
-          ].join('|')
-        : '',
-    [bench],
+    () => (activeBench ? guestShelfKey(activeBench) : ''),
+    [activeBench],
   );
 
   useEffect(() => {
@@ -548,11 +614,11 @@ function BenchFinder() {
   const cartridgeOptions = useMemo(
     () => [
       { id: 'all', label: 'All' },
-      ...(bench?.cartridges ?? [])
+      ...(activeBench?.cartridges ?? [])
         .filter((c) => !off.cartridgeKeys.includes(c.key))
         .map((c) => ({ id: c.key, label: c.name })),
     ],
-    [bench, off.cartridgeKeys],
+    [activeBench, off.cartridgeKeys],
   );
 
   /**
@@ -584,11 +650,11 @@ function BenchFinder() {
    */
   const gaps = useMemo(
     () => ({
-      powder: !!bench && bench.powders.length === 0,
-      bullet: !!bench && bench.bullets.length === 0,
-      cartridge: !!bench && bench.cartridges.length === 0,
+      powder: !!activeBench && activeBench.powders.length === 0,
+      bullet: !!activeBench && activeBench.bullets.length === 0,
+      cartridge: !!activeBench && activeBench.cartridges.length === 0,
     }),
-    [bench],
+    [activeBench],
   );
 
   /**
@@ -617,7 +683,7 @@ function BenchFinder() {
    */
   const shelf = useMemo<ShelfNames>(
     () => ({
-      powders: (bench?.powders ?? [])
+      powders: (activeBench?.powders ?? [])
         .filter((p) => !off.powderIds.includes(p.id))
         .map((p) => p.name),
       // ⚠️ THE WINDOW IS NAMED WITH THE BULLET, OR THE COUNT BESIDE IT LIES.
@@ -626,19 +692,19 @@ function BenchFinder() {
       // grains for a 150. Naming the bullet at its exact weight while quoting
       // a window-wide count attributes loads to a bullet that did not earn
       // them. A count is a promise; this keeps it one.
-      bullets: (bench?.bullets ?? [])
+      bullets: (activeBench?.bullets ?? [])
         .filter((b) => !off.bullets.includes(bulletKey(b)))
         .map((b) =>
           tolerance > 0
             ? `${benchBulletName(b)} ± ${tolerance} gr`
             : benchBulletName(b),
         ),
-      cartridges: (bench?.cartridges ?? [])
+      cartridges: (activeBench?.cartridges ?? [])
         .filter((c) => !off.cartridgeKeys.includes(c.key))
         .filter((c) => cartridge === 'all' || c.key === cartridge)
         .map((c) => c.name),
     }),
-    [bench, off, cartridge, tolerance],
+    [activeBench, off, cartridge, tolerance],
   );
 
   /* ── Units ─────────────────────────────────────────────────────────── */
@@ -646,6 +712,11 @@ function BenchFinder() {
   const changeUnits = useCallback(
     (next: Units) => {
       setUnits(next);
+      // ⚠️ A GUEST'S UNITS ARE THIS SITTING'S ONLY. There is no bench to store
+      // the preference on, and PUT /bench/me would 401 — so the toggle changes
+      // the drawing and the tables on this screen and nothing else. Same one
+      // control, same behaviour on the screen; only the persistence differs.
+      if (!isSignedIn) return;
       // The whole bench goes with it: PUT replaces rather than merges, so
       // sending units alone would clear the shelf.
       //
@@ -667,7 +738,7 @@ function BenchFinder() {
         },
       );
     },
-    [writeBench],
+    [isSignedIn, writeBench],
   );
 
   /* ── Overlays ──────────────────────────────────────────────────────── */
@@ -722,7 +793,23 @@ function BenchFinder() {
         // answers over the server's default ± 5 gr. Either way it prints a
         // figure the list behind it contradicts, with nothing on screen to
         // explain the gap. See BenchScope in lib/bench/api.ts.
-        .cartridge(token, key, { off: offList, tolerance, cartridge, weight }, { signal: ac.signal })
+        //
+        // ⚠️ AND THE SHELF ITSELF, FOR A GUEST. The counts are bench-relative;
+        // a declared visitor's bench exists only in the query, so leaving it
+        // out would print member-shaped figures ("0 loads") over a shelf they
+        // can see. Absent for a member — the server reads theirs.
+        .cartridge(
+          readToken,
+          key,
+          {
+            off: offList,
+            tolerance,
+            cartridge,
+            weight,
+            ...(isSignedIn ? {} : { shelf: guestQuery(guestShelf) }),
+          },
+          { signal: ac.signal },
+        )
         .then((s) => {
           if (mine !== specSeq.current) return;
           setSpec(s);
@@ -735,10 +822,17 @@ function BenchFinder() {
           setSpecLoading(false);
         });
     },
-    [token, offList, tolerance, cartridge, weight],
+    [readToken, isSignedIn, guestShelf, offList, tolerance, cartridge, weight],
   );
 
+  /**
+   * ⚠️ THE LOG IS A MEMBER'S OWN RECORD, SO THERE IS NO GUEST VERSION OF THIS.
+   * The button that opens it is not drawn for a declared visitor (see the
+   * toolbar), and GET /bench/log 401s without a session — this guard is the
+   * third layer, for a stale overlay opened before a session expired.
+   */
   const openLogList = useCallback(() => {
+    if (!isSignedIn) return;
     const mine = ++logSeq.current;
     setStack(onlyOverlay('logList'));
     setLogLoading(true);
@@ -754,7 +848,7 @@ function BenchFinder() {
         setLogLoading(false);
         fail(e, 'GET /bench/log');
       });
-  }, [token, fail]);
+  }, [isSignedIn, token, fail]);
 
   const openPowders = useCallback(() => {
     const mine = ++powdersSeq.current;
@@ -767,7 +861,17 @@ function BenchFinder() {
       // and all, over the width the toolbar is showing. Counted at the default
       // ± 5 gr while the finder is on "Exact", a row reads "17 loads on your
       // bench" and opens onto nine.
-      .powders(token, undefined, { off: offList, tolerance, cartridge, weight })
+      //
+      // ⚠️ AND A GUEST'S SHELF RIDES WITH IT. The row counts are the same
+      // promise for a signed-out visitor, whose shelf is entirely in the query;
+      // sent with a session the key is simply absent.
+      .powders(readToken, undefined, {
+        off: offList,
+        tolerance,
+        cartridge,
+        weight,
+        ...(isSignedIn ? {} : { shelf: guestQuery(guestShelf) }),
+      })
       .then((p) => {
         if (mine !== powdersSeq.current) return;
         setPowders(p);
@@ -781,10 +885,22 @@ function BenchFinder() {
         // allowed to make it.
         fail(e, 'GET /bench/powders');
       });
-  }, [token, offList, tolerance, cartridge, weight, fail]);
+  }, [readToken, isSignedIn, guestShelf, offList, tolerance, cartridge, weight, fail]);
 
   const addPowder = useCallback(
     (p: BenchPowder) => {
+      /**
+       * ⚠️ A SIGNED-OUT VISITOR EDITS THEIR OWN SHELF, AND NOTHING IS SENT.
+       * Same picker, same toast, same chip — the only difference is where the
+       * entry is kept: page state instead of PUT /bench/me. The prompt on the
+       * rail and the toolbar is what tells them it is not saved.
+       */
+      if (!isSignedIn) {
+        setGuestShelf((current) => addGuestPowder(current, p));
+        setStack(NO_OVERLAY);
+        say(`${p.name} added to your bench`);
+        return;
+      }
       writeBench(
         (current) => ({
           powderIds: [...current.powders.map((x) => x.id), p.id],
@@ -803,7 +919,7 @@ function BenchFinder() {
       );
       setStack(NO_OVERLAY);
     },
-    [writeBench, say, fail],
+    [isSignedIn, writeBench, say, fail],
   );
 
   /**
@@ -820,7 +936,10 @@ function BenchFinder() {
     setStack(onlyOverlay('bullets'));
     setBulletsLoading(true);
     benchApi
-      .bullets(token)
+      // Public catalogue read: the picker's `loads` is a fact about the world,
+      // not about the caller's shelf, so a guest gets exactly what a member
+      // gets and there is no shelf parameter to send.
+      .bullets(readToken)
       .then((b) => {
         if (mine !== bulletsSeq.current) return;
         setBullets(b);
@@ -831,14 +950,15 @@ function BenchFinder() {
         setBulletsLoading(false);
         fail(e, 'GET /bench/bullets');
       });
-  }, [token, fail]);
+  }, [readToken, fail]);
 
   const openCartridges = useCallback(() => {
     const mine = ++cartridgesSeq.current;
     setStack(onlyOverlay('cartridges'));
     setCartridgesLoading(true);
     benchApi
-      .cartridgeList(token)
+      // Same public read as the bullet picker — see openBullets.
+      .cartridgeList(readToken)
       .then((c) => {
         if (mine !== cartridgesSeq.current) return;
         setCartridges(c);
@@ -849,7 +969,7 @@ function BenchFinder() {
         setCartridgesLoading(false);
         fail(e, 'GET /bench/cartridges');
       });
-  }, [token, fail]);
+  }, [readToken, fail]);
 
   /**
    * ⚠️ EVERY ADD SENDS THE WHOLE BENCH. PUT /bench/me replaces rather than
@@ -872,6 +992,16 @@ function BenchFinder() {
    */
   const addBullet = useCallback(
     (b: BenchBulletOption) => {
+      // ⚠️ A GUEST'S SHELF IS PAGE STATE — see addPowder. The bullet itself
+      // travels as the same two fields (weight and calibre) either way.
+      if (!isSignedIn) {
+        setGuestShelf((current) => addGuestBullet(current, b));
+        setStack(NO_OVERLAY);
+        say(
+          `${benchBulletName({ weightGr: b.weightGr, calibreIn: b.calibreIn })} added to your bench`,
+        );
+        return;
+      }
       writeBench(
         (current) => ({
           powderIds: current.powders.map((p) => p.id),
@@ -898,11 +1028,18 @@ function BenchFinder() {
       );
       setStack(NO_OVERLAY);
     },
-    [writeBench, say, fail],
+    [isSignedIn, writeBench, say, fail],
   );
 
   const addCartridge = useCallback(
     (c: BenchCartridgeOption) => {
+      // ⚠️ A GUEST'S SHELF IS PAGE STATE — see addPowder.
+      if (!isSignedIn) {
+        setGuestShelf((current) => addGuestCartridge(current, c));
+        setStack(NO_OVERLAY);
+        say(`${c.name} added to your bench`);
+        return;
+      }
       writeBench(
         (current) => ({
           powderIds: current.powders.map((p) => p.id),
@@ -916,7 +1053,7 @@ function BenchFinder() {
       );
       setStack(NO_OVERLAY);
     },
-    [writeBench, say, fail],
+    [isSignedIn, writeBench, say, fail],
   );
 
   /**
@@ -938,6 +1075,36 @@ function BenchFinder() {
    */
   const removeFromBench = useCallback(
     (kind: keyof OffState, id: string) => {
+      /**
+       * ⚠️ A GUEST'S SHELF LEAVES THE SCREEN AND NOTHING ELSE. There is no
+       * saved copy to write, so removal is page state — plus the SAME cleanup
+       * the member path does after a successful write: a stale `off` entry
+       * would bring the entry back switched off, and a tab pinned to the
+       * cartridge that just left would empty the list with no chip to explain
+       * why. One set of rules, two places to keep the entry.
+       */
+      if (!isSignedIn) {
+        if (!guestHasEntry(guestShelf, kind, id)) return;
+        const removed =
+          kind === 'powderIds'
+            ? guestShelf.powders.find((p) => p.id === id)?.name
+            : kind === 'bullets'
+              ? guestShelf.bullets.filter((b) => bulletKey(b) === id).map(benchBulletName)[0]
+              : guestShelf.cartridges.find((c) => c.key === id)?.name;
+        // Nothing on the shelf answers to that id — a double tap on the ×,
+        // most likely. A removal that never happened must not be confirmed.
+        if (!removed) return;
+        setGuestShelf((current) => removeGuestEntry(current, kind, id));
+        setOff((prev) =>
+          prev[kind].includes(id)
+            ? { ...prev, [kind]: prev[kind].filter((x) => x !== id) }
+            : prev,
+        );
+        if (kind === 'cartridgeKeys') setCartridge((cur) => (cur === id ? 'all' : cur));
+        say(`${removed} removed from your bench`);
+        return;
+      }
+
       // Named as the write is built, not when the tap landed: by the time this
       // write's turn comes the shelf may already have changed, and once the
       // server answers the bench that comes back no longer holds the thing the
@@ -1000,7 +1167,7 @@ function BenchFinder() {
         (e) => fail(e, 'PUT /bench/me'),
       );
     },
-    [writeBench, say, fail],
+    [isSignedIn, guestShelf, writeBench, say, fail],
   );
 
   const saveLog = useCallback(
@@ -1094,6 +1261,10 @@ function BenchFinder() {
   /**
    * Copy a link to this exact search.
    *
+   * ⚠️ MEMBER-ONLY, AND THE BUTTON IS NOT DRAWN FOR A GUEST. POST /bench/share
+   * writes a row recording whose finder state it was, so it takes AuthGuard —
+   * the guard here is the second layer, not the control.
+   *
    * ⚠️ THE BENCH SNAPSHOT IS NAMES AND IDS, NOT THE WHOLE SHELF OBJECT. The
    * server caps a share at 8 KB, and what the far end needs is only enough to
    * work out which of ITS OWN chips to mute — see offFromSnapshot.
@@ -1105,6 +1276,7 @@ function BenchFinder() {
    * The fallback prints the URL, which can at least be read off the screen.
    */
   const copyLink = useCallback(() => {
+    if (!isSignedIn) return;
     const payload: BenchSharePayload = {
       filters: { cartridge, weight, tolerance, off },
       bench: bench
@@ -1130,7 +1302,7 @@ function BenchFinder() {
         }
       })
       .catch((e: unknown) => fail(e, 'POST /bench/share'));
-  }, [token, cartridge, weight, tolerance, off, bench, say, fail]);
+  }, [isSignedIn, token, cartridge, weight, tolerance, off, bench, say, fail]);
 
   useEffect(() => {
     if (!logBump) return;
@@ -1154,47 +1326,22 @@ function BenchFinder() {
   if (!isLoaded) return null;
 
   /**
-   * Signed out, and the session check has finished saying so.
+   * ⚠️ NO SESSION IS NO LONGER A WALL HERE — IT IS THE GUEST FINDER.
    *
-   * 🚨 WITHOUT THIS THE PAGE SHOWS SIX SKELETON ROWS FOR EVER. `loading`
-   * starts true and only the bench effect clears it, and that effect returns
-   * immediately when there is no session — so a member whose session expired
-   * mid-sitting, or who followed a shared link cold, sat watching a loading
-   * state that could never finish, with no error and nothing to press.
+   * A declared visitor gets the whole tool read-only: the same rail, tabs,
+   * weight window, results, load card and spec card, from a shelf held in page
+   * state and sent in the query (see `guestShelf` above). What they do not get
+   * is anything that writes — the load log, Copy link, "Log this load" — and
+   * the prompt tells them where the shelf could live if they want it kept. The
+   * old early return drew a sign-in tile for the WHOLE page; that is the
+   * behaviour this task removes.
+   *
+   * ⚠️ THE LOADING STATE STILL RESOLVES. `loading` starts true and the search
+   * effect fires for a guest shelf immediately (its key is `||`), so the
+   * skeletons clear into the empty-state panel. A member whose session expired
+   * mid-sitting now lands on the same guest finder instead of six skeletons
+   * that could never finish.
    */
-  if (isLoaded && !isSignedIn) {
-    return (
-      <main className="bench mx-auto px-4" style={{ maxWidth: 'var(--page-max)' }}>
-        <div
-          className="gg-tile"
-          style={{
-            margin: '32px auto',
-            maxWidth: 460,
-            padding: 24,
-            border: '0.5px solid var(--border)',
-            borderRadius: 'var(--r-md)',
-            background: 'var(--bg-card)',
-            textAlign: 'center',
-          }}
-        >
-          <h1 className="head" style={{ margin: '0 0 8px', fontSize: 20 }}>
-            The Bench
-          </h1>
-          <p style={{ margin: '0 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
-            Your bench — the powders, bullets and cartridges you keep — is yours alone. Sign in to
-            see what it can build.
-          </p>
-          <Link
-            href="/sign-in?redirect_url=/bench"
-            className="btn red"
-            style={{ display: 'inline-flex', alignItems: 'center', height: 44, padding: '0 16px' }}
-          >
-            Sign in
-          </Link>
-        </div>
-      </main>
-    );
-  }
 
   if (benchError) {
     return (
@@ -1296,7 +1443,16 @@ function BenchFinder() {
         onChange={changeUnits}
         size={phone ? 'mobile' : 'desktop'}
       />
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+      <div
+        style={{
+          marginLeft: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
         {/*
           🚨 lg, NOT md — IT HAS TO MATCH THE RAIL, WHICH IS `hidden lg:block`.
           At md the button was already hidden and the rail had not yet
@@ -1304,6 +1460,9 @@ function BenchFinder() {
           bench was unreachable: no chips to toggle, no ×, no way to take
           anything off a shelf at all. The two breakpoints are one decision and
           must be changed together.
+
+          ⚠️ THE SHELF BUTTON STAYS FOR A GUEST. It opens the same sheet with
+          the same chips on the same shelf — only the save claim changes.
         */}
         <Btn
           className="lg:hidden"
@@ -1312,32 +1471,46 @@ function BenchFinder() {
         >
           My bench
         </Btn>
-        <Btn size={phone ? 'mobile' : 'desktop'} onClick={copyLink}>
-          Copy link
-        </Btn>
-        <Btn
-          className={cx(logBump && 'bump')}
-          size={phone ? 'mobile' : 'desktop'}
-          onClick={openLogList}
-          // The badge is a glyph to a reader; the count belongs in the name.
-          aria-label={
-            entries.length > 0
-              ? `Load log, ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
-              : 'Load log'
-          }
-        >
-          Load log
-          {/*
-            SPEC §7: "has entries → red count badge". The count comes from the
-            log fetched once on mount and is kept current by every save, delete
-            and edit — never refetched for the badge alone.
-          */}
-          {entries.length > 0 ? (
-            <span className="bench-badge" aria-hidden="true">
-              {entries.length > 99 ? '99+' : entries.length}
-            </span>
-          ) : null}
-        </Btn>
+        {/*
+          🚨 COPY LINK AND THE LOAD LOG ARE ABSENT FOR A GUEST, NOT DISABLED.
+          Both end in a member-only call (POST /bench/share, GET /bench/log), so
+          a signed-out control could only 401 — and a dead control on a screen
+          that otherwise fully works reads as a broken page. The prompt takes
+          their place: one sentence, the same one the rail and the load card
+          carry.
+        */}
+        {isSignedIn ? (
+          <>
+            <Btn size={phone ? 'mobile' : 'desktop'} onClick={copyLink}>
+              Copy link
+            </Btn>
+            <Btn
+              className={cx(logBump && 'bump')}
+              size={phone ? 'mobile' : 'desktop'}
+              onClick={openLogList}
+              // The badge is a glyph to a reader; the count belongs in the name.
+              aria-label={
+                entries.length > 0
+                  ? `Load log, ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
+                  : 'Load log'
+              }
+            >
+              Load log
+              {/*
+                SPEC §7: "has entries → red count badge". The count comes from the
+                log fetched once on mount and is kept current by every save, delete
+                and edit — never refetched for the badge alone.
+              */}
+              {entries.length > 0 ? (
+                <span className="bench-badge" aria-hidden="true">
+                  {entries.length > 99 ? '99+' : entries.length}
+                </span>
+              ) : null}
+            </Btn>
+          </>
+        ) : (
+          <GuestPrompt style={{ maxWidth: 260 }} />
+        )}
       </div>
     </div>
   );
@@ -1361,13 +1534,20 @@ function BenchFinder() {
       {toolbar}
 
       <div className="bench-row">
-        {bench && (
+        {/*
+          ⚠️ `activeBench`, NOT `bench`: a member's rail waits for GET /bench/me
+          as it always did, and a guest's appears immediately from page state.
+          Same components either way — the only signed-out difference is the
+          badge/prompt swap, passed as `signedIn`.
+        */}
+        {activeBench && (
           <div
             className="bench-rail-col hidden lg:block"
             style={{ width: 280, flex: '0 0 280px' }}
           >
             <BenchRail
-              bench={bench}
+              bench={activeBench}
+              signedIn={isSignedIn}
               off={off}
               onToggle={toggleOff}
               onRemove={removeFromBench}
@@ -1410,11 +1590,12 @@ function BenchFinder() {
         </div>
       </div>
 
-      {bench && (
+      {activeBench && (
         <BenchSheet
           open={hasOverlay(stack, 'bench')}
           onClose={() => setStack((s) => closeOverlay(s, 'bench'))}
-          bench={bench}
+          bench={activeBench}
+          signedIn={isSignedIn}
           off={off}
           onToggle={toggleOff}
           onRemove={removeFromBench}
@@ -1440,7 +1621,13 @@ function BenchFinder() {
           cartridge={openLoad.group.cartridge}
           weightGr={openLoad.weightGr}
           onClose={() => setStack((s) => closeOverlay(s, 'load'))}
-          onLog={() => setStack((s) => pushOverlay(s, 'log'))}
+          /*
+           * ⚠️ ABSENT FOR A GUEST — the card then draws the sign-in prompt in
+           * the button's place. The log is a member's own record and
+           * POST /bench/log takes AuthGuard; a guest control could only 401.
+           * The spec card below stays, because that IS a content read.
+           */
+          onLog={isSignedIn ? () => setStack((s) => pushOverlay(s, 'log')) : undefined}
           // 'over': opened from the card, so Close comes back to the card.
           onSpec={() => openSpec(openLoad.group.cartridge.key, 'over')}
         />
@@ -1522,7 +1709,7 @@ function BenchFinder() {
         open={hasOverlay(stack, 'bullets')}
         bullets={bullets}
         loading={bulletsLoading}
-        onBench={(bench?.bullets ?? []).map(bulletKey)}
+        onBench={(activeBench?.bullets ?? []).map(bulletKey)}
         onClose={() => setStack((s) => closeOverlay(s, 'bullets'))}
         onAdd={addBullet}
       />
@@ -1531,7 +1718,7 @@ function BenchFinder() {
         open={hasOverlay(stack, 'cartridges')}
         cartridges={cartridges}
         loading={cartridgesLoading}
-        onBench={(bench?.cartridges ?? []).map((c) => c.key)}
+        onBench={(activeBench?.cartridges ?? []).map((c) => c.key)}
         onClose={() => setStack((s) => closeOverlay(s, 'cartridges'))}
         onAdd={addCartridge}
       />
@@ -1540,7 +1727,7 @@ function BenchFinder() {
         open={hasOverlay(stack, 'powders')}
         powders={powders}
         loading={powdersLoading}
-        onBench={bench?.powders.map((p) => p.id) ?? []}
+        onBench={activeBench?.powders.map((p) => p.id) ?? []}
         onClose={() => setStack((s) => closeOverlay(s, 'powders'))}
         onAdd={addPowder}
       />

@@ -160,3 +160,82 @@ describe('a count against the bench is taken over the same shelf as the list', (
     expect(params(f.url()).get('tolerance')).toBe('5');
   });
 });
+
+/* ── A signed-out visitor's shelf ────────────────────────────────────── */
+
+/**
+ * 🚨 THE GUEST SHELF'S SPELLING IS THE SERVER'S CONTRACT. SPEC-BUILD §4 names
+ * the arrays `powders[]`, `bullets[]`, `cartridges[]`; the backend reads those
+ * keys as repeated parameters and a bullet goes over as the chip key
+ * (`calibre|weight`). Sent as a comma-joined list the server would still accept
+ * the values — and nothing would ever fail — but the axis a value belongs to
+ * would then live in the value's shape rather than in its name.
+ */
+describe('GET /bench/loads carries a guest shelf as the SPEC arrays', () => {
+  it('sends each axis as its own repeated array parameter', async () => {
+    const f = stubFetch();
+    await benchApi.loads(async () => null, {
+      shelf: {
+        powderIds: ['p1', 'p2'],
+        bullets: [{ weightGr: 150, calibreIn: 0.308 }, { weightGr: 139 }],
+        cartridgeKeys: ['308win'],
+      },
+    });
+    const p = params(f.url());
+    expect(p.getAll('powders[]')).toEqual(['p1', 'p2']);
+    expect(p.getAll('bullets[]')).toEqual(['0.308|150', '|139']);
+    expect(p.getAll('cartridges[]')).toEqual(['308win']);
+  });
+
+  it('sends no shelf at all for a member, whose bench is stored', async () => {
+    const f = stubFetch();
+    await benchApi.loads(token, {});
+    const p = params(f.url());
+    expect(p.has('powders[]')).toBe(false);
+    expect(p.has('bullets[]')).toBe(false);
+    expect(p.has('cartridges[]')).toBe(false);
+  });
+
+  it('carries the shelf with the count reads, so a chip counts this shelf', async () => {
+    const f = stubFetch();
+    await benchApi.powders(async () => null, 'n550', {
+      off: [],
+      tolerance: 5,
+      shelf: { powderIds: ['p1'], bullets: [{ weightGr: 150, calibreIn: 0.308 }], cartridgeKeys: ['308win'] },
+    });
+    const p = params(f.url());
+    expect(p.getAll('powders[]')).toEqual(['p1']);
+    expect(p.getAll('bullets[]')).toEqual(['0.308|150']);
+    expect(p.getAll('cartridges[]')).toEqual(['308win']);
+  });
+});
+
+/**
+ * ⚠️ A TOKEN GETTER THAT ANSWERS null IS THE SIGNED-OUT STATE, AND IT MUST NOT
+ * PUT AN EMPTY `Authorization: Bearer ` ON THE WIRE. The reads are content
+ * reads behind the 18+ gate: the gate cookie rides along because the calls are
+ * same-origin, and a blank credential header would look like a broken session
+ * to OptionalAuthGuard instead of a visitor with none.
+ */
+describe('a read with no token sends no Authorization header', () => {
+  function capture(): { headers: () => Record<string, string> } {
+    let seen: Record<string, string> = {};
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen = (init?.headers ?? {}) as Record<string, string>;
+      return new Response('[]', { status: 200 });
+    });
+    return { headers: () => seen };
+  }
+
+  it('sends no Authorization header for a guest', async () => {
+    const f = capture();
+    await benchApi.loads(async () => null, {});
+    expect(f.headers().Authorization).toBeUndefined();
+  });
+
+  it('still sends it for a member', async () => {
+    const f = capture();
+    await benchApi.loads(token, {});
+    expect(f.headers().Authorization).toBe('Bearer tok');
+  });
+});

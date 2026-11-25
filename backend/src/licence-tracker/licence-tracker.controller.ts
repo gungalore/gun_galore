@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { ContentAccessGuard } from '../auth/content-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   AddEventInput,
@@ -39,7 +41,6 @@ const NoStore = () => Header('Cache-Control', 'private, no-store');
  * exists" rule the public listing paths follow.
  */
 @Controller('licence-centre/tracking')
-@UseGuards(AuthGuard)
 export class LicenceTrackerController {
   constructor(private readonly tracker: LicenceTrackerService) {}
 
@@ -53,8 +54,23 @@ export class LicenceTrackerController {
     return this.tracker.status();
   }
 
+  /**
+   * One-off status check for a signed-out visitor. Behind the 18+ gate
+   * (ContentAccessGuard) and throttled hard: every call is a live request to
+   * SAPS's public enquiry, which itself blocks repeated lookups.
+   */
+  @Post('check')
+  @NoStore()
+  @HttpCode(200)
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async guestCheck(@Body() body: CreateTrackerInput) {
+    return this.tracker.checkGuest(body ?? {});
+  }
+
   @Get()
   @NoStore()
+  @UseGuards(AuthGuard)
   async list(@CurrentUser() userId: string) {
     return { trackers: await this.tracker.list(userId) };
   }
@@ -66,6 +82,7 @@ export class LicenceTrackerController {
    */
   @Post()
   @NoStore()
+  @UseGuards(AuthGuard)
   async create(@CurrentUser() userId: string, @Body() body: CreateTrackerInput) {
     return this.tracker.create(userId, body ?? {});
   }
@@ -73,6 +90,7 @@ export class LicenceTrackerController {
   /** Deactivate, never delete — the member's own history survives. */
   @Delete(':id')
   @NoStore()
+  @UseGuards(AuthGuard)
   async remove(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.tracker.remove(userId, id);
   }
@@ -88,6 +106,7 @@ export class LicenceTrackerController {
    */
   @Post(':id/check')
   @NoStore()
+  @UseGuards(AuthGuard)
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async check(@CurrentUser() userId: string, @Param('id') id: string) {
@@ -96,6 +115,7 @@ export class LicenceTrackerController {
 
   @Get(':id')
   @NoStore()
+  @UseGuards(AuthGuard)
   async get(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.tracker.get(userId, id);
   }
@@ -103,6 +123,7 @@ export class LicenceTrackerController {
   /** A milestone the member recorded themselves. Always source MEMBER. */
   @Post(':id/events')
   @NoStore()
+  @UseGuards(AuthGuard)
   async addEvent(
     @CurrentUser() userId: string,
     @Param('id') id: string,
