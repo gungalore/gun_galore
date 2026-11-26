@@ -73,7 +73,7 @@ export default function CompetencyLines({
                 <input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  className="min-h-[40px] min-w-[12rem] flex-1 rounded-[6px] border border-[var(--border)] bg-[var(--bg-card)] px-2 text-[14px] text-[var(--text-primary)]"
+                  className="min-h-[40px] min-w-[12rem] flex-1 rounded-[6px] border border-[var(--border)] bg-[var(--field-bg)] px-2 text-[14px] text-[var(--text-primary)]"
                   aria-label={i.label}
                 />
                 <button

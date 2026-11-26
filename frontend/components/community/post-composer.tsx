@@ -203,7 +203,7 @@ function describePostError(
 }
 
 const fieldInput = {
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-primary)',
 } as const;
@@ -813,7 +813,7 @@ export function PostComposer({
           }}
           className="px-2 py-2 rounded-[6px] text-[13px]"
           style={{
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
           }}
@@ -833,7 +833,7 @@ export function PostComposer({
         maxLength={140}
         className="w-full px-3 py-2 rounded-[6px] text-[14px] mb-2"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-primary)',
         }}
@@ -846,7 +846,7 @@ export function PostComposer({
         maxLength={5000}
         className="w-full px-3 py-2 rounded-[6px] text-[14px] mb-2 resize-y"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-primary)',
         }}
@@ -857,7 +857,7 @@ export function PostComposer({
         placeholder="Tags, comma separated (e.g. biltong, gauteng)"
         className="w-full px-3 py-2 rounded-[6px] text-[13px] mb-2"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-primary)',
         }}
@@ -876,7 +876,7 @@ export function PostComposer({
         placeholder="Place or area (optional)"
         className="w-full px-3 py-2 rounded-[6px] text-[13px] mb-3"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-primary)',
         }}

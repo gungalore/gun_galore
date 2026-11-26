@@ -942,7 +942,7 @@ export default function IntakeInterviewPage() {
                     }}
                     placeholder={q.customPlaceholder}
                     className="min-h-[44px] flex-1 rounded-lg border px-3 text-[13.5px]"
-                    style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
+                    style={{ borderColor: 'var(--border)', background: 'var(--field-bg)', color: 'var(--text-primary)' }}
                   />
                 )}
                 <button
@@ -1132,7 +1132,7 @@ export default function IntakeInterviewPage() {
                           firearm_type: e.target.value,
                         }))
                       }
-                      className="mt-1 block w-full rounded-lg border bg-transparent px-2 py-2 text-[13px]"
+                      className="mt-1 block w-full rounded-lg border bg-[var(--field-bg)] px-2 py-2 text-[13px]"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                     >
                       <option value="">Choose…</option>
@@ -1152,7 +1152,7 @@ export default function IntakeInterviewPage() {
                           firearm_make: e.target.value,
                         }))
                       }
-                      className="mt-1 block w-full rounded-lg border bg-transparent px-2 py-2 text-[13px]"
+                      className="mt-1 block w-full rounded-lg border bg-[var(--field-bg)] px-2 py-2 text-[13px]"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                     />
                   </label>
@@ -1166,7 +1166,7 @@ export default function IntakeInterviewPage() {
                           firearm_model: e.target.value,
                         }))
                       }
-                      className="mt-1 block w-full rounded-lg border bg-transparent px-2 py-2 text-[13px]"
+                      className="mt-1 block w-full rounded-lg border bg-[var(--field-bg)] px-2 py-2 text-[13px]"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                     />
                   </label>
@@ -1180,7 +1180,7 @@ export default function IntakeInterviewPage() {
                           firearm_calibre: e.target.value,
                         }))
                       }
-                      className="mt-1 block w-full rounded-lg border bg-transparent px-2 py-2 text-[13px]"
+                      className="mt-1 block w-full rounded-lg border bg-[var(--field-bg)] px-2 py-2 text-[13px]"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                     />
                   </label>
@@ -1194,7 +1194,7 @@ export default function IntakeInterviewPage() {
                           firearm_serial: e.target.value,
                         }))
                       }
-                      className="mt-1 block w-full rounded-lg border bg-transparent px-2 py-2 text-[13px]"
+                      className="mt-1 block w-full rounded-lg border bg-[var(--field-bg)] px-2 py-2 text-[13px]"
                       style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                     />
                   </label>
@@ -1455,7 +1455,7 @@ export default function IntakeInterviewPage() {
                           setDetail(d.key, d.multi ? vals.join(', ') : vals[0] ?? '');
                         }}
                         className="mt-1 min-h-[44px] w-full rounded-lg border px-2 text-[13px]"
-                        style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
+                        style={{ borderColor: 'var(--border)', background: 'var(--field-bg)', color: 'var(--text-primary)' }}
                       >
                         {!d.multi ? <option value="">Choose…</option> : null}
                         {d.choices.map((c) => (
@@ -1496,7 +1496,7 @@ export default function IntakeInterviewPage() {
                         placeholder={d.customPlaceholder}
                         rows={3}
                         className="mt-1 w-full rounded-lg border px-2 py-2 text-[13px]"
-                        style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
+                        style={{ borderColor: 'var(--border)', background: 'var(--field-bg)', color: 'var(--text-primary)' }}
                       />
                     </label>
                   );
@@ -1510,7 +1510,7 @@ export default function IntakeInterviewPage() {
                       onChange={(e) => setDetail(d.key, e.target.value)}
                       placeholder={d.customPlaceholder}
                       className="mt-1 min-h-[44px] w-full rounded-lg border px-2 text-[13px]"
-                      style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)', color: 'var(--text-primary)' }}
+                      style={{ borderColor: 'var(--border)', background: 'var(--field-bg)', color: 'var(--text-primary)' }}
                     />
                   </label>
                 );

@@ -175,7 +175,7 @@ export default function BulkCapture({
                 <select
                   value={f.kind}
                   aria-label={`Document type for ${f.name}`}
-                  className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1 text-[13px]"
+                  className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1 text-[13px]"
                   onChange={async (e) => {
                     const next = e.target.value;
                     setFiled((cur) =>

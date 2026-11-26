@@ -853,7 +853,7 @@ function DocumentCentre() {
               searches the reading as well, so a calibre or a licence number
               finds the row. */}
           <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
-            <label className="flex min-h-[44px] flex-1 items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3">
+            <label className="flex min-h-[44px] flex-1 items-center gap-2 rounded-[6px] border border-[var(--field-border)] bg-[var(--field-bg)] px-3">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
@@ -864,7 +864,7 @@ function DocumentCentre() {
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by name, number or calibre"
                 aria-label="Search documents"
-                className="w-full bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+                className="w-full bg-[var(--field-bg)] text-[13px] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)] focus:outline-none"
               />
             </label>
 

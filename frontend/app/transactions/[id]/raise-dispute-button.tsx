@@ -284,7 +284,7 @@ export function RaiseDisputeModal({
             placeholder="Tell us what you bought and what has not arrived — the dispatch date, tracking reference, and any dates you contacted the seller."
             className="w-full px-3 py-2 rounded text-sm outline-none"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: `0.5px solid ${
                 details.length > 0 && !detailsOk
                   ? 'var(--red)'

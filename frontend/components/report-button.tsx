@@ -146,7 +146,7 @@ export function ReportButton({
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       className="w-full mb-3"
-                      style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '8px 10px', fontSize: 14, outline: 'none' }}
+                      style={{ background: 'var(--field-bg)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '8px 10px', fontSize: 14, outline: 'none' }}
                     >
                       {REASONS.map((r) => (
                         <option key={r.value} value={r.value}>
@@ -160,7 +160,7 @@ export function ReportButton({
                       placeholder="Add any detail (optional)"
                       rows={3}
                       className="w-full mb-3"
-                      style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '8px 10px', fontSize: 14, outline: 'none', resize: 'vertical' }}
+                      style={{ background: 'var(--field-bg)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, padding: '8px 10px', fontSize: 14, outline: 'none', resize: 'vertical' }}
                     />
                   </>
                 )}

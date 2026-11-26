@@ -3,7 +3,9 @@
 /**
  * Shared input primitive — consistent form controls per DESIGN.md v1.2 §8.
  * - Height 44px, --radius-sm fill, no border at rest
- * - Focus: fill turns --surface, 1px --accent border, --focus-ring
+ * - Fill is --field-bg (2026-11-26): a contrasting field surface, never the
+ *   page/card colour. Focus steps to --field-bg-focus + 1px --accent border
+ *   + --focus-ring.
  * - Labels above fields, 13px/600 weight
  * - Errors below in --danger with icon plus text (never colour alone)
  */
@@ -36,7 +38,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         style={{
           height: '44px',
           borderRadius: 'var(--r-sm)',
-          backgroundColor: 'var(--surface-sunken)',
+          backgroundColor: 'var(--field-bg)',
           border: hasError ? '1px solid var(--danger)' : 'none',
           padding: '0 14px',
           fontFamily: 'var(--font-body)',
@@ -47,18 +49,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           ...style,
         }}
         onFocus={(e) => {
-          e.currentTarget.style.backgroundColor = 'var(--surface)';
+          e.currentTarget.style.backgroundColor = 'var(--field-bg-focus)';
           e.currentTarget.style.borderColor = hasError ? 'var(--danger)' : 'var(--accent)';
           e.currentTarget.style.boxShadow = 'var(--focus-ring)';
           props.onFocus?.(e);
         }}
         onBlur={(e) => {
           if (!hasError) {
-            e.currentTarget.style.backgroundColor = 'var(--surface-sunken)';
+            e.currentTarget.style.backgroundColor = 'var(--field-bg)';
             e.currentTarget.style.borderColor = 'transparent';
             e.currentTarget.style.boxShadow = 'none';
           } else {
-            e.currentTarget.style.backgroundColor = 'var(--surface-sunken)';
+            e.currentTarget.style.backgroundColor = 'var(--field-bg)';
             e.currentTarget.style.borderColor = 'var(--danger)';
             e.currentTarget.style.boxShadow = 'none';
           }

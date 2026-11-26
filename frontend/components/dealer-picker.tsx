@@ -69,7 +69,7 @@ export function DealerPicker({
         onChange={(e) => setFilterProvince(e.target.value)}
         className="w-full mb-3"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-secondary)',
           borderRadius: '6px',

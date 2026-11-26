@@ -331,7 +331,7 @@ export default function NewComplaintPage() {
     padding: '9px 11px',
     borderRadius: 8,
     border: '0.5px solid var(--border)',
-    background: 'var(--bg-inset)',
+    background: 'var(--field-bg)',
     color: 'var(--text-primary)',
     fontSize: 14,
   } as const;

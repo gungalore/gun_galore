@@ -225,7 +225,7 @@ export default function MotivationWitnesses({
                       }
                       autoComplete="name"
                       placeholder="As it appears on their ID"
-                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--field-bg)] text-[var(--text-primary)] px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block text-sm">
@@ -241,7 +241,7 @@ export default function MotivationWitnesses({
                       inputMode="tel"
                       autoComplete="tel"
                       placeholder="072 123 4567"
-                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--field-bg)] text-[var(--text-primary)] px-3 py-2 text-sm"
                     />
                   </label>
                 </div>

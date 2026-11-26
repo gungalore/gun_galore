@@ -62,7 +62,7 @@ export function GuestCheckPanel() {
   }
 
   const inputStyle: React.CSSProperties = {
-    background: 'var(--bg-card)',
+    background: 'var(--field-bg)',
     color: 'var(--text-primary)',
     border: '1px solid var(--border-visible)',
     borderRadius: 6,

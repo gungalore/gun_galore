@@ -41,7 +41,7 @@ function Input({
         className="w-full rounded-lg border px-3 py-2 text-[13.5px]"
         style={{
           borderColor: 'var(--border)',
-          background: 'var(--bg-card)',
+          background: 'var(--field-bg)',
           color: 'var(--text-primary)',
         }}
       >
@@ -81,7 +81,7 @@ function Input({
       className="w-full rounded-lg border px-3 py-2 text-[13.5px]"
       style={{
         borderColor: 'var(--border)',
-        background: 'var(--bg-card)',
+        background: 'var(--field-bg)',
         color: 'var(--text-primary)',
       }}
     />

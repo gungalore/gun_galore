@@ -104,7 +104,7 @@ export default function UnplacedUploadDialog({
               maxLength={300}
               rows={3}
               placeholder="For example: the broken gate after the break-in, or my reloading bench."
-              className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-[10px] text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]"
+              className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-[10px] text-[14px] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)]"
             />
           </>
         ) : null}

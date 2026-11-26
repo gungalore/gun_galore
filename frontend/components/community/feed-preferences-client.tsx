@@ -178,7 +178,7 @@ export function FeedPreferencesClient() {
             placeholder="e.g. venison"
             className="px-3 py-2 rounded-[6px] text-[13px] flex-1"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
             }}

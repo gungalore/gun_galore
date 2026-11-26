@@ -45,7 +45,7 @@ const card: React.CSSProperties = {
   borderRadius: 10,
 };
 const input: React.CSSProperties = {
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-primary)',
   borderRadius: 6,

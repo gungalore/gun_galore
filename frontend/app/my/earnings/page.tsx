@@ -135,7 +135,7 @@ export default function EarningsPage() {
           aria-label="Period"
           value={period}
           onChange={(e) => setPeriod(e.target.value as Period)}
-          className="text-sm px-2 py-1.5 rounded-md bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)]"
+          className="text-sm px-2 py-1.5 rounded-md bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)]"
         >
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>

@@ -463,7 +463,7 @@ export default function DealerVerificationPage() {
               maxLength={120}
               style={{
                 width: '100%',
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 border: '0.5px solid var(--border)',
                 color: 'var(--text-primary)',
                 borderRadius: 6,
@@ -489,7 +489,7 @@ export default function DealerVerificationPage() {
               rows={2}
               style={{
                 width: '100%',
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 border: '0.5px solid var(--border)',
                 color: 'var(--text-primary)',
                 borderRadius: 6,
@@ -518,7 +518,7 @@ export default function DealerVerificationPage() {
               maxLength={40}
               style={{
                 width: '100%',
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 border: '0.5px solid var(--border)',
                 color: 'var(--text-primary)',
                 borderRadius: 6,
@@ -547,7 +547,7 @@ export default function DealerVerificationPage() {
             maxLength={40}
             style={{
               width: '100%',
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
               borderRadius: 6,

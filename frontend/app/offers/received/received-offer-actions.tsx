@@ -210,7 +210,7 @@ export default function ReceivedOfferActions({
             aria-invalid={!!counterBlocked}
             className="w-full pl-7 pr-3 py-2 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               // Red rim the moment the number can't be sent — the seller
               // shouldn't have to press Send to find out.
               border: `0.5px solid ${
@@ -238,7 +238,7 @@ export default function ReceivedOfferActions({
           placeholder="Note to buyer (optional)"
           className="w-full px-3 py-2 rounded-[6px] text-sm resize-none"
           style={{
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
           }}
@@ -400,7 +400,7 @@ export default function ReceivedOfferActions({
                     placeholder="Briefly describe your reason (min 10 characters)"
                     className="w-full px-3 py-2 mb-3 rounded-[6px] text-sm resize-none"
                     style={{
-                      background: 'var(--bg-inset)',
+                      background: 'var(--field-bg)',
                       border: '0.5px solid var(--border)',
                       color: 'var(--text-primary)',
                     }}

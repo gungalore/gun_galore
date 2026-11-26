@@ -227,7 +227,7 @@ export default function CardsRow({
               motivation.
             </div>
             <textarea
-              className="mt-[5px] min-h-[88px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-[10px] text-[14px] leading-[1.45] text-[var(--text-primary)]"
+              className="mt-[5px] min-h-[88px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-[10px] text-[14px] leading-[1.45] text-[var(--text-primary)]"
               value={own}
               onChange={(e) => {
                 touched.current = true;

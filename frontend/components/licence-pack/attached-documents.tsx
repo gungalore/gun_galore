@@ -206,7 +206,7 @@ export default function AttachedDocuments({
                       // nothing.
                       if (next && next !== d.kind) onRefile(d.id, next);
                     }}
-                    className="mt-1 min-h-[44px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1.5 text-[13px]"
+                    className="mt-1 min-h-[44px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1.5 text-[13px]"
                   >
                     {pickable.map((k) => (
                       <option key={k.kind} value={k.kind}>

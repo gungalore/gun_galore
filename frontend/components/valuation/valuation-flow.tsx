@@ -342,7 +342,7 @@ export function ValuationFlow() {
               required
               placeholder="e.g. Sako L61 Finnbear .30-06 rifle"
               className="w-full rounded-[8px] px-3 py-2.5 text-sm"
-              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+              style={{ background: 'var(--field-bg)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
             />
             <p className="mt-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Name the one item you are selling. Clear photos plus a descriptive name give the most accurate valuation.
@@ -361,7 +361,7 @@ export function ValuationFlow() {
               rows={4}
               placeholder="Model and model number, year, size or capacity, what is included (scope, magazines, case, tools, spare parts). Describe every mark, scratch, dent, rust, crack or repair, and say what works and what does not."
               className="w-full rounded-[8px] px-3 py-2.5 text-sm resize-y"
-              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+              style={{ background: 'var(--field-bg)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
             />
             <p className="mt-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Please mention every wear mark and defect, even small ones. The more honest the detail, the better we can estimate the value of your item.
@@ -375,7 +375,7 @@ export function ValuationFlow() {
               value={tagForNew}
               onChange={(e) => setTagForNew(e.target.value)}
               className="text-xs rounded-[6px] px-2 py-1.5"
-              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+              style={{ background: 'var(--field-bg)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
             >
               <option value="">No tag</option>
               {checklist.map((item) => (

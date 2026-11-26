@@ -184,7 +184,7 @@ function normaliseAttrValues(
 // afford.
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: 'var(--bg-card)',
+  background: 'var(--field-bg)',
   border: '1px solid var(--border-hover)',
   color: 'var(--text-primary)',
   borderRadius: '6px',
@@ -282,7 +282,7 @@ function SmallNumberField({
           // than reading that constant, so when every other field went white it
           // was left as the one grey well on the form — and it is the field the
           // seller cares most about.
-          background: 'var(--bg-card)',
+          background: 'var(--field-bg)',
           border: '1px solid var(--border-hover)',
           borderRadius: 6,
           padding: '8px 10px',
@@ -4113,7 +4113,7 @@ export default function NewListingPage() {
                           aria-label="Dealer name"
                           style={{
                             width: '100%',
-                            background: 'var(--bg-inset)',
+                            background: 'var(--field-bg)',
                             border: '0.5px solid var(--border)',
                             color: 'var(--text-primary)',
                             borderRadius: '6px',
@@ -4133,7 +4133,7 @@ export default function NewListingPage() {
                           aria-label="Dealer address"
                           style={{
                             width: '100%',
-                            background: 'var(--bg-inset)',
+                            background: 'var(--field-bg)',
                             border: '0.5px solid var(--border)',
                             color: 'var(--text-primary)',
                             borderRadius: '6px',
@@ -4151,7 +4151,7 @@ export default function NewListingPage() {
                           aria-label="Dealer phone"
                           style={{
                             width: '100%',
-                            background: 'var(--bg-inset)',
+                            background: 'var(--field-bg)',
                             border: '0.5px solid var(--border)',
                             color: 'var(--text-primary)',
                             borderRadius: '6px',
@@ -4169,7 +4169,7 @@ export default function NewListingPage() {
                           aria-label="Dealer email"
                           style={{
                             width: '100%',
-                            background: 'var(--bg-inset)',
+                            background: 'var(--field-bg)',
                             border: '0.5px solid var(--border)',
                             color: 'var(--text-primary)',
                             borderRadius: '6px',
@@ -4293,7 +4293,7 @@ export default function NewListingPage() {
                       aria-label="Dealer province"
                       style={{
                         width: '100%',
-                        background: 'var(--bg-inset)',
+                        background: 'var(--field-bg)',
                         border: '0.5px solid var(--border)',
                         color: plannedDealerProvince
                           ? 'var(--text-primary)'
@@ -4334,7 +4334,7 @@ export default function NewListingPage() {
                       aria-label="Dealer area or town"
                       style={{
                         width: '100%',
-                        background: 'var(--bg-inset)',
+                        background: 'var(--field-bg)',
                         border: '0.5px solid var(--border)',
                         color: 'var(--text-primary)',
                         borderRadius: '6px',

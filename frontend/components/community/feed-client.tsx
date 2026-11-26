@@ -593,7 +593,7 @@ export function FeedClient() {
           placeholder="Search posts, tags, categories or people"
           className="w-full rounded-[10px] py-3 pl-10 pr-3 text-[14px] outline-none focus-visible:ring-2"
           style={{
-            background: 'var(--bg-card)',
+            background: 'var(--field-bg)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
           }}
@@ -620,7 +620,7 @@ export function FeedClient() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="bg-transparent text-[13px] font-medium cursor-pointer appearance-none pr-6"
+          className="bg-[var(--field-bg)] text-[13px] font-medium cursor-pointer appearance-none pr-6"
           style={{
             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%2376746f' stroke-width='1.5'/%3E%3C/svg%3E")`,
             backgroundRepeat: 'no-repeat',

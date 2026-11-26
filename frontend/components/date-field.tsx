@@ -205,7 +205,7 @@ export default function DateField({
                 ? 'var(--warning)'
                 : 'var(--border)'
             }`,
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             color: 'var(--text-primary)',
             padding: '0 10px',
             fontSize: 15,

@@ -595,7 +595,7 @@ function CloseAccountDialog({
                 aria-label="Type CLOSE to confirm"
                 className="mt-1"
                 style={{
-                  background: 'var(--bg-inset)',
+                  background: 'var(--field-bg)',
                   border: '0.5px solid var(--border)',
                   color: 'var(--text-primary)',
                   borderRadius: 6,

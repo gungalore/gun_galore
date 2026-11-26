@@ -404,7 +404,7 @@ export function MyPostsClient() {
               placeholder="Title (optional)"
               className="w-full px-3 py-2 rounded-[6px] text-[13px]"
               style={{
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 color: 'var(--text-primary)',
                 border: '0.5px solid var(--border)',
               }}
@@ -415,7 +415,7 @@ export function MyPostsClient() {
               rows={6}
               className="w-full px-3 py-2 rounded-[6px] text-[13px] resize-y"
               style={{
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 color: 'var(--text-primary)',
                 border: '0.5px solid var(--border)',
               }}
@@ -426,7 +426,7 @@ export function MyPostsClient() {
               placeholder="Tags, comma separated"
               className="w-full px-3 py-2 rounded-[6px] text-[13px]"
               style={{
-                background: 'var(--bg-inset)',
+                background: 'var(--field-bg)',
                 color: 'var(--text-primary)',
                 border: '0.5px solid var(--border)',
               }}

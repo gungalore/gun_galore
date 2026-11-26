@@ -421,7 +421,7 @@ export default function SellerConsentPage() {
                 onChange={(e) =>
                   setCardFields((cur) => ({ ...cur, [key]: e.target.value }))
                 }
-                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
               />
             </label>
           ))}
@@ -443,7 +443,7 @@ export default function SellerConsentPage() {
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="As they appear on your identity document"
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       <label className="mt-3 block text-xs text-[var(--text-secondary)]">
@@ -453,7 +453,7 @@ export default function SellerConsentPage() {
           onChange={(e) => setIdNumber(e.target.value)}
           inputMode="numeric"
           placeholder="13 digits"
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
 
@@ -511,7 +511,7 @@ export default function SellerConsentPage() {
               onChange={(e) => setF(f.key, e.target.value)}
               inputMode={f.numeric ? 'numeric' : undefined}
               placeholder={f.placeholder}
-              className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+              className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
             />
           )}
         </label>
@@ -546,7 +546,7 @@ export default function SellerConsentPage() {
                 value={sectionF[f.key] ?? ''}
                 onChange={(e) => setF(f.key, e.target.value)}
                 placeholder={f.placeholder}
-                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
               />
             </label>
           ))}
@@ -593,7 +593,7 @@ export default function SellerConsentPage() {
           value={place}
           onChange={(e) => setPlace(e.target.value)}
           placeholder="Town or city"
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       <button

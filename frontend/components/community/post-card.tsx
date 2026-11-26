@@ -377,7 +377,7 @@ export function PostCard({
                     placeholder="Tell us why this should be reviewed…"
                     className="w-full px-2 py-1.5 rounded-[6px] text-[12px] resize-y"
                     style={{
-                      background: 'var(--bg-card)',
+                      background: 'var(--field-bg)',
                       border: '0.5px solid var(--border)',
                       color: 'var(--text-primary)',
                     }}

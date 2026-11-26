@@ -1925,7 +1925,7 @@ function BuyerPhoneCapture({
           placeholder="0821234567 or +27821234567"
           style={{
             flex: 1,
-            background: 'var(--bg-card)',
+            background: 'var(--field-bg)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
             borderRadius: 6,

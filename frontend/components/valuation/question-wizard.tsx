@@ -140,7 +140,7 @@ export function QuestionWizard({
             placeholder="Other (type your own)"
             className="flex-1 rounded-[8px] px-3 py-2 text-sm"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
             }}

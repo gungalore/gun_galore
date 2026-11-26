@@ -49,7 +49,7 @@ interface BrowseResponse {
 }
 
 const inputStyle: React.CSSProperties = {
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '1px solid var(--border-visible)',
   color: 'var(--text-primary)',
   borderRadius: 6,
@@ -389,6 +389,11 @@ export function LiveSearch({
           }}
           onKeyDown={onInputKeyDown}
           style={finalInputStyle}
+          // The 'attached' variant sits inside the nav's own painted pill,
+          // which is the field surface; the inner input stays flat so the
+          // shared field fill is not painted twice. Everything else paints
+          // itself from the --field-bg base rule / inputStyle.
+          data-field-flat={variant === 'attached' ? '' : undefined}
           aria-label="Search listings"
           autoComplete="off"
           // Undefined for every existing caller, so nothing that renders this

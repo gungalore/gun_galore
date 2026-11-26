@@ -508,7 +508,7 @@ export default function OfferPanel({
             placeholder="0.00"
             className="w-full pl-7 pr-3 py-2.5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-card)',
+              background: 'var(--field-bg)',
               border: '1px solid var(--border)',
               color: 'var(--text-primary)',
             }}
@@ -543,7 +543,7 @@ export default function OfferPanel({
           placeholder="e.g. Local pickup preferred"
           className="w-full px-3 py-2 rounded-[6px] text-sm resize-none"
           style={{
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
           }}

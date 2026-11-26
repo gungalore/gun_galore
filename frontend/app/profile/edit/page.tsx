@@ -33,7 +33,7 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   borderRadius: 6,
   padding: '10px 12px',
@@ -950,8 +950,8 @@ export default function EditProfilePage() {
                     ...inputStyle,
                     background:
                       me?.kycStatus === 'VERIFIED'
-                        ? 'var(--bg-deep)'
-                        : 'var(--bg-inset)',
+                        ? 'var(--field-bg-disabled)'
+                        : 'var(--field-bg)',
                     color:
                       me?.kycStatus === 'VERIFIED'
                         ? 'var(--text-secondary)'
@@ -979,8 +979,8 @@ export default function EditProfilePage() {
                     ...inputStyle,
                     background:
                       me?.kycStatus === 'VERIFIED'
-                        ? 'var(--bg-deep)'
-                        : 'var(--bg-inset)',
+                        ? 'var(--field-bg-disabled)'
+                        : 'var(--field-bg)',
                     color:
                       me?.kycStatus === 'VERIFIED'
                         ? 'var(--text-secondary)'
@@ -1306,7 +1306,7 @@ export default function EditProfilePage() {
                   maxWidth: '100%',
                   margin: '0 auto',
                   display: 'block',
-                  background: 'var(--bg-card)',
+                  background: 'var(--field-bg)',
                   border: '0.5px solid var(--border)',
                   borderRadius: 6,
                   padding: '14px 16px',

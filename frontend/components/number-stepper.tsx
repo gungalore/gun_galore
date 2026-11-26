@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -145,8 +145,8 @@ export function NumberStepper(props: NumberStepperProps) {
         display: 'inline-flex',
         alignItems: 'stretch',
         width: '100%',
-        background: 'var(--bg-inset)',
-        border: '0.5px solid var(--border)',
+        background: 'var(--field-bg)',
+        border: '0.5px solid var(--field-border)',
         borderRadius: 6,
         overflow: 'hidden',
         opacity: disabled ? 0.5 : 1,
@@ -162,6 +162,7 @@ export function NumberStepper(props: NumberStepperProps) {
       />
       <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
         <input
+            data-field-flat
           type="text"
           inputMode="decimal"
           aria-label={props['aria-label']}
@@ -183,7 +184,7 @@ export function NumberStepper(props: NumberStepperProps) {
           style={{
             flex: 1,
             width: '100%',
-            background: 'transparent',
+            background: 'var(--field-bg)',
             border: 'none',
             outline: 'none',
             color: 'var(--text-primary)',

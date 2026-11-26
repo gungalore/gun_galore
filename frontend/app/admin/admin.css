@@ -39,6 +39,28 @@
   --adm-line: rgba(255, 255, 255, 0.08);
   --adm-line-bright: rgba(255, 255, 255, 0.18);
 
+  /* ── Field surfaces (2026-11-26) ─────────────────────────────────────
+     Same rule as the shop (app/globals.css): a fillable control must be a
+     LIGHTER shade than the surface it sits on. The Desk is always dark, so
+     these are pinned here and the shop's base field rules (which read
+     --field-bg) pick them up inside `.admin-os`. The old fill was
+     rgba(255,255,255,0.05) over #030507 — about 1.1:1, the operator's
+     "same colour as the background" report on the console's own forms. */
+  --adm-field-bg: #222B33;                /* 1.46:1 on --adm-bg */
+  --adm-field-bg-hover: #28323B;
+  --adm-field-bg-focus: #2E3943;
+  --adm-field-bg-disabled: #141A20;
+  --field-bg: var(--adm-field-bg);
+  --field-bg-hover: var(--adm-field-bg-hover);
+  --field-bg-focus: var(--adm-field-bg-focus);
+  --field-bg-disabled: var(--adm-field-bg-disabled);
+  --field-placeholder: var(--adm-ink-2);
+  --field-focus-edge: var(--adm-cyan);
+
+  /* The Desk is its own dark theme: native date/time pickers and the
+     select popup must follow it even when the shop is in light mode. */
+  color-scheme: dark;
+
   --adm-mono: 'SF Mono', 'Fira Code', 'Roboto Mono', Menlo, monospace;
   --adm-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
     Arial, sans-serif;
@@ -984,7 +1006,7 @@
 .adm-select,
 .adm-textarea {
   width: 100%;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--adm-field-bg);
   border: 1px solid var(--adm-line-bright);
   border-radius: 10px;
   padding: 10px 14px;
@@ -992,18 +1014,20 @@
   font-size: 13px;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.2s var(--adm-ease);
+  transition: border-color 0.2s var(--adm-ease), background-color 0.2s var(--adm-ease);
 }
 
 .adm-input:focus,
 .adm-select:focus,
 .adm-textarea:focus {
+  background: var(--adm-field-bg-focus);
   border-color: var(--adm-cyan);
   box-shadow: 0 0 12px var(--adm-cyan-glow) !important;
 }
 
-.adm-input::placeholder {
-  color: var(--adm-ink-3);
+.adm-input::placeholder,
+.adm-textarea::placeholder {
+  color: var(--adm-ink-2);
 }
 
 .adm-label {

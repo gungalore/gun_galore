@@ -274,7 +274,7 @@ export default function CredentialCard({
         {renaming ? (
           <input
             autoFocus
-            className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-base font-semibold"
+            className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1 text-base font-semibold"
             value={draftName}
             maxLength={120}
             onChange={(e) => setDraftName(e.target.value)}
@@ -795,7 +795,7 @@ export default function CredentialCard({
             rows={2}
             maxLength={280}
             placeholder="For example: me and my son on a hunt in Limpopo, 2019."
-            className="mt-2 w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
+            className="mt-2 w-full rounded-[6px] border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
           />
           <div className="mt-2 flex items-center gap-3">
             <button

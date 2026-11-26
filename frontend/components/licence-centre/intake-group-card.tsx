@@ -355,7 +355,7 @@ export default function IntakeGroupCard({
                   className="mt-2 min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
                   style={{
                     borderColor: 'var(--border)',
-                    background: 'var(--bg-inset)',
+                    background: 'var(--field-bg)',
                     color: 'var(--text-primary)',
                   }}
                 />
@@ -381,7 +381,7 @@ export default function IntakeGroupCard({
                         className="mt-1 min-h-[44px] w-full rounded-lg border px-3 text-[13px]"
                         style={{
                           borderColor: 'var(--border)',
-                          background: 'var(--bg-inset)',
+                          background: 'var(--field-bg)',
                           color: 'var(--text-primary)',
                         }}
                       />

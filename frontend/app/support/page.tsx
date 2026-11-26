@@ -212,7 +212,7 @@ export default function SupportPage() {
               onChange={(e) => setReply(e.target.value)}
               rows={3}
               placeholder="Type a reply…"
-              className="w-full px-3 py-2 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
+              className="w-full px-3 py-2 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
             />
             <button
               onClick={sendReply}
@@ -249,7 +249,7 @@ export default function SupportPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full px-3 py-2 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)]"
+            className="w-full px-3 py-2 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)]"
           >
             {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
@@ -257,14 +257,14 @@ export default function SupportPage() {
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject"
-            className="w-full px-3 py-2 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
+            className="w-full px-3 py-2 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
           />
           <textarea
             value={bodyText}
             onChange={(e) => setBodyText(e.target.value)}
             rows={4}
             placeholder="How can we help?"
-            className="w-full px-3 py-2 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
+            className="w-full px-3 py-2 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
           />
           {error && <p className="text-xs text-[var(--red)]">{error}</p>}
           <div className="flex gap-2">

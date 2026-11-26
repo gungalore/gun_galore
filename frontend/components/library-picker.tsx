@@ -107,7 +107,7 @@ export default function LibraryPicker({
           className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
           style={{
             borderColor: 'var(--border)',
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             color: 'var(--text-tertiary-on-card)',
           }}
           disabled
@@ -131,7 +131,7 @@ export default function LibraryPicker({
           className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
           style={{
             borderColor: 'var(--border)',
-            background: 'var(--bg-inset)',
+            background: 'var(--field-bg)',
             color: 'var(--text-primary)',
           }}
           disabled={busy}

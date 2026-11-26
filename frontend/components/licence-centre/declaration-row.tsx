@@ -94,7 +94,7 @@ export default function DeclarationRow({
                 {detail.label}
               </div>
               <textarea
-                className="mt-[5px] min-h-[88px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-[10px] text-[14px] leading-[1.45] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]"
+                className="mt-[5px] min-h-[88px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-[10px] text-[14px] leading-[1.45] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)]"
                 value={detail.value}
                 placeholder={detail.help ?? ''}
                 onChange={(e) => onDetailChange(e.target.value)}
@@ -111,7 +111,7 @@ export default function DeclarationRow({
                     key={b.key}
                     type="text"
                     aria-label={b.label}
-                    className="h-10 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]"
+                    className="h-10 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 text-[14px] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)]"
                     value={b.value}
                     placeholder={b.help ?? b.label}
                     onChange={(e) => onBoxChange(b.key, e.target.value)}

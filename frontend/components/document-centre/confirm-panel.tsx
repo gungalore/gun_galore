@@ -126,7 +126,7 @@ export default function ConfirmPanel({
   const [err, setErr] = useState<string | null>(null);
 
   const control =
-    'mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none';
+    'mt-1 w-full rounded border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none';
 
   return (
     <section className="mt-6 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-4">

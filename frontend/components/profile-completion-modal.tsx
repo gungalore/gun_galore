@@ -918,7 +918,7 @@ function Input({
       disabled={disabled}
       style={{
         width: '100%',
-        background: 'var(--bg-inset)',
+        background: 'var(--field-bg)',
         border: '0.5px solid var(--border)',
         color: disabled ? 'var(--text-tertiary)' : 'var(--text-primary)',
         borderRadius: 6,
@@ -932,7 +932,7 @@ function Input({
 
 const selectStyle: React.CSSProperties = {
   width: '100%',
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-primary)',
   borderRadius: 6,

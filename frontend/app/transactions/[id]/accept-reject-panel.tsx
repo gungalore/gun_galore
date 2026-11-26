@@ -249,7 +249,7 @@ export function AcceptRejectPanel({
             maxLength={500}
             className="w-full mb-3 p-2 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
               resize: 'vertical',
@@ -379,7 +379,7 @@ export function AcceptRejectPanel({
             autoComplete="email"
             className="w-full p-2 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
             }}

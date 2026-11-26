@@ -233,7 +233,7 @@ export function VocabCombobox({
             }
           }}
           onKeyDown={onKeyDown}
-          className="flex-1 min-w-[8rem] bg-transparent outline-none text-[13px]"
+          className="flex-1 min-w-[8rem] bg-[var(--field-bg)] outline-none text-[13px]"
           style={{ color: 'var(--text-primary)' }}
         />
       </div>

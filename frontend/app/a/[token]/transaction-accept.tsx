@@ -775,7 +775,7 @@ function RejectPicker({
               width: '100%',
               padding: 10,
               borderRadius: 8,
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
               fontSize: 14,

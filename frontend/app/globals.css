@@ -102,6 +102,42 @@
    --bg-card-hover: #F7F2E9;
    --bg-inset:    #F1ECE2;
 
+   /* ── Field surfaces (2026-11-26) ────────────────────────────────────
+      THE RULE: every human-fillable control — text/number/email/password/
+      tel/url/date/time/search inputs, textareas, selects, OTP boxes, search
+      boxes, quantity value boxes, composers — must sit on a fill that
+      CONTRASTS with the surface it is painted on. The page/card/inset tokens
+      above are NOT field colours; a field that inherits them is the
+      operator's report, quoted: "anywhere where a user has to fill in
+      something is the same color as the background with a box which makes
+      it hard to see."
+
+      Direction is deliberate, and opposite per theme:
+        light theme → the field is a DARKER shade of the page/card;
+        dark theme  → the field is a LIGHTER shade of the page/card.
+      Measured: #E4DFD4 is 1.33:1 on a white card and 1.25:1 on the #FAF8F3
+      page — the same relationship the dark pair carries (#36312C is
+      1.35:1 on the #1C1A18 card, 1.46:1 on the #131110 page). Hover and
+      focus move the fill AWAY from the surface (dark theme: lighter; light
+      theme: darker) so an active field never fades back into the card.
+
+      --field-placeholder is a measured token rather than --text-tertiary:
+      #7A7267 on #E4DFD4 is only 3.9:1, another unreadable box. #645C52 is
+      4.95:1 (and 4.6:1 on the hover fill). Value ink is --text-primary
+      (12.4:1 on the light fill).
+
+      --surface-sunken / --bg-inset KEEP their names and their other jobs
+      (chips, table stripes, message bubbles, skeletons). Do not paint a
+      field with them any more; use these. BASE rules for native fields live
+      further down this file, beside the autofill rule. */
+   --field-bg:           #E4DFD4;
+   --field-bg-hover:     #DED8CB;
+   --field-bg-focus:     #D8D1C2;
+   --field-bg-disabled:  #F1EDE5;            /* flatter than rest — reads inert */
+   --field-border:       var(--border-visible); /* 3.18:1 on white */
+   --field-focus-edge:   var(--action-option-edge); /* 5.02:1 on white */
+   --field-placeholder:  #645C52;            /* 4.95:1 on --field-bg */
+
   /* Elevation. Warm-tinted (the ink, 26,22,19), never pure black — see the
      .gg-tile block below.
 
@@ -389,6 +425,19 @@
    --bg-card:     #1C1A18;
    --bg-card-hover: #242220;
    --bg-inset:    #1A1816;
+
+   /* Field surfaces, dark theme — a MUCH LIGHTER shade of the card/page.
+      See the light-theme block for the rule and the operator report it
+      answers. #36312C is 1.35:1 on the #1C1A18 card and 1.46:1 on the
+      #131110 page; hover/focus climb further (#3D3732 / #443D37) so an
+      active field always moves away from the surface, never into it.
+      --text-primary on #36312C is 10.7:1; --field-placeholder #A69E93 is
+      the measured placeholder (4.9:1 on the fill). */
+   --field-bg:           #36312C;
+   --field-bg-hover:     #3D3732;
+   --field-bg-focus:     #443D37;
+   --field-bg-disabled:  #2A2622;            /* closer to the card — reads inert */
+   --field-placeholder:  #A69E93;            /* 4.9:1 on --field-bg */
 
    /* Text. Near-white primary, muted secondary. */
    --text-primary:   #F4F1ED;
@@ -782,9 +831,10 @@ select optgroup {
 }
 
 /* Chrome / Safari autofill repaints the field with its own light background
-   (and dark text), ignoring our `background`. Force the themed surface and
-   text so autofilled boxes stay black-on-light in dark mode and
-   white-on-dark in light mode. */
+   (and dark text), ignoring our `background`. Force the themed field surface
+   and text so autofilled boxes stay fields (not white rectangles) in both
+   themes. Reads --field-bg: the SAME fill the field rests on, so focus does
+   not flash to a different colour when the browser autofills. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
@@ -792,9 +842,154 @@ textarea:-webkit-autofill,
 select:-webkit-autofill {
   -webkit-text-fill-color: var(--text-primary);
   caret-color: var(--text-primary);
-  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
-  box-shadow: 0 0 0 1000px var(--bg) inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg) inset;
+  box-shadow: 0 0 0 1000px var(--field-bg) inset;
   transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ─── FIELD SURFACES — every control a human fills in paints itself ─────
+   Operator, 2026-11-26: "anywhere where a user has to fill in something is
+   the same color as the background with a box which makes it hard to see.
+   Change the dark mode color to a much lighter shade of the background and
+   the light mode to a darker shade of the background throught the website."
+
+   These are the BASE rules. Anything that is a native text field, textarea
+   or select lands on --field-bg even when no component has styled it, so a
+   plain field can never inherit the page/card fill again. The component
+   call sites were migrated to the same tokens; this rule is the floor.
+
+   EXCLUDED on purpose:
+     – checkbox / radio / range / colour: painted by the OS, not fillable
+       boxes (a background here would paint a tint behind a switch);
+     – file / submit / button / reset / image: buttons, not places you type;
+     – [data-field-flat]: the opt-out for a field whose WRAPPER is the
+       painted control (number-stepper's value box, the nav's attached
+       search pill, the scanner's name bar). Use it only with that exact
+       shape and say why at the call site.
+   The :not() argument list also makes this rule one attribute more
+   specific than a single Tailwind utility, so `bg-transparent` and
+   `bg-[var(--bg-inset)]` on a field cannot sneak back in. An INLINE
+   `background` still wins by cascade order, which is why every component
+   that carries one was migrated at the call site. */
+
+input:not(
+    [type='checkbox'],
+    [type='radio'],
+    [type='range'],
+    [type='color'],
+    [type='file'],
+    [type='submit'],
+    [type='button'],
+    [type='reset'],
+    [type='image'],
+    [type='hidden'],
+    [data-field-flat]
+  ),
+textarea:not([data-field-flat]),
+select:not([data-field-flat]) {
+  background-color: var(--field-bg);
+}
+
+/* Hover/focus/disabled are !important ON PURPOSE: a focus or disabled state
+   must beat a component's inline resting background, otherwise a focused
+   field can look identical to an unfocused one — the same defect in a
+   different state. :where() keeps the selectors short; the flag does the
+   work. */
+@media (hover: hover) and (pointer: fine) {
+  :where(
+      input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'], [data-field-flat]),
+      textarea:not([data-field-flat]),
+      select:not([data-field-flat])
+    ):hover:not(:focus):not(:disabled):not([readonly]) {
+    background-color: var(--field-bg-hover) !important;
+  }
+}
+
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'], [data-field-flat]),
+    textarea:not([data-field-flat]),
+    select:not([data-field-flat])
+  ):focus {
+  background-color: var(--field-bg-focus) !important;
+}
+
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'], [data-field-flat]),
+    textarea:not([data-field-flat]),
+    select:not([data-field-flat])
+  ):disabled {
+  background-color: var(--field-bg-disabled) !important;
+}
+
+/* Read-only keeps the resting field fill on purpose: it is still a field the
+   member is meant to read as data (a prefilled licence number), not a
+   disabled control. It loses its interactive hover wash instead. */
+:where(input[readonly], textarea[readonly]):hover {
+  background-color: var(--field-bg) !important;
+}
+
+/* Placeholder ink. --field-placeholder is measured against --field-bg in
+   each theme (4.9:1 both); plain --text-tertiary is 3.9:1 on the light fill. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
+}
+
+/* Focus edge for fields whose component strips the browser outline (many
+   inline `outline: none` styles do). `outline` is not box-shadow, so no
+   utility can kill it, and --field-focus-edge is the accent edge (5.02:1 on
+   the light fill, 5.5:1 on the dark fill). Scoped to real fields so the OS
+   checkbox/switch focus styles keep their own treatment. The Desk overrides
+   the colour to its cyan; the scanner pins the light value in scan-theme
+   scope below. */
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'], [data-field-flat]),
+    textarea:not([data-field-flat]),
+    select:not([data-field-flat])
+  ):focus-visible {
+  outline: 2px solid var(--field-focus-edge) !important;
+  outline-offset: 1px;
+}
+
+/* Error state: an explicit invalid field keeps a semantic border whatever
+   the fill is. Component-set inline borders still win where they exist; this
+   catches plain fields marked by ARIA alone. */
+:where(input, textarea, select)[aria-invalid='true']:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* ─── Field tokens inside the two FIXED-THEME surfaces ──────────────────
+   Some surfaces deliberately do NOT follow the shop theme. They must not
+   inherit the shop's field fill, or a dark-theme fill would land on a light
+   surface (and vice versa) — the exact unreadable-box failure this change
+   exists to stop, mirrored.
+
+   1. THE SCANNER runs on a fixed light palette (components/scan/
+      scan-theme.ts, .gg-scan-root / .aos-root). Vendor copies in
+      scan-v3 must not be edited, so the tokens are pinned here instead and
+      the base rules above pick them up inside every scanner overlay.
+   2. .surface-dark is a deliberately dark plate (hero/footer). Bright mode
+      fields inside it take the dark-theme relationship: lighter than the
+      plate. (No fields ship on it today; this keeps that promise if one
+      is added.) */
+.gg-scan-root,
+.aos-root {
+  --field-bg:          #F4F2EC;
+  --field-bg-hover:    #ECE9E1;
+  --field-bg-focus:    #E4E0D5;
+  --field-bg-disabled: #F7F5F0;
+  --field-placeholder: #6B6359;
+  --field-focus-edge:  #B45309;
+}
+
+.surface-dark {
+  --field-bg:          #2E2A26;
+  --field-bg-hover:    #36312C;
+  --field-bg-focus:    #3D3732;
+  --field-bg-disabled: #262220;
+  --field-placeholder: #A69E93;
+  --field-focus-edge:  #6FA8FF;
 }
 
 /* In browser mode (not standalone), reserve room at the bottom of the

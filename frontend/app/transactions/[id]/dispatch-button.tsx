@@ -37,7 +37,7 @@ function formatRand(cents: number) {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-primary)',
   borderRadius: '6px',

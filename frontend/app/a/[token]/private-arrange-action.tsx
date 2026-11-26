@@ -352,7 +352,7 @@ const textarea: React.CSSProperties = {
   boxSizing: 'border-box',
   padding: 12,
   margin: '4px 0 12px',
-  background: 'var(--bg)',
+  background: 'var(--field-bg)',
   color: 'var(--text-primary)',
   border: '0.5px solid var(--border)',
   borderRadius: 8,

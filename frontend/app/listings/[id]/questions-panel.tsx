@@ -471,7 +471,7 @@ export function QuestionsPanel({
             onChange={(e) => setDraft(e.target.value)}
             className="w-full rounded-[6px] px-3 py-2 text-sm resize-y"
             style={{
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
               outline: 'none',

@@ -542,7 +542,7 @@ export default function DocumentAddButtons({
                           className="min-h-[42px] w-full rounded-lg border px-3 text-[13.5px]"
                           style={{
                             borderColor: 'var(--border)',
-                            background: 'var(--bg-inset)',
+                            background: 'var(--field-bg)',
                             color: 'var(--text-primary)',
                           }}
                         />

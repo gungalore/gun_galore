@@ -72,7 +72,7 @@ function serializeAttrs(filters: AttrFilters): string | undefined {
 }
 
 const selectStyle: React.CSSProperties = {
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-secondary)',
   borderRadius: '6px',
@@ -83,7 +83,7 @@ const selectStyle: React.CSSProperties = {
 };
 
 const priceInputStyle: React.CSSProperties = {
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   color: 'var(--text-secondary)',
   borderRadius: '6px',

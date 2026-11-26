@@ -213,7 +213,7 @@ export default function DangerAreas({
                   onChange={(e) =>
                     setTicks((t) => ({ ...t, [a.key]: e.target.value }))
                   }
-                  className="mt-[8px] ml-[26px] block w-[calc(100%-26px)] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-inset)] px-[10px] py-[8px] text-[13.5px] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]"
+                  className="mt-[8px] ml-[26px] block w-[calc(100%-26px)] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-[10px] py-[8px] text-[13.5px] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)]"
                 />
               ) : null}
             </li>

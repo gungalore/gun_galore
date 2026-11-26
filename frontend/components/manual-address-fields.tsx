@@ -41,7 +41,7 @@ interface Props {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  background: 'var(--bg-inset)',
+  background: 'var(--field-bg)',
   border: '0.5px solid var(--border)',
   borderRadius: 6,
   padding: '10px 12px',

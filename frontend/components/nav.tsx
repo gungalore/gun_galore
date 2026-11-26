@@ -227,9 +227,9 @@ export function Nav() {
           <div
             className="hidden md:flex flex-1 max-w-[520px] items-stretch"
             style={{
-              border: '0.5px solid var(--border)',
+              border: '0.5px solid var(--field-border)',
               borderRadius: 6,
-              background: 'var(--bg-inset)',
+              background: 'var(--field-bg)',
             }}
           >
             <CategoryMenu variant="search" />

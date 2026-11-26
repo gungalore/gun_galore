@@ -158,7 +158,7 @@ export function BugReportForm({
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="w-full px-3 py-2 rounded-md text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)]"
+          className="w-full px-3 py-2 rounded-md text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)]"
         >
           {CATEGORIES.map((c) => (
             <option key={c.value} value={c.value}>
@@ -178,7 +178,7 @@ export function BugReportForm({
             maxLength={254}
             autoComplete="email"
             placeholder="you@example.com"
-            className="w-full px-3 py-2 rounded-md text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)]"
+            className="w-full px-3 py-2 rounded-md text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)]"
           />
         </div>
       )}
@@ -216,7 +216,7 @@ export function BugReportForm({
           rows={5}
           maxLength={MAX_DESCRIPTION}
           placeholder="What did you do, what did you expect, and what happened instead?"
-          className="w-full px-3 py-2 rounded-md text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none resize-y"
+          className="w-full px-3 py-2 rounded-md text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none resize-y"
         />
         <p className="text-[11px] text-[var(--text-tertiary)] mt-1">
           {description.trim().length}/{MAX_DESCRIPTION}

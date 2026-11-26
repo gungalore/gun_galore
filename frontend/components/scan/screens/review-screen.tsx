@@ -296,6 +296,7 @@ export default function ReviewScreen({
         }}
       >
         <input
+            data-field-flat
           value={name}
           onChange={(e) => onName(e.target.value)}
           placeholder="Name this document"
@@ -304,7 +305,7 @@ export default function ReviewScreen({
             flex: 1,
             minHeight: T.tap,
             border: 'none',
-            background: 'transparent',
+            background: 'var(--field-bg)',
             fontSize: 13.5,
             fontFamily: 'inherit',
             color: T.ink,

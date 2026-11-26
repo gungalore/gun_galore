@@ -83,7 +83,7 @@ export function RatingReply({
         placeholder="Your one public reply — shown under the review on your profile. Stay professional; a composed reply builds more trust than a perfect score."
         className="w-full text-xs px-2.5 py-2 rounded-[6px]"
         style={{
-          background: 'var(--bg-inset)',
+          background: 'var(--field-bg)',
           border: '0.5px solid var(--border)',
           color: 'var(--text-primary)',
           resize: 'vertical',

@@ -494,7 +494,7 @@ export function OfferDecisionPage({
                 padding: '8px 10px',
                 borderRadius: 6,
                 fontSize: 14,
-                background: 'var(--bg-card)',
+                background: 'var(--field-bg)',
                 border: '0.5px solid var(--border)',
                 color: 'var(--text-primary)',
                 resize: 'vertical',

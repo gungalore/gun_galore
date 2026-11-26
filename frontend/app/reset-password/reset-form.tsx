@@ -19,7 +19,7 @@ const field: React.CSSProperties = {
   padding: '10px 12px',
   borderRadius: 6,
   border: '0.5px solid var(--border)',
-  background: 'var(--bg)',
+  background: 'var(--field-bg)',
   color: 'var(--text-primary)',
   fontSize: 15,
 };

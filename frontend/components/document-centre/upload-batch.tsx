@@ -310,7 +310,7 @@ function Card({
                     onChange={(e) =>
                       onDescriptionChange(card.id, e.target.value)
                     }
-                    className="mt-1 w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
+                    className="mt-1 w-full rounded-[6px] border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1.5 text-[13px] text-[var(--text-primary)]"
                     placeholder="Me and my son on a hunt in Limpopo, June"
                   />
                 </label>

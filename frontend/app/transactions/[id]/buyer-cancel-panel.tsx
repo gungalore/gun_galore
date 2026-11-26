@@ -125,7 +125,7 @@ export default function BuyerCancelPanel({ txId }: { txId: string }) {
           onChange={(e) => setOtherText(e.target.value)}
           rows={2}
           placeholder="Briefly explain (min 3 characters)"
-          className="w-full px-3 py-2 mb-3 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
+          className="w-full px-3 py-2 mb-3 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
         />
       )}
       {error && <p className="text-xs text-[var(--red)] mb-2">{error}</p>}

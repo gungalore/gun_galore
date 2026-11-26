@@ -633,7 +633,7 @@ export default function MotivationSellerConsent({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       {/* ⚠️ HOW IT TRAVELS, ASKED BEFORE WHAT WE NEED TO SEND IT.
@@ -694,7 +694,7 @@ export default function MotivationSellerConsent({
           onChange={(e) => setPhone(e.target.value)}
           inputMode="tel"
           placeholder="082 000 0000"
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
 
@@ -726,7 +726,7 @@ export default function MotivationSellerConsent({
           type="email"
           autoComplete="off"
           placeholder="them@example.co.za"
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
         <span className="mt-1 block text-[var(--text-tertiary)]">
           The link goes here as well as by SMS, so they can open it on a
@@ -757,7 +757,7 @@ export default function MotivationSellerConsent({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={knownLabel || 'e.g. the Howa 6.5'}
-          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--field-bg)] px-3 py-2 text-sm text-[var(--text-primary)]"
         />
         <span className="mt-1 block text-[var(--text-tertiary)]">
           Just enough for them to know which one you mean. We read the make,

@@ -300,7 +300,7 @@ export default function UploadPanel({
                   )}
                 </span>
                 <select
-                  className="rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-sm text-[var(--text-primary)] [&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)]"
+                  className="rounded border border-[var(--border)] bg-[var(--field-bg)] px-2 py-1 text-sm text-[var(--text-primary)] [&>option]:bg-[var(--field-bg)] [&>option]:text-[var(--text-primary)]"
                   value={f.kind}
                   aria-label={`Document type for ${f.name}`}
                   onChange={async (e) => {

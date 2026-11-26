@@ -216,7 +216,7 @@ export function StationPicker({
 
   const base =
     'mt-1 w-full rounded border px-3 py-2 text-sm ' +
-    'bg-[var(--bg-inset)] text-[var(--text-primary)] ' +
+    'bg-[var(--field-bg)] text-[var(--text-primary)] ' +
     'focus:border-[var(--border-hover)] focus:outline-none ' +
     (missing ? 'border-[var(--warning)]' : 'border-[var(--border)]');
 

@@ -117,7 +117,7 @@ function Control({
   const empty = !value.trim();
   const missing = item.required && empty;
   const base =
-    'w-full min-h-[44px] rounded-[var(--r-sm)] border bg-[var(--bg-card)] px-3 py-[10px] text-[14px] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]';
+    'w-full min-h-[44px] rounded-[var(--r-sm)] border bg-[var(--field-bg)] px-3 py-[10px] text-[14px] text-[var(--text-primary)] placeholder:text-[var(--field-placeholder)]';
   const keyline = missing
     ? 'border-[var(--warning)]'
     : 'border-[var(--border)]';

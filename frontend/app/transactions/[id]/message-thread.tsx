@@ -135,7 +135,7 @@ export default function MessageThread({
           rows={2}
           maxLength={2000}
           placeholder="Type a message…"
-          className="flex-1 px-3 py-2 rounded text-sm bg-[var(--bg-inset)] border border-[var(--border)] text-[var(--text-primary)] outline-none resize-none"
+          className="flex-1 px-3 py-2 rounded text-sm bg-[var(--field-bg)] border border-[var(--border)] text-[var(--text-primary)] outline-none resize-none"
         />
         <button
           type="button"
