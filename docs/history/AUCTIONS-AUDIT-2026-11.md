@@ -1,5 +1,12 @@
 # Auctions — audit (2026-11-25)
 
+> **Resolution (2026-11-26):** every confirmed finding below was fixed in the full deploy `335e1956`
+> (rollback `alloutdoor-20261126-023114.dump`, additive migration `20261125230000_auction_settlement_markers`).
+> The product decisions taken in the operator's absence are recorded in HANDOFF; the marketplace audit
+> performed straight afterwards lives in [`MARKETPLACE-AUDIT-2026-11.md`](MARKETPLACE-AUDIT-2026-11.md).
+> Production still has zero auction bids — the engine has never carried a real bid, so rehearse with two
+> accounts before a campaign leans on auctions.
+
 **Scope:** the auction product end to end — bidding engine, close/relist lifecycle, unpaid-win
 enforcement, money/checkout, frontend surfaces (PDP panel, SMS token pages, My Bids, sell/cancel),
 notifications, admin, gates, search, tests — plus the live production data and HTTP behaviour.

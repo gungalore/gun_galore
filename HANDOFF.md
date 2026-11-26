@@ -5,7 +5,108 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-25**.
+Last updated: **2026-11-26**.
+
+## 2026-11-26 — AUCTIONS FIXED, MARKETPLACE AUDITED AND FIXED (FULL DEPLOY)
+
+Operator, going to bed: *"Fix all of them systematically. When they are fixed audit the marketplace as
+well and fix the issues you find as well. We then need to set up Google analytics after all fixes has
+been done. use alloutdoor69@gmail.com for the analytics profile. Do everything systematically."*
+
+Shipped **`335e1956`** (full deploy, 2026-11-26 02:31 SAST); rollback
+**`alloutdoor-20261126-023114.dump`** (39,297,739 bytes); migration
+`20261125230000_auction_settlement_markers`; all three PM2 services online; backend health ×2 OK; public
+site 307→`/gate?next=…` and `/gate` 200. **Gates:** backend 458 suites / **6,684 passed** / 8 skipped;
+frontend 198 files / **2,253 passed** / 1 skipped; both typechecks clean; production build (theme-sync +
+fee-sync) clean. Audits: [auctions](docs/history/AUCTIONS-AUDIT-2026-11.md) (5 high / 12 medium / 18
+low), [marketplace](docs/history/MARKETPLACE-AUDIT-2026-11.md).
+
+**Production data context (read this before trusting the auction engine):** the live DB still has **0
+Bid rows ever**, 0 offers, 7 users, 17 listings; the one auction ever created expired with no bids on
+2026-10-28. The auction fixes below are code- and spec-proven, **not exercised by a real bid**. Rehearse
+with two accounts before a campaign leans on auctions.
+
+**Auction fixes (decisions taken in the operator's absence).**
+- **Pay link:** a winner's SMS/email CHECKOUT link now reads its one listing through
+  `GET /actions/:token/checkout-listing`; before this the 18+ gate 404'd the anonymous SSR listing read
+  and the receiver landed on the not-found page (the token was the credential but the server fetch
+  carried no cookie). Signed-in behaviour unchanged.
+- **Reserve:** the reserve is met when the **high bidder's stored max** clears it — the visible bid is
+  lifted to the reserve at that point — and finalisation also rescues a legacy win whose max cleared it
+  (sale at the reserve). Previously a lone auto-bid above the reserve could expire unsold.
+- **Starting bid:** the seller chooses it; with a reserve it must not exceed the reserve and blank
+  derives 70% only as a default. The fixed 70% rule (which published the reserve) is gone from the sell
+  form, Terms and validation; the auction edit path can change it pre-bid but not reserve/length/fixed
+  price.
+- **Settlement durability:** additive `Listing.auctionSettledAt` / `winnerStruckAt` columns + a
+  `recoverAuctionSettlements()` sweep in the every-minute auction cron. Terminal close notices/strike/
+  runner-up invite are awaited, the strike is exactly-once, and a won auction stranded between the
+  pay-window claim and the Transaction insert is handed back to the lifecycle. (First production run
+  replayed the one old EXPIRED auction — a one-time backfill; its seller got a duplicate "no bids"
+  notice.)
+- **Cancellation:** a seller can no longer cancel or edit an auction once it has any bid
+  (`listing-locked-by-bids`); a bid-less cancel stamps `endedAt`; the three false "all bidders notified/
+  refunded, hurts your trust score" copy claims are gone. Admin take-down still allows any listing but
+  fans out to bidders/winner ("cancelled — nothing to pay"), expires an accepted offer and refuses a
+  listing with a paid transaction (refund via the order instead).
+- **Accepted offers vs proxies:** an offer on a live auction must be at least the leader's stored max,
+  and any off-bid close runs the loser fan-out + settlement stamp — a seller can no longer use an offer
+  to cut out a standing proxy bidder silently.
+- **Bidding guards/UX:** bids need ≥1 real photo and 404 on hidden listings; a leading bidder cannot
+  lower their own proxy ceiling (API `AUCTION_MAX_LOWERED`, UI pre-fills at the stored max and shows it);
+  server-time offset drives the countdown/close state; bid-result/outbid updates are announced; the bid
+  dialog traps focus/Escape; reserve-not-met is shown on the PDP; the odometer announces the actual
+  amount; dark-theme closing contrast is AA; cents are no longer rounded away; "Complete checkout"
+  carries no amount; seller's own auction gets Edit/Cancel controls.
+- **Ended auctions:** `/listings/<id>/result` shows every outcome; loser/lapsed/cancelled notification
+  links point there instead of the 404ing PDP. `CANCELLED` is served by the auction-state endpoint so a
+  stale panel shows the terminal state instead of reconnecting forever; My Bids derives its pill from
+  `listingStatus`. Snipe extensions republish `endTimeTs` and re-arm the one-shot ending-soon alert.
+- **Ops/tests:** admin can clear a bidder's non-payment strikes with a reason (audit-logged, alert
+  resolved); the strike alert says suspension is automatic; `notifyWinnerUnpaid` dead code removed; the
+  dormant AuctionWatch endpoints removed (watching = wishlist; the panel's watcher count now reads the
+  wishlist); Meili `categoryId`/`categorySlug` escaped; module boot spec added; specs added for the
+  reserve single-bidder case, finalisation rescue, proxy-lowering, photo gate, hidden-listing 404,
+  cancel guard, edit-lock ownership, settlement/strike recovery.
+
+**Marketplace — critical/high fixed (full detail in the marketplace audit doc).**
+- **`GET /wishlist` returned the WHOLE private Listing row** — firearm serial, licence holder's real
+  name, seller's home address/coords, hidden reserve — for any saved listing, and saving accepted
+  hidden ids. Now uses the public PDP allow-list + `PUBLICLY_VISIBLE_STATUSES`; hidden ids 404.
+- **Service worker could cache private HTML** (`defaultCache` same-origin rule caught document
+  navigations): `/account`, `/my/orders`, `/transactions/<id>`, `/messages`, `/notifications`,
+  `/documents`, `/cart` could be replayed after sign-out on a shared device. New `lib/sw-caching.ts`
+  makes every document navigation and member-only route NetworkOnly (wrapping all `defaultCache`
+  matchers) and sign-out purges the private caches.
+- **Accepted-offer pay links are now tokenised** (CHECKOUT token targeting the offer; `/a/<token>` →
+  `/checkout/offer/<id>?t=`; page reads via `GET /actions/:token/offer-checkout`), so a signed-out buyer
+  can pay instead of being bounced to sign-in and later struck.
+- Medium/low: member complaint history at `/account/complaints` + notification/module/closure links;
+  admin listing take-down + bulk-review UI and clear-auction-strikes action; dispute CAS; orphan-reclaim
+  status guard; stale-sweep live-offer/hold guard; offer counter/expiry guards; COUNTERED buyer expiry
+  nudge; throttles on public valuation capture and shipping quote/delivery-options; fee-calculation
+  spec; `/listings/<id>/edit` member-only with return path; `/v/<token>` gate-exempt; `/my/offers`
+  empty state off the retired type; admin bulk-review 400 not 500.
+
+**Google Analytics — code shipped, property NOT created (operator action needed).** The integration is
+live and **inert**: root layout reads **`GA_MEASUREMENT_ID`** server-side (not `NEXT_PUBLIC_`, so the id
+can be added with an env change + frontend restart, no rebuild) and mounts
+`components/google-analytics.tsx` only for a real `G-…` id; it sends one page_view per App Router
+navigation and never tracks `/admin` or `/a/<token>`. Wait for **alloutdoor69@gmail.com**: that Google
+account is **signed out in every browser profile on this machine** (Chrome Default = gjpfourie@gmail,
+Profile 2 = ppprsa3006, Profile 3 "ALLOUTDOOR" = alloutdoor69 but its web session is expired; no saved
+password; no accessible recovery channel), so a GA4 property could not be created. Next step: sign in to
+alloutdoor69@gmail.com in Chrome (or supply the measurement id) — then create/choose the GA4 web stream
+for `alloutdoor.co.za`, put `GA_MEASUREMENT_ID=G-…` in `/home/alloutdoor/app/frontend/.env.production`,
+restart the frontend, and confirm the gtag request in a browser. Everything else is done.
+
+**Verified live:** health 200; `/listings/<id>/result` 307→gate (content class) and `/account/complaints`
+307→sign-in (member class); `/api/listings/<id>/edit-lock`, `/api/actions/<junk>/{checkout-listing,
+offer-checkout}` → 404; `/api/wishlist` → 401; `/v/<token>` 200; auction-end cron current; settlement
+migration applied; no new backend error lines after the reload.
+
+**Rollback:** revert `335e1956` and run a full deploy. The migration is additive (two nullable columns);
+a code-only revert leaves them harmless.
 
 ## 2026-11-25 — COMMUNITY FEED: BLUR ALWAYS ACTIVE, CLICK TO REVEAL (FRONTEND-ONLY DEPLOY)
 
