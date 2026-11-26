@@ -20,6 +20,7 @@ import {
 import { assertAccountNotClosed } from '../common/account-standing';
 import { assertContactVerified } from '../common/contact-verification';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import { AuctionsService } from '../auctions/auctions.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
 import { OfferStatus, Prisma } from '@prisma/client';
@@ -72,6 +73,10 @@ export class OffersService {
     // can act from the SMS link without signing in.
     private readonly actionTokens: ActionTokensService,
     private readonly activity: ActivityService,
+    // AuctionsService owns the loser fan-out when an auction closes off the
+    // bid path (an accepted offer ends the auction early). OffersModule imports
+    // AuctionsModule; AuctionsModule never imports this one.
+    private readonly auctions: AuctionsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -325,6 +330,17 @@ export class OffersService {
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
     }
+    // ⚠️ AN EXPIRED-BUT-UNSWEPT OFFER IS NOT PENDING. The status flips to
+    // EXPIRED on the 10-minute sweep, so for up to ten minutes a lapsed offer
+    // still reads PENDING — and accepting it would promise the buyer a 24h
+    // pay window on a negotiation the system already considers over. Treat it
+    // as not pending (the buyer can make a fresh offer; the one-shot cap is
+    // checked at submit time).
+    if (offer.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'This offer has expired — ask the buyer to make a new one.',
+      );
+    }
     // M8 — re-check listing status at accept time. The listing could
     // have sold via another offer or buy-now since the seller saw their
     // SMS/notification. Without this, the seller would "accept" an
@@ -387,6 +403,13 @@ export class OffersService {
     // dangling on an item that's effectively sold.
     void this.declineSiblings(listing.id, offerId);
     void this.notifyBuyerOfAccept(offerId);
+    // An auction closed EARLY by this accept still owes its losing bidders a
+    // notice and its settlement stamp (2026-11 audit H5). The buyer/seller
+    // were already told by the offer flow, so settleAuctionEnded skips those
+    // two and only runs the loser fan-out.
+    if (listing.listingType === 'AUCTION') {
+      void this.auctions.settleAuctionEnded(listing.id);
+    }
     // Resolve the seller's "offer received" notification — they just
     // acted on it. The new "offer accepted" row that fires for the
     // buyer is action-required (buyer must pay) and isn't cleared
@@ -477,9 +500,18 @@ export class OffersService {
   // Seller counters — one counter per offer lifetime
   // ----------------------------------------------------------------
   async counter(sellerId: string, offerId: string, dto: CounterOfferDto) {
-    const { offer } = await this.loadOfferForSeller(sellerId, offerId);
+    const { offer, listing } = await this.loadOfferForSeller(sellerId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
+    }
+    // Mirror accept()'s listing guard: the listing could have sold via
+    // Buy-Now, been cancelled, or be reserved by another accepted offer since
+    // the seller opened their notification. Telling the buyer "the seller
+    // countered" on an item that is gone only produces a dead counter.
+    if (listing.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'This listing is no longer available — it may already have sold or been cancelled.',
+      );
     }
     if (offer.counterAmount !== null) {
       throw new BadRequestException('Seller can only counter once per offer');
@@ -578,6 +610,11 @@ export class OffersService {
         data: {
           status: OfferStatus.ACCEPTED,
           expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
+          // Fresh 24h PAY window → fresh reminder eligibility. The buyer may
+          // already have had a "your counter expires soon" nudge (the same
+          // one-shot column guards both), and that must not suppress the
+          // pay-window reminder for this new window.
+          buyerPayRemindedAt: null,
         },
       });
       if (guard.count === 0) {
@@ -596,6 +633,10 @@ export class OffersService {
     // — previously acceptCounter told the seller but never handed the buyer a
     // way to pay (the promised payment link was never sent).
     void this.notifyBuyerOfCounterAccept(offerId);
+    // Same early-close settlement as the seller-accept path (auction only).
+    if (listing.listingType === 'AUCTION') {
+      void this.auctions.settleAuctionEnded(listing.id);
+    }
     // Buyer resolved their "offer countered". Seller's new
     // counterAccepted row is dismissible (buyer will pay next).
     void this.notifications.resolveByEntity('offer', offerId);
@@ -895,6 +936,36 @@ export class OffersService {
       void this.remindBuyerToPay(o.id);
     }
 
+    // ── Buyer: COUNTERED offer about to lapse ─────────────────────
+    // The seller countered and the buyer has 24h to accept or reject. Their
+    // window closes silently today, so a buyer who misses it loses the deal
+    // with no warning (the seller only hears about it after the fact).
+    // Mirrors the PENDING/ACCEPTED passes: one-shot via the SAME
+    // buyerPayRemindedAt claim, which acceptCounter() clears when the buyer
+    // accepts so the fresh pay window gets its own reminder.
+    const counteredSoon = await this.prisma.offer.findMany({
+      where: {
+        status: OfferStatus.COUNTERED,
+        buyerPayRemindedAt: null,
+        expiresAt: { gt: now, lte: new Date(now.getTime() + 12 * 3600_000) },
+      },
+      select: { id: true },
+      take: 100,
+    });
+    for (const o of counteredSoon) {
+      const claim = await this.prisma.offer.updateMany({
+        where: {
+          id: o.id,
+          status: OfferStatus.COUNTERED,
+          buyerPayRemindedAt: null,
+        },
+        data: { buyerPayRemindedAt: now },
+      });
+      if (claim.count === 0) continue;
+      reminded += 1;
+      void this.remindBuyerOfCounterExpiring(o.id);
+    }
+
     if (reminded > 0) this.logger.log(`Reminded on ${reminded} expiring offer(s)`);
     return { reminded };
   }
@@ -925,6 +996,7 @@ export class OffersService {
       listingType: string;
       trackInventory: boolean;
       currentBid: number | null;
+      currentBidderId?: string | null;
     },
     amount: number,
     buyerId: string,
@@ -932,6 +1004,22 @@ export class OffersService {
     const now = new Date();
 
     if (listing.listingType === 'AUCTION') {
+      // ⚠️ FAIRNESS (2026-11 audit H5): the seller must not be able to use an
+      // accepted offer to cut out a standing proxy bidder. The offer has to at
+      // least match the leader's stored maximum, which is exactly where the
+      // auction would have ended had the offer been a bid.
+      if (listing.currentBidderId) {
+        const leader = await tx.bid.findFirst({
+          where: { listingId: listing.id, bidderId: listing.currentBidderId },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { maxAmount: true },
+        });
+        if (leader && amount < leader.maxAmount) {
+          throw new BadRequestException(
+            "This offer is below the current high bidder's maximum, so the auction has to run to its end. You can let it close, or decline the offer.",
+          );
+        }
+      }
       const claim = await tx.listing.updateMany({
         where: {
           id: listing.id,
@@ -949,6 +1037,10 @@ export class OffersService {
           expiresAt: new Date(now.getTime() + COUNTER_TTL_HOURS * 3_600_000),
           winnerRemindedAt: null,
           bidCount: { increment: 1 },
+          // A new sale window: clear the previous settlement markers so this
+          // promotion (and its eventual lapse/strike) is settled on its own.
+          auctionSettledAt: null,
+          winnerStruckAt: null,
         },
       });
       if (claim.count === 0) {
@@ -1271,6 +1363,7 @@ export class OffersService {
       // offer also reserves the listing, so the plain listing checkout would
       // 404 for it - this is the one correct destination for BOTH Marketplace and
       // auction offers.
+      const actionUrl = await this.offerCheckoutUrl(offer);
       await this.notifications.offerPayReminderBuyer({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1280,10 +1373,97 @@ export class OffersService {
         offerId: offer.id,
         amount,
         hoursLeft,
-        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
+        actionUrl,
       });
     } catch (err) {
       this.logger.error(`remindBuyerToPay failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ~12h-to-lapse nudge to the buyer on a COUNTERED offer — they must accept
+  // or reject the seller's counter before it expires. Mints a fresh
+  // COUNTER_DECISION token (offer.expiresAt TTL) so the SMS stays one-tap.
+  private async remindBuyerOfCounterExpiring(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: true, buyer: true },
+      });
+      if (
+        !offer ||
+        offer.status !== OfferStatus.COUNTERED ||
+        !offer.counterAmount
+      ) {
+        return;
+      }
+      const hoursLeft = Math.max(
+        1,
+        Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000),
+      );
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'COUNTER_DECISION',
+          targetType: 'offer',
+          targetId: offer.id,
+          authorisedUserId: offer.buyerId,
+          expiresAt: offer.expiresAt,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `COUNTER_DECISION token mint failed (reminder): ${(err as Error).message}`,
+          );
+          return null;
+        });
+      await this.notifications.offerCounterExpiryReminderBuyer({
+        buyerEmail: offer.buyer.email,
+        buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+        counterAmount: offer.counterAmount,
+        hoursLeft,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.error(
+        `remindBuyerOfCounterExpiring failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * The pay-now link for an accepted offer.
+   *
+   * ⚠️ A TOKEN, NOT A BARE CHECKOUT URL. The plain
+   * `${APP_URL()}/checkout/offer/<id>` page requires a session, so a buyer who
+   * opens the SMS/email on a signed-out device is bounced to sign-in — and if
+   * they give up there, the 24h window lapses and they are struck for
+   * non-payment on a link they could not use. `/a/<token>` is the checkout
+   * credential: it resolves the offer without a session and redirects to the
+   * same offer checkout page. Falls back to the plain URL if minting fails
+   * (still correct for a signed-in buyer, never worse than before).
+   */
+  private async offerCheckoutUrl(offer: {
+    id: string;
+    buyerId: string;
+    expiresAt: Date;
+  }): Promise<string> {
+    const plain = `${APP_URL()}/checkout/offer/${offer.id}`;
+    try {
+      const token = await this.actionTokens.mint({
+        purpose: 'CHECKOUT',
+        targetType: 'offer',
+        targetId: offer.id,
+        authorisedUserId: offer.buyerId,
+        expiresAt: offer.expiresAt,
+      });
+      return `${APP_URL()}/a/${token}`;
+    } catch (err) {
+      this.logger.warn(
+        `CHECKOUT token mint failed for offer ${offer.id}: ${(err as Error).message}`,
+      );
+      return plain;
     }
   }
 
@@ -1378,6 +1558,7 @@ export class OffersService {
       // Accepted offers reserve the listing, so the buyer must pay on the
       // offer checkout page (which knows the agreed amount); the plain listing
       // checkout would see a reserved listing and 404.
+      const actionUrl = await this.offerCheckoutUrl(offer);
       await this.notifications.offerAccepted({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1386,7 +1567,7 @@ export class OffersService {
         listingId: offer.listing.id,
         acceptedAmount: offer.offerAmount,
         offerId: offer.id,
-        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
+        actionUrl,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfAccept failed: ${(err as Error).message}`);
@@ -1407,6 +1588,7 @@ export class OffersService {
       });
       if (!offer || !offer.counterAmount) return;
       // Same destination and reason as notifyBuyerOfAccept.
+      const actionUrl = await this.offerCheckoutUrl(offer);
       await this.notifications.offerAccepted({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
@@ -1415,7 +1597,7 @@ export class OffersService {
         listingId: offer.listing.id,
         acceptedAmount: offer.counterAmount,
         offerId: offer.id,
-        actionUrl: `${APP_URL()}/checkout/offer/${offer.id}`,
+        actionUrl,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfCounterAccept failed: ${(err as Error).message}`);

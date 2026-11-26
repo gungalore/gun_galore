@@ -21,25 +21,38 @@
 
 import { useEffect, useState } from 'react';
 
-function msLeft(endTime: string | Date | null | undefined): number {
+function msLeft(
+  endTime: string | Date | null | undefined,
+  clockOffsetMs = 0,
+): number {
   if (!endTime) return 0;
   const end =
     typeof endTime === 'string' ? new Date(endTime).getTime() : endTime.getTime();
-  const left = end - Date.now();
+  // clockOffsetMs is (device clock − server clock). The remaining time against
+  // the SERVER clock is end − (now − offset), i.e. end − now + offset. An
+  // offset of 0 (every caller that does not pass one) is the old behaviour.
+  const left = end - Date.now() + clockOffsetMs;
   return left > 0 ? left : 0;
 }
 
 export function useCountdown(
   endTime: string | Date | null | undefined,
+  /**
+   * Optional server-clock correction: (device clock − server clock) in ms.
+   * Passed by the auction odometer so a mis-set device clock cannot show the
+   * wrong remaining time on a live auction (audit L14).
+   */
+  clockOffsetMs = 0,
 ): number {
-  const [ms, setMs] = useState(() => msLeft(endTime));
+  const [ms, setMs] = useState(() => msLeft(endTime, clockOffsetMs));
 
   useEffect(() => {
-    // Recompute on endTime change (snipe protection can push it back).
-    setMs(msLeft(endTime));
+    // Recompute on endTime change (snipe protection can push it back) and when
+    // the measured server offset changes.
+    setMs(msLeft(endTime, clockOffsetMs));
     if (!endTime) return;
     const t = window.setInterval(() => {
-      const left = msLeft(endTime);
+      const left = msLeft(endTime, clockOffsetMs);
       setMs(left);
       if (left <= 0) {
         // Auto-stop once the target passes — no point ticking forever.
@@ -47,7 +60,7 @@ export function useCountdown(
       }
     }, 1000);
     return () => window.clearInterval(t);
-  }, [endTime]);
+  }, [endTime, clockOffsetMs]);
 
   return ms;
 }

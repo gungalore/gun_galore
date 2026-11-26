@@ -317,7 +317,13 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       // Support (a formal case with a CO reference that can hold a payout),
       // and complaint_status_changed notifications deep-link here — without
       // a menu row they had no badge and no route in.
-      { href: '/complaints', label: 'Complaints', Icon: FlagIcon },
+      //
+      // ⚠️ POINTS AT /account/complaints, NOT /complaints. `/complaints` is
+      // the public complaints PROCEDURE page and lists no cases, so the menu
+      // row used to land a member who had just been told "your case moved" on
+      // a policy document with no way to see the case. The procedure page is
+      // still one click away from the history page's intro line.
+      { href: '/account/complaints', label: 'Complaints', Icon: FlagIcon },
       { href: '/faq', label: 'FAQ', Icon: FaqIcon },
       { href: '/how-selling-works', label: 'How selling works', Icon: BookIcon },
       { href: '/report-a-bug', label: 'Report a bug', Icon: BugIcon },

@@ -32,6 +32,8 @@ describe('routeGate — the 18+ gate classes', () => {
       '/licence-centre/print/book/tok',
       '/scan/handoff',
       '/scan/selftest',
+      // Phone capture for the valuation flow — the QR token is the credential.
+      '/v/abc123',
       // Statutory / platform-requirement carve-outs.
       '/data-deletion',
       '/paia',
@@ -71,6 +73,13 @@ describe('routeGate — the 18+ gate classes', () => {
       '/community/me',
       '/community/settings',
       '/listings/new',
+      // The seller's own edit surface. `/listings/<id>` itself is content —
+      // see the content block below — so this one is pattern-matched, not a
+      // prefix.
+      '/listings/abc/edit',
+      '/listings/abc/edit/',
+      // A member's own complaint cases live under the hub.
+      '/account/complaints',
     ])('%s', (path) => {
       expect(routeGate(path)).toBe('member-only');
     });
@@ -78,6 +87,10 @@ describe('routeGate — the 18+ gate classes', () => {
     it('does not treat a prefixed word as member-only', () => {
       expect(routeGate('/accounting')).toBe('content');
       expect(routeGate('/cartography')).toBe('content');
+      // The edit pattern must match the whole trailing segment, or a future
+      // `/listings/<id>/edit-preview` would silently become member-only.
+      expect(routeGate('/listings/abc/edits')).toBe('content');
+      expect(routeGate('/listings/edit')).toBe('content');
     });
   });
 
@@ -85,6 +98,14 @@ describe('routeGate — the 18+ gate classes', () => {
     it.each([
       '/',
       '/listings/abc',
+      // An ended auction's result page is content: every bidder, winner and
+      // cancelled-sale recipient gets this link, and it exposes only the same
+      // public auction state the PDP did.
+      '/listings/abc/result',
+      // Only the exact `/edit` segment is a seller action; anything else under
+      // a listing stays content.
+      '/listings/abc/edit-summary',
+      '/listings/abc/result/something',
       '/category/camping-outdoor',
       '/brand/coleman',
       '/brands',

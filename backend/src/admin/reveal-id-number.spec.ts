@@ -37,6 +37,7 @@ function makeService(overrides: {
     {} as never, // files
     {} as never, // notifications
     {} as never, // listings
+    {} as never, // auctions
     audit as never,
     {} as never, // zohoBooks
     {} as never, // ozow

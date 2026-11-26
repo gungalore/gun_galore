@@ -111,6 +111,7 @@ export function OfferCheckoutForm({
   listingType,
   dealerName,
   dealerLocation,
+  actionToken = null,
 }: {
   offerId: string;
   listingId: string;
@@ -119,8 +120,46 @@ export function OfferCheckoutForm({
   listingType: ListingType;
   dealerName?: string | null;
   dealerLocation?: string | null;
+  /**
+   * The CHECKOUT action token from `?t=`, for a buyer who is NOT signed in.
+   * Same contract as /checkout/[listingId]/checkout-form.tsx: appending it to
+   * an API call is the credential, and a Bearer header is then not sent. The
+   * server's AuthOrTokenGuard accepts `?t=` on GET/PATCH /users/me and
+   * POST /transactions — the three calls this form makes that need identity.
+   */
+  actionToken?: string | null;
 }) {
   const { getToken } = useAuth();
+
+  /**
+   * Build the URL + headers for an identity-requiring API call.
+   *
+   * ⚠️ MIRRORS authedRequest IN /checkout/[listingId]/checkout-form.tsx, and it
+   * is deliberately a copy rather than a shared hook: the two checkout forms
+   * have diverged too far to merge (see also SummaryLine below), and a shared
+   * helper changing shape would silently move the other form's credentials.
+   * Keep the two behaviours the same: token => `?t=`; session => Bearer.
+   */
+  async function authedRequest(
+    path: string,
+  ): Promise<{ url: string; headers: HeadersInit }> {
+    if (actionToken) {
+      const sep = path.includes('?') ? '&' : '?';
+      return {
+        url: `${API_URL}${path}${sep}t=${encodeURIComponent(actionToken)}`,
+        headers: { 'Content-Type': 'application/json' },
+      };
+    }
+    const token = await getToken();
+    return {
+      url: `${API_URL}${path}`,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }
+
   const {
     methods: paymentMethods,
     provider: paymentProvider,
@@ -166,11 +205,13 @@ export function OfferCheckoutForm({
     let cancelled = false;
     (async () => {
       try {
-        const token = await getToken();
-        const res = await fetch(`${API_URL}/users/me/addresses`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          cache: 'no-store',
-        });
+        // ⚠️ TOKEN BUYERS GET A 401 HERE, AND THAT IS FINE. The address book is
+        // a session-managed list (GET /users/me/addresses is AuthGuard-only),
+        // not something the checkout token can read — but the profile default
+        // below is the address checkout actually uses, so the form still
+        // prefills. A failure is non-fatal by design.
+        const { url, headers } = await authedRequest('/users/me/addresses');
+        const res = await fetch(url, { headers, cache: 'no-store' });
         if (!res.ok) return;
         const rows = (await res.json()) as Address[];
         if (cancelled || !Array.isArray(rows)) return;
@@ -183,7 +224,8 @@ export function OfferCheckoutForm({
     return () => {
       cancelled = true;
     };
-  }, [getToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getToken, actionToken]);
 
   // Profile default address — the resting address this checkout uses unless
   // the buyer changes it. Fetched separately from the address book because it
@@ -193,11 +235,12 @@ export function OfferCheckoutForm({
     let cancelled = false;
     (async () => {
       try {
-        const token = await getToken();
-        const res = await fetch(`${API_URL}/users/me`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          cache: 'no-store',
-        });
+        // GET /users/me is AuthOrTokenGuard-backed, so this is the signed-out
+        // token buyer's identity read: it is what supplies the default delivery
+        // address and contact prefill, and it must carry `?t=` rather than a
+        // Bearer header when there is no session.
+        const { url, headers } = await authedRequest('/users/me');
+        const res = await fetch(url, { headers, cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as ProfileMe;
         if (cancelled) return;
@@ -236,7 +279,8 @@ export function OfferCheckoutForm({
     return () => {
       cancelled = true;
     };
-  }, [getToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getToken, actionToken]);
 
   // Reset the editor fields to the profile default (used by "Use my default
   // address", which also closes the editor).
@@ -257,6 +301,12 @@ export function OfferCheckoutForm({
   // Phase-1 payment gate — card payments aren't live yet, so a checkout POST
   // returns 503 "launching soon". True once we've detected that.
   const [comingSoon, setComingSoon] = useState(false);
+  // The buyer's own interrupted gateway attempt for this offer. The server
+  // returns 409 UNPAID_CHECKOUT_EXISTS (with the transaction id) instead of a
+  // second payable session; without this the buyer sees only a red error and
+  // has no way back to the payment they already started. Mirrors
+  // /checkout/[listingId]/checkout-form.tsx.
+  const [unpaidAttempt, setUnpaidAttempt] = useState<string | null>(null);
 
   // Bob Go door-to-door is the only courier rail. A firearm never rides a
   // courier at all and keeps its own route. An in-person handover skips both.
@@ -414,11 +464,15 @@ export function OfferCheckoutForm({
     if (!isReady()) return;
     setSubmitting(true);
     setError(null);
+    setUnpaidAttempt(null);
     try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/transactions`, {
+      // ⚠️ POST /transactions IS AuthOrTokenGuard-BACKED, which is what makes
+      // Pay work for a signed-out CHECKOUT-token buyer: the token rides in the
+      // query string, never in a Bearer header the browser does not have.
+      const { url, headers } = await authedRequest('/transactions');
+      const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers,
         body: JSON.stringify(buildPayload()),
       });
       if (!res.ok) {
@@ -428,6 +482,21 @@ export function OfferCheckoutForm({
         // launching soon" until PAYMENTS_LIVE. Show the launching-soon state.
         if (/launching soon/i.test(msg)) {
           setComingSoon(true);
+          setSubmitting(false);
+          return;
+        }
+        // The server refuses a second payable session while an unfinished one
+        // exists. Surface the resume panel instead of a wall of error text —
+        // the exact failure mode a buyer hit by backing out of the card page.
+        const conflict = err as {
+          code?: string;
+          transactionId?: string;
+        };
+        if (
+          conflict.code === 'UNPAID_CHECKOUT_EXISTS' &&
+          typeof conflict.transactionId === 'string'
+        ) {
+          setUnpaidAttempt(conflict.transactionId);
           setSubmitting(false);
           return;
         }
@@ -470,6 +539,49 @@ export function OfferCheckoutForm({
           style={{ background: 'var(--red-wash)', border: '0.5px solid var(--red)', color: 'var(--red)' }}
         >
           {error}
+        </div>
+      )}
+
+      {/* Interrupted payment recovery. Same 409 the Buy Now checkout returns:
+          this offer already has an unpaid gateway attempt, and paying again
+          would either double-charge or be refused. Resume goes to the existing
+          attempt rather than starting a second one.
+          ⚠️ NO "Start again" here, unlike the Buy Now form: abandoning the
+          attempt is POST /transactions/:id/abandon, which is AuthGuard-only,
+          so a signed-out token buyer cannot call it. Resume is the only
+          truthful action available to both credentials. */}
+      {unpaidAttempt && (
+        <div
+          className="rounded-[8px] p-4"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1.5px solid var(--action-option-edge)',
+          }}
+        >
+          <p
+            className="text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+          >
+            You have an unfinished payment for this offer
+          </p>
+          <p
+            className="text-xs mt-1"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+          >
+            It wasn&apos;t completed. Resume it to avoid paying twice — the
+            existing payment window still applies.
+          </p>
+          <a
+            href={`/checkout/resume/${unpaidAttempt}`}
+            className="inline-block mt-3 px-4 py-2 rounded-[6px] text-sm font-medium"
+            style={{
+              background: 'var(--action-primary-bg)',
+              color: '#fff',
+              textDecoration: 'none',
+            }}
+          >
+            Resume payment
+          </a>
         </div>
       )}
 

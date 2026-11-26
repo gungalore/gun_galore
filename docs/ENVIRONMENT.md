@@ -1067,6 +1067,20 @@ leave out of a new environment, and locally its absence is the reason a fresh
 `frontend/.env.local` cannot complete a sign-in — the API answers 200 and the
 page bounces anyway.
 
+### `GA_MEASUREMENT_ID`
+
+**Optional; the GA4 web stream id (`G-XXXXXXXXXX`).** Read on the SERVER by the
+root layout (`frontend/app/layout.tsx`) and passed to
+`components/google-analytics.tsx`. Deliberately **not** a `NEXT_PUBLIC_`
+variable: the layout reads it at request time, so the property can be added or
+swapped on the box with an env change and a frontend restart — no rebuild.
+
+Unset, blank or an obvious placeholder leaves analytics completely inert
+(`lib/analytics.ts` validates the shape), so a deploy can land before the GA
+property exists. When set, every public page_view is sent once per App Router
+navigation; `/admin` (internal Desk) and `/a/<token>` (the token IS the
+credential) are never sent. Admin Desk access must never be tracked.
+
 ---
 
 # Reconciliation notes, 2026-08-12

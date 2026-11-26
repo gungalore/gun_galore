@@ -1,4 +1,4 @@
-﻿import { safeJson } from './safe-json';
+import { safeJson } from './safe-json';
 
 // ─── /users/me client ────────────────────────────────────────────────
 //
@@ -127,7 +127,11 @@ const BLOCKER_HREF: Record<string, string> = {
   PAYOUT_DUE: '/my/earnings',
   UNDELIVERED: '/shipping',
   FIREARM_TRANSFER: '/shipping',
-  OPEN_COMPLAINT: '/complaints',
+  // ⚠️ THE CASE LIST, NOT THE PROCEDURE PAGE. `/complaints` is the public
+  // complaints-handling policy and shows no cases; a member sent there to
+  // "close the open complaint first" could read the policy forever and never
+  // find the case. `/account/complaints` is their own history.
+  OPEN_COMPLAINT: '/account/complaints',
   LIVE_AUCTION: '/my/listings',
   MID_CHECKOUT: '/my/listings',
   OPEN_OFFERS: '/my/offers',

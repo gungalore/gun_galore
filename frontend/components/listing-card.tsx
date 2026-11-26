@@ -444,7 +444,11 @@ function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
       className="px-1.5 py-0.5 rounded-[3px] whitespace-nowrap shrink-0"
       style={{
         background: urgent ? 'var(--red-wash)' : 'var(--bg-inset)',
-        color: urgent ? 'var(--red)' : 'var(--text-secondary)',
+        // Audit L18 — urgent ink was var(--red), which in dark mode is the
+        // night-sky blue (#0967F5, ~3.1:1 on the wash) and failed AA for 11px
+        // text. The chip keeps its red identity through the wash and border;
+        // the text itself takes the theme's own high-contrast ink.
+        color: urgent ? 'var(--text-primary)' : 'var(--text-secondary)',
         fontWeight: urgent ? 500 : 400,
         border: `0.5px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,
       }}

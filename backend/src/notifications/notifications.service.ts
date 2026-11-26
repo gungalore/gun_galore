@@ -1167,6 +1167,62 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Expiry reminder to the BUYER on a COUNTERED offer (~12h left to accept
+  // or reject the seller's counter). Reuses a fresh COUNTER_DECISION token
+  // so the SMS stays one-tap. Dismissible + force-pushed. This is the mirror
+  // image of offerCountered: same destination, "your window is closing"
+  // framing instead of "you have a counter".
+  // ---------------------------------------------------------------
+  async offerCounterExpiryReminderBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+    counterAmount: number;
+    hoursLeft: number;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/my/offers`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_counter_expiry_reminder',
+      title: `~${d.hoursLeft}h left to answer a counter`,
+      body: `The seller countered your offer on ${d.listingTitle} at ${formatRand(d.counterAmount)} — accept or reject it before it expires.`,
+      url: d.actionUrl ?? '/my/offers',
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Counter expiring' },
+      headline: 'A counter-offer is about to expire',
+      body: `Hi ${b(d.buyerName)}, the seller countered your offer on ${b(d.listingTitle)} at ${b(formatRand(d.counterAmount))}. You have about ${b(String(d.hoursLeft))} hours to accept or reject it — if it lapses the counter is gone and the item stays on sale.`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Seller counter', value: formatRand(d.counterAmount) },
+      ],
+      cta: { label: 'Answer the counter', url },
+      preheader: `~${d.hoursLeft}h left to answer the counter on ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      `Reminder: answer the counter on ${d.listingTitle}`,
+      html,
+    );
+    if (d.actionUrl) {
+      await this.sendSms(
+        d.buyerPhone,
+        `ALL Outdoor: ~${d.hoursLeft}h left to answer the seller's R${Math.round(d.counterAmount / 100)} counter on ${truncate(d.listingTitle, 22)}. Accept/decline: ${d.actionUrl}`,
+        `counter-reminder-${d.offerId}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
   // Pay-window reminder to an AUCTION WINNER (~6h before the 24h pay
   // window lapses → EXPIRED + strike). Reuses a fresh CHECKOUT token so
   // the SMS deep-links to checkout. Dismissible + force-pushed.
@@ -3273,6 +3329,12 @@ export class NotificationsService {
   // bidder. Dismissible (final state, no action). Linked on the listing so
   // it can auto-resolve if ever needed. No SMS spam beyond the single row +
   // email — losers already got per-bid outbid SMS during the auction.
+  //
+  // ⚠️ Links to /listings/<id>/result, NOT the PDP: an EXPIRED listing 404s
+  // for non-owners (dead inventory must not stay crawlable), so the PDP link
+  // dropped every losing bidder on the generic 404 instead of the outcome
+  // (2026-11 audit M3). The result page reads the public auction-state
+  // endpoint, which still serves the final state.
   async auctionEndedLoser(
     loserEmail: string,
     listingTitle: string,
@@ -3284,7 +3346,7 @@ export class NotificationsService {
       type: 'auction_lost',
       title: 'Auction ended — you didn’t win',
       body: `${listingTitle} closed at ${formatRand(finalBid)}.`,
-      url: `/listings/${listingId}`,
+      url: `/listings/${listingId}/result`,
       iconKey: 'bid',
       linkedType: 'listing',
       linkedId: listingId,
@@ -3294,10 +3356,84 @@ export class NotificationsService {
       status: { tone: 'error', label: 'Auction ended' },
       headline: 'Auction ended',
       body: `Bidding has closed on ${b(listingTitle)} at ${b(formatRand(finalBid))}. You weren’t the winning bidder this time — browse similar listings to keep hunting.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${listingId}` },
+      cta: {
+        label: 'See the result',
+        url: `${this.appUrl}/listings/${listingId}/result`,
+      },
       preheader: `Auction ended — you didn’t win ${listingTitle}`,
     });
     await this.send(loserEmail, 'Auction ended — ' + listingTitle, html);
+  }
+
+  // A seller (or the platform) cancelled a live auction. Bidders are told
+  // explicitly — the old code left them with an open "you were outbid" row
+  // and a listing that silently 404s (2026-11 audit H4/M12).
+  async auctionCancelledForBidder(
+    bidderEmail: string,
+    listingTitle: string,
+    listingId: string,
+  ) {
+    await this.persistByEmail(bidderEmail, {
+      category: 'BUYER',
+      type: 'auction_cancelled',
+      title: 'Auction cancelled',
+      body: `${listingTitle} was cancelled before it closed. No sale was made.`,
+      url: `/listings/${listingId}/result`,
+      iconKey: 'bid',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Auction cancelled' },
+      headline: 'Auction cancelled',
+      body: `The auction for ${b(listingTitle)} was cancelled before it closed, so no sale was made and no payment is due. You can browse live auctions from your dashboard.`,
+      cta: {
+        label: 'See the auction',
+        url: `${this.appUrl}/listings/${listingId}/result`,
+      },
+      preheader: `Auction cancelled — ${listingTitle}`,
+    });
+    await this.send(bidderEmail, 'Auction cancelled — ' + listingTitle, html);
+  }
+
+  // The winner of a cancelled sale (seller withdrew the item before it closed,
+  // or the platform removed the listing). Tells them plainly nothing is owed.
+  async auctionCancelledForWinner(
+    winnerEmail: string,
+    listingTitle: string,
+    listingId: string,
+    winnerPhone?: string | null,
+  ) {
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'auction_cancelled',
+      title: 'Sale cancelled',
+      body: `${listingTitle} was cancelled — you don't have to pay.`,
+      url: `/listings/${listingId}/result`,
+      iconKey: 'bid',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Sale cancelled' },
+      headline: 'Sale cancelled',
+      body: `The sale of ${b(listingTitle)} was cancelled, so there is nothing to pay. If you were already charged, reply to this email and we will refund you in full.`,
+      cta: {
+        label: 'See the auction',
+        url: `${this.appUrl}/listings/${listingId}/result`,
+      },
+      preheader: `Sale cancelled — ${listingTitle}`,
+    });
+    await this.send(winnerEmail, 'Sale cancelled — ' + listingTitle, html);
+    if (winnerPhone) {
+      await this.sendSms(
+        winnerPhone,
+        `ALL Outdoor: The sale of ${truncate(listingTitle, 24)} was cancelled — nothing to pay.`,
+        `auction-cancelled-winner-${listingId}`,
+      );
+    }
   }
 
   // M31 — one-shot notice to a winner whose 24h pay window lapsed and whose
@@ -3315,7 +3451,7 @@ export class NotificationsService {
       type: 'auction_win_lapsed',
       title: 'Payment window missed',
       body: `Your win on ${listingTitle} was cancelled — the 24h payment window passed.`,
-      url: `/listings/${listingId}`,
+      url: `/listings/${listingId}/result`,
       iconKey: 'bid',
       linkedType: 'listing',
       linkedId: listingId,
@@ -3325,7 +3461,10 @@ export class NotificationsService {
       status: { tone: 'error', label: 'Payment window missed' },
       headline: 'Your auction win was cancelled',
       body: `The 24-hour payment window for ${b(listingTitle)} (${b(formatRand(finalBid))}) has passed, so this sale has been cancelled. Repeated missed payments can lead to your bidding being suspended.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${listingId}` },
+      cta: {
+        label: 'See the auction',
+        url: `${this.appUrl}/listings/${listingId}/result`,
+      },
       preheader: `Payment window missed — ${listingTitle}`,
     });
     await this.send(winnerEmail, 'Payment window missed — ' + listingTitle, html);
@@ -3946,7 +4085,10 @@ export class NotificationsService {
   }) {
     const resolved = d.status === 'RESOLVED' || d.status === 'CLOSED';
     const needsUser = d.status === 'AWAITING_USER';
-    const url = `${this.appUrl}/complaints`;
+    // /account/complaints is the member page where a case is actually read,
+    // replied to and tracked. /complaints is the static legal/explainer page —
+    // linking a status change there dropped the member on prose with no case.
+    const url = `${this.appUrl}/account/complaints`;
     const pretty = d.status.replace(/_/g, ' ').toLowerCase();
 
     // ⚠️ SUPERSEDE FIRST — this is what makes the row terminable. The
@@ -3972,7 +4114,7 @@ export class NotificationsService {
       body: needsUser
         ? `We've replied to your complaint about ${d.subject} and need something from you to continue.`
         : `Your complaint about ${d.subject} is now ${pretty}.`,
-      url: '/complaints',
+      url: '/account/complaints',
       iconKey: 'transaction',
       linkedType: 'complaint',
       linkedId: d.referenceNumber,

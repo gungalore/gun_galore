@@ -244,7 +244,7 @@ export class AccountClosureService {
       blockers.push({
         code: 'OPEN_COMPLAINT',
         count: complaints,
-        href: '/complaints',
+        href: '/account/complaints',
         message: `There is an open complaint involving one of your orders. It has to be closed out first.`,
       });
     }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useCountdown } from '@/lib/use-countdown';
+import { formatPrice } from '@/lib/utils';
 
 /**
  * The live auction price + countdown rings.
@@ -64,13 +65,20 @@ export function AuctionOdometer({
   endTime,
   /** Rendered under the price — "Next bid R 12,450", the seller's own view, etc. */
   footnote,
+  /**
+   * Server-clock correction: (device clock − server clock) in ms, from the
+   * caller's `serverNow`. 0 means "no correction", which is what every
+   * device-clock-only caller gets.
+   */
+  clockOffsetMs = 0,
 }: {
   amountCents: number;
   bidCount: number;
   endTime: string | null | undefined;
   footnote?: React.ReactNode;
+  clockOffsetMs?: number;
 }) {
-  const ms = useCountdown(endTime);
+  const ms = useCountdown(endTime, clockOffsetMs);
   const ended = !endTime || ms <= 0;
 
   const totalSeconds = Math.floor(ms / 1000);
@@ -93,9 +101,12 @@ export function AuctionOdometer({
   const hot = 'var(--red)';
   const gold = 'var(--gold)';
 
-  const formatted = new Intl.NumberFormat('en-ZA').format(
-    Math.round(amountCents / 100),
-  );
+  // Same formatter every summary line uses, so the odometer and the bid
+  // history agree to the cent — the old Intl.NumberFormat rounded a
+  // cent-bearing hammer to whole rands (audit L7). The "R " prefix is
+  // rendered separately, so only the numeric part is diffed for the roll.
+  const amountLabel = formatPrice(amountCents);
+  const formatted = amountLabel.replace(/^R\s/, '');
 
   // ── Roll bookkeeping ────────────────────────────────────────────────
   const prevRef = useRef<string | null>(null);
@@ -158,27 +169,29 @@ export function AuctionOdometer({
         </span>
       </div>
 
-      {/* The price. aria-live is polite and the value is announced as one
-          number — a per-digit roll must never be read out digit by digit. */}
+      {/* The price. Audit L8 — every visual digit is aria-hidden, so the old
+          live region announced "Current bid rand" with no number. One sr-only
+          text alternative carries the real formatted amount and is the only
+          thing announced; the whole price is one phrase, never digit by
+          digit. */}
       <div className="odo-priceline">
-        <span className="odo-price" aria-live="polite" aria-atomic="true">
-          <span className="sr-only">Current bid </span>
-          <span aria-hidden>R&nbsp;</span>
+        <span aria-live="polite" aria-atomic="true">
+          <span className="sr-only">{`Current bid ${amountLabel}`}</span>
+        </span>
+        <span className="odo-price" aria-hidden="true">
+          <span>R&nbsp;</span>
           {digits.map((d, i) => (
             <span className="odo-slot" key={`${i}-${d.ch}`}>
               {d.changed ? (
-                <span className="odo-col" aria-hidden>
+                <span className="odo-col">
                   <span className="odo-cell">{d.prev}</span>
                   <span className="odo-cell">{d.ch}</span>
                 </span>
               ) : (
-                <span className="odo-static" aria-hidden>
-                  {d.ch}
-                </span>
+                <span className="odo-static">{d.ch}</span>
               )}
             </span>
           ))}
-          <span className="sr-only">rand</span>
         </span>
         {ghost && decorate && (
           <span className="odo-ghost" aria-hidden>
@@ -297,6 +310,13 @@ export function AuctionOdometer({
           font-family: var(--font-head); font-weight: 700; font-size: 13px;
           font-variant-numeric: tabular-nums;
         }
+        /* Audit L18 — the closing-state numbers. Light mode keeps the ochre
+           --red (5.0:1 on the white card). Dark mode's --red is the night-sky
+           blue #0967F5 — 3.5:1 on #1C1A18, below AA for these 13px figures —
+           so the dark theme borrows --hot, the 6.1:1 closing red the design
+           pack already uses for this state. */
+        .odo-num.odo-urgent { color: var(--red); }
+        html[data-theme="dark"] .odo-num.odo-urgent { color: var(--hot); }
         .odo-lbl {
           margin-top: 2px; font-size: 9px; letter-spacing: 1px;
           text-transform: uppercase; color: var(--text-tertiary);
@@ -308,11 +328,13 @@ export function AuctionOdometer({
           animation: sweep 60s linear infinite;
         }
         .odo-live { animation: livedot 1.6s ease-in-out infinite; }
-        .odo-urgent { animation: urgent 1s ease-in-out infinite; }
 
         @keyframes sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes livedot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
-        @keyframes urgent { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+        /* ⚠️ NO OPACITY PULSE ON THE CLOSING NUMBERS. The old urgent keyframe
+           dipped them to 0.55, which pushed the dark-theme contrast under AA
+           for half of every second — the colour and the seconds arc already
+           carry the urgency, so the text stays at full opacity (audit L18). */
 
         /* ⚠️ A AND B ARE IDENTICAL ON PURPOSE. Alternating between them is what
            retriggers the animation on each bid; one class would only ever play
@@ -352,7 +374,7 @@ export function AuctionOdometer({
            information, not motion. */
         @media (prefers-reduced-motion: reduce) {
           .odo-arc { transition: none; }
-          .odo-sweep, .odo-live, .odo-urgent { animation: none; }
+          .odo-sweep, .odo-live { animation: none; }
           .rollA .odo-col, .rollB .odo-col,
           .rollA .odo-step, .rollB .odo-step,
           .rollA .odo-count, .rollB .odo-count,

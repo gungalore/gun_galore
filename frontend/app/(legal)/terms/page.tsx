@@ -589,9 +589,9 @@ export default function TermsPage() {
         <strong>3 days — R2,500</strong>; <strong>5 days — R5,000</strong>;{' '}
         <strong>7 days — R7,500</strong>; and <strong>14 days — R10,000</strong>.
         The minimum applies to the reserve where one is set, or otherwise to the
-        starting bid. Where a reserve is set, the starting bid is calculated at
-        70% of the reserve and may therefore sit below the minimum; it is the
-        reserve that must meet it.
+        starting bid. Where a reserve is set, the Seller chooses the starting
+        bid (which must not exceed the reserve) and it may therefore sit below
+        the minimum; it is the reserve that must meet it.
       </p>
       <p>
         We may cancel a bid, offer or auction, or remove a listing, where we

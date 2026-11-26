@@ -36,6 +36,10 @@ export default function SellerControls({
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A failed DELETE is now a real possibility (auctions with bids are refused
+  // server-side), so the server's message gets a line of its own instead of a
+  // silent navigate-away that leaves the seller thinking it worked.
+  const [cancelError, setCancelError] = useState<string | null>(null);
   // Edit-lock state — fetched from GET /listings/:id/edit-lock so we
   // don't have to trial-and-error on the PATCH. Same backend gate
   // covers AUCTION (bids placed) AND TAKE_A_SHOT (active offer).
@@ -54,8 +58,12 @@ export default function SellerControls({
     let cancelled = false;
     (async () => {
       try {
+        const token = await getToken();
         const r = await fetch(`${API_URL}/listings/${listingId}/edit-lock`, {
           cache: 'no-store',
+          // Owner-only now: the probe requires the listing owner (it used to
+          // be an unauthenticated existence oracle for hidden listings).
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         if (!r.ok || cancelled) return;
         const data = (await r.json()) as EditLockState;
@@ -74,16 +82,36 @@ export default function SellerControls({
   if (!statusAllowsEdit) return null;
 
   const locked = lock ? !lock.canEdit : false;
+  // Audit H4/M12 — once bids exist the auction cannot be cancelled (the edit
+  // lock reason is exactly that), so do not offer a confirm for it at all.
+  const blockedByBids = lock?.code === 'listing-locked-by-bids';
 
   async function handleCancel() {
     setBusy(true);
+    setCancelError(null);
     try {
       const token = await getToken();
-      await fetch(`${API_URL}/listings/${listingId}`, {
+      const res = await fetch(`${API_URL}/listings/${listingId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) {
+        // The server refuses a live auction with bids (and any other guarded
+        // case) with a 409/400. Surface its message rather than pretending
+        // the cancel happened.
+        const body = (await res.json().catch(() => ({}))) as {
+          message?: string | string[];
+        };
+        const message = Array.isArray(body.message)
+          ? body.message.join(', ')
+          : (body.message ?? `Could not cancel (error ${res.status}).`);
+        throw new Error(message);
+      }
       router.push('/my/listings');
+    } catch (err) {
+      setCancelError(
+        err instanceof Error ? err.message : 'Could not cancel this listing.',
+      );
     } finally {
       setBusy(false);
     }
@@ -109,10 +137,27 @@ export default function SellerControls({
         >
           🔒 Editing locked — {lock.reason}{' '}
           {lock.code === 'listing-locked-by-bids'
-            ? 'Cancel and relist if the listing is wrong (cancelling will refund all bidders).'
+            ? 'Bids are locked in, and an auction cannot be cancelled once bids are placed — let it run, or contact support if something is wrong.'
             : lock.code === 'listing-locked-by-offer'
               ? 'Reject the active offer (or wait for it to expire), then edit.'
               : ''}
+        </p>
+      )}
+      {cancelError && (
+        <p
+          role="alert"
+          style={{
+            margin: 0,
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+            background: 'var(--red-wash)',
+            border: '0.5px solid var(--red)',
+            borderRadius: 6,
+            padding: '8px 10px',
+            lineHeight: 1.4,
+          }}
+        >
+          {cancelError}
         </p>
       )}
       <div className="flex gap-2">
@@ -137,37 +182,40 @@ export default function SellerControls({
             Edit listing
           </Link>
         )}
-        {confirm ? (
-          <div className="flex gap-1.5">
+        {/* No cancel offered while the edit lock says bids exist — the server
+            refuses that DELETE, and this surface must not promise otherwise. */}
+        {!blockedByBids &&
+          (confirm ? (
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleCancel}
+                disabled={busy}
+                className="px-3 py-2 rounded-[6px] text-sm font-medium"
+                style={{ background: 'var(--danger-fill)', color: 'var(--danger-ink)', opacity: busy ? 0.6 : 1 }}
+              >
+                Confirm cancel
+              </button>
+              <button
+                onClick={() => setConfirm(false)}
+                className="px-3 py-2 rounded-[6px] text-sm"
+                style={{ border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+              >
+                No
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={handleCancel}
-              disabled={busy}
-              className="px-3 py-2 rounded-[6px] text-sm font-medium"
-              style={{ background: 'var(--danger-fill)', color: 'var(--danger-ink)', opacity: busy ? 0.6 : 1 }}
+              onClick={() => setConfirm(true)}
+              className={
+                locked
+                  ? 'flex-1 py-2 rounded-[6px] text-sm font-medium'
+                  : 'px-3 py-2 rounded-[6px] text-sm'
+              }
+              style={{ color: 'var(--danger-edge)', border: '1.5px solid var(--danger-edge)' }}
             >
-              Confirm cancel
+              Cancel listing
             </button>
-            <button
-              onClick={() => setConfirm(false)}
-              className="px-3 py-2 rounded-[6px] text-sm"
-              style={{ border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
-            >
-              No
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirm(true)}
-            className={
-              locked
-                ? 'flex-1 py-2 rounded-[6px] text-sm font-medium'
-                : 'px-3 py-2 rounded-[6px] text-sm'
-            }
-            style={{ color: 'var(--danger-edge)', border: '1.5px solid var(--danger-edge)' }}
-          >
-            Cancel listing
-          </button>
-        )}
+          ))}
       </div>
     </div>
   );

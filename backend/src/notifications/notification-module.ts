@@ -23,8 +23,13 @@ export function moduleForNotification(
     return category === 'SELLER' ? '/offers/received' : '/my/offers';
   }
 
-  // Auction bids — always the bidder (buyer) side.
-  if (type.startsWith('bid_') || type.startsWith('auction_')) return '/my/bids';
+  // Auction bids — always the bidder (buyer) side. The SELLER also receives
+  // auction_* types (auction_ended_*, auction_runner_up_available) and those
+  // belong on the seller's own listing/action surfaces, not the buyer's My
+  // Bids page (2026-11 audit L5).
+  if (type.startsWith('auction_') || type.startsWith('bid_')) {
+    return category === 'SELLER' ? '/my/listings' : '/my/bids';
+  }
 
   // Banking / profile actions.
   if (type.startsWith('bank_verify') || type === 'refund_needs_bank_details') {
@@ -120,9 +125,12 @@ export function moduleForNotification(
     return '/my/orders';
   }
 
-  // Complaints — the member's own dispute cases. The row's url already points
-  // at /complaints, which is now an account-menu entry, so the badge lands.
-  if (type === 'complaint_status_changed') return '/complaints';
+  // Complaints — the member's own dispute cases. Both the row's url and the
+  // module live under the account area: /account/complaints is the member
+  // complaints page (a static legal /complaints page is NOT where a case is
+  // read or answered). Keep this in sync with the row url in
+  // NotificationsService.complaintStatusChanged.
+  if (type === 'complaint_status_changed') return '/account/complaints';
 
   // Payout release — seller's earnings; for a buyer it's an order event.
   if (type === 'payment_released') {

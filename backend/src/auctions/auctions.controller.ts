@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Get,
-  Delete,
   Param,
   Body,
   UseGuards,
@@ -74,16 +73,9 @@ export class AuctionsController {
     return this.auctions.cancelProxy(userId, listingId);
   }
 
-  // BUYER: watchlist
-  @UseGuards(AuthGuard)
-  @Post(':listingId/watch')
-  watch(@CurrentUser() userId: string, @Param('listingId') listingId: string) {
-    return this.auctions.watch(userId, listingId);
-  }
-
-  @UseGuards(AuthGuard)
-  @Delete(':listingId/watch')
-  unwatch(@CurrentUser() userId: string, @Param('listingId') listingId: string) {
-    return this.auctions.unwatch(userId, listingId);
-  }
+  // NOTE (2026-11 audit L6): the POST/DELETE /auctions/:id/watch endpoints
+  // were removed. They wrote the dormant AuctionWatch table, which no
+  // frontend surface ever called — watching is the wishlist (WatchedListing),
+  // whose ending-soon alert is the one that actually fires — so the routes
+  // only existed as a misleading "0 watching" data source.
 }

@@ -1,9 +1,17 @@
 export function formatPrice(cents: number): string {
   // Space after "R" matches the approved design boards (all 23 write "R 8,500"
   // not "R8,500") — display-only, nothing parses this string back into a number.
+  //
+  // ⚠️ WHOLE RANDS KEEP THE DESIGN'S "R 8,500"; CENTS ARE NOT ROUNDED AWAY.
+  // The old 0-decimal formatter dropped the cents from every auction line, so a
+  // hammer of R 8,500.50 printed "R 8,500" beside a bid stepper reading
+  // "R 8,500.50" and the summary never footed (audit L7). Auctions and bids are
+  // whole-rand in practice, so this changes nothing for the normal case — it
+  // only stops a cent-bearing amount from lying.
+  const wholeRands = cents % 100 === 0;
   return `R ${(cents / 100).toLocaleString('en-ZA', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: wholeRands ? 0 : 2,
+    maximumFractionDigits: wholeRands ? 0 : 2,
   })}`;
 }
 

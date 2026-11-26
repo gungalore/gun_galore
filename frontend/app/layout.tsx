@@ -16,6 +16,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PageViewTracker } from '@/components/page-view-tracker';
+import { GoogleAnalytics } from '@/components/google-analytics';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { ProfileCompleteNudge } from '@/components/profile-complete-nudge';
@@ -221,6 +222,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // GA4 measurement id (G-XXXXXXXXXX) — read on the SERVER from a non-public
+  // env var so the property can be added/switched on the production box with
+  // an env change + frontend restart, no rebuild. When it is absent or still
+  // a placeholder the component renders nothing and analytics stays inert.
+  const gaMeasurementId = process.env.GA_MEASUREMENT_ID ?? '';
   return (
     <AuthProvider>
       {/* ThemeProvider sets data-theme on <html> via useTheme(). The pre-paint
@@ -368,6 +374,11 @@ export default function RootLayout({
               effect-mount when there's no event. */}
           <ConnectionStatusBanner />
           <PageViewTracker />
+          {/* GA4 — no-op until GA_MEASUREMENT_ID is set; skips /admin (internal)
+              and /a/<token> (the token in the URL is a credential). */}
+          {gaMeasurementId ? (
+            <GoogleAnalytics measurementId={gaMeasurementId} />
+          ) : null}
           <SwUpdateBanner />
           <PublicNav />
           {/* ⚠️ MobileSearchBar WAS MOUNTED HERE AND IS NOW PART OF THE SHELL.

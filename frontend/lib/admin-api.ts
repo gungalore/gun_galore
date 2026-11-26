@@ -1403,3 +1403,108 @@ export function removeSellerStrike(
     method: 'POST',
   });
 }
+
+// ── Listing takedown + bulk review ────────────────────────────────────
+//
+// ⚠️ THE ENDPOINTS EXISTED WITHOUT A CALLER. POST /admin/listings/:id/delete
+// (reason required, seller notified) and POST /admin/listings/bulk-review were
+// shipped in the backend, but nothing in lib/admin-api.ts could call them — so
+// the Operate queue could only approve or reject ONE listing at a time, and
+// there was no way at all to remove a live listing that had gone bad. These are
+// the wrappers; the Operate page owns the dialogs.
+
+/** Result of POST /admin/listings/:id/delete — the updated (CANCELLED) row. */
+export interface AdminListingTakedownResult {
+  id: string;
+  title?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Take a listing down immediately (soft-delete → CANCELLED, removed from
+ * search, seller emailed the reason). The backend refuses when the listing has
+ * a paid sale against it — refund that transaction instead.
+ */
+export function adminDeleteListing(
+  listingId: string,
+  reason: string,
+): Promise<AdminListingTakedownResult> {
+  return adminFetch<AdminListingTakedownResult>(
+    `/admin/listings/${encodeURIComponent(listingId)}/delete`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+}
+
+/** One row's outcome inside a bulk review response. */
+export interface BulkListingReviewRow {
+  listingId: string;
+  outcome: 'ok' | 'skipped';
+  message?: string;
+}
+
+/**
+ * Result of POST /admin/listings/bulk-review.
+ *
+ * `skipped` is a PARTIAL SUCCESS, not a failure: a listing that another admin
+ * moved on (or a seller deleted) between the queue load and the click is
+ * reported per-row rather than failing the whole batch.
+ */
+export interface BulkListingReviewResult {
+  processed: number;
+  skipped?: number;
+  results: BulkListingReviewRow[];
+}
+
+/**
+ * Approve or reject up to 100 listings in one call.
+ *
+ * ⚠️ A REJECT NEEDS A REASON OF AT LEAST 5 CHARACTERS — it is sent to every
+ * seller in the batch, and the backend rejects a shorter one. Approve may omit
+ * it, but the dialog always asks: the reason is what the audit trail keeps.
+ */
+export function bulkReviewListings(
+  listingIds: string[],
+  action: 'APPROVE' | 'REJECT',
+  reason?: string,
+): Promise<BulkListingReviewResult> {
+  return adminFetch<BulkListingReviewResult>('/admin/listings/bulk-review', {
+    method: 'POST',
+    body: JSON.stringify({
+      listingIds,
+      action,
+      ...(reason ? { reason } : {}),
+    }),
+  });
+}
+
+// ── Bidder auction strikes ────────────────────────────────────────────
+
+/**
+ * Result of POST /admin/users/:id/clear-auction-strikes.
+ *
+ * `cleared: false` means the member had no live strikes — an honest no-op, not
+ * an error.
+ */
+export interface AuctionStrikesClearResult {
+  cleared: boolean;
+  auctionStrikes: number;
+}
+
+/**
+ * Clear a bidder's non-payment strikes (auction wins + accepted offers share
+ * this counter) and lift the automatic bidding/offer suspension.
+ *
+ * ⚠️ A REASON OF AT LEAST 5 CHARACTERS IS REQUIRED and lands in the admin audit
+ * trail. The route only appeared with the 2026-11 audit — until then a member
+ * who was blocked from bidding had no review path at all.
+ */
+export function clearAuctionStrikes(
+  userId: string,
+  reason: string,
+): Promise<AuctionStrikesClearResult> {
+  return adminFetch<AuctionStrikesClearResult>(
+    `/admin/users/${encodeURIComponent(userId)}/clear-auction-strikes`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+}

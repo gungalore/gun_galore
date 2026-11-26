@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
+import {
+  PUBLIC_LISTING_SELECT,
+} from '../listings/listings.service';
+import { PUBLICLY_VISIBLE_STATUSES } from '../listings/listing-visibility';
 
 /**
  * Wishlist (Save-for-later) service.
@@ -62,11 +66,20 @@ export class WishlistService {
     // the seller already owns it; saving it is meaningless and would
     // pollute the heart-state on /my/listings. Backend rejects with
     // 400 so the frontend can show "this is your own listing" copy.
+    //
+    // ⚠️ STATUS CHECK (2026-11 marketplace audit, CRITICAL): ids are public,
+    // so without this any signed-in member could POST any listing id —
+    // including DRAFT/PENDING_REVIEW/CANCELLED — then GET /wishlist and read a
+    // row the PDP deliberately 404s. Save only what the public catalogue can
+    // show, and use the SAME 404 as a missing listing so the endpoint cannot
+    // confirm a hidden row exists.
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
-      select: { id: true, sellerId: true },
+      select: { id: true, sellerId: true, status: true },
     });
-    if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing || !PUBLICLY_VISIBLE_STATUSES.includes(listing.status)) {
+      throw new NotFoundException('Listing not found');
+    }
     if (listing.sellerId === userId) {
       throw new BadRequestException("You can't save your own listing.");
     }
@@ -122,32 +135,28 @@ export class WishlistService {
 
   /** Full saved-listings list with images + seller info — mirrors the
    * /listings endpoint shape so the frontend can reuse ListingCard
-   * unchanged. Includes ALL statuses (incl. SOLD / REMOVED) so the
-   * /wishlist page can render greyed-out tombstones for removed
-   * listings instead of silently dropping them. */
+   * unchanged. Includes ALL statuses (incl. SOLD / cancelled tombstones) so
+   * the /wishlist page can render greyed-out rows for removed listings
+   * instead of silently dropping them.
+   *
+   * ⚠️ IT USED TO `include` THE WHOLE LISTING ROW (2026-11 marketplace audit,
+   * CRITICAL). That returned every scalar column — firearm serial numbers,
+   * the licence holder's real name, the seller's collection address and
+   * coordinates, the hidden reserve/auto-accept thresholds — for any listing
+   * a member had saved, defeating the PDP's field allow-list entirely. It now
+   * uses the SAME PUBLIC_LISTING_SELECT the public PDP uses, and drops rows
+   * whose status can never legitimately be saved. */
   async list(userId: string) {
     await this.assertUserExists(userId);
     const rows = await this.prisma.watchedListing.findMany({
-      where: { userId },
+      where: {
+        userId,
+        listing: { status: { notIn: ['DRAFT', 'PENDING_REVIEW'] } },
+      },
       orderBy: { createdAt: 'desc' },
-      include: {
-        listing: {
-          include: {
-            images: { orderBy: { order: 'asc' } },
-            category: true,
-            // Same social-proof aggregate the browse cards get, so a saved
-            // listing's count is identical on /wishlist and in the grid.
-            _count: { select: { wishlistedBy: true } },
-            seller: {
-              select: {
-                id: true,
-                username: true,
-                sellerTier: true,
-                averageRating: true,
-              },
-            },
-          },
-        },
+      select: {
+        createdAt: true,
+        listing: { select: PUBLIC_LISTING_SELECT },
       },
     });
     // Shape: { savedAt, listing } per row — keeps the listing object

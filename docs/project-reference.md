@@ -930,11 +930,38 @@ registered with a provider must point at **alloutdoor.co.za**.
   have an auto-accept threshold and a separate `autoDeclineThreshold` that rejects
   a recorded offer.
 - **Auctions:** proxy bidding with a stored max; increments R50/100/250/500/1000;
-  a bid in the final 2 minutes extends the end by 2 minutes; Buy Now only while
-  there are zero bids; `reserveMet` flips when `currentBid >= reservePrice` and the
-  reserve amount is never shown. eBay-style dual-row history: when a bid triggers
+  a bid in the final 2 minutes extends the end by 2 minutes and republishes
+  `endTimeTs` to Meilisearch. **Buy Now is retired** (create/update reject
+  `buyNowPrice`; checkout is winner-only). The seller may set the starting bid;
+  with a reserve it must not exceed the reserve and blank derives 70% as a
+  default (so the reserve is not derivable from the opening price). The reserve
+  is met when the **high bidder's stored maximum** clears it — the visible bid is
+  lifted to the reserve at that point, and finalisation also rescues a legacy
+  row whose winner max cleared it (sale at the reserve). The reserve amount is
+  never shown before it is met. eBay-style dual-row history: when a bid triggers
   an existing proxy, two `Bid` rows are written in one transaction and `bidCount`
-  increments by 2. Ties go to the earlier bidder. `maxAmount` is never public.
+  increments by 2. Ties go to the earlier bidder. `maxAmount` is never public,
+  and a leading bidder cannot lower their own max through a new auto bid (the
+  API returns `AUCTION_MAX_LOWERED`; cancel-proxy is the explicit path).
+  A bid requires at least one real photo; hidden/draft auctions 404 a bid
+  rather than confirm they exist.
+- **Auction lifecycle:** once `bidCount > 0` the seller can neither edit nor
+  cancel the auction (`listing-locked-by-bids`); a bid-less auction cancel
+  stamps `endedAt`. The platform take-down route may remove any listing, but
+  fans out to bidders and the winner, expires an accepted offer and refuses a
+  listing with a **paid** transaction (refund via the order instead). Terminal
+  closes settle AFTER the status flip (strike, seller/winner/loser notices,
+  runner-up invite) and `Listing.auctionSettledAt` / `winnerStruckAt` make the
+  every-minute `recoverAuctionSettlements()` replay a settlement interrupted by
+  a crash, with the non-payment strike exactly-once. Bidders see expired /
+  cancelled outcomes on `/listings/<id>/result`; ended-auction notification
+  links point there because the PDP still 404s `EXPIRED` inventory. Auction
+  "watching" is the wishlist — `AuctionWatch` is a dormant historical table (no
+  endpoints). An accepted offer on a live auction must match the leader's stored
+  max and closes the auction early through the normal loser fan-out. Winner
+  checkout links carry a CHECKOUT action token; the winner's pay page reads its
+  one listing through `GET /actions/:token/checkout-listing` so a signed-out
+  recipient is not walled by the 18+ gate.
 - **Seller failure is strikes, not fines.** Three counters on `User` —
   `auctionStrikes` (3 = bidding suspended), `dispatchStrikes`, and
   `sellerRejectStrikes` (**2 = `sellingBannedAt`**: no new listings, buying
@@ -945,6 +972,12 @@ registered with a provider must point at **alloutdoor.co.za**.
   strike-free sale-decline route is a buyer-concern, which now rides the custom
   `OTHER` reason (strikes + admin review). **There is no fine system** — no
   Penalty model, no admin approval step, no paygate deduction.
+  **Bidder non-payment strikes** (`auctionStrikes`, shared by unpaid auction wins
+  and unpaid accepted offers) suspend bidding AND offers at 3 and are reviewed
+  after the fact: an admin can clear them from the user dossier with a reason
+  (`POST /admin/users/:id/clear-auction-strikes`), which also resolves the
+  `BIDDER_AUCTION_STRIKES_THRESHOLD` alert. The suspension is automatic; the
+  alert copy says so.
 - **Seller tiers** (badge only; no listing-volume cap, no deposit, no fee
   discount): New (0 sales), Established (3+ / 50+ score), Trusted (10+ / 70+),
   Top Seller (25+ / 85+). The legacy `DEALER` tier is **retired** (never assigned,

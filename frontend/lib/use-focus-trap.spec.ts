@@ -111,6 +111,17 @@ describe('a focus trap', () => {
     expect(document.activeElement).toBe(outside);
   });
 
+  it('⚠️ restores focus to an EXPLICIT opener even when nothing had focus', () => {
+    // Safari does not focus a <button> on click, so "whatever had focus" is
+    // the body there. Dialogs that must return the keyboard user to the
+    // control that opened them pass it explicitly instead.
+    const { dialog, outside, a } = scene();
+    const release = createFocusTrap(dialog, { returnFocusTo: outside });
+    expect(document.activeElement).toBe(a);
+    release();
+    expect(document.activeElement).toBe(outside);
+  });
+
   it('locks the page behind, and unlocks it only when the last trap goes', () => {
     const { dialog } = scene();
     const outer = createFocusTrap(dialog);

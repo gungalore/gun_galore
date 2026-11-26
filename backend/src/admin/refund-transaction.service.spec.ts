@@ -79,6 +79,7 @@ function makeService(overrides: {
     { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     notifications as never,
     {} as never, // listings — unused by refund
+    {} as never, // auctions
     audit as never,
     zohoBooks as never,
     ozow as never,

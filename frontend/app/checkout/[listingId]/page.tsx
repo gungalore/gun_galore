@@ -7,19 +7,52 @@ import { Listing, CheckoutHold } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
 import { CheckoutForm } from './checkout-form';
 
+/**
+ * Read the listing this checkout is for.
+ *
+ * Two credentials can authorise it, and a server-side fetch cannot rely on
+ * either cookie (a server-to-server fetch carries no cookie jar):
+ *
+ *  - `?t=<token>` — a CHECKOUT action token from the winner's SMS/email. It is
+ *    the credential the middleware already exempts this page for, so the
+ *    listing is read through the token-scoped endpoint instead of the
+ *    ContentAccessGuard-protected public one. Without this the winner saw the
+ *    404 page, because the 18+ gate 404s the public listing read.
+ *  - a session — the ordinary signed-in path.
+ */
+async function loadCheckoutListing(
+  listingId: string,
+  actionToken: string | undefined,
+  sessionToken: string | null,
+): Promise<Listing | null> {
+  if (actionToken) {
+    const viaToken = await apiFetch<Listing>(
+      `/actions/${encodeURIComponent(actionToken)}/checkout-listing`,
+      { cache: 'no-store' },
+    ).catch(() => null);
+    if (viaToken) return viaToken;
+  }
+  return apiFetch<Listing>(`/listings/${listingId}`, {
+    cache: 'no-store',
+    headers: sessionToken
+      ? { Authorization: `Bearer ${sessionToken}` }
+      : undefined,
+  }).catch(() => null);
+}
+
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ listingId: string }>;
+  searchParams: Promise<{ t?: string }>;
 }) {
   const { listingId } = await params;
+  const { t: actionToken } = await searchParams;
   // Forward the buyer's session token — members-only stock (firearms) is
   // 404'd to anonymous callers, and this SSR fetch carries no cookie jar.
   const { token } = await auth();
-  const listing = await apiFetch<Listing>(`/listings/${listingId}`, {
-    cache: 'no-store',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }).catch(() => null);
+  const listing = await loadCheckoutListing(listingId, actionToken, token);
   if (!listing) return { title: 'Checkout — ALL Outdoor' };
   return { title: `Buy ${listing.title} — ALL Outdoor` };
 }
@@ -34,14 +67,13 @@ export default async function CheckoutPage({
   const { listingId } = await params;
   const { t: actionToken } = await searchParams;
 
-  // Members-only stock (firearms, publicVisible=false) 404s for anonymous
-  // callers, so the buyer's session token MUST be forwarded or every firearm
-  // Marketplace dead-ends on a 404 here. Mirrors the listing detail fetch.
+  // Members-only stock (firearms) 404s for anonymous callers, so the buyer's
+  // session token MUST be forwarded or every firearm Marketplace dead-ends on
+  // a 404 here. A CHECKOUT action token is the other credential: see
+  // loadCheckoutListing (the winner's SMS pay link has no session).
   const { userId, token } = await auth();
-  const listing = await apiFetch<Listing>(`/listings/${listingId}`, {
-    cache: 'no-store',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  }).catch(() => null);
+  const listing = await loadCheckoutListing(listingId, actionToken, token);
+
 
   if (!listing) return notFound();
   // P0.2 — auction winners land here from the "you won" SMS/token link.

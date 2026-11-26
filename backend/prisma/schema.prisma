@@ -1300,6 +1300,21 @@ model Listing {
   // can't race the every-minute sweep.
   winnerRemindedAt DateTime?
 
+  // ── Auction settlement markers (2026-11 audit M4) ─────────────────
+  // The terminal flip (WON/EXPIRED) commits first and everything the
+  // settlement still owes the people involved — strike, seller/winner
+  // notices, runner-up invite — runs after it. A crash in that gap would
+  // otherwise lose the side effect permanently because the sweep only
+  // selects rows by status. `auctionSettledAt` is stamped only once the
+  // settlement pass has completed; a NULL value on an ended auction makes
+  // the every-minute recovery sweep replay it (at-least-once; the strike is
+  // exactly-once via winnerStruckAt).
+  auctionSettledAt DateTime?
+  // CAS claim for the winner's non-payment strike: only the run that flips
+  // NULL→now increments User.auctionStrikes, so a recovery replay cannot
+  // double-strike.
+  winnerStruckAt   DateTime?
+
   // Stale-listing lifecycle (non-auction). lastRenewedAt seeds from
   // createdAt (backfilled at migration, now() for new rows) and advances ONLY
   // on an explicit seller "still for sale" renew — NEVER on unrelated writes

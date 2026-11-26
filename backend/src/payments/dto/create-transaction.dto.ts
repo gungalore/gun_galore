@@ -149,14 +149,14 @@ export class CreateTransactionDto {
   })
   privateArrangeConsent?: boolean;
 
-  // M33 â€” 18+/competency attestation for firearm checkouts. The flag
-  // must be explicitly `true` (not `undefined`, not `false`) when the
-  // listing is a firearm. The service re-checks `listing.isFirearm`
-  // server-side and refuses the transaction if the flag isn't true on
-  // a firearm listing â€” defence in depth against the frontend gate
-  // being bypassed. Stored as `firearmAttestationAcceptedAt` on the
-  // Transaction so we have durable evidence the buyer affirmed at
-  // checkout (dispute defence + SAPS audit trail).
+  // M33 — legacy 18+/competency attestation flag. The 18+ declaration is
+  // accepted ONCE, in the Terms at registration (see the /terms page); checkout
+  // does NOT re-gate on this field and there is NO server-side refusal when it
+  // is absent or false. This comment used to claim a service-side
+  // `listing.isFirearm` re-check that refuses the transaction — it does not
+  // exist, and must not be described as if it did. The value is still accepted
+  // and, when explicitly true, persisted as `firearmAttestationAcceptedAt` so
+  // historical rows stay attributable as evidence.
   @IsOptional()
   @IsBoolean()
   firearmAttestation18Plus?: boolean;

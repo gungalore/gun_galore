@@ -34,6 +34,13 @@ export interface FocusTrapOptions {
   lockScroll?: boolean;
   /** Where focus should land. Defaults to the first focusable inside. */
   initialFocus?: HTMLElement | null;
+  /**
+   * Where focus should go when the trap is released. Defaults to whatever had
+   * focus when it opened. Pass the opener explicitly where the browser does
+   * not focus a button on click (Safari) — otherwise that fallback is the
+   * body and a keyboard user is dumped back at the top of the page.
+   */
+  returnFocusTo?: HTMLElement | null;
 }
 
 interface ActiveTrap {
@@ -93,9 +100,12 @@ export function createFocusTrap(
   container: HTMLElement,
   opts: FocusTrapOptions = {},
 ): () => void {
-  const { onClose, lockScroll = true, initialFocus } = opts;
+  const { onClose, lockScroll = true, initialFocus, returnFocusTo } = opts;
   const doc = container.ownerDocument;
   const previouslyFocused = doc.activeElement as HTMLElement | null;
+  // An explicit opener wins over "whatever was focused" — see the option's
+  // note. Resolved once at open so a React re-render cannot redirect it.
+  const restoreTarget = returnFocusTo ?? previouslyFocused;
 
   const entry: ActiveTrap = { container, onClose };
   stack.push(entry);
@@ -169,8 +179,8 @@ export function createFocusTrap(
       }
     }
 
-    if (previouslyFocused && doc.contains(previouslyFocused)) {
-      previouslyFocused.focus?.();
+    if (restoreTarget && doc.contains(restoreTarget)) {
+      restoreTarget.focus?.();
     }
   };
 }
@@ -190,7 +200,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
   opts: FocusTrapOptions & { active?: boolean } = {},
 ) {
   const ref = useRef<T | null>(null);
-  const { active = true, lockScroll = true, initialFocus } = opts;
+  const { active = true, lockScroll = true, initialFocus, returnFocusTo } = opts;
   // ⚠️ THROUGH A REF, so a handler recreated on every render — which is every
   // inline arrow function in this codebase — does not tear the trap down and
   // rebuild it, stealing focus back to the top of the dialog each time.
@@ -203,10 +213,12 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
     return createFocusTrap(el, {
       lockScroll,
       initialFocus,
+      returnFocusTo,
       onClose: () => onCloseRef.current?.(),
     });
-    // `initialFocus` is read once at open, deliberately: re-running on a new
-    // element identity would re-open the trap and yank focus.
+    // `initialFocus` and `returnFocusTo` are read once at open, deliberately:
+    // re-running on a new element identity would re-open the trap and yank
+    // focus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, lockScroll]);
 

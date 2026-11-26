@@ -9,16 +9,19 @@ import {
   NeonCard,
   Pill,
   SkeletonRows,
+  useAdminToast,
   type AdminTone,
 } from '@/components/admin/admin-ui';
 import { UserActions } from '@/components/admin/user-actions';
 import { SellerChargesPanel } from '@/components/admin/seller-charges-panel';
 import { SellerStrikesPanel } from '@/components/admin/seller-strikes-panel';
+import { ReasonDialog } from '@/components/admin/admin-confirm';
 import { useAdminSession } from '@/components/admin/admin-session';
 import { useAdminPoll } from '@/lib/use-admin-poll';
 import {
   adminFetch,
   adminFetchBlob,
+  clearAuctionStrikes,
   formatWhen,
   revealIdNumber,
   type AdminUserDossier,
@@ -50,6 +53,10 @@ export default function MemberProfilePage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === 'string' ? params.id : '';
   const { isGod } = useAdminSession();
+  const { toast } = useAdminToast();
+  // Bidder non-payment strikes: the only review path for a member suspended
+  // from bidding/offers. Reason is mandatory and lands in the audit trail.
+  const [clearAuctionOpen, setClearAuctionOpen] = useState(false);
 
   const dossier = useAdminPoll<AdminUserDossier>(
     () => adminFetch<AdminUserDossier>(`/admin/users/${id}/dossier`),
@@ -325,6 +332,33 @@ export default function MemberProfilePage() {
         <Row label="Selling banned" value={formatWhen(user.sellingBannedAt)} />
         <Row label="Failed logins" value={String(user.failedLoginCount ?? 0)} />
         <Row label="Locked until" value={formatWhen(user.lockedUntil)} />
+
+        {/* Auction-strike write path. Before the 2026-11 audit the counter had
+            no admin control at all: a member blocked from bidding by the
+            automatic suspension had no review path, and the alert claiming an
+            admin would "review" it pointed at nothing. Auction wins and
+            accepted offers share this ONE counter, so clearing it lifts both
+            suspensions — say so, because the number alone does not. */}
+        <div className="adm-label" style={{ marginTop: 12 }}>
+          Bidder non-payment strikes
+        </div>
+        <p className="adm-sub" style={{ marginTop: 0 }}>
+          Auction wins and accepted offers share this counter. Clearing it
+          reviews the suspension and restores bidding and offers. Every clear
+          needs a reason and is recorded in the audit trail.
+        </p>
+        <button
+          type="button"
+          className="adm-btn"
+          data-tone="ghost"
+          disabled={!isGod || (user.auctionStrikes ?? 0) === 0}
+          onClick={() => setClearAuctionOpen(true)}
+        >
+          Clear auction strikes
+        </button>
+        {!isGod ? (
+          <p className="adm-sub">Read-only admin tier — no controls.</p>
+        ) : null}
       </NeonCard>
 
       {/* ── Activity ──────────────────────────────────────────────── */}
@@ -385,6 +419,32 @@ export default function MemberProfilePage() {
           ))
         )}
       </NeonCard>
+
+      {clearAuctionOpen ? (
+        <ReasonDialog
+          open
+          title={`Clear ${handle}’s auction strikes?`}
+          body={
+            (user.auctionStrikes ?? 0) > 0
+              ? `Clears all ${user.auctionStrikes} non-payment strike${user.auctionStrikes === 1 ? '' : 's'} and lifts the automatic bidding/offer suspension. The reason is recorded against this member in the admin audit trail.`
+              : 'This member has no live strikes — submitting records a reviewed no-op in the audit trail.'
+          }
+          confirmLabel="Clear strikes"
+          danger={(user.auctionStrikes ?? 0) > 0}
+          minLength={5}
+          onClose={() => setClearAuctionOpen(false)}
+          onConfirm={async (reason) => {
+            const result = await clearAuctionStrikes(user.id, reason);
+            toast(
+              result.cleared
+                ? 'Auction strikes cleared — bidding and offers restored.'
+                : 'No live auction strikes to clear.',
+            );
+            setClearAuctionOpen(false);
+            dossier.refresh();
+          }}
+        />
+      ) : null}
     </>
   );
 }

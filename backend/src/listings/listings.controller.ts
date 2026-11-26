@@ -398,16 +398,16 @@ export class ListingsController {
   }
 
   /**
-   * Cheap pre-flight: returns whether the seller can edit this
-   * listing right now (bids placed? listing sold/cancelled?). The
-   * /listings/[id] detail page hits this so it can hide the Edit
-   * button server-side instead of trial-and-erroring on the PATCH.
-   * Public read — no auth needed; the answer is the same for any
-   * caller (it's not sensitive info).
-   */
+   * Cheap pre-flight: returns whether the seller can edit this listing right
+   * now (bids placed? listing sold/cancelled? live payment?).
+   *
+   * ⚠️ OWNER-ONLY (2026-11 audit M8). It exposes listing status and live
+   * offer state, so it must never be an anonymous existence oracle again:
+   * content guard for the gate plus a seller check inside the service. */
   @Get(':id/edit-lock')
-  editLock(@Param('id') id: string) {
-    return this.listingsService.getEditLockState(id);
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  editLock(@Param('id') id: string, @CurrentUser() userId?: string) {
+    return this.listingsService.getEditLockState(id, userId);
   }
 
   @Delete(':id')

@@ -63,6 +63,11 @@ const GATE_EXEMPT = [
   '/witness',
   '/consent',
   '/dealer-portal',
+  // Phone capture for the valuation flow. Same shape as its siblings above:
+  // the QR code on a desktop screen IS the credential, and the phone that
+  // scans it has usually never declared anything — an age click in front of it
+  // strands the member mid-scan with the desktop waiting on photos.
+  '/v',
   '/licence-centre/print/book',
   '/scan/handoff',
   '/scan/selftest',
@@ -81,6 +86,10 @@ const GATE_EXEMPT = [
  */
 const MEMBER_ONLY = [
   '/documents',
+  // Covers the complaint history at /account/complaints as well as the hub
+  // itself: a member's own complaint cases are private data (they carry the
+  // order they were lodged against), so they sit behind the session wall with
+  // the rest of /account.
   '/account',
   '/settings',
   '/profile',
@@ -125,6 +134,23 @@ export type RouteGate = 'gate-exempt' | 'member-only' | 'content';
  */
 const CONTENT_EXCEPTIONS = ['/licence-centre/tracking'];
 
+/**
+ * Pattern-classified member-only routes — paths with a variable segment that
+ * cannot be expressed as a prefix.
+ *
+ * `/listings/<id>/edit` is a seller's action on THEIR OWN row (the page loads
+ * the owner-only edit lock and PATCHes the listing), so it needs a session the
+ * same way `/listings/new` does. It is NOT a prefix of `/listings`, because the
+ * public detail page lives at `/listings/<id>` and must stay content. The
+ * `/new` path above stays a plain prefix entry — only the id-bearing form needs
+ * the pattern.
+ *
+ * ⚠️ Matching the whole path (`/edit` at the end) is deliberate: a future
+ * `/listings/<id>/edit-preview` should fall through to the default content
+ * class until somebody decides what it holds.
+ */
+const MEMBER_ONLY_PATTERNS: RegExp[] = [/^\/listings\/[^/]+\/edit\/?$/];
+
 function matches(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
@@ -134,6 +160,9 @@ export function routeGate(pathname: string): RouteGate {
   const path = pathname || '/';
   if (GATE_EXEMPT.some((p) => matches(path, p))) return 'gate-exempt';
   if (CONTENT_EXCEPTIONS.includes(path)) return 'content';
+  if (MEMBER_ONLY_PATTERNS.some((pattern) => pattern.test(path))) {
+    return 'member-only';
+  }
   if (MEMBER_ONLY.some((p) => matches(path, p))) return 'member-only';
   return 'content';
 }

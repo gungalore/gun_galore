@@ -559,7 +559,9 @@ export class AdminListingsController {
           ? 'REJECT'
           : null;
     if (!action) {
-      throw new Error('action must be APPROVE or REJECT');
+      // Bad input is a 400, not a 500 — a plain Error here surfaced as
+      // "Internal server error" for what is just a malformed body.
+      throw new BadRequestException('action must be APPROVE or REJECT');
     }
     return this.adminService.bulkReviewListings(
       body.listingIds ?? [],
@@ -743,6 +745,19 @@ export class AdminUsersController {
     @CurrentAdmin() admin: { sub: string },
   ) {
     return this.adminService.clearRejectStrikes(id, admin.sub);
+  }
+
+  // Clear a bidder's non-payment strikes (auction wins + accepted offers) and
+  // lift the automatic bidding/offer suspension after review. The auction
+  // strike counter had no admin write path at all before the 2026-11 audit.
+  @Post(':id/clear-auction-strikes')
+  @HttpCode(200)
+  clearAuctionStrikes(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.clearAuctionStrikes(id, admin.sub, body?.reason ?? '');
   }
 
   // The seller's reject-strike ledger — why each strike landed.

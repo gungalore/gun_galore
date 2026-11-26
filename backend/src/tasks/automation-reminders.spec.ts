@@ -22,14 +22,17 @@ const agoHours = (h: number) => new Date(Date.now() - h * 3_600_000);
 // window lapses + strikes (buyer).
 // ───────────────────────────────────────────────────────────────────
 describe('OffersService.remindExpiring', () => {
-  function makeService(over: { pending?: unknown[]; accepted?: unknown[] } = {}) {
+  function makeService(
+    over: { pending?: unknown[]; accepted?: unknown[]; countered?: unknown[] } = {},
+  ) {
     const prisma = {
       offer: {
         findMany: jest
           .fn()
-          // 1st call = PENDING pass, 2nd = ACCEPTED pass.
+          // 1st call = PENDING pass, 2nd = ACCEPTED pass, 3rd = COUNTERED pass.
           .mockResolvedValueOnce(over.pending ?? [])
-          .mockResolvedValueOnce(over.accepted ?? []),
+          .mockResolvedValueOnce(over.accepted ?? [])
+          .mockResolvedValueOnce(over.countered ?? []),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest.fn().mockResolvedValue(null),
       },
@@ -40,6 +43,7 @@ describe('OffersService.remindExpiring', () => {
       { check: jest.fn() } as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
+      {} as never, // auctions
     );
     const remindSeller = jest
       .spyOn(
@@ -53,7 +57,13 @@ describe('OffersService.remindExpiring', () => {
         'remindBuyerToPay' as never,
       )
       .mockResolvedValue(undefined as never);
-    return { service, prisma, remindSeller, remindBuyer };
+    const remindCounterBuyer = jest
+      .spyOn(
+        service as never as Record<string, () => Promise<void>>,
+        'remindBuyerOfCounterExpiring' as never,
+      )
+      .mockResolvedValue(undefined as never);
+    return { service, prisma, remindSeller, remindBuyer, remindCounterBuyer };
   }
 
   it('reminds the seller on a PENDING offer inside the 12h window', async () => {
@@ -84,6 +94,39 @@ describe('OffersService.remindExpiring', () => {
     await flush();
     expect(res.reminded).toBe(1);
     expect(remindBuyer).toHaveBeenCalledWith('O2');
+  });
+
+  // A COUNTERED offer is the buyer's pending decision too: the seller already
+  // answered, and if the buyer never does the counter lapses silently. Same
+  // one-shot guard (buyerPayRemindedAt) as the pay reminder.
+  it('nudges the buyer on a COUNTERED offer inside its expiry window', async () => {
+    const { service, prisma, remindCounterBuyer } = makeService({
+      countered: [{ id: 'O3' }],
+    });
+    const res = await service.remindExpiring();
+    await flush();
+    expect(res.reminded).toBe(1);
+    expect(remindCounterBuyer).toHaveBeenCalledWith('O3');
+    const claim = prisma.offer.updateMany.mock.calls.find(
+      (c) => (c[0] as { where: { id: string } }).where.id === 'O3',
+    );
+    expect(claim?.[0]).toMatchObject({
+      where: {
+        id: 'O3',
+        status: OfferStatus.COUNTERED,
+        buyerPayRemindedAt: null,
+      },
+      data: { buyerPayRemindedAt: expect.any(Date) },
+    });
+    // The COUNTERED pass only selects rows inside its 12h window.
+    const where = (prisma.offer.findMany.mock.calls[2][0] as {
+      where: Record<string, unknown>;
+    }).where;
+    expect(where).toMatchObject({
+      status: OfferStatus.COUNTERED,
+      buyerPayRemindedAt: null,
+    });
+    expect(where.expiresAt).toMatchObject({ gt: expect.any(Date), lte: expect.any(Date) });
   });
 
   // The whole point of the guard: an overlapping cron run must not send a
@@ -137,6 +180,7 @@ describe('OffersService.expireStale — seller is told about a lapse', () => {
       { check: jest.fn() } as never,
       { mint: jest.fn() } as never,
       { record: jest.fn() } as never,
+      {} as never, // auctions
     );
     const buyerSpy = jest
       .spyOn(

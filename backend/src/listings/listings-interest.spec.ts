@@ -188,14 +188,17 @@ describe('ListingsService.interest', () => {
       listingRow({
         listingType: 'AUCTION',
         bidCount: 12,
-        _count: { wishlistedBy: 5, offers: 2, watchers: 4 },
+        // Watchers ARE the wishlist since the 2026-11 audit (the dormant
+        // AuctionWatch table never had a writer), so the panel must read the
+        // wishlist headcount — `watchers` here is deliberately ignored.
+        _count: { wishlistedBy: 4, offers: 2, watchers: 0 },
       }),
-      { watchers7d: 1, bids7d: 4 },
+      { saves7d: 1, bids7d: 4 },
     );
 
     const result = await svc.interest('listing-1', SELLER);
 
-    expect(prisma.auctionWatch.count).toHaveBeenCalled();
+    expect(prisma.auctionWatch.count).not.toHaveBeenCalled();
     expect(prisma.bid.count).toHaveBeenCalled();
     expect(result.bids).toEqual({ total: 12, last7d: 4 });
     expect(result.watchers).toEqual({ total: 4, last7d: 1 });

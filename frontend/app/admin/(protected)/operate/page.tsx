@@ -20,10 +20,12 @@ import {
   adminAlerts,
   adminComplaint,
   adminComplaints,
+  adminDeleteListing,
   adminFetch,
   adminSupportTicket,
   adminSupportTickets,
   bulkResolveAdminAlerts,
+  bulkReviewListings,
   formatWhen,
   replySupportTicket,
   resolveAdminAlert,
@@ -63,6 +65,11 @@ export default function OperatePage() {
   const [post, setPost] = useState<PostRow | null>(null);
   const [video, setVideo] = useState<ListingVideoRow | null>(null);
   const [review, setReview] = useState<ReviewTarget | null>(null);
+  // Take a listing off sale entirely (not a review decision): the reason is
+  // mandatory, it is emailed to the seller, and the row goes CANCELLED.
+  const [takedown, setTakedown] = useState<ListingRow | null>(null);
+  // Approve/reject every PENDING_REVIEW row currently shown, in one call.
+  const [bulkAction, setBulkAction] = useState<'APPROVE' | 'REJECT' | null>(null);
 
   const listings = useAdminPoll<Paginated<ListingRow>>(
     () =>
@@ -138,6 +145,63 @@ export default function OperatePage() {
     setVideo(null);
   }
 
+  /**
+   * Take the listing down. Distinct from Review › Reject: rejection is a
+   * PENDING_REVIEW decision, take-down removes a listing that is (or was) live.
+   * The backend refuses a listing with a paid sale against it, and that refusal
+   * is surfaced by the dialog rather than swallowed.
+   */
+  async function takeListingDown(reason: string) {
+    if (!takedown) return;
+    await adminDeleteListing(takedown.id, reason);
+    toast('Listing taken down — the seller has been emailed the reason.');
+    setListing(null);
+    setTakedown(null);
+    listings.refresh();
+  }
+
+  /**
+   * Approve or reject the whole shown page of PENDING_REVIEW rows.
+   *
+   * ⚠️ THE IDS ARE THE ONES ON SCREEN, not every pending listing in the
+   * database: the queue is capped at 20 and an operator reviewing a screen
+   * should act on exactly what they can see. The backend caps a batch at 100
+   * and reports per-row `skipped` results, which the toast repeats so a partial
+   * batch never reads as a clean sweep.
+   */
+  async function runBulkReview(reason: string) {
+    if (!bulkAction || listingRows.length === 0) return;
+    const result = await bulkReviewListings(
+      listingRows.map((row) => row.id),
+      bulkAction,
+      reason,
+    );
+    const skipped = result.skipped ?? result.results.length - result.processed;
+    toast(
+      `${result.processed} ${bulkAction === 'APPROVE' ? 'approved' : 'rejected'}${
+        skipped > 0 ? `, ${skipped} skipped (already moved on)` : ''
+      }.`,
+      skipped > 0 ? 'red' : 'cyan',
+    );
+    setBulkAction(null);
+    listings.refresh();
+  }
+
+  const bulkCopy =
+    bulkAction === null
+      ? null
+      : bulkAction === 'APPROVE'
+        ? {
+            title: `Approve all ${listingRows.length} listings in the queue?`,
+            body: 'Each one is published and re-indexed exactly as a single Approve would. The reason is recorded against every row for the audit trail.',
+            label: 'Approve all',
+          }
+        : {
+            title: `Reject all ${listingRows.length} listings in the queue?`,
+            body: 'Each seller is notified with this reason (at least 5 characters). Use only when the whole batch has the same problem.',
+            label: 'Reject all',
+          };
+
   return (
     <>
       <div id="alerts" />
@@ -153,6 +217,31 @@ export default function OperatePage() {
           </Pill>
         }
       >
+        <p className="adm-sub" style={{ margin: 0 }}>
+          Approving publishes and re-indexes; rejecting emails the seller the
+          reason. Taking a listing down is a separate, terminal action — it
+          removes it from sale and search whether or not it ever passed review.
+        </p>
+        {isGod && listingRows.length > 0 ? (
+          <div className="adm-grid-2" style={{ marginBottom: 8 }}>
+            <button
+              type="button"
+              className="adm-btn"
+              data-tone="green"
+              onClick={() => setBulkAction('APPROVE')}
+            >
+              Approve all ({listingRows.length})
+            </button>
+            <button
+              type="button"
+              className="adm-btn"
+              data-tone="red"
+              onClick={() => setBulkAction('REJECT')}
+            >
+              Reject all ({listingRows.length})
+            </button>
+          </div>
+        ) : null}
         {listings.loading && !listings.data ? (
           <SkeletonRows rows={3} />
         ) : listings.error ? (
@@ -164,25 +253,45 @@ export default function OperatePage() {
           />
         ) : (
           listingRows.map((row) => (
-            <ActionRow
+            // The row itself is the review button; the take-down control is a
+            // SIBLING, never nested inside it — a button inside a button is
+            // invalid HTML and swallows one of the two clicks on a phone.
+            <div
               key={row.id}
-              icon="doc"
-              tone="amber"
-              title={row.title ?? `Listing ${row.id.slice(0, 8)}`}
-              caption={
-                <>
-                  {row.category?.name ?? 'Uncategorised'}
-                  {row.price != null ? ` · R${Math.round(row.price / 100).toLocaleString('en-ZA')}` : ''}
-                </>
-              }
-              trailing={
-                <>
-                  {row.isFirearm ? <Pill tone="red">FIREARM</Pill> : null}
-                  <Pill tone="amber">REVIEW</Pill>
-                </>
-              }
-              onClick={() => setListing(row)}
-            />
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <ActionRow
+                  icon="doc"
+                  tone="amber"
+                  title={row.title ?? `Listing ${row.id.slice(0, 8)}`}
+                  caption={
+                    <>
+                      {row.category?.name ?? 'Uncategorised'}
+                      {row.price != null ? ` · R${Math.round(row.price / 100).toLocaleString('en-ZA')}` : ''}
+                    </>
+                  }
+                  trailing={
+                    <>
+                      {row.isFirearm ? <Pill tone="red">FIREARM</Pill> : null}
+                      <Pill tone="amber">REVIEW</Pill>
+                    </>
+                  }
+                  onClick={() => setListing(row)}
+                />
+              </div>
+              {isGod ? (
+                <button
+                  type="button"
+                  className="adm-btn"
+                  data-tone="ghost"
+                  style={{ flexShrink: 0, padding: '6px 10px', fontSize: 11 }}
+                  onClick={() => setTakedown(row)}
+                >
+                  Take down
+                </button>
+              ) : null}
+            </div>
           ))
         )}
       </NeonCard>
@@ -297,6 +406,21 @@ export default function OperatePage() {
             Reject
           </button>
         </div>
+        <button
+          type="button"
+          className="adm-btn"
+          data-tone="ghost"
+          disabled={!isGod || !listing}
+          onClick={() => {
+            if (!listing) return;
+            // Hand the row to the take-down dialog. Kept separate from
+            // Review › Reject: a take-down is terminal and notifies the seller
+            // that a listing was REMOVED, not that it never passed review.
+            setTakedown(listing);
+          }}
+        >
+          Take listing down…
+        </button>
         {!isGod ? (
           <p className="adm-sub">Read-only admin tier — no review controls.</p>
         ) : null}
@@ -412,6 +536,38 @@ export default function OperatePage() {
           minLength={3}
           onClose={() => setReview(null)}
           onConfirm={submitReview}
+        />
+      ) : null}
+
+      {/* Take-down. The reason is mandatory (backend refuses a blank one) and
+          is what the seller receives, so the dialog demands a real sentence
+          rather than letting a tap through produce a reasonless removal. */}
+      {takedown ? (
+        <ReasonDialog
+          open
+          title={`Take down “${takedown.title ?? takedown.id.slice(0, 10)}”?`}
+          body="Removes the listing from sale and from search immediately, and emails the seller with this reason. A listing with a paid sale against it cannot be taken down — refund that order instead."
+          confirmLabel="Take down listing"
+          danger
+          minLength={5}
+          onClose={() => setTakedown(null)}
+          onConfirm={takeListingDown}
+        />
+      ) : null}
+
+      {/* Bulk review of exactly the rows on screen. Reject uses the same
+          dialog because every seller in the batch receives the reason; the
+          backend requires at least 5 characters for a reject. */}
+      {bulkCopy && bulkAction ? (
+        <ReasonDialog
+          open
+          title={bulkCopy.title}
+          body={bulkCopy.body}
+          confirmLabel={bulkCopy.label}
+          danger={bulkAction === 'REJECT'}
+          minLength={5}
+          onClose={() => setBulkAction(null)}
+          onConfirm={runBulkReview}
         />
       ) : null}
     </>

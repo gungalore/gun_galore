@@ -4,7 +4,7 @@
 // service (defence in depth).
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { TransactionsController } from './transactions.controller';
 import {
   DISPUTE_NEVER_ARRIVED_ONLY_GUIDANCE,
@@ -91,6 +91,9 @@ describe('TransactionsService.raiseDispute — reason gate', () => {
       transaction: {
         findUnique: jest.fn().mockResolvedValue(tx),
         update: jest.fn().mockResolvedValue(tx),
+        // The dispute is a CAS on (HELD, paidAt not null) so it cannot
+        // overwrite a RELEASED payout.
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       adminAlert: { create: jest.fn().mockResolvedValue({}) },
     };
@@ -137,15 +140,44 @@ describe('TransactionsService.raiseDispute — reason gate', () => {
         'The parcel never arrived at my address.',
       ),
     ).resolves.toEqual({ disputed: true });
-    const update = prisma.transaction.update.mock.calls[0][0];
+    const update = prisma.transaction.updateMany.mock.calls[0][0];
+    expect(update.where).toEqual({
+      id: 'TX1',
+      paymentStatus: 'HELD',
+      paidAt: { not: null },
+    });
     expect(update.data.paymentStatus).toBe('DISPUTED');
     expect(update.data.adminNote).toContain('[BUYER DISPUTE: NEVER_ARRIVED]');
     expect(update.data.adminNote).not.toContain('ATTESTATION');
+    // The unconditional write is gone — it could flip a RELEASED payout.
+    expect(prisma.transaction.update).not.toHaveBeenCalled();
     expect(tracking.recordInternal).toHaveBeenCalledWith(
       'TX1',
       'BUYER_RAISED_DISPUTE',
       expect.objectContaining({ occurredAt: expect.any(Date) }),
     );
     expect(prisma.adminAlert.create).toHaveBeenCalled();
+  });
+
+  it('loses the race cleanly when the payment left HELD before the CAS', async () => {
+    // The read above saw HELD, but the admin released the payout in between —
+    // the CAS matches 0 rows and the dispute must be refused, not written.
+    const { service, prisma, tracking } = makeService();
+    prisma.transaction.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      service.raiseDispute(
+        'TX1',
+        'B1',
+        'NEVER_ARRIVED',
+        'The parcel never arrived at my address.',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.transaction.update).not.toHaveBeenCalled();
+    expect(tracking.recordInternal).not.toHaveBeenCalledWith(
+      'TX1',
+      'BUYER_RAISED_DISPUTE',
+      expect.anything(),
+    );
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
   });
 });

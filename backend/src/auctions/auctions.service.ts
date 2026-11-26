@@ -31,10 +31,19 @@ const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
 // Superset of ListingsService.PUBLICLY_VISIBLE_STATUSES. The public PDP 404s
 // an EXPIRED listing, but this endpoint still serves its final state so a
-// bidder can see how the auction closed and the seller can make the runner-up
-// decision. DRAFT / PENDING_REVIEW / CANCELLED must 404 here too rather than
-// confirm the row exists.
-const AUCTION_PUBLIC_STATUSES = ['ACTIVE', 'PAYMENT_PENDING', 'SOLD', 'EXPIRED'];
+// bidder can see how the auction closed (the /listings/<id>/result page and
+// every ended-auction notification link depend on it since the 2026-11 audit).
+// DRAFT / PENDING_REVIEW must 404 here too rather than confirm the row exists.
+// CANCELLED is included so an already-open auction panel and the result page
+// can render a terminal "cancelled" state instead of a permanent reconnect
+// loop (2026-11 audit M12).
+const AUCTION_PUBLIC_STATUSES = [
+  'ACTIVE',
+  'PAYMENT_PENDING',
+  'SOLD',
+  'EXPIRED',
+  'CANCELLED',
+];
 
 // How long the seller has to decide whether to offer an expired-win auction
 // to the runner-up. Short on purpose: the runner-up's interest (and the
@@ -145,6 +154,7 @@ export class AuctionsService {
       where: { id: listingId },
       select: {
         id: true,
+        title: true,
         listingType: true,
         status: true,
         publicVisible: true,
@@ -158,6 +168,11 @@ export class AuctionsService {
         endTime: true,
         endedAt: true,
         sellerId: true,
+        images: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { url: true },
+        },
       },
     });
     if (!listing) throw new NotFoundException('Listing not found');
@@ -206,7 +221,17 @@ export class AuctionsService {
 
     return {
       id: listing.id,
+      // Title + primary image are public on the PDP already; the result page
+      // (which is how a bidder sees an EXPIRED/CANCELLED auction after the PDP
+      // starts 404ing) needs them.
+      title: listing.title,
+      primaryImageUrl: listing.images[0]?.url ?? null,
       status: listing.status,
+      // The client cannot trust the device clock for a money countdown: a phone
+      // whose clock is minutes ahead hid every bid CTA while the server still
+      // accepted bids (2026-11 audit L14). The panel derives an offset from
+      // this stamp and drives the countdown/close state off server time.
+      serverNow: new Date().toISOString(),
       startingBid: listing.price,
       // Auction fixed-price option is retired: the sell form no longer offers it, the
       // API rejects it, and checkout's auction path is for winners only.
@@ -258,6 +283,7 @@ export class AuctionsService {
           currentBid: true,
           currentBidderId: true,
           endedAt: true,
+          bidCount: true,
         },
       });
       if (!listing) throw new NotFoundException('Listing not found');
@@ -302,6 +328,11 @@ export class AuctionsService {
           status: 'ACTIVE',
           currentBid: visible,
           currentBidderId: buyer.id,
+          // bidCount too (2026-11 audit L3): the bid path guards on it so ANY
+          // interleaved write is detected. Without it, two concurrent cancels
+          // (double-tap) both matched and each wrote a cancel row + bumped the
+          // count, duplicating audit history for one action.
+          bidCount: listing.bidCount,
         },
         data: { bidCount: { increment: 1 } },
       });
@@ -438,6 +469,14 @@ export class AuctionsService {
           listingId,
           amountCents: outcome.currentBid,
         });
+        // A snipe extension moves endTime, which lives in the search document
+        // (`endTimeTs`) and gates the one-shot "ending soon" alert. Neither
+        // used to be refreshed after a bid, so `?q=` ordering could rank the
+        // auction with a stale close time and a wishlister alerted before the
+        // first extension could never be alerted again (2026-11 audit L4).
+        if (outcome.extended) {
+          void this.handleAuctionExtended(listingId, outcome.endTime);
+        }
         return {
           currentBid: outcome.currentBid,
           bidCount: outcome.bidCount,
@@ -492,10 +531,33 @@ export class AuctionsService {
         throw new BadRequestException('Not an auction');
       }
       if (listing.status !== 'ACTIVE') {
+        // A hidden/lapsed auction must not confirm its existence to a caller
+        // who is not the owner (2026-11 audit L10). ACTIVE-but-ended keeps the
+        // friendly 400 further down.
+        if (
+          listing.status === 'DRAFT' ||
+          listing.status === 'PENDING_REVIEW' ||
+          listing.status === 'CANCELLED'
+        ) {
+          throw new NotFoundException('Listing not found');
+        }
         throw new BadRequestException('Auction is not active');
       }
       if (listing.sellerId === buyerId) {
         throw new ForbiddenException('Cannot bid on your own auction');
+      }
+      // A photo-less auction is not a real listing: the create path trusts a
+      // client-declared imageCount, so a crafted create can publish before any
+      // image exists, and photos cannot be added once a bid has locked the
+      // listing (2026-11 audit L11). Refuse the bid instead of locking a
+      // permanently photo-less auction.
+      const listingPhotoCount = await tx.listingImage.count({
+        where: { listingId },
+      });
+      if (listingPhotoCount === 0) {
+        throw new BadRequestException(
+          'This auction has no photos yet — bidding opens once the seller adds one.',
+        );
       }
       const now = new Date();
       if (!listing.endTime || now >= listing.endTime) {
@@ -540,6 +602,19 @@ export class AuctionsService {
       const isSameBidder = listing.currentBidderId === buyerId;
       const currentBid = listing.currentBid ?? 0;
       const isOneShot = dto.isOneShot === true;
+
+      // A bidder who is already leading must not be able to SILENTLY lower
+      // their own stored proxy ceiling. The UI now pre-fills the raise at the
+      // current max, but the API is the authority: lowering for real is the
+      // explicit Cancel auto bid action (cancelProxy), which keeps the visible
+      // lead instead of quietly reducing protection.
+      if (isSameBidder && prevHighMax > 0 && dto.maxAmount < prevHighMax) {
+        throw new BadRequestException({
+          code: 'AUCTION_MAX_LOWERED',
+          message:
+            'Use Cancel auto bid to reduce your maximum — a new auto bid must be at least your current max.',
+        });
+      }
 
       let visibleBid: number;
       let newHighBidderId: string;
@@ -614,14 +689,30 @@ export class AuctionsService {
         proxyCountered = true;
       }
 
+      // Reserve semantics: the reserve is met when the HIGH BIDDER'S CEILING
+      // clears it, not merely when the visible bid does. A lone proxy maximum
+      // above the reserve must lift the visible bid to the reserve — the
+      // alternative is an auction that expires unsold while the only bidder
+      // was willing to pay more than the seller asked for (2026-11 audit H2).
+      // The reserve amount becomes public at exactly this moment, which is
+      // the normal proxy-auction behaviour ("reserve met" reveals the figure).
+      const highMax = proxyCountered ? prevHighMax : dto.maxAmount;
+      let reserveMet = listing.reserveMet;
+      if (
+        listing.reservePrice !== null &&
+        !reserveMet &&
+        highMax >= listing.reservePrice
+      ) {
+        visibleBid = Math.max(visibleBid, listing.reservePrice);
+        reserveMet = true;
+      }
+
       // Snipe protection — bid in last 2 mins pushes endTime out by 2 mins.
       const newEndTime =
         listing.endTime.getTime() - now.getTime() < SNIPE_WINDOW_MS
           ? new Date(now.getTime() + SNIPE_WINDOW_MS)
           : listing.endTime;
 
-      const reserveMet =
-        listing.reservePrice !== null && visibleBid >= listing.reservePrice;
 
       // Record the bid(s). Three cases:
       //
@@ -723,6 +814,10 @@ export class AuctionsService {
         bidCount: listing.bidCount + (dualRow ? 2 : 1),
         reserveMet,
         endTime: newEndTime,
+        // Whether the snipe-protection window actually moved the close time.
+        // The wrapper republishes the new close time to Meilisearch and re-arms
+        // the one-shot "ending soon" alert when it did (2026-11 audit L4).
+        extended: newEndTime.getTime() !== listing.endTime.getTime(),
         highBidderId: newHighBidderId,
         outbidUserId,
         sellerId: listing.sellerId,
@@ -799,28 +894,6 @@ export class AuctionsService {
       }));
 
     return rows;
-  }
-
-  // --- Watchlist --------------------------------------------------------
-
-  async watch(userId: string, listingId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new ForbiddenException('User not synced');
-    await this.prisma.auctionWatch.upsert({
-      where: { listingId_userId: { listingId, userId: user.id } },
-      create: { listingId, userId: user.id },
-      update: {},
-    });
-    return { watching: true };
-  }
-
-  async unwatch(userId: string, listingId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new ForbiddenException('User not synced');
-    await this.prisma.auctionWatch.deleteMany({
-      where: { listingId, userId: user.id },
-    });
-    return { watching: false };
   }
 
   // --- End auctions cron ------------------------------------------------
@@ -904,11 +977,35 @@ export class AuctionsService {
         currentBidderId: listing.currentBidderId,
       };
 
+      // Defensive rescue for a winner whose stored ceiling clears the reserve
+      // while the visible bid does not (legacy rows, or any path that predates
+      // the ceiling-aware lift in placeBidAttempt). The sale settles AT THE
+      // RESERVE — never below it — and the listing records the flag so the
+      // public post-close state is consistent (2026-11 audit H2).
+      let salePrice = listing.currentBid ?? 0;
+      let finalReserveMet = listing.reserveMet;
+      if (
+        listing.bidCount > 0 &&
+        listing.currentBidderId &&
+        listing.reservePrice !== null &&
+        !finalReserveMet
+      ) {
+        const topBid = await tx.bid.findFirst({
+          where: { listingId, bidderId: listing.currentBidderId },
+          orderBy: [{ maxAmount: 'desc' }, { id: 'desc' }],
+          select: { maxAmount: true },
+        });
+        if (topBid && topBid.maxAmount >= listing.reservePrice) {
+          finalReserveMet = true;
+          salePrice = Math.max(salePrice, listing.reservePrice);
+        }
+      }
+
       // Case A: bids exist AND reserve met (or no reserve) → winner!
       if (
         listing.bidCount > 0 &&
         listing.currentBidderId &&
-        (listing.reservePrice === null || listing.reserveMet)
+        (listing.reservePrice === null || finalReserveMet)
       ) {
         const claim = await tx.listing.updateMany({
           where: casWhere,
@@ -917,6 +1014,15 @@ export class AuctionsService {
             endedAt: now,
             // Buyer has 24h to pay — reuse expiresAt as the pay window
             expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            // The settled hammer: the visible bid, or the reserve when the
+            // winner's ceiling cleared it (salePrice >= currentBid by design).
+            currentBid: salePrice,
+            reserveMet: finalReserveMet,
+            // Fresh terminal state: nothing has been settled yet, and this
+            // winner has not been struck. A crash between here and the
+            // settlement is repaired by recoverAuctionSettlements().
+            auctionSettledAt: null,
+            winnerStruckAt: null,
           },
         });
         if (claim.count === 0) return null; // state moved — re-evaluate next sweep
@@ -938,29 +1044,39 @@ export class AuctionsService {
           kind: 'WON' as const,
           sellerId: listing.sellerId,
           winnerId: listing.currentBidderId,
-          amount: listing.currentBid!,
+          amount: salePrice,
         };
       }
 
       // Case B: bids exist but reserve NOT met → seller decides
-      if (listing.bidCount > 0 && !listing.reserveMet) {
+      if (listing.bidCount > 0 && !finalReserveMet) {
         const claim = await tx.listing.updateMany({
           where: casWhere,
-          data: { status: 'EXPIRED', endedAt: now },
+          data: {
+            status: 'EXPIRED',
+            endedAt: now,
+            auctionSettledAt: null,
+            winnerStruckAt: null,
+          },
         });
         if (claim.count === 0) return null; // state moved — re-evaluate next sweep
         // Notifications for this outcome fire after the transaction commits.
         return {
           kind: 'NO_RESERVE' as const,
           sellerId: listing.sellerId,
-          amount: listing.currentBid ?? 0,
+          amount: salePrice,
         };
       }
 
       // Case C: no bids
       const claim = await tx.listing.updateMany({
         where: casWhere,
-        data: { status: 'EXPIRED', endedAt: now },
+        data: {
+          status: 'EXPIRED',
+          endedAt: now,
+          auctionSettledAt: null,
+          winnerStruckAt: null,
+        },
       });
       if (claim.count === 0) return null; // state moved — re-evaluate next sweep
       return { kind: 'NO_BIDS' as const, sellerId: listing.sellerId, amount: 0 };
@@ -976,50 +1092,306 @@ export class AuctionsService {
     // update: every terminal auction state is non-searchable.
     await this.removeFromSearchIndex(listingId);
 
-    // Notifications fire only AFTER the transaction has committed. Firing them
-    // inside the callback could announce a winner whose write then rolled back.
-    if (outcome.kind === 'WON') {
-      void this.notifyAuctionWon(outcome.winnerId, listingId, outcome.amount);
-      void this.notifyAuctionEndedSeller(
-        outcome.sellerId,
-        listingId,
-        'WON',
-        outcome.amount,
+    // Everything the settlement owes the people involved runs AFTER the
+    // transaction has committed (announcing a winner whose write rolled back
+    // would be worse than a delay), and only completes the job when
+    // auctionSettledAt is stamped. A crash before that stamp leaves the row
+    // for recoverAuctionSettlements() to replay — see the markers in
+    // schema.prisma (2026-11 audit M4).
+    await this.settleAuctionEnded(listingId);
+
+    return outcome;
+  }
+
+  /**
+   * Deliver the settlement for one ended auction and stamp auctionSettledAt.
+   *
+   * At-least-once by design: the terminal status flip commits first, so the
+   * only way the notices/strike/runner-up invite survive a crash is for the
+   * every-minute recovery sweep to be able to replay them. The strike itself
+   * is exactly-once (winnerStruckAt CAS claim); duplicate notices are an
+   * accepted, vanishingly rare trade-off.
+   *
+   * Derives the outcome from the row, so it is safe to call for a fresh
+   * finalise AND for a replay.
+   */
+  async settleAuctionEnded(listingId: string): Promise<void> {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: {
+        id: true,
+        title: true,
+        sellerId: true,
+        status: true,
+        endedAt: true,
+        bidCount: true,
+        currentBid: true,
+        currentBidderId: true,
+        reservePrice: true,
+        reserveMet: true,
+      },
+    });
+    if (!listing || !listing.endedAt) return;
+
+    try {
+      if (listing.status === 'PAYMENT_PENDING' && listing.currentBidderId) {
+        // WON. If an ACCEPTED offer closed this auction early, the offer flow
+        // has already told the buyer ("accepted — pay now") and the seller;
+        // re-announcing a win would double-notify them. Only the losing
+        // bidders are still owed a notice, so settle those and move on.
+        const viaAcceptedOffer = await this.prisma.offer.findFirst({
+          where: {
+            listingId: listing.id,
+            buyerId: listing.currentBidderId,
+            status: { in: ['ACCEPTED', 'CONVERTED'] },
+          },
+          select: { id: true },
+        });
+        if (!viaAcceptedOffer) {
+          await this.notifyAuctionWon(
+            listing.currentBidderId,
+            listing.id,
+            listing.currentBid ?? 0,
+          );
+          await this.notifyAuctionEndedSeller(
+            listing.sellerId,
+            listing.id,
+            'WON',
+            listing.currentBid ?? 0,
+          );
+        }
+        await this.resolveAndNotifyLosers(
+          listing.id,
+          listing.currentBidderId,
+          listing.currentBid ?? 0,
+        );
+      } else if (listing.status === 'EXPIRED') {
+        if (listing.bidCount === 0) {
+          await this.notifyAuctionEndedSeller(
+            listing.sellerId,
+            listing.id,
+            'NO_BIDS',
+            0,
+          );
+        } else if (listing.reservePrice !== null && !listing.reserveMet) {
+          await this.notifyAuctionEndedSeller(
+            listing.sellerId,
+            listing.id,
+            'NO_RESERVE',
+            listing.currentBid ?? 0,
+          );
+          await this.resolveAndNotifyLosers(
+            listing.id,
+            null,
+            listing.currentBid ?? 0,
+          );
+        } else if (listing.currentBidderId) {
+          // A winner who never paid: strike (exactly once), tell the seller
+          // and the winner, and offer the item to the runner-up.
+          await this.strikeUnpaidWinnerOnce(listing.id, listing.currentBidderId);
+          await this.notifyWinnerLapsed(
+            listing.currentBidderId,
+            listing.id,
+            listing.currentBid ?? 0,
+          );
+          await this.notifyAuctionEndedSeller(
+            listing.sellerId,
+            listing.id,
+            'WINNER_UNPAID',
+            listing.currentBid ?? 0,
+          );
+          await this.inviteRunnerUpOffer(listing.id, listing.currentBidderId);
+        }
+      } else {
+        // SOLD/CANCELLED/other terminal states owe nothing here.
+        await this.markAuctionSettled(listing.id);
+        return;
+      }
+      await this.markAuctionSettled(listing.id);
+    } catch (err) {
+      // Leave auctionSettledAt NULL so the recovery sweep replays it.
+      this.logger.warn(
+        `settleAuctionEnded failed for ${listingId}: ${(err as Error).message}`,
       );
-      // M30 — resolve losers' stuck bid_outbid rows + send each a one-shot
-      // 'you didn't win' notice. Type-filtered + excludeUserId so the winner's
-      // freshly-persisted auction_won row is never touched.
-      void this.resolveAndNotifyLosers(
-        listingId,
-        outcome.winnerId,
-        outcome.amount,
-      );
-    } else if (outcome.kind === 'NO_RESERVE') {
-      void this.notifyAuctionEndedSeller(
-        outcome.sellerId,
-        listingId,
-        'NO_RESERVE',
-        outcome.amount,
-      );
-      // M30 — no winner in a reserve-not-met close, so every bidder is a
-      // loser: resolve all bid_outbid rows on the listing + notify each.
-      void this.resolveAndNotifyLosers(listingId, null, outcome.amount);
-    } else {
-      void this.notifyAuctionEndedSeller(
-        outcome.sellerId,
-        listingId,
-        'NO_BIDS',
-        0,
+    }
+  }
+
+  private async markAuctionSettled(listingId: string): Promise<void> {
+    await this.prisma.listing
+      .updateMany({
+        where: { id: listingId },
+        data: { auctionSettledAt: new Date() },
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Every-minute recovery for the two states a crash can leave behind
+   * (2026-11 audit M4/M6):
+   *
+   *  1. a won auction whose checkout claim nulled expiresAt and then the
+   *     process died before the Transaction row was written — no sweep can
+   *     see it, so it is handed back to the lifecycle with a lapsed window;
+   *  2. an ended auction (WON or EXPIRED) whose settlement never completed —
+   *     replay settleAuctionEnded (at-least-once, strike exactly once).
+   *
+   * Everything is time-gated so a live checkout/settlement in progress is
+   * never stepped on.
+   */
+  async recoverAuctionSettlements(): Promise<{
+    unstuck: number;
+    replayed: number;
+  }> {
+    const now = Date.now();
+    let unstuck = 0;
+    let replayed = 0;
+
+    // (1) Stranded PAYMENT_PENDING: ended, pay window CAS-nulled by a
+    // checkout start, no Transaction row at all, and old enough that the
+    // insert cannot still be in flight. Hand it to sweepUnpaidWins by
+    // stamping a lapsed window — never ACTIVE.
+    try {
+      const stranded = await this.prisma.listing.findMany({
+        where: {
+          listingType: 'AUCTION',
+          status: 'PAYMENT_PENDING',
+          endedAt: { not: null, lt: new Date(now - 60 * 60_000) },
+          expiresAt: null,
+          transactions: { none: {} },
+        },
+        select: { id: true },
+        take: 25,
+      });
+      for (const l of stranded) {
+        const claim = await this.prisma.listing.updateMany({
+          where: {
+            id: l.id,
+            status: 'PAYMENT_PENDING',
+            endedAt: { not: null },
+            expiresAt: null,
+            transactions: { none: {} },
+          },
+          data: { expiresAt: new Date(now - 1000) },
+        });
+        if (claim.count > 0) unstuck += 1;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `recoverAuctionSettlements stranded scan failed: ${(err as Error).message}`,
       );
     }
 
-    return outcome;
+    // (2) Ended auctions whose settlement never completed.
+    try {
+      const unsettled = await this.prisma.listing.findMany({
+        where: {
+          listingType: 'AUCTION',
+          status: { in: ['PAYMENT_PENDING', 'EXPIRED'] },
+          endedAt: { not: null, lt: new Date(now - 2 * 60_000) },
+          auctionSettledAt: null,
+        },
+        select: { id: true },
+        orderBy: { endedAt: 'asc' },
+        take: 50,
+      });
+      for (const l of unsettled) {
+        await this.settleAuctionEnded(l.id);
+        replayed += 1;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `recoverAuctionSettlements replay failed: ${(err as Error).message}`,
+      );
+    }
+
+    return { unstuck, replayed };
   }
 
   // Best-effort eviction. The auction is already committed as ended, so a
   // search-index failure (Meili down) must be logged, not thrown — the
   // hydration gate in ListingsService.browseViaSearch is the second line of
   // defence, and the unpaid-win sweep retries the delete once more.
+  /**
+   * Fan out a cancelled auction to the people it stranded (2026-11 audit H4 /
+   * M12). Sellers can no longer cancel a bid-bearing auction, so this is used
+   * by the admin take-down path and any future platform-side cancellation:
+   * resolve every open auction inbox row on the listing, expire an accepted
+   * offer, and tell each bidder — the winner included — that no sale was made
+   * and nothing is owed. Best-effort; the status change is the source of
+   * truth.
+   */
+  async announceAuctionCancelled(listingId: string): Promise<void> {
+    try {
+      const listing = await this.prisma.listing.findUnique({
+        where: { id: listingId },
+        select: { id: true, title: true, currentBidderId: true, sellerId: true },
+      });
+      if (!listing) return;
+      await this.notifications.resolveByEntity('listing', listingId, {
+        resolvedBy: 'auto_expired',
+      });
+      await this.prisma.offer
+        .updateMany({
+          where: { listingId, status: 'ACCEPTED' },
+          data: { status: 'EXPIRED' },
+        })
+        .catch(() => undefined);
+      const bidders = await this.prisma.bid.findMany({
+        where: { listingId },
+        distinct: ['bidderId'],
+        select: {
+          bidderId: true,
+          bidder: { select: { email: true, phone: true } },
+        },
+      });
+      for (const b of bidders) {
+        if (!b.bidder?.email) continue;
+        if (listing.currentBidderId === b.bidderId) {
+          await this.notifications.auctionCancelledForWinner(
+            b.bidder.email,
+            listing.title,
+            listing.id,
+            b.bidder.phone,
+          );
+        } else {
+          await this.notifications.auctionCancelledForBidder(
+            b.bidder.email,
+            listing.title,
+            listing.id,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `announceAuctionCancelled failed for ${listingId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Best-effort: republish an extended close time to the listings index and
+  // re-arm the one-shot ending-soon alert. Both are derived caches — the
+  // database is the truth — so a failure must never fail the bid.
+  private async handleAuctionExtended(
+    listingId: string,
+    endTime: Date,
+  ): Promise<void> {
+    try {
+      await this.search.updateDocuments(INDEXES.LISTINGS, [
+        { id: listingId, endTimeTs: endTime.getTime() },
+      ]);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to republish extended endTime for ${listingId}: ${(err as Error).message}`,
+      );
+    }
+    await this.prisma.listing
+      .updateMany({
+        where: { id: listingId },
+        data: { endingSoonNotifiedAt: null },
+      })
+      .catch(() => undefined);
+  }
+
   private async removeFromSearchIndex(listingId: string): Promise<void> {
     try {
       await this.search.deleteDocument(INDEXES.LISTINGS, listingId);
@@ -1105,7 +1477,16 @@ export class AuctionsService {
           status: 'PAYMENT_PENDING',
           expiresAt: { not: null, lt: now },
         },
-        data: { status: 'EXPIRED' },
+        data: {
+          status: 'EXPIRED',
+          // A new terminal state: the WON settlement markers no longer
+          // describe this row, so clear them. The settlement below re-stamps
+          // auctionSettledAt; a crash before it is repaired by the recovery
+          // sweep. winnerStruckAt null makes THIS lapse strikeable even
+          // though the WON phase was already settled.
+          auctionSettledAt: null,
+          winnerStruckAt: null,
+        },
       });
       if (claim.count === 0) continue; // winner claimed checkout in the gap
       expired += 1;
@@ -1127,29 +1508,10 @@ export class AuctionsService {
           ),
         );
       this.logger.log(`Auction ${l.id}: winner never paid within 24h → EXPIRED`);
-      void this.notifyAuctionEndedSeller(
-        l.sellerId,
-        l.id,
-        'WINNER_UNPAID',
-        l.currentBid ?? 0,
-      );
-      // FLOW-F5 (M28) — strike the winner who never paid. auctionStrikes was
-      // dead code: the place-bid gate refuses bidders with >=3 strikes, but
-      // nothing ever incremented it, so it could never fire. Mirror the
-      // seller dispatchStrikes pattern — increment + alert an admin at 3 for
-      // a manual suspension review.
-      if (l.currentBidderId) {
-        void this.strikeUnpaidWinner(l.currentBidderId, l.id);
-        // M31 — the winner never started/finished payment: resolve their
-        // stuck 'pay within 24h' inbox row and tell them the sale lapsed.
-        void this.notifyWinnerLapsed(l.currentBidderId, l.id, l.currentBid ?? 0);
-      }
-      // BIG-2 — the second-highest bidder is a proven, priced-in buyer sitting
-      // in the Bid table. Until now the seller was just told to relist and
-      // restart a 7-day auction to reach someone we already had. Offer it to
-      // the runner-up — SELLER-CONFIRMED, never automatic (same policy as
-      // offers: the platform never sells on someone's behalf).
-      void this.inviteRunnerUpOffer(l.id, l.currentBidderId);
+      // Strike the winner (exactly once), notify winner + seller, offer the
+      // item to the runner-up, and stamp the settlement. A failure leaves the
+      // marker null so recoverAuctionSettlements() replays it.
+      await this.settleAuctionEnded(l.id);
     }
     return { expired };
   }
@@ -1334,6 +1696,11 @@ export class AuctionsService {
           // Fresh window ⇒ fresh reminder eligibility (the pay-window nudge
           // guard is one-shot per stamp).
           winnerRemindedAt: null,
+          // A new sale window means a new settlement: clear the previous
+          // winner's settlement markers so this promotion (and its eventual
+          // lapse) is settled and struck on its own merits.
+          auctionSettledAt: null,
+          winnerStruckAt: null,
         },
       });
       if (claim.count === 0) return false;
@@ -1423,10 +1790,19 @@ export class AuctionsService {
 
   // FLOW-F5 (M28) — record an unpaid-auction-win strike against the winner
   // and alert an admin once they hit the 3-strike suspension threshold the
-  // place-bid gate enforces. Best-effort; a strike-write failure must never
-  // block the sweep.
-  private async strikeUnpaidWinner(bidderId: string, listingId: string) {
+  // place-bid gate enforces.
+  //
+  // Exactly-once (2026-11 audit M4): the settlement can be replayed by the
+  // recovery sweep, so the strike is claimed by CAS on the listing's
+  // winnerStruckAt marker BEFORE the counter is incremented. A replay after a
+  // crash either re-claims nothing (already struck) or strikes once.
+  private async strikeUnpaidWinnerOnce(bidderId: string, listingId: string) {
     try {
+      const claim = await this.prisma.listing.updateMany({
+        where: { id: listingId, winnerStruckAt: null },
+        data: { winnerStruckAt: new Date() },
+      });
+      if (claim.count === 0) return; // already struck
       const after = await this.prisma.user.update({
         where: { id: bidderId },
         data: { auctionStrikes: { increment: 1 }, lastStrikeAt: new Date() },
@@ -1439,44 +1815,25 @@ export class AuctionsService {
               type: 'BIDDER_AUCTION_STRIKES_THRESHOLD',
               referenceId: bidderId,
               urgent: true,
-              context: `Bidder @${after.username ?? bidderId} hit ${after.auctionStrikes} unpaid-auction-win strikes (latest: auction ${listingId}) — review for bidding suspension.`,
+              context: `Bidder @${after.username ?? bidderId} hit ${after.auctionStrikes} non-payment strikes (latest: auction ${listingId}). Bidding and offers are suspended automatically — review the strikes in the user's dossier and clear them if this was not the buyer's fault.`,
             },
           })
           .catch(() => undefined);
       }
     } catch (err) {
+      // Put the claim back ONLY when the counter write failed before it could
+      // land — anything else risks a double strike. A failed settlement is
+      // replayed by the recovery sweep thanks to auctionSettledAt staying null.
+      await this.prisma.listing
+        .updateMany({
+          where: { id: listingId, winnerStruckAt: { not: null } },
+          data: { winnerStruckAt: null },
+        })
+        .catch(() => undefined);
       this.logger.warn(
-        `strikeUnpaidWinner failed for ${bidderId}: ${(err as Error).message}`,
+        `strikeUnpaidWinnerOnce failed for ${bidderId}/${listingId}: ${(err as Error).message}`,
       );
-    }
-  }
-
-  // P0.2 review fix — Path B unpaid winner: the winner STARTED checkout
-  // (expiresAt CAS-claimed, so sweepUnpaidWins can never fire) but never
-  // paid the EFT, and the manual freeze sweep expired the listing. Give
-  // the seller the same WINNER_UNPAID story Path A already tells, instead
-  // of the sale silently evaporating. Called by the freeze sweep.
-  async notifyWinnerUnpaid(listingId: string) {
-    const listing = await this.prisma.listing.findUnique({
-      where: { id: listingId },
-      select: { sellerId: true, currentBid: true, currentBidderId: true },
-    });
-    if (!listing) return;
-    void this.notifyAuctionEndedSeller(
-      listing.sellerId,
-      listingId,
-      'WINNER_UNPAID',
-      listing.currentBid ?? 0,
-    );
-    // M31 — Path B (winner started checkout but the EFT lapsed and the
-    // freeze sweep expired the listing): resolve the winner's stuck
-    // 'pay within 24h' row + notify them the sale was cancelled.
-    if (listing.currentBidderId) {
-      void this.notifyWinnerLapsed(
-        listing.currentBidderId,
-        listingId,
-        listing.currentBid ?? 0,
-      );
+      throw err;
     }
   }
 

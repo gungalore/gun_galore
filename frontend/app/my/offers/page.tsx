@@ -1,4 +1,4 @@
-﻿import { serverAuth as auth } from '../../../lib/auth-server';
+import { serverAuth as auth } from '../../../lib/auth-server';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -59,22 +59,41 @@ export default async function MyOffersPage() {
             className="text-sm mb-5"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            Take a Shot lets you name your own price. The seller can
-            accept, counter once, or decline — you get 24 hours to act
-            on a counter.
+            Offers let you name your own price on a Buy Now or auction
+            listing. The seller can accept, counter once, or decline — you get
+            24 hours to act on a counter.
           </p>
-          <Link
-            href="/?listingType=TAKE_A_SHOT"
-            className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
-            style={{
-              background: 'var(--action-primary-bg)',
-              color: '#fff',
-              fontWeight: 500,
-              textDecoration: 'none',
-            }}
-          >
-            Browse Take a Shot listings →
-          </Link>
+          {/* ⚠️ NOT `?listingType=TAKE_A_SHOT` ANY MORE. That listing type is
+              retired (AGENTS.md), so the empty state's only call to action
+              pointed at a browse filter that matches nothing — a dead end for
+              a member who has just been told they can name their own price.
+              Offers live on BUY_NOW and AUCTION listings today. */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href="/?listingType=BUY_NOW"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--action-primary-bg)',
+                color: '#fff',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Browse Buy Now listings
+            </Link>
+            <Link
+              href="/?listingType=AUCTION"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-primary)',
+                border: '0.5px solid var(--border-visible)',
+                textDecoration: 'none',
+              }}
+            >
+              Browse auctions
+            </Link>
+          </div>
         </div>
       )}
 

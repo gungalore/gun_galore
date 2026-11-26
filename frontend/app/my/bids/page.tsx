@@ -298,36 +298,47 @@ function BidCard({
 }) {
   const ended = !!row.endedAt;
   const ahead = row.youAreHighBidder;
+  // Audit M12 — a cancelled auction used to land in this card with the
+  // "Active" pill and a "High bidder" label, because both were derived from
+  // `endedAt`/`isWinner` only and the cancel write never set `endedAt`. The
+  // listing's own status is now authoritative: the backend serves CANCELLED
+  // with `endedAt` set, and the pill/label follow `listingStatus`.
+  const cancelled = row.listingStatus === 'CANCELLED';
+  // Prominent Active vs Closed pill at the card head — the eye reads intent
+  // instantly without parsing the detail row.
+  const isActive = !row.isWinner && row.listingStatus === 'ACTIVE';
   // High bidder on a live RESERVE auction where the reserve isn't met yet:
   // "high bidder" alone reads as "winning", but the item won't sell at this
   // price — surface it so the buyer knows to bid higher.
-  const reserveShort = !ended && ahead && row.hasReserve && !row.reserveMet;
-  const statusLabel = row.isWinner
-    ? 'You won'
-    : ended
-    ? 'Lost'
-    : ahead
-    ? reserveShort
-      ? 'High bidder — reserve not met'
-      : 'High bidder'
-    : 'Outbid';
-  const statusColor = row.isWinner
-    ? 'var(--success)'
-    : ended
+  const reserveShort =
+    isActive && ahead && row.hasReserve && !row.reserveMet;
+  const statusLabel = cancelled
+    ? 'Cancelled'
+    : row.isWinner
+      ? 'You won'
+      : ended
+        ? 'Lost'
+        : ahead
+          ? reserveShort
+            ? 'High bidder — reserve not met'
+            : 'High bidder'
+          : 'Outbid';
+  const statusColor = cancelled
     ? 'var(--text-tertiary)'
-    : ahead
-    ? reserveShort
-      ? 'var(--warning)'
-      : 'var(--success)'
-    : 'var(--warning)';
-  // Prominent Active vs Closed pill at the card head — the eye reads
-  // intent instantly without parsing the detail row.
-  const isActive = !ended && !row.isWinner;
+    : row.isWinner
+      ? 'var(--success)'
+      : ended
+        ? 'var(--text-tertiary)'
+        : ahead
+          ? reserveShort
+            ? 'var(--warning)'
+            : 'var(--success)'
+          : 'var(--warning)';
   // Being outbid is the single highest-intent moment on this page and it was
-  // the only state with no button at all. Gate on listingStatus ACTIVE too
-  // (not just !endedAt) so a cancelled or already-sold listing never gets a
-  // CTA pointing at a dead auction — that mirrors the `live` bucket exactly.
-  const canIncrease = !ended && !ahead && row.listingStatus === 'ACTIVE';
+  // the only state with no button at all. `isActive` already requires
+  // listingStatus ACTIVE, so a cancelled or already-sold listing never gets a
+  // CTA pointing at a dead auction.
+  const canIncrease = isActive && !ahead;
   const timeColor = remainingColor(row.endTime);
   const timeUrgent = timeColor !== 'var(--text-tertiary)';
 
@@ -411,7 +422,7 @@ function BidCard({
                 {formatPrice(row.myMaxAmount)}
               </span>
             </span>
-            {!ended && row.endTime && (
+            {isActive && !ended && row.endTime && (
               <span
                 className="text-xs"
                 style={{
@@ -464,7 +475,7 @@ function BidCard({
               textDecoration: 'none',
             }}
           >
-            Complete Checkout — {formatPrice(row.currentBid ?? 0)}
+            Complete checkout
           </a>
         </div>
       )}

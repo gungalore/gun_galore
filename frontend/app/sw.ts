@@ -13,14 +13,24 @@
 //     30-day max. Same reasoning — URLs are fingerprinted.
 //   • Brand static assets in /public (logo, manifest, icons) —
 //     stale-while-revalidate. Updates land within a tab refresh.
-//   • HTML pages, /api/*, every auth route — deliberately
-//     NOT cached. Network-only. Prices, auctions, bids, and auth must
-//     never go stale.
+//   • HTML pages, /api/*, every auth route, every member-only route and every
+//     single-use token page — deliberately NOT cached. Network-only. Prices,
+//     auctions, bids, and auth must never go stale — and, more importantly, a
+//     document URL like /account is the SAME URL for a signed-in member and a
+//     signed-out visitor, so a URL-keyed cache cannot serve it to the second
+//     person who opens the installed app on that device.
 //   • Offline fallback pages for navigations that fail — /offline for the
 //     shop. The Desk's /admin/offline stand-in went with the Desk on
 //     2026-09-22. Which page answers a given failure is decided in
 //     lib/sw-offline.ts, because nothing under app/ is collected by vitest
-//     and a rule written here could never be tested.
+//     and a rule written here could never be tested. WHICH REQUESTS MAY NEVER
+//     BE CACHED is decided in lib/sw-caching.ts for the same reason.
+//   • ⚠️ defaultCache IS WRAPPED, NOT APPENDED RAW. Its generic same-origin
+//     rule is a NetworkFirst into cache `others` that matches documents and
+//     ignores Cache-Control; appended raw it cached /account, /my/orders,
+//     /messages and /cart HTML for 24h. lib/sw-caching.ts rewrites every
+//     defaultCache matcher so none of them can match a navigation or a private
+//     path — defence in depth under the NetworkOnly rule below.
 //
 // Kill switch: setting NEXT_PUBLIC_DISABLE_PWA=true at build time
 // disables SW generation entirely. Useful if a caching bug ships.
@@ -43,6 +53,13 @@ import {
 // written inline in this file can never go red. See lib/sw-offline.spec.ts;
 // this file is the adapter that hands serwist what that module decides.
 import { SHOP_OFFLINE_URL, shopOfflineFallbackApplies } from '../lib/sw-offline';
+// ⚠️ THE CACHE-EXCLUSION RULES LIVE THERE TOO, for the same reason — and this
+// is the fix for the 2026-11 finding that the worker served cached member HTML
+// to the next person on the device. See lib/sw-caching.ts / .spec.ts.
+import {
+  excludeUncacheableRequests,
+  mustAlwaysUseNetwork,
+} from '../lib/sw-caching';
 // ⚠️ lib/app-url.ts IS COMPILED INTO THE WORKER TOO. It must stay free of
 // `window` / `document` — see its header. The alternative was a second copy of
 // "which hostnames are ours" here, and the two would drift the first time a
@@ -62,14 +79,33 @@ declare global {
 
 declare const self: ServiceWorkerGlobalScope;
 
-// CRITICAL: bypass the service worker entirely for admin routes,
-// backend API, the auth routes, and the payment gateway hosted pages. These
-// must always hit the network fresh — admin data is real-time, API responses
-// contain auth state, sign-in sets httpOnly cookies, and the
-// gateway hosted pages must never be served from cache. Putting these
-// BEFORE every other rule (including defaultCache and the navigation
-// fallback) ensures nothing else can intercept them.
+// CRITICAL: bypass the service worker entirely for DOCUMENT NAVIGATIONS, every
+// member-only/private/credential route, admin routes, backend API, the auth
+// routes, and the payment gateway hosted pages. These must always hit the
+// network fresh — admin data is real-time, API responses contain auth state,
+// sign-in sets httpOnly cookies, and the gateway hosted pages must never be
+// served from cache. Putting these BEFORE every other rule (including
+// defaultCache and the navigation fallback) ensures nothing else can intercept
+// them.
 const networkOnlyRoutes: RuntimeCaching[] = [
+  {
+    // 🚨 THIS RULE MUST STAY FIRST, AND IT MUST KEEP MATCHING EVERY DOCUMENT.
+    //
+    // The failure it prevents is not staleness — it is DISCLOSURE. serwist's
+    // defaultCache ends in a generic same-origin NetworkFirst (cache `others`)
+    // whose matcher does not distinguish a member's `/account` from the
+    // signed-out bounce at the same URL. Appended raw, it cached member HTML
+    // for 24h and replayed it on the same device after sign-out. The routes
+    // and the reasoning live in lib/sw-caching.ts, because nothing under app/
+    // is collected by vitest; this file only assembles them.
+    matcher: ({ request, url }) =>
+      mustAlwaysUseNetwork({
+        mode: request.mode,
+        destination: request.destination,
+        pathname: url.pathname,
+      }),
+    handler: new NetworkOnly(),
+  },
   {
     // RSC navigation + prefetch payloads are build-specific — they encode
     // the current build's chunk graph. Caching them across a redeploy
@@ -118,14 +154,15 @@ const networkOnlyRoutes: RuntimeCaching[] = [
     // ⚠️ EVERY AUTH ROUTE, AND THE LIST IS DUPLICATED ELSEWHERE. A cached
     // sign-in page is a page that posts to a session that has moved on, and a
     // cached verify page shows a code entry for an account already created.
-    // SHOP_FALLBACK_EXCLUDES in lib/sw-offline.ts names the same paths for a
-    // different reason — add a new auth route to BOTH.
+    // lib/sw-caching.ts names the same paths so they are also excluded from
+    // defaultCache's matchers, and SHOP_FALLBACK_EXCLUDES in lib/sw-offline.ts
+    // names them for a different reason (never stand in for a failed
+    // navigation) — add a new auth route to ALL THREE.
     //
-    // ⚠️ AND THE TWO LISTS ARE ALREADY ONE ENTRY OUT OF STEP: `/kyc` is
-    // excluded from the shop's fallback and is NOT network-only here. Left
-    // alone deliberately — whether the hosted identity hand-off should also
-    // bypass the cache is the KYC track's call, not this one's. Recorded so
-    // the next reader knows it is a known difference rather than an oversight.
+    // ⚠️ `/kyc` USED TO BE THE KNOWN GAP HERE, and is now covered by the first
+    // rule above via lib/sw-caching.ts's private list. It is still NOT named in
+    // this matcher; no need to duplicate a path that the document/private rule
+    // already takes to the network.
     //
     // The hostname test that used to sit here was for the identity provider's
     // own domain. There is no third-party auth host any more; every one of
@@ -245,10 +282,19 @@ const serwist = new Serwist({
   clientsClaim: false,
   navigationPreload: true,
   // Order matters — Serwist evaluates routes top-down, first match
-  // wins. Network-only rules MUST come first so admin/api/auth always
-  // bypass caching entirely. Image rules come next so Cloudinary
-  // doesn't get intercepted by defaultCache's generic image matcher.
-  runtimeCaching: [...networkOnlyRoutes, ...imageCaching, ...defaultCache],
+  // wins. Network-only rules MUST come first so documents, private routes,
+  // admin/api/auth always bypass caching entirely. Image rules come next so
+  // Cloudinary doesn't get intercepted by defaultCache's generic image matcher.
+  //
+  // ⚠️ defaultCache IS WRAPPED BY excludeUncacheableRequests, NOT APPENDED
+  // RAW — that wrapper is what stops its generic same-origin NetworkFirst
+  // (cache `others`) from storing a document after all. See
+  // lib/sw-caching.ts for the failure this prevents.
+  runtimeCaching: [
+    ...networkOnlyRoutes,
+    ...imageCaching,
+    ...excludeUncacheableRequests(defaultCache),
+  ],
   // Navigation fallback — when a document request fails and the page isn't
   // cached, serve a stand-in instead of the browser's default network error.
   //

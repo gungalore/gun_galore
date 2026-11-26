@@ -219,7 +219,8 @@ describe('normaliseEligibility', () => {
     expect(hrefFor('PAYOUT_DUE')).toBe('/my/earnings');
     expect(hrefFor('UNDELIVERED')).toBe('/shipping');
     expect(hrefFor('FIREARM_TRANSFER')).toBe('/shipping');
-    expect(hrefFor('OPEN_COMPLAINT')).toBe('/complaints');
+    // The member's own case list — `/complaints` is only the procedure page.
+    expect(hrefFor('OPEN_COMPLAINT')).toBe('/account/complaints');
     expect(hrefFor('LIVE_AUCTION')).toBe('/my/listings');
     expect(hrefFor('MID_CHECKOUT')).toBe('/my/listings');
     expect(hrefFor('OPEN_OFFERS')).toBe('/my/offers');

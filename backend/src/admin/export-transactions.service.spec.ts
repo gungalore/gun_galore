@@ -18,6 +18,7 @@ function makeService(rows: Record<string, unknown>[]) {
     { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     {} as never, // notifications
     {} as never, // listings
+    {} as never, // auctions
     audit as never,
     {} as never, // zohoBooks
     {} as never, // ozow

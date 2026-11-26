@@ -17,6 +17,7 @@ import { SessionService } from '../auth/session.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
+import { AuctionsService } from '../auctions/auctions.service';
 import { AdminAuditService } from './admin-audit.service';
 import {
   adminAlertGroup,
@@ -72,6 +73,9 @@ export class AdminService {
     private readonly files: SecureFileStorageService,
     private readonly notifications: NotificationsService,
     private readonly listings: ListingsService,
+    // Auction fan-out for a take-down of a live/awaiting-payment auction
+    // (2026-11 audit M7). Provided by AuctionsModule.
+    private readonly auctions: AuctionsService,
     private readonly audit: AdminAuditService,
     // @Global so no module import. Used by refundTransaction() to
     // post a Credit Note to Books reversing the original commission
@@ -518,6 +522,22 @@ export class AdminService {
     });
     if (!existing) throw new NotFoundException('Listing not found');
 
+    // ⚠️ NEVER take down a listing with money against it. A paid transaction
+    // must be refunded through the transaction flow (which moves the money on
+    // the locked rail); flipping it CANCELLED would mute the sale without
+    // returning a cent (2026-11 audit M7, and the paid-but-cancelled case
+    // markPaid already has to alert on).
+    const paidTransaction = await this.prisma.transaction.findFirst({
+      where: { listingId, paidAt: { not: null } },
+      select: { id: true },
+    });
+    if (paidTransaction) {
+      throw new BadRequestException(
+        'This listing has a paid sale against it. Refund that transaction from its order page instead of deleting the listing.',
+      );
+    }
+
+    const isAuction = existing.listingType === 'AUCTION';
     const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data: {
@@ -525,6 +545,12 @@ export class AdminService {
         adminReviewedById: adminId,
         adminReviewedAt: new Date(),
         adminOverrideReason: trimmedReason,
+        // An admin take-down of an auction is terminal too: stamp the close
+        // and the settlement marker so the recovery sweep does not later
+        // replay a settlement for a row a human has already dealt with.
+        ...(isAuction
+          ? { endedAt: existing.endedAt ?? new Date(), auctionSettledAt: new Date() }
+          : {}),
       },
       include: {
         seller: {
@@ -536,6 +562,14 @@ export class AdminService {
     // Remove from search immediately (reindexById is no-op on
     // non-ACTIVE so the explicit removal is the safer call here).
     void this.listings.removeFromIndex(listingId);
+
+    // An auction take-down strands the bidders and/or the winner: tell them
+    // no sale was made, resolve their open inbox rows and expire any accepted
+    // offer. Without this the winner kept a pay-now link that could never
+    // succeed and every bidder kept a non-dismissible "outbid" row forever.
+    if (isAuction) {
+      void this.auctions.announceAuctionCancelled(listingId);
+    }
 
     // Notify the seller. Separate template from listingRejected
     // because the wording differs — "rejected at review" ≠
@@ -1041,6 +1075,54 @@ export class AdminService {
       reason: 'Seller reject-strikes cleared after review',
     });
     return { cleared: true };
+  }
+
+  /**
+   * Clear a bidder's non-payment strikes after review and lift the automatic
+   * bidding/offer suspension (2026-11 audit M5).
+   *
+   * The counter had no write path other than increments, so a buyer who hit 3
+   * (including through our own gateway outage or a payment page that would not
+   * load) was blocked from bidding and offers FOREVER, with the alert copy
+   * claiming an admin would "review" a suspension that had already happened
+   * automatically. This is that review. Auction/offer non-payment shares one
+   * counter, so clearing it clears both — say so in the UI.
+   */
+  async clearAuctionStrikes(userId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException(
+        'Give a reason for clearing these strikes — it goes into the audit trail.',
+      );
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, auctionStrikes: true, username: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.auctionStrikes === 0) return { cleared: false, auctionStrikes: 0 };
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { auctionStrikes: 0 },
+    });
+    await this.prisma.adminAlert.updateMany({
+      where: {
+        type: 'BIDDER_AUCTION_STRIKES_THRESHOLD',
+        referenceId: userId,
+        resolved: false,
+      },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'BIDDER_AUCTION_STRIKES_CLEARED',
+      resourceType: 'User',
+      resourceId: userId,
+      oldValue: { auctionStrikes: user.auctionStrikes },
+      newValue: { auctionStrikes: 0 },
+      reason: trimmed,
+    });
+    return { cleared: true, auctionStrikes: 0 };
   }
 
   // The seller's reject-strike ledger (newest first), so an admin can see WHY

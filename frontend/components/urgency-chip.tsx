@@ -20,7 +20,10 @@ export function UrgencyChip({
       }
       style={{
         background: 'var(--red-wash)',
-        color: 'var(--red)',
+        // Audit L18 — var(--red) ink is the night-sky blue in dark mode and
+        // failed AA on the wash (11px text). The red identity stays in the
+        // wash + border; the text takes the theme's high-contrast ink.
+        color: 'var(--text-primary)',
         fontWeight: 500,
         border: '0.5px solid var(--red)',
         whiteSpace: 'nowrap',

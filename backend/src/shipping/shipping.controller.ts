@@ -8,6 +8,7 @@ import {
   HttpCode,
   Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { DealersService } from './dealers.service';
 import {
   ShippingService,
@@ -61,9 +62,16 @@ export class ShippingController {
   // priceCents is what the checkout breakdown shows AND what we
   // re-quote at transaction-create time so the buyer's card lands on
   // the exact amount they saw. Public — listings are public anyway.
+  //
+  // ⚠️ EACH REQUEST IS A PAID BOB GO CALL. The route is unauthenticated by
+  // design (the checkout form runs before sign-in on token checkouts), so the
+  // global bucket alone lets a script burn the carrier's rate-limit and our
+  // wallet. Throttle per IP; the delivery-options routes below proxy the same
+  // paid lookup and carry the same limit.
   // ---------------------------------------------------------------
   @Post('quote')
   @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async quote(@Body() body: QuoteRequestBody) {
     return this.shipping.quoteForListing(body);
   }
@@ -94,17 +102,20 @@ export class ShippingController {
   // and referrers.
   @Post('delivery-options/cart')
   @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async cartDeliveryOptions(@Body() body: CartDeliveryOptionsDto) {
     return this.shipping.deliveryOptionsForCart(body.lines, body.deliveryAddress);
   }
 
   // The buyer's delivery option for ONE listing — the cheapest Bob Go door
-  // rate for this parcel and route.
+  // rate for this parcel and route. Like POST quote, this is a paid carrier
+  // lookup and public, so it carries the same per-IP throttle (see above).
   //
   // POST, not GET, because it carries a delivery address — a GET would put the
   // buyer's street address in a URL, and URLs end up in logs and referrers.
   @Post('delivery-options')
   @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async deliveryOptions(
     @Body()
     body: {

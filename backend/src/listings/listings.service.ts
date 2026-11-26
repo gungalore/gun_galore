@@ -1735,38 +1735,60 @@ export class ListingsService {
       if (!dto.durationDays) {
         throw new BadRequestException('Auction duration is required');
       }
-      // Starting-bid rule. Two modes:
-      //   1) Reserve set → starting = floor(reserve * 0.7). We OVERWRITE
-      //      whatever the seller submitted as `price` so the rule is
-      //      enforced server-side and can't be tampered with via the
-      //      payload.
-      //   2) No reserve → seller's typed `price` is the starting bid.
+      // Starting-bid rule (2026-11 audit M2 — the seller now sets this):
+      //   • Reserve set → the seller chooses the starting bid; it must be
+      //     positive and no higher than the reserve. If they leave it blank we
+      //     derive floor(reserve * 0.7) as a default only. A FIXED 70% rule
+      //     made the "hidden" reserve trivially derivable (starting / 0.7), so
+      //     the derivation is no longer enforced or published.
+      //   • No reserve → the seller's typed `price` is the starting bid.
       //
-      // ⚠️ THE DURATION'S MINIMUM-VALUE FLOOR IS CHECKED HERE, BEFORE THE
-      // 30%-UNDER DERIVATION, so it reads the RESERVE when one is set and the
-      // seller's typed starting bid when there isn't — never the derived
-      // figure. See AUCTION_MIN_VALUE_CENTS.
+      // ⚠️ THE DURATION'S MINIMUM-VALUE FLOOR APPLIES TO THE COMMITTED VALUE —
+      // the RESERVE when one is set (the derived/typed starting bid may sit
+      // below it by design), the typed starting bid when there is no reserve.
+      // See AUCTION_MIN_VALUE_CENTS.
       const minValueCents = AUCTION_MIN_VALUE_CENTS[dto.durationDays];
-      const committedValueCents = dto.reservePrice ?? dto.price ?? 0;
-      if (minValueCents && committedValueCents < minValueCents) {
-        const what = dto.reservePrice ? 'reserve' : 'starting bid';
-        const floorRand = Math.round(minValueCents / 100)
-          .toString()
-          .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        throw new BadRequestException(
-          `A ${dto.durationDays}-day auction needs a ${what} of at least R${floorRand}.`,
-        );
-      }
+      const typedStartingBid =
+        typeof dto.price === 'number' && dto.price > 0 ? dto.price : null;
       if (dto.reservePrice) {
-        // Pre-derive the starting bid from the reserve before the row
-        // insert below reads `dto.price`. Mutating the DTO is the
-        // simplest way to keep both insert paths in sync (the create
-        // call reads `dto.price ?? null` directly).
-        dto.price = Math.floor(dto.reservePrice * 0.7);
-      } else if (!dto.price || dto.price <= 0) {
-        throw new BadRequestException(
-          'Set a starting bid (or set a reserve and we will derive it at 30% below).',
-        );
+        const floorRand = minValueCents
+          ? Math.round(minValueCents / 100)
+              .toString()
+              .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+          : null;
+        if (minValueCents && dto.reservePrice < minValueCents) {
+          throw new BadRequestException(
+            `A ${dto.durationDays}-day auction needs a reserve of at least R${floorRand}.`,
+          );
+        }
+        const startingBid =
+          typedStartingBid ?? Math.floor(dto.reservePrice * 0.7);
+        if (startingBid <= 0) {
+          throw new BadRequestException(
+            'Set a starting bid for the auction.',
+          );
+        }
+        if (startingBid > dto.reservePrice) {
+          throw new BadRequestException(
+            'The starting bid must not be above the reserve.',
+          );
+        }
+        dto.price = startingBid;
+      } else {
+        if (!typedStartingBid) {
+          throw new BadRequestException(
+            'Set a starting bid for the auction.',
+          );
+        }
+        if (minValueCents && typedStartingBid < minValueCents) {
+          const floorRand = Math.round(minValueCents / 100)
+            .toString()
+            .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          throw new BadRequestException(
+            `A ${dto.durationDays}-day auction needs a starting bid of at least R${floorRand}.`,
+          );
+        }
+        dto.price = typedStartingBid;
       }
       // Auction fixed-price option is retired (operator decision): the sell form no
       // longer offers it and there is no buyer path for it. Reject it rather
@@ -2245,11 +2267,11 @@ export class ListingsService {
       this.prisma.listingFaq.count({
         where: { listingId: id, hiddenAt: null },
       }),
-      // Watchers and bids only exist on auctions; a buy-now listing can skip
-      // both round-trips entirely.
-      isAuction
-        ? this.prisma.auctionWatch.count({ where: { listingId: id, ...last7d } })
-        : 0,
+      // Watching IS saving to the wishlist (2026-11 audit L6): the dedicated
+      // AuctionWatch table was a dormant stub — no frontend ever wrote to it,
+      // so auctions reported "0 watching" on every listing. No extra query:
+      // the wishlist headcount and 7-day count are already above.
+      0,
       isAuction
         ? this.prisma.bid.count({ where: { listingId: id, ...last7d } })
         : 0,
@@ -2276,7 +2298,12 @@ export class ListingsService {
       // bidCount is the denormalised counter every bid write already bumps,
       // so the lifetime figure needs no aggregate at all.
       bids: { total: listing.bidCount, last7d: bids7d },
-      watchers: { total: listing._count.watchers, last7d: watchers7d },
+      // For auctions "watchers" is the wishlist headcount — see the L6 note
+      // where the count is read. AuctionWatch is a dormant historical table.
+      watchers: {
+        total: isAuction ? listing._count.wishlistedBy : 0,
+        last7d: isAuction ? saves7d : 0,
+      },
       // Hidden entries are platform-moderated out of the public Q&A, so they
       // must not count as visible questions either.
       questions: {
@@ -2799,10 +2826,12 @@ export class ListingsService {
     // correct. Leaf categories have no children indexed under them, so
     // this behaves identically to an exact match for leaves.
     if (categoryId)
-      filterParts.push(`(categoryId = "${categoryId}" OR parentId = "${categoryId}")`);
+      filterParts.push(
+        `(categoryId = "${categoryId.replace(/(["\\])/g, '\\$1')}" OR parentId = "${categoryId.replace(/(["\\])/g, '\\$1')}")`,
+      );
     if (categorySlug)
       filterParts.push(
-        `(categorySlug = "${categorySlug}" OR parentSlug = "${categorySlug}")`,
+        `(categorySlug = "${categorySlug.replace(/(["\\])/g, '\\$1')}" OR parentSlug = "${categorySlug.replace(/(["\\])/g, '\\$1')}")`,
       );
     // Multi-select — a buyer can tick BUY_NOW *and* AUCTION, or two
     // provinces, or two conditions. One value keeps the exact `field = "X"`
@@ -3318,6 +3347,54 @@ export class ListingsService {
     // commitment on one item then swaps it. assertEditable throws
     // 409 if locked.
     await this.assertEditable(listing);
+
+    // ── Auction edit rules (2026-11 audit M1) ────────────────────────────
+    // create() enforces a whole set of auction invariants (duration ↔ value
+    // floor, starting bid ≤ reserve, no fixed-price). The edit path used to
+    // spread the raw DTO into Prisma, so a live pre-bid auction could be
+    // edited to a R1 starting bid on a 14-day run (floor R10,000), gain a
+    // reserve, or even gain the retired buyNowPrice. Those fields are fixed
+    // once published — cancel + relist to change them. The STARTING BID stays
+    // editable while there are no bids (it is the advertised opening price),
+    // but it must still satisfy the same rules as create.
+    if (listing.listingType === ListingType.AUCTION) {
+      if (
+        dto.reservePrice !== undefined ||
+        dto.durationDays !== undefined ||
+        dto.buyNowPrice !== undefined
+      ) {
+        throw new BadRequestException(
+          "An auction's length, reserve and fixed price are fixed once published — cancel and relist to change them.",
+        );
+      }
+      if (dto.price !== undefined) {
+        const startingBid = dto.price;
+        if (!startingBid || startingBid <= 0) {
+          throw new BadRequestException(
+            'Set a starting bid for the auction.',
+          );
+        }
+        if (listing.reservePrice !== null && startingBid > listing.reservePrice) {
+          throw new BadRequestException(
+            'The starting bid must not be above the reserve.',
+          );
+        }
+        const minValueCents = listing.durationDays
+          ? AUCTION_MIN_VALUE_CENTS[listing.durationDays]
+          : undefined;
+        const committedValueCents = listing.reservePrice ?? startingBid;
+        if (minValueCents && committedValueCents < minValueCents) {
+          const floorRand = Math.round(minValueCents / 100)
+            .toString()
+            .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          throw new BadRequestException(
+            `A ${listing.durationDays}-day auction needs a ${
+              listing.reservePrice ? 'reserve' : 'starting bid'
+            } of at least R${floorRand}.`,
+          );
+        }
+      }
+    }
 
     // AMMUNITION BAN — the edit path is the obvious bypass: publish something
     // innocent, then rewrite it into ammunition once it is live. Checked
@@ -3900,6 +3977,22 @@ export class ListingsService {
       );
     }
 
+    // ⚠️ A seller cannot pull an auction once buyers have committed (2026-11
+    // audit H4). This mirrors the edit lock and the account-closure rule, and
+    // replaces the old behaviour where a seller could void every bid in the
+    // closing seconds with no consequence and no notice to the bidders. The
+    // atomic write below re-asserts bidCount = 0 so a bid landing in the race
+    // cannot be cancelled out from under its bidder.
+    if (listing.listingType === ListingType.AUCTION && listing.bidCount > 0) {
+      throw new ConflictException({
+        message:
+          'This auction has bids on it and can no longer be cancelled. Let it run, or contact support if something is wrong.',
+        code: 'listing-locked-by-bids',
+        bidCount: listing.bidCount,
+        listingId: id,
+      });
+    }
+
     // Atomic guard: cancel only while the listing is still in a cancellable
     // state, so a buyer reserving between assertOwner and this write can't be
     // raced into a cancelled-but-paid sale.
@@ -3907,8 +4000,19 @@ export class ListingsService {
       where: {
         id,
         status: { notIn: [ListingStatus.PAYMENT_PENDING, ListingStatus.SOLD] },
+        ...(listing.listingType === ListingType.AUCTION
+          ? { bidCount: 0 }
+          : {}),
       },
-      data: { status: ListingStatus.CANCELLED },
+      data: {
+        status: ListingStatus.CANCELLED,
+        // A cancelled auction is terminal — stamp when, so every consumer
+        // (My Bids pill, auction state, dashboards) reads one consistent
+        // lifecycle instead of inferring "active" from a null endedAt.
+        ...(listing.listingType === ListingType.AUCTION
+          ? { endedAt: new Date() }
+          : {}),
+      },
     });
     if (result.count === 0) {
       throw new BadRequestException(
@@ -4797,18 +4901,34 @@ export class ListingsService {
     }
   }
 
-  /** Public read of the lock state — used by /listings/:id detail so
-   *  the frontend can hide the Edit button without trial-and-error
-   *  on the update endpoint. Returns `{ canEdit, reason? }`. */
-  async getEditLockState(listingId: string): Promise<{
+  /** Owner-only read of the lock state — used by the PDP seller controls and
+   *  the edit page so they can hide the Edit button without trial-and-error
+   *  on the PATCH endpoint. Returns `{ canEdit, reason?, code? }`.
+   *
+   *  ⚠️ This USED to be public with no guard at all, which made it an
+   *  unauthenticated existence oracle for DRAFT/PENDING_REVIEW/CANCELLED
+   *  listings and disclosed live offer state on someone else's listing
+   *  (2026-11 audit M8). A non-owner gets the same generic "not found" answer
+   *  as a missing row. */
+  async getEditLockState(
+    listingId: string,
+    userId?: string,
+  ): Promise<{
     canEdit: boolean;
     reason: string | null;
     code: string | null;
   }> {
+    const notFound = {
+      canEdit: false,
+      reason: 'Listing not found',
+      code: 'not-found',
+    };
+    if (!userId) return notFound;
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
       select: {
         id: true,
+        sellerId: true,
         listingType: true,
         status: true,
         bidCount: true,
@@ -4816,9 +4936,7 @@ export class ListingsService {
         acceptsOffers: true,
       },
     });
-    if (!listing) {
-      return { canEdit: false, reason: 'Listing not found', code: 'not-found' };
-    }
+    if (!listing || listing.sellerId !== userId) return notFound;
     if (
       listing.status === ListingStatus.SOLD ||
       listing.status === ListingStatus.CANCELLED

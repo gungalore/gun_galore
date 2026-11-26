@@ -12,6 +12,12 @@ import {
 } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+// ⚠️ THE SIGN-OUT HALF OF THE SERVICE-WORKER CACHE FIX. The worker no longer
+// caches documents or member routes, but caches written by an OLDER deployed
+// worker are still on this device — and on a shared phone the next person to
+// open the installed app must not inherit the previous member's cached
+// /account, /my/orders or notifications HTML. See lib/sw-caching.ts.
+import { purgePrivateServiceWorkerCaches } from './sw-caching';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -209,6 +215,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tokenRef.current = null;
       expiryRef.current = 0;
       setUser(null);
+      // Best-effort and awaited before the redirect: a purge that races the
+      // navigation may be cut off, leaving the old caches on the device. The
+      // helper swallows every failure, so a browser without Cache Storage
+      // (private mode, insecure context) still signs out.
+      await purgePrivateServiceWorkerCaches();
       if (typeof opts === 'function') {
         opts();
         return;

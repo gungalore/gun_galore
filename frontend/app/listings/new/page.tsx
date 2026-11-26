@@ -1545,6 +1545,15 @@ export default function NewListingPage() {
           `${what} of at least ${formatAuctionFloor(floor.minCents)} for a ${form.durationDays}-day auction`,
         );
       }
+      // A seller-chosen starting bid must sit below the reserve — at or above
+      // it the reserve is not a reserve at all.
+      if (
+        hasReserve &&
+        hasPrice &&
+        Math.round(parseFloat(form.price) * 100) > reserveCents
+      ) {
+        step3.push('Starting bid below the reserve');
+      }
     } else if (form.listingType !== 'TAKE_A_SHOT') {
       // TAKE_A_SHOT needs no price — the buyer names one.
       if (!hasPrice) step3.push('Your price');
@@ -1977,9 +1986,11 @@ export default function NewListingPage() {
     // `price` is sent exactly as the seller typed it. For BUY_NOW that IS the
     // listed price; the buyer-paid Platform Fee is calculated at checkout, so
     // never add a fee here or it would be charged twice.
-    // For AUCTION it is the starting bid, unchanged.
-    if (!isPriceless) {
-      body.price = Math.round(parseFloat(form.price) * 100);
+    // For AUCTION it is the starting bid (optional when a reserve is set —
+    // the backend derives a 70% default only when it is omitted).
+    const typedPrice = parseFloat(form.price);
+    if (!isPriceless && Number.isFinite(typedPrice) && typedPrice > 0) {
+      body.price = Math.round(typedPrice * 100);
     }
     // UX-7 — optional compare-at ("was") price, BUY_NOW only. Display-only;
     // the backend validates it (> price, ≤ 4× price) and never uses it in fees.
@@ -2005,14 +2016,10 @@ export default function NewListingPage() {
     if (form.listingType === 'AUCTION') {
       body.durationDays = parseInt(form.durationDays, 10);
       if (form.reservePrice) {
-        const reserveCents = Math.round(parseFloat(form.reservePrice) * 100);
-        body.reservePrice = reserveCents;
-        // Auction-with-reserve: starting bid is derived as 30% below
-        // the reserve (= 70% of reserve), rounded DOWN so we never start
-        // ABOVE the 30% mark. Whatever the seller typed into the
-        // starting-bid input is ignored on this path — the input is
-        // hidden anyway when a reserve is set.
-        body.price = Math.floor(reserveCents * 0.7);
+        body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
+        // The starting bid is the seller's choice (the field stays visible
+        // when a reserve is set). Left blank, we omit `price` and the backend
+        // derives a 70% default. Never override a typed value.
       }
       // Auction fixed-price option is retired and create() rejects it. Nothing may send
       // buyNowPrice here, including a relist of a legacy auction.
@@ -3417,10 +3424,12 @@ export default function NewListingPage() {
             )}
 
             {/* Auction block — Duration + Reserve + Starting bid.
-                When the seller sets a reserve, the starting bid is
-                hidden + derived as floor(reserve * 0.7). When they
-                leave reserve blank, they type the starting bid
-                directly. Marketplace removed per operator decision. */}
+                The starting bid is ALWAYS the seller's choice now: typed
+                directly with no reserve, or typed as the opening figure
+                below the reserve (blank = a 70% default). A fixed 70% rule
+                made the "hidden" reserve trivially derivable, so it is no
+                longer enforced or published. Marketplace removed per
+                operator decision. */}
             {form.listingType === 'AUCTION' && (
               <>
                 <Field label="Duration" required>
@@ -3442,10 +3451,9 @@ export default function NewListingPage() {
                     <>
                       The lowest price you&apos;ll accept. Hidden from
                       bidders. Bids count toward closing the sale only
-                      once they meet this number. When set, the starting
-                      bid is automatically 30% below your reserve so
-                      bidding can start low without giving the number
-                      away.
+                      once they meet this number. You choose the starting
+                      bid below it; the reserve amount is only revealed
+                      once bidding reaches it.
                     </>
                   }
                 >
@@ -3457,72 +3465,71 @@ export default function NewListingPage() {
                 </Field>
 
                 {form.reservePrice ? (
-                  // ─── Reserve set → starting bid is derived ────
+                  // ─── Reserve set → seller chooses the opening bid ────
                   (() => {
                     const reserveCents = Math.round(
                       parseFloat(form.reservePrice || '0') * 100,
                     );
-                    const startCents = Math.floor(reserveCents * 0.7);
+                    const defaultStartCents = Math.floor(reserveCents * 0.7);
+                    const defaultStartRand = (
+                      defaultStartCents / 100
+                    ).toLocaleString('en-ZA', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    });
                     return (
-                      <div
-                        style={{
-                          background: 'var(--bg-inset)',
-                          border: '0.5px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '12px 14px',
-                        }}
-                      >
-                        <p
-                          className="text-xs uppercase mb-1"
+                      <>
+                        <Field
+                          label="Starting bid"
+                          tipLabel="How you get paid"
+                          tipTitle="How you get paid"
+                          tip={
+                            <>
+                              Bidding sets the final price and our 5%
+                              commission comes off it. Accept the order
+                              within 48 hours, then hand the item over
+                              within 5 days. Your payout is released once
+                              delivery is confirmed — allow 2-3 business
+                              days to reach your bank.
+                            </>
+                          }
+                          hint={`The opening bid buyers see. Keep it below your reserve. Leave blank to start at R${defaultStartRand} (70% of your reserve).`}
+                        >
+                          <PriceInput
+                            value={form.price}
+                            onChange={(v) => set('price', v)}
+                            placeholder={`${defaultStartRand} (default)`}
+                          />
+                        </Field>
+                        <div
                           style={{
-                            color: 'var(--text-tertiary)',
-                            letterSpacing: '0.05em',
+                            background: 'var(--bg-inset)',
+                            border: '0.5px solid var(--border)',
+                            borderRadius: 6,
+                            padding: '12px 14px',
                           }}
                         >
-                          Starting bid (calculated)
-                        </p>
-                        <p
-                          className="text-lg"
-                          style={{
-                            color: 'var(--text-primary)',
-                            fontWeight: 500,
-                          }}
-                        >
-                          R{(startCents / 100).toLocaleString('en-ZA', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </p>
-                        <p
-                          className="text-xs mt-1 mb-3"
-                          style={{ color: 'var(--text-tertiary)' }}
-                        >
-                          Set at 30% below your reserve. Buyers see this
-                          as the opening bid; we never reveal the
-                          reserve itself.
-                        </p>
-                        {/* Payout preview is computed on the RESERVE,
-                            not the starting bid. The starting bid is a
-                            hook to get bidding going — what the seller
-                            actually cares about is what they'll receive
-                            IF the auction reaches reserve. */}
-                        <p
-                          className="text-xs uppercase mb-1 mt-4"
-                          style={{
-                            color: 'var(--text-tertiary)',
-                            letterSpacing: '0.05em',
-                          }}
-                        >
-                          If the auction reaches your reserve of R
-                          {(reserveCents / 100).toLocaleString('en-ZA', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </p>
-                        <PriceBreakdown
-                          priceCents={reserveCents}
-                        />
-                      </div>
+                          {/* Payout preview is computed on the RESERVE,
+                              not the starting bid. The starting bid is a
+                              hook to get bidding going — what the seller
+                              actually cares about is what they'll receive
+                              IF the auction reaches reserve. */}
+                          <p
+                            className="text-xs uppercase mb-2"
+                            style={{
+                              color: 'var(--text-tertiary)',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            If the auction reaches your reserve of R
+                            {(reserveCents / 100).toLocaleString('en-ZA', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                          <PriceBreakdown priceCents={reserveCents} />
+                        </div>
+                      </>
                     );
                   })()
                 ) : (

@@ -45,6 +45,13 @@ describe('NotificationsService.complaintStatusChanged — supersede', () => {
       resolvedBy: 'auto_expired',
     });
     expect(calls).toEqual(['resolve', 'persist']);
+    // The row and the email CTA both land on the MEMBER complaints page, not
+    // the static legal /complaints explainer.
+    expect(svc.persistByEmail.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ url: '/account/complaints' }),
+    );
+    const html = svc.send.mock.calls[0][2] as string;
+    expect(html).toContain('/account/complaints');
   });
 
   it('also supersedes on a closing status (verdict row replaces the ask)', async () => {

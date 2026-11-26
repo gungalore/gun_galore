@@ -47,8 +47,12 @@ describe('moduleForNotification', () => {
     expect(moduleForNotification('cancellation_requested_buyer', 'BUYER')).toBe('/my/orders');
   });
 
-  it('routes complaint updates to the Complaints module', () => {
-    expect(moduleForNotification('complaint_status_changed', 'ACCOUNT')).toBe('/complaints');
+  it('routes complaint updates to the member complaints page', () => {
+    // /account/complaints is the member case page; the static /complaints
+    // legal page is not where a case is read or answered.
+    expect(moduleForNotification('complaint_status_changed', 'ACCOUNT')).toBe(
+      '/account/complaints',
+    );
   });
 
   it('routes the Licence Centre documents (tracker + motivations) to /licence-centre', () => {

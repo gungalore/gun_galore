@@ -21,6 +21,7 @@ import {
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { TransactionsService } from '../payments/transactions.service';
+import { ListingsService } from '../listings/listings.service';
 import { sellerBreakdown } from '../payments/fee-presentation';
 import {
   nextPickupDay,
@@ -28,6 +29,47 @@ import {
   soonestPickupDate,
 } from '../shipping/pickup-dates';
 import { cutoffHour, resolveServiceLevel } from '../shipping/service-levels';
+
+/** Public listing snapshot a token checkout page can render without a session. */
+interface CheckoutListingSnapshot {
+  id: string;
+  title: string;
+  listPrice: number | null;
+  reference: string | null;
+  primaryImageUrl: string | null;
+  status: string;
+}
+
+/**
+ * Payload returned by GET /actions/:token for a CHECKOUT token.
+ *
+ * Two shapes, switched on the token's targetType:
+ *  - listing → auction-winner / Buy-Now checkout (`/checkout/<id>?t=`);
+ *  - offer   → accepted-offer pay window (`/checkout/offer/<id>?t=`), with the
+ *              offer snapshot the token page needs to explain the deal.
+ */
+type CheckoutResolvePayload =
+  | {
+      kind: 'CHECKOUT';
+      expiresAt: string;
+      greeting: string;
+      listing: CheckoutListingSnapshot;
+      redirectTo: string;
+    }
+  | {
+      kind: 'CHECKOUT';
+      expiresAt: string;
+      greeting: string;
+      listing: CheckoutListingSnapshot;
+      offer: {
+        id: string;
+        amount: number;
+        counterAmount: number | null;
+        expiresAt: string;
+        status: string;
+      };
+      redirectTo: string;
+    };
 
 /**
  * Public, token-gated endpoints powering the /a/<token> SMS-link
@@ -66,6 +108,10 @@ export class ActionTokensController {
     private readonly auctions: AuctionsService,
     @Inject(forwardRef(() => TransactionsService))
     private readonly transactions: TransactionsService,
+    // Needed by GET :token/checkout-listing — a CHECKOUT link is the only
+    // credential a signed-out auction winner has, so the checkout page must be
+    // able to read its one listing without a session or the ao_cat gate cookie.
+    private readonly listings: ListingsService,
   ) {}
 
   // ─── Resolve: render data for the /a/:token page ─────────────────
@@ -120,6 +166,87 @@ export class ActionTokensController {
       default:
         throw new BadRequestException(`Unknown token purpose: ${resolved.purpose}`);
     }
+  }
+
+  // ─── CHECKOUT token: read the one listing it authorises ──────────
+  //
+  // The winner's "pay within 24h" SMS/email lands on /a/<token>, which
+  // redirects to /checkout/<listingId>?t=<token>. That page is exempt from
+  // the 18+ gate because the token is the credential — but its SERVER-side
+  // listing fetch carries no cookies, so GET /listings/:id (which sits behind
+  // ContentAccessGuard) 404s and the winner sees the not-found page. This
+  // endpoint is the token-scoped replacement: it validates the token, then
+  // serves the same public listing projection for that ONE target.
+  //
+  // Deliberately narrow:
+  //  - CHECKOUT tokens only (the only kind that can pay a listing);
+  //  - the listing must be the token's own target and an AUCTION (the only
+  //    thing CHECKOUT tokens are ever minted for today);
+  //  - no userId is passed to findById, so the public projection is returned
+  //    (no owner extras such as reservePrice);
+  //  - the token is NOT consumed by a read (the page can be reloaded).
+  @Get(':token/checkout-listing')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async checkoutListing(@Param('token') token: string) {
+    const resolved = await this.tokens.resolve(token);
+    if (resolved.purpose !== 'CHECKOUT' || resolved.targetType !== 'listing') {
+      await this.tokens.markInvalid(token);
+      throw new ForbiddenException('This link cannot perform that action.');
+    }
+    const listing = await this.listings
+      .findById(resolved.targetId)
+      .catch(() => null);
+    if (!listing || listing.listingType !== 'AUCTION') {
+      throw new NotFoundException('Listing not found');
+    }
+    return listing;
+  }
+
+  // ─── CHECKOUT token on an ACCEPTED OFFER ────────────────────────
+  //
+  // The accepted-offer pay-now SMS/email lands on /a/<token>, which redirects
+  // to /checkout/offer/<offerId>?t=<token>. That page is exempt from the 18+
+  // gate and needs no session (the token is the credential), but its
+  // SERVER-side offer fetch cannot use the authenticated GET /offers/:id — so
+  // this endpoint is the token-scoped replacement. It returns exactly what the
+  // offer checkout form needs, and nothing more:
+  //  - CHECKOUT tokens only, and only on the token's OWN target offer;
+  //  - the token's buyer must still be the offer's buyer (a re-issued token
+  //    for a different account must not read somebody else's negotiation);
+  //  - the listing is the PUBLIC projection (ListingsService.findById with no
+  //    userId), so no owner extras such as reserve price/auto-accept;
+  //  - the token is NOT consumed by a read (the page can be reloaded, and a
+  //    failed Pay must not burn the only link the buyer has).
+  @Get(':token/offer-checkout')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async offerCheckout(@Param('token') token: string) {
+    const resolved = await this.tokens.resolve(token);
+    if (resolved.purpose !== 'CHECKOUT' || resolved.targetType !== 'offer') {
+      await this.tokens.markInvalid(token);
+      throw new ForbiddenException('This link cannot perform that action.');
+    }
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: resolved.targetId },
+      select: {
+        id: true,
+        status: true,
+        offerAmount: true,
+        counterAmount: true,
+        expiresAt: true,
+        buyerId: true,
+        listingId: true,
+      },
+    });
+    // Same 404 for "gone" and "not yours": the token is the auth credential,
+    // so a mismatch must not confirm that another buyer's offer exists.
+    if (!offer || offer.buyerId !== resolved.authorisedUserId) {
+      throw new NotFoundException('Offer not found');
+    }
+    const listing = await this.listings
+      .findById(offer.listingId)
+      .catch(() => null);
+    if (!listing) throw new NotFoundException('Listing not found');
+    return { offer, listing };
   }
 
   // ─── Transaction accept (TOK-7 Phase 1) ─────────────────────────
@@ -853,7 +980,63 @@ export class ActionTokensController {
   private async buildCheckoutPayload(
     resolved: ResolvedToken,
     user: { username: string | null; firstName: string | null },
-  ) {
+  ): Promise<CheckoutResolvePayload> {
+    // Two targets can carry a CHECKOUT link: a LISTING (auction winner / plain
+    // Buy-Now checkout) and an OFFER (an accepted offer's pay-now link). The
+    // offer branch exists because the bare /checkout/offer/<id> page requires
+    // a session, so a signed-out buyer on the SMS link could not pay.
+    if (resolved.targetType === 'offer') {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: resolved.targetId },
+        select: {
+          id: true,
+          status: true,
+          offerAmount: true,
+          counterAmount: true,
+          expiresAt: true,
+          listing: {
+            select: {
+              id: true,
+              title: true,
+              price: true,
+              referenceNumber: true,
+              status: true,
+              images: {
+                where: { isPrimary: true },
+                take: 1,
+                select: { url: true },
+              },
+            },
+          },
+        },
+      });
+      if (!offer) throw new NotFoundException('Offer no longer exists');
+
+      return {
+        kind: 'CHECKOUT',
+        expiresAt: resolved.expiresAt.toISOString(),
+        greeting: user.firstName ?? user.username ?? 'there',
+        listing: {
+          id: offer.listing.id,
+          title: offer.listing.title,
+          listPrice: offer.listing.price,
+          reference: offer.listing.referenceNumber,
+          primaryImageUrl: offer.listing.images[0]?.url ?? null,
+          status: offer.listing.status,
+        },
+        offer: {
+          id: offer.id,
+          amount: offer.offerAmount,
+          counterAmount: offer.counterAmount,
+          expiresAt: offer.expiresAt.toISOString(),
+          status: offer.status,
+        },
+        // The offer checkout page carries the agreed amount; the token rides
+        // along so that page can fetch /actions/<token>/offer-checkout.
+        redirectTo: `/checkout/offer/${offer.id}?t=${resolved.token}`,
+      };
+    }
+
     // For checkout, targetId = listingId. The actual checkout UI lives
     // at /checkout/[listingId]?t=<token>. This payload just confirms
     // the redirect destination + provides listing snapshot for any

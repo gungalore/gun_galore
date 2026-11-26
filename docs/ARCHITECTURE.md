@@ -432,15 +432,38 @@ Proxy bidding. The bidder submits a **maximum**; the system bids the minimum
 increment on their behalf and auto-counters up to that maximum. `maxAmount` is
 never exposed publicly. Increments are tiered by current bid level —
 R50 / R100 / R250 / R500 / R1,000, defined as `INCREMENT_TIERS` in
-`auctions.service.ts`. There is an optional **hidden reserve**: only the derived
-boolean `reserveMet` is ever public, never `reservePrice`.
+`auctions.service.ts`. There is an optional **hidden reserve**, and the
+starting bid is the **seller's own choice** (which may sit below the reserve;
+only when they leave it blank is a 70% default derived, so the reserve is not
+derivable from the opening price). The reserve is met when the **high bidder's
+stored maximum** clears it, not merely the visible bid — the visible bid is
+lifted to the reserve at that moment (the normal proxy-auction behaviour) so a
+lone bidder willing to pay above the reserve cannot lose the item to an
+`EXPIRED` reserve-not-met close. `reserveMet` is public; `reservePrice` never is
+once met — the reserve figure shows only as the current bid it has become.
 
 **Snipe protection:** a bid inside the final two minutes pushes `endTime` out by
-two minutes, repeatedly. Auctions are ended by a per-minute cron, not by a
-timer. **Auction Buy Now is retired:** the sell form no longer offers it, the
-create API rejects `buyNowPrice` on an auction, and checkout's auction branch is
-winner-only. An accepted offer on an auction is promoted to the same winner
-state, so it settles through that one path.
+two minutes, repeatedly, and republishes the new close time to the search index
+(re-arming the one-shot ending-soon alert). Auctions are ended by a per-minute
+cron, not by a timer.
+
+**Auction Buy Now is retired:** the sell form no longer offers it, the create
+and update APIs reject `buyNowPrice`, and checkout's auction branch is
+winner-only. An accepted offer on an auction closes it early and is promoted to
+the same winner state — but only when the offer is at least the leader's stored
+maximum, and the close runs the loser fan-out, so an offer cannot cut out a
+standing proxy bidder.
+
+**Lifecycle:** once an auction has a bid the seller can no longer cancel or
+edit it (only its starting bid while there are no bids), and a platform
+take-down fans out to bidders and the winner. Every terminal close is settled
+after the status flip (strike, seller/winner/loser notices, runner-up invite);
+`auctionSettledAt`/`winnerStruckAt` markers make the every-minute recovery
+sweep replay a settlement that a crash interrupted, with the non-payment strike
+exactly-once. Bidders see ended auctions on `/listings/<id>/result` — the PDP
+still 404s `EXPIRED` inventory, so notification links never point there.
+Watching an auction is the wishlist (`WatchedListing`), not the dormant
+`AuctionWatch` table.
 
 Logic: `backend/src/auctions/auctions.service.ts`. Bid placement and auction
 finalisation are both CAS-guarded (conditional `updateMany` with the expected

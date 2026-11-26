@@ -48,6 +48,7 @@ import { WardenController } from './warden.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { ListingsModule } from '../listings/listings.module';
+import { AuctionsModule } from '../auctions/auctions.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { ShippingModule } from '../shipping/shipping.module';
@@ -65,6 +66,10 @@ import { MotivationsModule } from '../motivations/motivations.module';
   imports: [
     JwtModule.register({}),
     ListingsModule,
+    // AuctionsService so an admin take-down of a live/awaiting-payment auction
+    // can notify the bidders and winner instead of stranding them (2026-11
+    // audit M7). One-way: AuctionsModule never imports AdminModule.
+    AuctionsModule,
     PaymentsModule,
     ZohoBooksModule,
     ShippingModule, // AdminTransactionsController → ShippingService (record a failed shipment)

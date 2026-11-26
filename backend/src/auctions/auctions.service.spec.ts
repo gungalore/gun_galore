@@ -18,6 +18,7 @@ const HOUR = 3600_000;
 
 function makeMocks() {
   const tx = {
+    listingImage: { count: jest.fn().mockResolvedValue(1) }, // L11 photo gate
     listing: {
       findUnique: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -42,6 +43,8 @@ function makeMocks() {
     listing: {
       findUnique: jest.fn().mockResolvedValue(null), // notify helpers no-op
       findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      update: jest.fn().mockResolvedValue({}),
     },
     bid: { findMany: jest.fn().mockResolvedValue([]) },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
@@ -59,7 +62,10 @@ function makeMocks() {
     auctionWinnerLapsed: jest.fn().mockResolvedValue(undefined),
   };
   const actionTokens = { mint: jest.fn().mockResolvedValue('tok') };
-  const search = { deleteDocument: jest.fn().mockResolvedValue(undefined) };
+  const search = {
+    deleteDocument: jest.fn().mockResolvedValue(undefined),
+    updateDocuments: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new AuctionsService(
     prisma as never,
     notifications as never,
@@ -74,6 +80,8 @@ function makeMocks() {
 function activeListing(overrides: Record<string, unknown> = {}) {
   return {
     id: 'L1',
+    title: 'Test auction',
+    images: [],
     sellerId: 'S1',
     listingType: 'AUCTION',
     status: 'ACTIVE',
@@ -470,6 +478,8 @@ describe('offerToRunnerUp — moves the isWinner flag with the promotion', () =>
     const { service, prisma, tx, notifications } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue({
       id: 'L1',
+    title: 'Test auction',
+    images: [],
       status: 'EXPIRED',
       sellerId: 'S1',
     });
@@ -503,6 +513,8 @@ describe('offerToRunnerUp — moves the isWinner flag with the promotion', () =>
     const { service, prisma, tx, notifications } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue({
       id: 'L1',
+    title: 'Test auction',
+    images: [],
       status: 'EXPIRED',
       sellerId: 'S1',
     });
@@ -551,5 +563,121 @@ describe('getAuctionState visibility', () => {
 
     const member = await service.getAuctionState('L1', 'U1');
     expect(member.id).toBe('L1');
+  });
+
+  it('serves a CANCELLED auction so the panel/result page can show it', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing({ status: 'CANCELLED', endedAt: new Date() }),
+    });
+    const state = await service.getAuctionState('L1');
+    expect(state.status).toBe('CANCELLED');
+    // Public payload carries what the result page needs.
+    expect(state.title).toBe('Test auction');
+    expect(state.primaryImageUrl).toBeNull();
+  });
+});
+
+// ── 2026-11 auction audit fixes ──────────────────────────────────────────
+describe('reserve semantics (H2)', () => {
+  it('lifts a lone proxy maximum above the reserve to the reserve', async () => {
+    const { service, tx, prisma } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(
+      activeListing({ price: 700_000, reservePrice: 1_000_000 }),
+    );
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing({ price: 700_000, reservePrice: 1_000_000 }),
+      title: 'Test auction',
+    });
+
+    const res = await service.placeBid('clerk1', 'L1', {
+      maxAmount: 1_200_000,
+    });
+
+    // Visible bid jumps to the reserve — the bidder's ceiling cleared it, so
+    // the item is actually sellable rather than expiring unsold.
+    expect(res.currentBid).toBe(1_000_000);
+    expect(res.reserveMet).toBe(true);
+    expect(res.youAreHighBidder).toBe(true);
+  });
+
+  it('leaves the visible bid at the starting bid while below the reserve', async () => {
+    const { service, tx, prisma } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(
+      activeListing({ price: 700_000, reservePrice: 1_000_000 }),
+    );
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing({ price: 700_000, reservePrice: 1_000_000 }),
+      title: 'Test auction',
+    });
+
+    const res = await service.placeBid('clerk1', 'L1', {
+      maxAmount: 900_000,
+    });
+    expect(res.currentBid).toBe(700_000);
+    expect(res.reserveMet).toBe(false);
+  });
+
+  it('finalisation sells at the reserve when the winner ceiling cleared it', async () => {
+    const { service, tx, prisma } = makeMocks();
+    const ended = activeListing({
+      price: 700_000,
+      reservePrice: 1_000_000,
+      currentBid: 950_000,
+      currentBidderId: 'B1',
+      bidCount: 2,
+      endTime: new Date(Date.now() - 60_000),
+    });
+    prisma.listing.findMany.mockResolvedValue([{ id: 'L1' }]);
+    tx.listing.findUnique.mockResolvedValue(ended);
+    tx.bid.findFirst
+      .mockResolvedValueOnce({ maxAmount: 1_200_000 }) // max-rescue lookup
+      .mockResolvedValueOnce({ id: 'b-win' }); // winning bid row
+
+    const out = await service.endStale();
+
+    expect(out.processed).toBe(1);
+    const claim = tx.listing.updateMany.mock.calls[0][0];
+    expect(claim.data.currentBid).toBe(1_000_000);
+    expect(claim.data.reserveMet).toBe(true);
+  });
+});
+
+describe('proxy ceiling + photo guards (M9/L11/L10)', () => {
+  it('refuses a leading bidder lowering their own stored maximum', async () => {
+    const { service, tx } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(
+      activeListing({
+        currentBid: 40_000,
+        currentBidderId: 'B1',
+        bidCount: 2,
+      }),
+    );
+    tx.bid.findFirst.mockResolvedValue({ maxAmount: 60_000 });
+
+    await expect(
+      service.placeBid('clerk1', 'L1', { maxAmount: 45_000 }),
+    ).rejects.toMatchObject({ response: { code: 'AUCTION_MAX_LOWERED' } });
+  });
+
+  it('refuses a bid when the auction has no photos', async () => {
+    const { service, tx } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(activeListing());
+    tx.listingImage.count.mockResolvedValue(0);
+
+    await expect(
+      service.placeBid('clerk1', 'L1', { maxAmount: 100_000 }),
+    ).rejects.toThrow('no photos yet');
+  });
+
+  it('404s a bid on a hidden listing instead of confirming it exists', async () => {
+    const { service, tx } = makeMocks();
+    tx.listing.findUnique.mockResolvedValue(
+      activeListing({ status: 'PENDING_REVIEW' }),
+    );
+
+    await expect(
+      service.placeBid('clerk1', 'L1', { maxAmount: 100_000 }),
+    ).rejects.toThrow('Listing not found');
   });
 });

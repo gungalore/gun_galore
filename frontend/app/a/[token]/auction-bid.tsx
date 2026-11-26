@@ -19,6 +19,7 @@
 
 import { useState } from 'react';
 import { BidStepper, bidIncrement, formatRandStrict } from '@/components/bid-stepper';
+import { shouldWarnReserve } from '@/lib/auction-bid-ui';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -41,6 +42,12 @@ export interface AuctionBidPayload {
     currentBid?: number;
     bidCount?: number;
     reserveMet?: boolean;
+    /**
+     * Whether the auction actually has a reserve. `reserveMet` is `false` for
+     * a no-reserve auction, so the two must be read together or the reserve
+     * warning lies (audit M11).
+     */
+    hasReserve?: boolean;
   } | null;
 }
 
@@ -66,9 +73,19 @@ export function AuctionBidPage({
   token: string;
   payload: AuctionBidPayload;
 }) {
+  // ⚠️ ALL HOOKS RUN BEFORE ANY EARLY RETURN. Audit M10: the `ended` guard
+  // below used to sit ABOVE this useState, so the first re-render after the
+  // clock crossed endTime (e.g. any stepper/choice `setView`) rendered fewer
+  // hooks than the previous one and React threw “Rendered fewer hooks than
+  // expected” — killing the SMS bidding page exactly at the close boundary.
+  // Keep every hook in this component above the branch; if one is ever added,
+  // it goes here too.
+  const [view, setView] = useState<ViewState>({ kind: 'choice' });
+
   // Auction-ended guard — auction may have closed between SMS send
   // and tap. Show a tailored message instead of letting the user
-  // tap submit only to get a backend rejection.
+  // tap submit only to get a backend rejection. Still a plain render
+  // branch, just below the hooks now.
   const ended =
     payload.listing.status !== 'ACTIVE' ||
     (payload.listing.endTime &&
@@ -80,8 +97,6 @@ export function AuctionBidPage({
 
   const currentBid = payload.auction?.currentBid ?? payload.listing.currentBid ?? 0;
   const minNextBid = payload.auction?.nextMinBid ?? currentBid + bidIncrement(currentBid);
-
-  const [view, setView] = useState<ViewState>({ kind: 'choice' });
 
   async function submitBid(mode: 'single' | 'auto', amountCents: number) {
     setView({ kind: 'submitting' });
@@ -172,7 +187,7 @@ export function AuctionBidPage({
           amountCents={minNextBid}
           muted
         />
-        {payload.auction?.reserveMet === false && (
+        {shouldWarnReserve(payload.auction) && (
           <p
             style={{
               fontSize: 12,
@@ -464,7 +479,7 @@ function DoneScreen({
           }}
         >
           {payload.listing.endTime &&
-            `If no one outbids you before ${new Date(payload.listing.endTime).toLocaleString('en-ZA')}, this firearm is yours.`}
+            `If no one outbids you before ${new Date(payload.listing.endTime).toLocaleString('en-ZA')}, this item is yours.`}
         </p>
       )}
     </div>

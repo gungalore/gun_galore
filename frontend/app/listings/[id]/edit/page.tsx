@@ -138,9 +138,6 @@ export default function EditListingPage() {
     plannedDealerWebsite: '',
     plannedDealerEmail: '',
     dealerManual: false,
-    // Auction-specific
-    reservePrice: '',
-    buyNowPrice: '',
     // Take-a-Shot-specific
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
@@ -163,18 +160,33 @@ export default function EditListingPage() {
 
   useEffect(() => {
     if (!isLoaded) return;
-    if (!isSignedIn) { router.push('/sign-in'); return; }
+    if (!isSignedIn) {
+      // ⚠️ THE RETURN PATH IS THE WHOLE POINT. `/listings/<id>/edit` is
+      // member-only in lib/route-gate.ts, so the middleware normally bounces a
+      // signed-out seller with this URL preserved. This client-side guard is
+      // the second half (a session expiring between render and mount), and it
+      // used to drop the seller on the bare sign-in page with no way back to
+      // the listing they were editing.
+      router.push(
+        `/sign-in?redirect_url=${encodeURIComponent(`/listings/${id}/edit`)}`,
+      );
+      return;
+    }
 
     async function load() {
       try {
         const token = await getToken();
-        // Fire both requests in parallel — listing detail (auth'd)
-        // and the public edit-lock probe.
+        // Fire both requests in parallel — listing detail (auth'd) and the
+        // owner-only edit-lock probe (also auth'd now: it is no longer a
+        // public existence oracle for hidden listings).
         const [res, lockRes] = await Promise.all([
           fetch(`${API_URL}/listings/${id}`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
-          fetch(`${API_URL}/listings/${id}/edit-lock`, { cache: 'no-store' }),
+          fetch(`${API_URL}/listings/${id}/edit-lock`, {
+            cache: 'no-store',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }),
         ]);
         if (!res.ok) { router.push('/my/listings'); return; }
         const l: Listing = await res.json();
@@ -243,10 +255,10 @@ export default function EditListingPage() {
           plannedDealerWebsite: l.plannedDealerWebsite ?? '',
           plannedDealerEmail: l.plannedDealerEmail ?? '',
           dealerManual: !l.plannedDealerPlaceId,
-          reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
-          // Retired field, kept in the form state shape. Never seeded from a
-          // legacy auction and never sent.
-          buyNowPrice: '',
+          // Auction terms (reservePrice / durationDays / buyNowPrice) are set
+          // at publication and are deliberately NOT seeded into this form:
+          // the update endpoint rejects changes to them, so a field here could
+          // only ever be a lie (cancel + relist is the change path).
           autoAcceptThreshold: l.autoAcceptThreshold
             ? String(l.autoAcceptThreshold / 100)
             : '',
@@ -387,12 +399,11 @@ export default function EditListingPage() {
         body.plannedDealerWebsite = form.plannedDealerWebsite.trim();
         body.plannedDealerEmail = form.plannedDealerEmail.trim();
       }
-      // Auction + Take-a-Shot type-specific fields. We send them
-      // regardless of listingType — backend ignores irrelevant ones.
-      if (form.reservePrice.trim()) {
-        body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
-      }
-      // Auction fixed-price option is retired; never send it.
+      // Auction terms are FIXED after publication. The backend now rejects
+      // PATCHes to reservePrice, durationDays and buyNowPrice, so none of them
+      // is ever sent — title/description/price/shipping/address edits are the
+      // only changes this page can make to an auction. Length and reserve can
+      // only change by cancelling and relisting (see the note in the form).
       if (form.autoAcceptThreshold.trim()) {
         body.autoAcceptThreshold = Math.round(
           parseFloat(form.autoAcceptThreshold) * 100,
@@ -688,7 +699,7 @@ export default function EditListingPage() {
   if (editLock && !editLock.canEdit) {
     const detail =
       editLock.code === 'listing-locked-by-bids'
-        ? 'Bidders committed on the listing as it stands; changing the item now would be unfair to them. If the listing is genuinely wrong, head back to the listing page and cancel it (all bids will be refunded), then create a new one with the correct details.'
+        ? 'Bidders committed on the listing as it stands, so the details are locked. Bids cannot be withdrawn and an auction cannot be cancelled once bids are placed — let it run, or contact support if something is wrong.'
         : editLock.code === 'listing-locked-by-offer'
           ? "There's an offer in negotiation. Once you change the item, the offer would no longer be on what the buyer agreed to. Reject the offer (or wait for it to expire), then edit."
           : (editLock.reason ?? 'This listing is locked.');
@@ -1072,10 +1083,20 @@ export default function EditListingPage() {
           </>
         )}
 
-        {/* Auction terms are fixed at publish: the update endpoint does not
-            accept reserve/duration changes, and auction Marketplace is retired.
-            Rendering those fields here only invited edits that silently did
-            nothing. Cancel and relist to change auction terms. */}
+        {/* Auction terms are fixed at publish: the update endpoint rejects
+            reserve/duration/buyNow changes, and auction Marketplace is retired.
+            The note below says so out loud, because there is no field to edit
+            and a seller needs to know why (cancel + relist is the path). */}
+        {listing.listingType === 'AUCTION' && (
+          <p
+            className="text-xs mb-4"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            Auction length and reserve are fixed after publishing. To change
+            them, cancel and relist the item — which is only possible while it
+            has no bids.
+          </p>
+        )}
 
         {/* Take-a-Shot threshold — only honoured for TAKE_A_SHOT
             listings. Setting it auto-accepts any offer at-or-above. */}

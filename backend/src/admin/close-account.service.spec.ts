@@ -76,6 +76,7 @@ function makeService(
     {} as never, // files
     {} as never, // notifications
     {} as never, // listings
+    {} as never, // auctions
     audit as never,
     {} as never, // zohoBooks
     {} as never, // ozow
@@ -284,6 +285,7 @@ describe('AdminService.updateUser — the username columns', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // auctions
       audit as never,
       {} as never,
       {} as never,
@@ -411,6 +413,7 @@ describe('AdminService.bulkBanUsers', () => {
       { revokeAllForUser: jest.fn(async () => 0) } as never,
     // UsersService — POPIA erasure.
     { deleteById: jest.fn(async () => undefined) } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

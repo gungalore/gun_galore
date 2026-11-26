@@ -254,6 +254,34 @@ export class TasksService {
           listingType: { not: 'AUCTION' },
           isDealListing: false,
           lastRenewedAt: { lte: expireCutoff },
+          // ⚠️ NEVER EXPIRE A LISTING WITH A LIVE SALE IN FLIGHT. A tracked
+          // listing stays ACTIVE while a unit is reserved, and an accepted
+          // offer / checkout hold / held payment means a buyer is mid-deal —
+          // expiring the listing here killed a paid-in-progress sale. These
+          // are the same conditions ListingsService.hasLivePaymentActivity
+          // uses to lock edits/cancels, plus the accepted offer.
+          offers: {
+            none: { status: 'ACCEPTED', expiresAt: { gt: now } },
+          },
+          checkoutHolds: {
+            none: {
+              OR: [
+                { claimedAt: null, expiresAt: { gt: now } },
+                { claimedAt: { gt: new Date(now.getTime() - 10 * 60_000) } },
+              ],
+            },
+          },
+          transactions: {
+            none: {
+              paymentStatus: 'HELD',
+              rejectedAt: null,
+              cancelledByBuyerAt: null,
+              OR: [
+                { paidAt: { not: null } },
+                { gatewayCheckoutId: { not: null } },
+              ],
+            },
+          },
         },
         select: {
           id: true,
@@ -532,12 +560,18 @@ export class TasksService {
       });
       for (const o of orphans) {
         try {
-          await this.prisma.$transaction([
+          const [stockReclaim] = await this.prisma.$transaction([
             o.listing.trackInventory
-              ? this.prisma.listing.update({
-                  where: { id: o.listingId },
+              ? this.prisma.listing.updateMany({
+                  // ⚠️ ONLY A STILL-ACTIVE LISTING may have its reserved unit
+                  // handed back. The old unconditional update({status:'ACTIVE'})
+                  // resurrected a tracked listing that the seller or the
+                  // lifecycle had closed (CANCELLED / EXPIRED / SOLD) — it
+                  // reappeared for sale with stock restored. Mirrors the
+                  // non-tracked P0.2 guard below; a closed listing keeps its
+                  // status and the dead transaction is still deleted.
+                  where: { id: o.listingId, status: 'ACTIVE' },
                   data: {
-                    status: 'ACTIVE',
                     quantityAvailable: { increment: o.quantity },
                     quantityReserved: { decrement: o.quantity },
                   },
@@ -553,9 +587,17 @@ export class TasksService {
                 }),
             this.prisma.transaction.delete({ where: { id: o.id } }),
           ]);
-          this.logger.warn(
-            `Reclaimed orphan reserve-tx ${o.id} — listing ${o.listingId} released`,
-          );
+          if (o.listing.trackInventory && stockReclaim.count === 0) {
+            // Nobody else will ever release this unit, but resurrecting a
+            // closed listing is worse — leave it and surface for an operator.
+            this.logger.warn(
+              `Orphan reserve-tx ${o.id} reclaimed but listing ${o.listingId} is no longer ACTIVE (tracked inventory left untouched)`,
+            );
+          } else {
+            this.logger.warn(
+              `Reclaimed orphan reserve-tx ${o.id} — listing ${o.listingId} released`,
+            );
+          }
         } catch (err) {
           this.logger.warn(
             `orphan reclaim failed for ${o.id}: ${(err as Error).message}`,
@@ -1036,6 +1078,15 @@ export class TasksService {
       const reminded = await this.auctionsService.remindUnpaidWinners();
       if (reminded.reminded > 0) {
         this.logger.log(`Reminded ${reminded.reminded} unpaid auction winner(s)`);
+      }
+      // Repair a terminal auction whose settlement (strike / notices /
+      // runner-up invite) never finished, and a won auction stranded by a
+      // crash between the pay-window claim and the Transaction insert.
+      const recovered = await this.auctionsService.recoverAuctionSettlements();
+      if (recovered.unstuck > 0 || recovered.replayed > 0) {
+        this.logger.warn(
+          `Auction recovery: unstuck ${recovered.unstuck}, replayed ${recovered.replayed} settlement(s)`,
+        );
       }
       // Alert wishlisters that a saved auction is closing within the hour.
       await this.wishlistAlerts.sweepEndingSoonAuctions();

@@ -57,6 +57,10 @@ function makeMocks() {
     jest.fn((callback: (tx: typeof prisma) => unknown) => callback(prisma));
   const notifications = {
     resolveByEntity: jest.fn().mockResolvedValue(undefined),
+    // The accepted-offer pay link is minted from a CHECKOUT token; the test
+    // below asserts the URL handed to this fan-out.
+    offerAccepted: jest.fn().mockResolvedValue(undefined),
+    offerPayReminderBuyer: jest.fn().mockResolvedValue(undefined),
   };
   const contactFilter = {
     check: jest.fn().mockResolvedValue({ allowed: true }),
@@ -68,6 +72,7 @@ function makeMocks() {
     contactFilter as never,
     actionTokens as never,
     { record: jest.fn() } as never,
+    { settleAuctionEnded: jest.fn().mockResolvedValue(undefined) } as never, // auctions
   );
   // The notify wrappers re-fetch and fan out — irrelevant to the state
   // machine under test. Spy them out and assert the CALLS.
@@ -106,7 +111,7 @@ function makeMocks() {
       .spyOn(service as never as Record<string, () => Promise<void>>, 'notifySellerOfCounterRejected' as never)
       .mockResolvedValue(undefined as never),
   };
-  return { service, prisma, notifications, contactFilter, spies };
+  return { service, prisma, notifications, contactFilter, actionTokens, spies };
 }
 
 // A listing that takes offers. It used to be defined by its TYPE — offers only
@@ -359,6 +364,9 @@ describe('accept — single-promise + CAS', () => {
       counterAmount: null,
       buyerId: 'B1',
       listing: tasListing(),
+      // A live offer's 48h window. accept() refuses an expired-but-unswept
+      // offer (see the dedicated test below), so every fixture must carry it.
+      expiresAt: new Date(Date.now() + 12 * 3_600_000),
     });
   }
 
@@ -405,6 +413,7 @@ describe('accept — single-promise + CAS', () => {
       offerAmount: 9_000,
       counterAmount: null,
       buyerId: 'B1',
+      expiresAt: new Date(Date.now() + 12 * 3_600_000),
       listing: tasListing({
         listingType: 'BUY_NOW',
         trackInventory: false,
@@ -430,6 +439,7 @@ describe('accept — single-promise + CAS', () => {
       offerAmount: 15_000,
       counterAmount: null,
       buyerId: 'B1',
+      expiresAt: new Date(Date.now() + 12 * 3_600_000),
       listing: tasListing({
         listingType: 'AUCTION',
         price: 10_000,
@@ -468,6 +478,143 @@ describe('accept — single-promise + CAS', () => {
         isWinner: true,
       }),
     });
+  });
+});
+
+describe('accept — an expired-but-unswept offer is not pending', () => {
+  it('refuses an offer whose 48h window has passed, even before the sweep flips it', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'O1',
+      listingId: 'L1',
+      status: OfferStatus.PENDING,
+      offerAmount: 9_000,
+      counterAmount: null,
+      buyerId: 'B1',
+      listing: tasListing(),
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    await expect(service.accept('seller-clerk', 'O1')).rejects.toThrow(
+      /expired/i,
+    );
+    // Nothing is written: the offer stays for expireStale to close out.
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('counter — listing must still be live', () => {
+  it('refuses to counter when the listing has sold or been cancelled', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 'O1',
+      listingId: 'L1',
+      status: OfferStatus.PENDING,
+      offerAmount: 20_000,
+      counterAmount: null,
+      listing: tasListing({ status: 'CANCELLED' }),
+    });
+    await expect(
+      service.counter('seller-clerk', 'O1', { counterAmount: 25_000 }),
+    ).rejects.toThrow(/no longer available/i);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('accepted-offer pay link — a CHECKOUT token, not a bare URL', () => {
+  function acceptedOffer(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'O1',
+      listingId: 'L1',
+      status: OfferStatus.ACCEPTED,
+      offerAmount: 9_000,
+      counterAmount: null,
+      buyerId: 'B1',
+      expiresAt: new Date(Date.now() + 6 * 3_600_000),
+      listing: { id: 'L1', title: 'Test item', price: 10_000 },
+      buyer: {
+        email: 'buyer@example.com',
+        firstName: 'Buyer',
+        phone: '+27821234567',
+      },
+      ...overrides,
+    };
+  }
+  type PrivateNotifier = {
+    notifyBuyerOfAccept(offerId: string): Promise<void>;
+    notifyBuyerOfCounterAccept(offerId: string): Promise<void>;
+    remindBuyerToPay(offerId: string): Promise<void>;
+  };
+
+  // A signed-out buyer opening the "pay now" SMS previously landed on the
+  // session-gated /checkout/offer/<id> page, and could be struck for a window
+  // they could not use. The link must be an /a/<CHECKOUT token> credential.
+  it('mints purpose CHECKOUT bound to the offer + buyer and sends /a/<token>', async () => {
+    const { service, prisma, notifications, actionTokens, spies } = makeMocks();
+    // makeMocks spies the notify wrappers out for the state-machine tests;
+    // this test exercises the real fan-out.
+    spies.notifyBuyerOfAccept.mockRestore();
+    prisma.offer.findUnique.mockResolvedValue(acceptedOffer());
+
+    await (service as never as PrivateNotifier).notifyBuyerOfAccept('O1');
+
+    expect(actionTokens.mint).toHaveBeenCalledWith({
+      purpose: 'CHECKOUT',
+      targetType: 'offer',
+      targetId: 'O1',
+      authorisedUserId: 'B1',
+      expiresAt: expect.any(Date),
+    });
+    expect(notifications.offerAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({ actionUrl: expect.stringMatching(/\/a\/tok$/) }),
+    );
+  });
+
+  it('falls back to the plain offer-checkout URL when the mint fails', async () => {
+    const { service, prisma, notifications, actionTokens, spies } = makeMocks();
+    spies.notifyBuyerOfAccept.mockRestore();
+    prisma.offer.findUnique.mockResolvedValue(acceptedOffer());
+    actionTokens.mint.mockRejectedValueOnce(new Error('db down'));
+
+    await (service as never as PrivateNotifier).notifyBuyerOfAccept('O1');
+
+    expect(notifications.offerAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionUrl: expect.stringMatching(/\/checkout\/offer\/O1$/),
+      }),
+    );
+  });
+
+  // The counter-accept and the pre-lapse reminder are the same pay link on the
+  // same offer, so they must mint the token too (the reminder previously
+  // carried the plain URL while its own comment claimed a token).
+  it('also mints CHECKOUT for the counter-accept and pay-reminder paths', async () => {
+    const { service, prisma, notifications, actionTokens, spies } = makeMocks();
+    spies.notifyBuyerOfCounterAccept.mockRestore();
+    prisma.offer.findUnique.mockResolvedValue(
+      acceptedOffer({ counterAmount: 9_500 }),
+    );
+
+    const privateService = service as never as PrivateNotifier;
+    await privateService.notifyBuyerOfCounterAccept('O1');
+    await privateService.remindBuyerToPay('O1');
+
+    expect(actionTokens.mint).toHaveBeenCalledTimes(2);
+    for (const call of actionTokens.mint.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({
+          purpose: 'CHECKOUT',
+          targetType: 'offer',
+          targetId: 'O1',
+          authorisedUserId: 'B1',
+        }),
+      );
+    }
+    expect(notifications.offerAccepted).toHaveBeenCalledWith(
+      expect.objectContaining({ actionUrl: expect.stringMatching(/\/a\/tok$/) }),
+    );
+    expect(notifications.offerPayReminderBuyer).toHaveBeenCalledWith(
+      expect.objectContaining({ actionUrl: expect.stringMatching(/\/a\/tok$/) }),
+    );
   });
 });
 

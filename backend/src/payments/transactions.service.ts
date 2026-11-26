@@ -2466,6 +2466,14 @@ export class TransactionsService {
    * Called at the top of create(). A lapsed attempt is released so the buyer can
    * start again; a live one blocks with a resumable 409 so we never charge
    * twice. Returns normally when there is nothing to resume/block.
+   *
+   * ⚠️ API CONTRACT (frontend, incl. the offer checkout): the refusal body is
+   * `{ code: 'UNPAID_CHECKOUT_EXISTS', transactionId, message }`. `transactionId`
+   * is the RESUME affordance, not just telemetry — the checkout page should
+   * offer "resume payment" pointing at that existing attempt (its hosted
+   * gateway link is still live) rather than a dead-end error, because the
+   * buyer must not create a second transaction for the same item. This check
+   * runs on EVERY create() path, including the accepted-offer branch below.
    */
   private async assertNoLiveUnpaidAttempt(
     buyerId: string,
@@ -2650,7 +2658,20 @@ export class TransactionsService {
           },
           select: { id: true },
         });
-        if (!otherHold) {
+        if (tx.listing.listingType === 'AUCTION') {
+          // ⚠️ An ENDED auction must never go back to ACTIVE (2026-11 audit
+          // H3): it has endedAt set, so endStale skips it, sweepUnpaidWins
+          // only sees PAYMENT_PENDING rows with a lapsed expiresAt, and the
+          // winner checkout requires PAYMENT_PENDING — ACTIVE made the sale
+          // permanently unsellable and unstrikable. Hand it back to the
+          // auction lifecycle with a LAPSED window so the every-minute
+          // unpaid-winner sweep expires it, strikes the winner, tells the
+          // seller and offers the runner-up.
+          await txc.listing.updateMany({
+            where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
+            data: { expiresAt: new Date(Date.now() - 1000) },
+          });
+        } else if (!otherHold) {
           await txc.listing.updateMany({
             where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
             data: { status: 'ACTIVE' },
@@ -6335,13 +6356,29 @@ export class TransactionsService {
     // for future filtering.
     const note = `[BUYER DISPUTE: ${reason}] ${trimmedDetails}`;
 
-    await this.prisma.transaction.update({
-      where: { id: transactionId },
+    // ⚠️ CAS, NOT AN UNCONDITIONAL UPDATE. The guards above are a READ: between
+    // them and this write an admin (or the debit-order release) can move the
+    // payment OUT of HELD — most importantly to RELEASED, paying the seller.
+    // An unconditional `update({paymentStatus:'DISPUTED'})` would silently
+    // overwrite that, turning a completed payout into a disputed order with
+    // money already gone. The WHERE re-asserts the exact state the dispute is
+    // allowed on; count 0 means the money moved and the buyer must be told.
+    const claimed = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        paymentStatus: 'HELD',
+        paidAt: { not: null },
+      },
       data: {
         paymentStatus: 'DISPUTED',
         adminNote: tx.adminNote ? `${tx.adminNote}\n\n${note}` : note,
       },
     });
+    if (claimed.count === 0) {
+      throw new ConflictException(
+        'This payment is no longer on hold — it has already been released or resolved, so a dispute can no longer be raised here. Contact support if you still need help.',
+      );
+    }
 
     // Timeline row so the buyer + seller both see when the dispute
     // landed (admin dossier renders the full timeline too).
@@ -6933,12 +6970,20 @@ export class TransactionsService {
           });
 
           if (s.listing.listingType === 'AUCTION') {
-            // Hand back to the auction lifecycle with a LAPSED window; the
-            // every-minute sweepUnpaidWins flips EXPIRED + strikes + runner-up.
-            // Never ACTIVE (ended-auction zombie).
+            // Hand back to the auction lifecycle, but give the winner a real
+            // retry window instead of an instantly-lapsed one (2026-11 audit
+            // L1). The old code stamped a PAST window here, which sent the
+            // sale straight to sweepUnpaidWins — EXPIRED + a non-payment
+            // strike — with no 6-hour reminder in between, even though the
+            // attempt could have failed on our gateway. Six hours matches the
+            // reminder window, so the every-minute reminder pass nudges them
+            // once before the strike. Never ACTIVE (ended-auction zombie).
             await txc.listing.updateMany({
               where: { id: s.listingId, status: 'PAYMENT_PENDING' },
-              data: { expiresAt: new Date(Date.now() - 1000) },
+              data: {
+                expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+                winnerRemindedAt: null,
+              },
             });
           } else if (s.listing.trackInventory) {
             const restored = await txc.listing.updateMany({

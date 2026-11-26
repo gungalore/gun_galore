@@ -506,4 +506,85 @@ describe('ListingsService — cancel status guard', () => {
     );
     expect(search.deleteDocument).not.toHaveBeenCalled();
   });
+
+  // ── 2026-11 auction audit H4: bids are commitments, not decoration ────
+  const ownedAuction = (bidCount: number) =>
+    prisma.listing.findUnique.mockResolvedValue({
+      id: 'l1',
+      sellerId: 'u1',
+      status: 'ACTIVE',
+      listingType: 'AUCTION',
+      bidCount,
+    });
+
+  it('refuses to cancel an auction that has bids', async () => {
+    ownedAuction(3);
+    await expect(service.cancel('l1', 'u1')).rejects.toMatchObject({
+      response: { code: 'listing-locked-by-bids' },
+    });
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('cancels a bid-less auction, stamps endedAt and re-asserts bidCount=0', async () => {
+    ownedAuction(0);
+    await service.cancel('l1', 'u1');
+
+    const arg = prisma.listing.updateMany.mock.calls[0][0];
+    expect(arg.data.status).toBe('CANCELLED');
+    expect(arg.data.endedAt).toBeInstanceOf(Date);
+    expect(arg.where).toMatchObject({ id: 'l1', bidCount: 0 });
+  });
+});
+
+// ── 2026-11 marketplace audit M8: the edit-lock probe is owner-only ─────
+describe('ListingsService — edit-lock ownership', () => {
+  function make(listing: Record<string, unknown> | null) {
+    const prisma = {
+      listing: { findUnique: jest.fn().mockResolvedValue(listing) },
+      offer: { findFirst: jest.fn().mockResolvedValue(null) },
+      checkoutHold: { count: jest.fn().mockResolvedValue(0) },
+      transaction: { count: jest.fn().mockResolvedValue(0) },
+    };
+    const service = new ListingsService(
+      prisma as never,
+      { isConnected: false } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { record: jest.fn() } as never,
+      new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never,
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+    return { service, prisma };
+  }
+
+  const row = {
+    id: 'L1',
+    sellerId: 'owner1',
+    listingType: 'BUY_NOW',
+    status: 'ACTIVE',
+    bidCount: 0,
+    acceptsOffers: true,
+  };
+
+  it('gives a non-owner the same generic answer as a missing row', async () => {
+    const { service, prisma } = make(row as never);
+    const asStranger = await service.getEditLockState('L1', 'someone-else');
+    expect(asStranger).toMatchObject({ canEdit: false, code: 'not-found' });
+    const anonymous = await service.getEditLockState('L1');
+    expect(anonymous).toMatchObject({ canEdit: false, code: 'not-found' });
+    expect(prisma.listing.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the owner the truth (including the auction bid lock)', async () => {
+    const { service } = make({ ...row, listingType: 'AUCTION', bidCount: 2 } as never);
+    const state = await service.getEditLockState('L1', 'owner1');
+    expect(state.canEdit).toBe(false);
+    expect(state.code).toBe('listing-locked-by-bids');
+  });
 });

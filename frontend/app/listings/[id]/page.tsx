@@ -1002,10 +1002,26 @@ export default async function ListingDetailPage({
               sellerId={sellerUserId}
             />
           ) : listing.listingType === 'AUCTION' ? (
-            <AuctionPanel
-              listingId={listing.id}
-              sellerId={sellerUserId}
-            />
+            <>
+              <AuctionPanel
+                listingId={listing.id}
+                sellerId={sellerUserId}
+              />
+              {/* Audit L16 — the seller's own auction PDP had no Edit/Cancel
+                  control; those lived only on /my/listings while the mobile
+                  sticky bar already offered "Edit listing". Same owner panel
+                  as the BUY_NOW branch, so the controls are reachable where
+                  the seller is looking. It hides itself for non-owners and for
+                  statuses that cannot be edited/cancelled. */}
+              {isOwnListing && (
+                <SellerControls
+                  listingId={listing.id}
+                  sellerId={sellerUserId}
+                  status={listing.status}
+                  inline
+                />
+              )}
+            </>
           ) : listing.status === 'PAYMENT_PENDING' &&
             (hasUnpaidCheckout || heldCheckout) ? (
             <div

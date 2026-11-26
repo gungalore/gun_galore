@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AuctionOdometer } from '@/components/auction-odometer';
 import Link from 'next/link';
 import { useUser, useAuth, SignInButton } from '../../../lib/auth';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 import { HelpText } from '@/components/help-text';
 import {
   BidStepper,
   bidIncrement,
   formatRandStrict,
 } from '@/components/bid-stepper';
+import {
+  autoBidPrefillCents,
+  autoBidRaiseNote,
+  clockOffsetMs,
+  serverNowMs,
+} from '@/lib/auction-bid-ui';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -33,6 +40,13 @@ interface AuctionState {
   startTime: string | null;
   endTime: string | null;
   endedAt: string | null;
+  /**
+   * Optional server timestamp for the response. When present the panel
+   * corrects its countdown and its closed/biddable decision for a skewed
+   * device clock (see lib/auction-bid-ui.ts); when absent it falls back to the
+   * device clock, exactly as before.
+   */
+  serverNow?: string;
   nextMinBid: number;
   recentBids: {
     id: string;
@@ -60,7 +74,15 @@ function formatRand(cents: number) {
 // Countdown for the big timer card. Returns each unit separately so the
 // JSX can lay them out as four "D / H / M / S" blocks with labels.
 // `closing` flips true in the last 5 minutes so the card can turn red.
-function formatRemaining(endTime: string | null): {
+//
+// `nowMs` is the SERVER-corrected tick, not `Date.now()` — see the
+// clockOffset state in the component. Passing it in is what keeps a device
+// clock minutes fast from hiding the bid CTAs on an auction the server still
+// accepts bids for (audit L14).
+function formatRemaining(
+  endTime: string | null,
+  nowMs: number,
+): {
   days: number;
   hours: number;
   mins: number;
@@ -71,7 +93,7 @@ function formatRemaining(endTime: string | null): {
   if (!endTime) {
     return { days: 0, hours: 0, mins: 0, secs: 0, ended: false, closing: false };
   }
-  const ms = new Date(endTime).getTime() - Date.now();
+  const ms = new Date(endTime).getTime() - nowMs;
   if (ms <= 0) {
     return { days: 0, hours: 0, mins: 0, secs: 0, ended: true, closing: false };
   }
@@ -102,6 +124,16 @@ export default function AuctionPanel({
   const [error, setError] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [now, setNow] = useState(Date.now());
+  // Audit L14 — the close decision must not trust the device clock. The
+  // server's timestamp from the last successful poll gives us the skew; every
+  // countdown and the `auctionOver` test below run on the corrected tick.
+  // Zero (the fallback) means "no serverNow in the payload", which keeps the
+  // old device-clock behaviour rather than breaking on an older backend.
+  const [clockOffset, setClockOffset] = useState(0);
+  // Focus return targets for the two modals (audit L8). Held here, not inside
+  // BidModal, because the modal unmounts before the opener control does.
+  const placeBidButtonRef = useRef<HTMLButtonElement | null>(null);
+  const autoBidButtonRef = useRef<HTMLButtonElement | null>(null);
   // Snipe-protection banner — appears for 8s when we detect that the
   // poll's new endTime is ≥30s further out than the previous one.
   // Comes from the server-side end-extension that auctions.service.ts
@@ -175,6 +207,7 @@ export default function AuctionPanel({
         }
         prevEndTimeRef.current = data.endTime ?? null;
         setState(data);
+        setClockOffset(clockOffsetMs(data.serverNow));
         setPollFailures(0);
       }
       if (mineRes && mineRes.ok) {
@@ -259,16 +292,27 @@ export default function AuctionPanel({
     );
   }
 
-  const remaining = formatRemaining(state.endTime);
-  // "Over" means EITHER the client clock passed endTime OR the backend has
-  // already moved the listing off ACTIVE. Both matter: the clock flips first
-  // (finalizeAuction runs on a 1-minute cron, so there's a gap where the
-  // countdown reads 0 but no outcome exists yet), and the status is the only
-  // thing that tells us WHICH outcome happened. Keying the closed UI on the
-  // clock alone is why every ended auction — win, reserve-not-met, cancelled
-  // — used to read as the same flat "Bidding has closed."
+  // Server-corrected "now". Every close decision below runs on this, not on
+  // the raw device clock — a phone set minutes fast used to hide the bid CTAs
+  // while the server still accepted bids (audit L14). With no serverNow the
+  // offset is 0 and this is exactly Date.now().
+  const adjustedNow = serverNowMs(now, clockOffset);
+  const remaining = formatRemaining(state.endTime, adjustedNow);
+  // "Over" means EITHER the server-corrected clock passed endTime OR the
+  // backend has already moved the listing off ACTIVE. Both matter: the clock
+  // flips first (finalizeAuction runs on a 1-minute cron, so there's a gap
+  // where the countdown reads 0 but no outcome exists yet), and the status is
+  // the only thing that tells us WHICH outcome happened. Keying the closed UI
+  // on the clock alone is why every ended auction — win, reserve-not-met,
+  // cancelled — used to read as the same flat "Bidding has closed."
   const auctionOver = remaining.ended || state.status !== 'ACTIVE';
   const isOwnAuction = isLoaded && user?.id === sellerId;
+  // Audit M9 — a live proxy ceiling is a promise the bidder already made.
+  // The modal prefills on max(nextMinBid, this) so opening it and accepting
+  // the default can only keep or raise it; lowering is the deliberate
+  // "Cancel auto bid" path.
+  const proxyMax =
+    myBid?.proxyActive && myBid.maxAmount != null ? myBid.maxAmount : null;
 
   // Shared bid-submit. Both Place Bid (one-shot) and Auto Bid (proxy)
   // hit the same endpoint with the same shape — only `isOneShot`
@@ -301,8 +345,15 @@ export default function AuctionPanel({
       // Refresh state immediately so the header + countdown update.
       // Also refresh the user's own bid state so the Auto Bid button
       // flips to "ACTIVE · R{max}" without waiting for the 5s poll.
+      // Audit L15 — this refresh MUST carry the same Authorization header as
+      // load(). Same-origin cookies masked the omission in the web app, but a
+      // cross-site app shell lost the refreshed state (and a failed `/me` left
+      // a stale "You ✓").
       const [fresh, mineFresh] = await Promise.all([
-        fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' }),
+        fetch(`${API_URL}/auctions/${listingId}`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        }),
         fetch(`${API_URL}/auctions/${listingId}/me`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
@@ -342,9 +393,14 @@ export default function AuctionPanel({
           ? 'No active proxy to cancel.'
           : 'Auto bid cancelled. You remain the high bidder.',
       );
-      // Refresh both state surfaces immediately.
+      // Refresh both state surfaces immediately. Same Authorization header as
+      // load() for the same reason as the post-bid refresh below — a
+      // members-only auction 404s to an anonymous caller.
       const [fresh, mineFresh] = await Promise.all([
-        fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' }),
+        fetch(`${API_URL}/auctions/${listingId}`, {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        }),
         fetch(`${API_URL}/auctions/${listingId}/me`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
@@ -426,6 +482,11 @@ export default function AuctionPanel({
         amountCents={state.currentBid ?? state.startingBid}
         bidCount={state.bidCount}
         endTime={auctionOver ? null : state.endTime}
+        // The rings are the visible countdown, so they get the same
+        // server-clock correction as `auctionOver` above. Without this the
+        // panel could say "closed" while the rings still counted down (or the
+        // reverse) whenever the device clock is off.
+        clockOffsetMs={clockOffset}
         footnote={
           state.bidCount === 0 ? 'Starting bid — no bids yet' : undefined
         }
@@ -474,6 +535,27 @@ export default function AuctionPanel({
         </div>
       )}
 
+      {/* Reserve visibility (audit L13) — the panel never read hasReserve or
+          reserveMet, so “High bidder: You” could sit on an auction that would
+          not sell for reserve reasons, with nothing on screen saying so.
+          Muted rather than alarming, and the amount is NEVER shown: the
+          reserve is the seller's private number. Only while live — once the
+          auction ends, EndedAuctionNotice explains the outcome. */}
+      {!auctionOver && state.hasReserve && !state.reserveMet && state.bidCount > 0 && (
+        <p
+          className="rounded-[6px] px-3 py-2 text-xs"
+          style={{
+            background: 'var(--warning-wash)',
+            border: '0.5px solid var(--warning-line)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}
+        >
+          ⚠ Reserve not yet met — the item only sells if bidding reaches the
+          seller&apos;s reserve.
+        </p>
+      )}
+
       {/* Outbid banner — shows when the signed-in user previously
           placed a bid but is no longer the high bidder. Distinguishes
           "exceeded your max" (another bidder went above) from "tied
@@ -481,6 +563,12 @@ export default function AuctionPanel({
           users hit the tie case often and the wording matters. */}
       {myBid?.hasBid && !myBid.isHighBidder && !auctionOver && (
         <div
+          // Announce the state change when a poll finds the bidder has been
+          // outbid — it can happen while they are looking at another part of
+          // the page (audit L8).
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
             background: 'var(--red-wash)',
@@ -521,7 +609,7 @@ export default function AuctionPanel({
           currentBid={state.currentBid}
           endedAt={state.endedAt}
           myBid={isOwnAuction ? null : myBid}
-          now={now}
+          now={adjustedNow}
         />
       ) : isOwnAuction ? (
         <div
@@ -560,6 +648,7 @@ export default function AuctionPanel({
               have landed yet (matches backend's buyNow eligibility). */}
           <div className="space-y-2">
             <button
+              ref={placeBidButtonRef}
               type="button"
               onClick={() => { setError(''); setOpenModal('placeBid'); }}
               disabled={submitting}
@@ -575,6 +664,7 @@ export default function AuctionPanel({
               Place Bid
             </button>
             <button
+              ref={autoBidButtonRef}
               type="button"
               onClick={() => { setError(''); setOpenModal('autoBid'); }}
               disabled={submitting}
@@ -632,13 +722,23 @@ export default function AuctionPanel({
           </HelpText>
 
           {error && (
-            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>
+            <p
+              className="text-xs mt-2"
+              role="alert"
+              style={{ color: 'var(--red)' }}
+            >
               {error}
             </p>
           )}
           {confirmation && (
             <p
               className="text-xs mt-2"
+              // A bid result is a status update, not an error: polite and
+              // atomic so a screen reader reads the whole sentence once
+              // (audit L8).
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
               style={{ color: 'var(--text-secondary)' }}
             >
               {confirmation}
@@ -654,16 +754,25 @@ export default function AuctionPanel({
               onSubmit={(cents) => submitBid(cents, true)}
               submitting={submitting}
               error={error}
+              returnFocusRef={placeBidButtonRef}
             />
           )}
           {openModal === 'autoBid' && (
             <BidModal
               kind="autoBid"
               minCents={state.nextMinBid}
+              // Audit M9 — a live proxy opens at the existing ceiling (or the
+              // new minimum if that is higher), never at the bare minimum, so
+              // the default cannot silently lower it.
+              initialCents={autoBidPrefillCents(state.nextMinBid, proxyMax)}
+              notice={
+                proxyMax != null ? autoBidRaiseNote(proxyMax) : undefined
+              }
               onCancel={() => setOpenModal(null)}
               onSubmit={(cents) => submitBid(cents, false)}
               submitting={submitting}
               error={error}
+              returnFocusRef={autoBidButtonRef}
             />
           )}
         </>
@@ -851,7 +960,7 @@ function EndedAuctionNotice({
             textDecoration: 'none',
           }}
         >
-          Complete checkout — {formatRand(currentBid ?? 0)}
+          Complete checkout
         </Link>
         <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
           If checkout isn&apos;t completed in time the sale is cancelled, the
@@ -883,9 +992,12 @@ function EndedAuctionNotice({
   }
 
   if (status === 'CANCELLED') {
+    // Now reachable: the backend serves a CANCELLED auction with its
+    // `endedAt` set, so the panel gets the terminal status instead of polling
+    // a 404 forever (audit M12).
     return (
       <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
-        Auction cancelled — the seller withdrew this listing before it closed.
+        Auction cancelled — the listing was withdrawn before it closed.
       </div>
     );
   }
@@ -943,13 +1055,24 @@ function EndedAuctionNotice({
 function BidModal({
   kind,
   minCents,
+  initialCents,
+  notice,
   onCancel,
   onSubmit,
   submitting,
   error,
+  returnFocusRef,
 }: {
   kind: 'placeBid' | 'autoBid';
   minCents: number;
+  /**
+   * Amount the modal opens on. Defaults to the minimum; the Auto Bid modal
+   * passes max(minimum, live proxy maximum) so accepting the default can
+   * never lower an existing ceiling (audit M9).
+   */
+  initialCents?: number;
+  /** Inline note under the explainer — e.g. the live proxy maximum. */
+  notice?: string;
   onCancel: () => void;
   onSubmit: (cents: number) => Promise<boolean | void> | void;
   submitting: boolean;
@@ -957,10 +1080,27 @@ function BidModal({
   // error line too, but that sits UNDERNEATH this overlay — without this
   // prop a failed bid looked like "nothing happened" (user-reported).
   error?: string;
+  /**
+   * Control that opened this dialog. Focus returns there on close — held by
+   * the parent because the opener outlives this component.
+   */
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>;
 }) {
-  // Stepper starts at the lowest legal bid and steps in tiered
-  // increments. State is local so closing the modal resets it.
-  const [valueCents, setValueCents] = useState(minCents);
+  // Stepper starts at the opening amount and steps in tiered increments.
+  // State is local so closing the modal resets it.
+  const [valueCents, setValueCents] = useState(initialCents ?? minCents);
+  const titleId = useId();
+  // Audit L8 — the bid dialog used to be a bare overlay: no focus move in, no
+  // trap, no Escape, no scroll lock, no focus restore. `useFocusTrap` is the
+  // site's tested dialog contract (lib/use-focus-trap.ts): initial focus on the
+  // first control, Tab cycles inside, Escape closes, background scroll locks,
+  // and focus goes back to the opener. It also stacks with any outer trap.
+  const dialogRef = useFocusTrap<HTMLDivElement>({
+    onClose: onCancel,
+    // Explicit opener: Safari does not focus a <button> on click, so the
+    // hook's "whatever had focus" fallback would be the body there.
+    returnFocusTo: returnFocusRef?.current ?? null,
+  });
 
   const title = kind === 'placeBid' ? 'Place Bid' : 'Auto Bid';
   const ctaLabel = kind === 'placeBid' ? 'Place Bid' : 'Set Auto Bid';
@@ -974,17 +1114,20 @@ function BidModal({
       data-blocking-overlay="true"
       role="dialog"
       aria-modal="true"
-      aria-label={kind === 'placeBid' ? 'Place bid' : 'Set auto bid'}
+      aria-labelledby={titleId}
       className="fixed inset-0 z-[60] flex items-center justify-center px-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}
       onClick={onCancel}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="rounded-[8px] p-6 max-w-sm w-full"
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <h3
+          id={titleId}
           className="text-lg mb-3"
           style={{ color: 'var(--text-primary)', fontWeight: 500 }}
         >
@@ -1009,6 +1152,15 @@ function BidModal({
             Bid exactly this amount right now. If someone outbids you,
             we won&apos;t auto-counter for you — you&apos;ll need to come
             back and bid again.
+          </p>
+        )}
+
+        {notice && (
+          <p
+            className="text-xs mb-4"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+          >
+            {notice}
           </p>
         )}
 

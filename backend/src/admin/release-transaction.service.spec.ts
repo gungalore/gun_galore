@@ -48,6 +48,7 @@ function makeService(overrides: {
     { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     {} as never, // notifications — unused by release
     {} as never, // listings — unused
+    {} as never, // auctions
     {} as never, // audit — unused
     zohoBooks as never,
     {} as never, // ozow — manual rail, never called
