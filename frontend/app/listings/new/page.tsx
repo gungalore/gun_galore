@@ -9,6 +9,7 @@ import { CONDITION_LABELS } from '@/lib/utils';
 import {
   AUCTION_DURATIONS,
   AUCTION_LOWEST_FLOOR_CENTS,
+  auctionDurationsForReserve,
   auctionFloorViolation,
   auctionStartingBidCents,
   formatAuctionFloor,
@@ -3554,6 +3555,37 @@ export default function NewListingPage() {
                           ),
                         }))}
                       />
+                      {/* Live unlock feedback. The pills above ungrey the
+                          moment the typed reserve crosses each floor; this
+                          line names what is available right now so a seller
+                          who is mid-keystroke can see the bands opening up
+                          (and knows which longer bands still need more). */}
+                      {reserveCents > 0 &&
+                        (() => {
+                          const unlocked =
+                            auctionDurationsForReserve(reserveCents);
+                          return (
+                            <p
+                              className="text-xs mt-2"
+                              aria-live="polite"
+                              style={{
+                                color:
+                                  unlocked.length > 0
+                                    ? 'var(--text-secondary)'
+                                    : 'var(--warning)',
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {unlocked.length > 0
+                                ? `Unlocked at this reserve: ${unlocked
+                                    .map((d) => d.label)
+                                    .join(', ')}.`
+                                : `No duration unlocked yet — the lowest reserve is ${formatAuctionFloor(
+                                    AUCTION_LOWEST_FLOOR_CENTS,
+                                  )}.`}
+                            </p>
+                          );
+                        })()}
                     </Field>
 
                     <Field
@@ -5240,11 +5272,16 @@ function PriceInput({
         R
       </span>
       <input
-        type="number"
-        min={1}
-        step="0.01"
+        // Text + inputMode keeps the mobile numeric keypad while still
+        // accepting South African money typing ("20 000", "R20,000"). The
+        // duration bands must ungrey while the seller types, and a browser
+        // number input silently blanks those formats, making the reserve look
+        // empty and every duration stay grey.
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ''))}
         style={{ ...inputStyle, paddingLeft: 26 }}
         placeholder={placeholder}
       />
