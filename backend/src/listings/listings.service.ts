@@ -2267,7 +2267,12 @@ export class ListingsService {
       }),
       this.prisma.offer.count({ where: { listingId: id, ...last7d } }),
       this.prisma.listingFaq.count({
-        where: { listingId: id, hiddenAt: null, ...last7d },
+        // ListingFaq uses `generatedAt`, not `createdAt` (the shared last7d
+        // filter is for models with a createdAt column). Passing createdAt here
+        // made the whole seller-interest endpoint 500 on every call — visible in
+        // the production log as "Unknown argument `createdAt`" on
+        // prisma.listingFaq.count (2026-11-26).
+        where: { listingId: id, hiddenAt: null, generatedAt: { gte: since } },
       }),
       this.prisma.listingFaq.count({
         where: { listingId: id, hiddenAt: null },
