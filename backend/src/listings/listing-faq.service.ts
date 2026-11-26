@@ -116,13 +116,18 @@ export class ListingFaqService {
   }
 
   /**
-   * "Usually replies within ..." from the seller's actual first replies.
+   * "Usually replies within ..." from the seller's actual reply times.
    *
-   * The sample is one inquiry where the seller replied: `createdAt` is the
-   * buyer's first message (the thread is created by it) and
-   * `sellerFirstReplyAt` is stamped on the seller's first text/media reply.
-   * Bounded to the last 90 days and 50 threads; a query failure degrades to
-   * "reply time not yet known" rather than breaking the listing page.
+   * ⚠️ 2026-11-26 operator: "I replied three times on the turret tags question
+   * but it did not give a time that I usually respond to users." The old sample
+   * was ONE inquiry (first reply only), so three back-and-forth replies in the
+   * same thread counted as one and the badge still read "New seller". A sample
+   * is now **each seller reply to a buyer message**: latency = that reply minus
+   * the latest preceding buyer message (the thread's createdAt for the first
+   * one). Consecutive seller messages with no buyer prompt add no sample. Still
+   * bounded to the last 90 days and a capped number of inquiries/samples, and a
+   * query failure degrades to "reply time not yet known" rather than breaking
+   * the listing page.
    */
   async replyLabelForSeller(sellerId: string): Promise<SellerReplyLabel> {
     try {
@@ -132,19 +137,38 @@ export class ListingFaqService {
       const rows = await this.prisma.listingInquiry.findMany({
         where: {
           sellerId,
-          sellerFirstReplyAt: { not: null },
           createdAt: { gte: cutoff },
         },
         orderBy: { createdAt: 'desc' },
         take: REPLY_SAMPLE_CAP,
-        select: { createdAt: true, sellerFirstReplyAt: true },
+        select: {
+          createdAt: true,
+          messages: {
+            orderBy: { createdAt: 'asc' },
+            select: { senderId: true, createdAt: true },
+          },
+        },
       });
-      const samples = rows
-        .filter((r) => r.sellerFirstReplyAt)
-        .map(
-          (r) =>
-            (r.sellerFirstReplyAt!.getTime() - r.createdAt.getTime()) / 60_000,
-        );
+      const samples: number[] = [];
+      for (const inquiry of rows) {
+        // The thread is created by the buyer's first message.
+        let awaitingSince: Date | null = inquiry.createdAt;
+        for (const message of inquiry.messages) {
+          if (message.senderId === sellerId) {
+            if (awaitingSince) {
+              samples.push(
+                (message.createdAt.getTime() - awaitingSince.getTime()) / 60_000,
+              );
+              awaitingSince = null;
+              if (samples.length >= REPLY_SAMPLE_CAP) break;
+            }
+          } else {
+            // Each new buyer message starts a fresh response wait.
+            awaitingSince = message.createdAt;
+          }
+        }
+        if (samples.length >= REPLY_SAMPLE_CAP) break;
+      }
       return replyLabelFor(samples);
     } catch (err) {
       this.logger.warn(

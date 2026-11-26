@@ -56,9 +56,9 @@ function makeService(
     offer: { count: offerCount },
     listingFaq: {
       count: jest.fn(
-        (args: { where: { createdAt?: unknown; hiddenAt?: unknown } }) =>
+        (args: { where: { generatedAt?: unknown; hiddenAt?: unknown } }) =>
           Promise.resolve(
-            args.where.createdAt
+            args.where.generatedAt
               ? (counts.questions7d ?? 0)
               : (counts.questionsTotal ?? 3),
           ),
@@ -144,9 +144,9 @@ describe('ListingsService.interest', () => {
       prisma.watchedListing.count.mock.calls[0][0].where.createdAt.gte,
     ).toEqual(gte);
     const faqWeek = prisma.listingFaq.count.mock.calls[0][0] as {
-      where: { createdAt: { gte: Date } };
+      where: { generatedAt: { gte: Date } };
     };
-    expect(faqWeek.where.createdAt.gte).toEqual(gte);
+    expect(faqWeek.where.generatedAt.gte).toEqual(gte);
   });
 
   it('returns lifetime totals from the counts and the open-offer figure', async () => {

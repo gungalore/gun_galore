@@ -108,15 +108,56 @@ describe('ListingFaqService.listPublic', () => {
     const { svc } = makeService({
       entries: [FAQ_ROW],
       samples: [
-        { createdAt: new Date('2026-11-01T10:00:00Z'), sellerFirstReplyAt: new Date('2026-11-01T10:30:00Z') },
-        { createdAt: new Date('2026-11-02T10:00:00Z'), sellerFirstReplyAt: new Date('2026-11-02T10:20:00Z') },
-        { createdAt: new Date('2026-11-03T10:00:00Z'), sellerFirstReplyAt: new Date('2026-11-03T10:10:00Z') },
+        {
+          createdAt: new Date('2026-11-01T10:00:00Z'),
+          messages: [
+            { senderId: 'B1', createdAt: new Date('2026-11-01T10:00:00Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-01T10:30:00Z') },
+          ],
+        },
+        {
+          createdAt: new Date('2026-11-02T10:00:00Z'),
+          messages: [
+            { senderId: 'B1', createdAt: new Date('2026-11-02T10:00:00Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-02T10:20:00Z') },
+          ],
+        },
+        {
+          createdAt: new Date('2026-11-03T10:00:00Z'),
+          messages: [
+            { senderId: 'B1', createdAt: new Date('2026-11-03T10:00:00Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-03T10:10:00Z') },
+          ],
+        },
       ],
     });
     const out = await svc.listPublic('L1');
     expect(out.entries).toEqual([FAQ_ROW]);
     expect(out.sellerReply.label).toContain('within an hour');
     expect(out.sellerReply.sampleSize).toBe(3);
+  });
+
+  it('counts each seller reply in ONE thread (the Turret Tags report)', async () => {
+    // Three replies to the same buyer inside one inquiry previously produced a
+    // sample size of 1, so the badge still said "New seller".
+    const { svc } = makeService({
+      samples: [
+        {
+          createdAt: new Date('2026-11-26T18:11:00Z'),
+          messages: [
+            { senderId: 'B1', createdAt: new Date('2026-11-26T18:11:00Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-26T18:12:00Z') },
+            { senderId: 'B1', createdAt: new Date('2026-11-26T18:13:30Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-26T18:14:00Z') },
+            { senderId: 'B1', createdAt: new Date('2026-11-26T18:16:00Z') },
+            { senderId: 'S1', createdAt: new Date('2026-11-26T18:17:00Z') },
+          ],
+        },
+      ],
+    });
+    const out = await svc.listPublic('L1');
+    expect(out.sellerReply.sampleSize).toBe(3);
+    expect(out.sellerReply.label).toContain('within an hour');
   });
 
   it('404s a missing or non-public listing, but serves a gated one', async () => {
