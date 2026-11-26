@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Offer decision page — handles BOTH directions of the offer/counter
@@ -512,7 +512,7 @@ export function OfferDecisionPage({
               ← Back
             </ActionButton>
             <ActionButton
-              variant="secondary"
+              variant="danger"
               disabled={
                 !view.reason ||
                 (view.reason === 'OTHER' && view.note.trim().length < 10)
@@ -569,7 +569,7 @@ function ActionButton({
   disabled,
   children,
 }: {
-  variant: 'primary' | 'secondary' | 'ghost';
+  variant: 'primary' | 'secondary' | 'ghost' | 'danger';
   onClick: () => void;
   disabled?: boolean;
   children: React.ReactNode;
@@ -589,6 +589,14 @@ function ActionButton({
       background: 'transparent',
       color: 'var(--text-secondary)',
       border: '1px solid var(--border)',
+    },
+    // Irreversible, penalty-bearing action (declining an offer records a
+    // strike). Red so it can never be mistaken for the neutral secondary
+    // buttons beside it.
+    danger: {
+      background: disabled ? 'var(--bg-inset)' : 'var(--red)',
+      color: disabled ? 'var(--text-tertiary)' : '#fff',
+      border: 'none',
     },
   };
   return (

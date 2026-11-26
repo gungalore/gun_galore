@@ -3604,14 +3604,16 @@ export default function NewListingPage() {
                       }
                       hint="Set automatically 30% below your reserve. It's read-only and can't be edited after publishing."
                     >
-                      <input
-                        type="text"
-                        readOnly
-                        aria-label="Opening bid, set automatically 30% below your reserve"
-                        value={
-                          openingBidCents > 0 ? formatRand(openingBidCents) : ''
+                      {/* Static display, not a form control: the opening bid
+                          is derived from the reserve, so there is nothing to
+                          focus, select or copy here (a readOnly <input> still
+                          showed a caret/selection highlight and grabbed focus). */}
+                      <div
+                        aria-label={
+                          openingBidCents > 0
+                            ? `Opening bid ${formatRand(openingBidCents)}, set automatically 30% below your reserve`
+                            : 'Opening bid, set automatically 30% below your reserve'
                         }
-                        placeholder="Type your reserve to see it"
                         style={{
                           ...inputStyle,
                           background: 'var(--bg-inset)',
@@ -3622,8 +3624,15 @@ export default function NewListingPage() {
                           fontWeight: 600,
                           fontVariantNumeric: 'tabular-nums',
                           cursor: 'default',
+                          userSelect: 'none',
+                          WebkitUserSelect: 'none',
+                          pointerEvents: 'none',
                         }}
-                      />
+                      >
+                        {openingBidCents > 0
+                          ? formatRand(openingBidCents)
+                          : 'Type your reserve to see it'}
+                      </div>
                     </Field>
 
                     {reserveCents > 0 && (

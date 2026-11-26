@@ -982,19 +982,24 @@ export default function EditListingPage() {
                   : 'Opening bid'
               }
             >
-              <input
-                type="text"
-                readOnly
-                value={auctionOpeningBidLabel}
-                aria-label="Opening bid, fixed after publishing"
+              {/* Static display, not a form control: a readOnly <input> was
+                  still focusable and selectable, which made a derived figure
+                  look editable. */}
+              <div
+                aria-label={`Opening bid ${auctionOpeningBidLabel}, fixed after publishing`}
                 style={{
                   ...inputStyle,
                   background: 'var(--bg-inset)',
                   color: 'var(--text-primary)',
                   fontWeight: 600,
                   cursor: 'default',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  pointerEvents: 'none',
                 }}
-              />
+              >
+                {auctionOpeningBidLabel}
+              </div>
               <p
                 className="text-xs mt-1.5"
                 style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
