@@ -7,6 +7,25 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — LISTING INTEREST FIXED; REPLY-TIME BADGE COUNTS EVERY REPLY (BACKEND DEPLOY)
+
+Operator: "Lisitng interest seems to not work. And I replied three times on the turret tags question but
+it did not give a time that I usually respond to users."
+
+- **Listing interest** was the live 500 already found and fixed in `ca380275`: `prisma.listingFaq.count`
+  used a non-existent `createdAt` instead of `generatedAt`, so every `GET /listings/:id/interest` threw
+  ("We couldn't load this listing's interest"). The operator's screenshot predates that deploy; no
+  interest/listingFaq error has appeared in the log since the 21:23 backend restart.
+- **Reply-time badge** sampled only the FIRST reply per inquiry, so three replies in Ruanda's single Turret
+  Tags thread produced one sample and the badge still said "New seller — reply time not yet known". A sample
+  is now **each seller reply to the latest buyer message** (thread creation for the first), capped and still
+  bounded to 90 days. Verified live: `GET /listings/cmvic0wrp000r3gvnqcf9qnx2/faq` now returns
+  `{"sellerReply":{"label":"Usually replies within an hour","sampleSize":3}}`.
+
+Deployed **`adeca90a`** (backend-only, 21:49 SAST); rollback **`alloutdoor-20261126-214938.dump`**
+(39,445,747 bytes); backend online, health OK, gate 200. Checks: backend tsc clean + **461 suites / 6,737
+tests** (8 skipped); the interest spec was updated to the `generatedAt` column.
+
 ## 2026-11-26 — PEACH INTERRUPTED-PAYMENT RECOVERY (+ ListingFaq interest 500 FIX)
 
 Operator forwarded Ruanda's phone screenshots: after backing out of the Peach hosted page and retrying, Peach
