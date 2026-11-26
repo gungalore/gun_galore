@@ -7,6 +7,39 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — PEACH INTERRUPTED-PAYMENT RECOVERY (+ ListingFaq interest 500 FIX)
+
+Operator forwarded Ruanda's phone screenshots: after backing out of the Peach hosted page and retrying, Peach
+showed "Could not find Checkout details", then the checkout's Pay button did nothing.
+
+What the production evidence showed. Her unpaid transaction (created 18:43, 15-minute window ending 18:58)
+was still being offered as "Resume payment" at 20:45 by GET /transactions/unpaid, which had no deadline
+filter. The stored Peach checkout session returned "created" (000.200.100) from the API but the hosted page
+itself was dead — reopening the stored URL gave the Peach error. Clicking Pay then hit
+UNPAID_CHECKOUT_EXISTS, and the frontend responded by setting state it already had, so the button appeared
+to do nothing.
+
+- GET /transactions/unpaid now only advertises an attempt inside its hold window + the existing 5-minute
+  release grace. A lapsed attempt is no longer offered as resumable; Pay can release it and start clean.
+- Explicit Resume of a pending Peach attempt now mints a FRESH Peach session for the SAME transaction
+  instead of reopening the single-use stored URL. Ozow keeps returning its long-lived link. (A Peach session
+  that was already open in another tab could in theory still be paid; unmatched/duplicate Peach webhooks
+  would be visible in the logs/alerts and refunded via Peach. The buyer is only handed the new page.)
+- A lapsed Resume now safely releases the attempt and redirects to a clean checkout for the same listing
+  (instead of a dead-end 400).
+- Pay when an unpaid attempt exists now navigates to the resume flow instead of silently resetting the same
+  banner. New payment-safety specs cover the unpaid filter, the fresh Peach session and lapsed recovery.
+- While verifying, the backend log exposed an unrelated live 500: prisma.listingFaq.count({ createdAt }) —
+  ListingFaq has generatedAt, not createdAt — so every seller-interest call failed. Fixed to generatedAt
+  (commit ca380275, backend-only deploy).
+
+Deployed 465d35af (full, 21:17 SAST; rollback alloutdoor-20261126-211712.dump) and ca380275 (backend-only,
+21:22; rollback alloutdoor-20261126-212229.dump). Backend/frontend/warden online; health OK; gate
+307→/gate + /gate 200; payment-methods still Peach-only. Checks: backend tsc clean + 461 suites / 6,736
+tests (8 skipped); frontend typecheck clean + 207 files / 2,318 tests (1 skipped) + build clean. Ruanda's
+stale transaction is untouched; her next Pay/Resume will release it safely and start a fresh Peach session —
+ask her to retry.
+
 ## 2026-11-26 — EXPANDABLE Q&A BOX, ALWAYS-VISIBLE ADDRESS ADD, BUY NOW LEAVES A CART TRACE (FRONTEND DEPLOY)
 
 Operator, from phone screenshots: *"The questions and answers should be grouped in one box that is
