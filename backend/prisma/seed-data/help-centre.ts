@@ -79,7 +79,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What are the ways to sell on All Outdoor?',
     question: 'Which selling formats can I choose?',
     answer:
-      "Three: Marketplace — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
+      "Three: Marketplace — one fixed price, the fastest way to sell; Auction — you set a reserve, the opening bid is set 30% below it automatically, and the highest bid at the deadline wins; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
     tags: ['selling', 'auction', 'marketplace', 'offers'],
   },
   {
@@ -95,7 +95,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do auctions work?',
     question: 'How do I run an auction on All Outdoor?',
     answer:
-      'Set a duration and a starting bid when you list on the [Sell page](/sell). Buyers bid, and the highest bid when time runs out wins. You can set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum. Bidding is free; the winner pays and the money is held until they confirm delivery. Bids in the final 2 minutes extend the end time, so snipers cannot steal it at the last second.',
+      'You set a reserve — the minimum your item sells for — and the opening bid is set for you automatically at 30% below it. Buyers then bid up from there, and the highest bid when time runs out wins; if bidding never reaches your reserve, the auction ends without a sale. Your reserve also decides how long the auction may run: 3 days needs a reserve of at least R2,500, 5 days R5,000, 7 days R7,500 and 14 days R10,000 — and a larger reserve may choose any shorter length. Bidding is free; the winner pays and the money is held until they confirm delivery. Bids in the final 2 minutes extend the end time, so snipers cannot steal it at the last second.',
     tags: ['selling', 'auction', 'reserve'],
   },
   {

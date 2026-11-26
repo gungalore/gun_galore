@@ -3617,7 +3617,7 @@ export class NotificationsService {
         html = this.email({
           status: { tone: 'error', label: 'No bids' },
           headline: 'No bids — relist?',
-          body: `${b(listingTitle)} ended with no bids. You can relist with a lower starting price.`,
+          body: `${b(listingTitle)} ended with no bids. You can relist with a lower reserve.`,
           cta: { label: 'View dashboard', url: ctaUrl },
           preheader: `${listingTitle} closed with no bids`,
         });

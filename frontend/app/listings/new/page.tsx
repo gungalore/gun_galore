@@ -8,8 +8,11 @@ import { Category, CategoryAttributeDef, Me } from '@/lib/types';
 import { CONDITION_LABELS } from '@/lib/utils';
 import {
   AUCTION_DURATIONS,
+  AUCTION_LOWEST_FLOOR_CENTS,
   auctionFloorViolation,
+  auctionStartingBidCents,
   formatAuctionFloor,
+  isAuctionDurationAllowed,
 } from '@/lib/auction-minimums';
 import {
   PLATFORM_FEE_BANDS as COMMISSION_BANDS,
@@ -104,14 +107,14 @@ const SHIPPING_METHOD_VALUES: ShippingMethod[] = [
 ];
 
 // Auction durations the Step-3 picker actually offers. A relisted auction
-// whose duration isn't one of these (a legacy 10-day run) keeps the form
-// default rather than selecting nothing at all.
+// whose duration isn't one of these (a legacy 10-day run) starts with no
+// duration selected rather than selecting a length the picker can't show.
 const RELISTABLE_DURATIONS = ['3', '5', '7', '14'];
 
-// Auction length ↔ minimum item value lives in lib/auction-minimums.ts, so
-// the day pills, the Continue gate and the backend's refusal all read the
-// same numbers. See that file for why the floor is on the reserve / typed
-// starting bid and never on the derived 30%-under starting bid.
+// Auction length ↔ minimum reserve lives in lib/auction-minimums.ts, so the
+// day pills, the Continue gate and the backend's refusal all read the same
+// numbers. The floor is measured on the reserve only: the opening bid is
+// DERIVED as floor(reserve * 0.7) and is allowed to sit below the floor.
 function calcCommissionCents(priceCents: number): number {
   // Delegates to the one copy — see the note on the aliases above.
   return platformFeeCents(priceCents);
@@ -777,7 +780,11 @@ export default function NewListingPage() {
     passFeeToBuyer: true,
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
-    durationDays: '7',
+    // No duration is assumed. An auction's lengths are gated by the reserve,
+    // and the reserve itself starts blank, so pre-picking a length could show
+    // a pill selected that the current reserve does not allow. The seller
+    // picks once the reserve is typed; Step 3 blocks publish until they do.
+    durationDays: '',
     reservePrice: '',
     // Marketplace is opt-in. The checkbox below toggles whether the price
     // input is visible AND whether the value is submitted — turning it
@@ -804,8 +811,9 @@ export default function NewListingPage() {
   // endpoint) and seed the text fields so the seller doesn't retype title,
   // description, category + attributes. Photos are File objects and can't be
   // carried over — the seller re-uploads them (the form already requires
-  // that). Price/reserve are seeded from the source; the seller can lower
-  // them (the NO_BIDS/NO_RESERVE copy tells them to).
+  // that). Price / reserve are seeded from the source; the seller can adjust
+  // them for the new listing. An auction's duration is only carried across
+  // when the seeded reserve still unlocks it (see the relist effect below).
   const searchParams = useSearchParams();
   const relistFromId = searchParams.get('relistFrom');
   const relistDoneRef = useRef(false);
@@ -956,6 +964,18 @@ export default function NewListingPage() {
         )
           ? String(l.durationDays)
           : null;
+        // Carrying an auction's length across only works when the reserve
+        // carried across too — a legacy no-reserve auction seeds no reserve,
+        // and EVERY duration is gated by the reserve now. A seeded length the
+        // reserve cannot fund would render selected-but-disabled, so drop it
+        // and let the seller re-pick after typing the reserve the new rules
+        // require. The relist notice keeps the seller aware nothing is lost:
+        // the source auction's length is gone with the no-reserve rules.
+        const relistReserveCents =
+          l.reservePrice != null && l.reservePrice > 0 ? l.reservePrice : 0;
+        const relistDurationAllowed =
+          relistDuration != null &&
+          isAuctionDurationAllowed(relistDuration, relistReserveCents);
         setForm((f) => ({
           ...f,
           title: l.title ?? f.title,
@@ -967,21 +987,32 @@ export default function NewListingPage() {
           //
           // BUY_NOW: `l.price` is now the seller's raw ask, and `sellerAskCents`
           // mirrors it. Seed from the ask so a relist never invents a number.
+          // AUCTION: no price to seed — the opening bid is derived from the
+          // reserve (floor(reserve * 0.7)) and the seller no longer types it.
           price:
             relistType === 'BUY_NOW'
               ? l.sellerAskCents != null
                 ? String(l.sellerAskCents / 100)
                 : ''
-              : l.price != null
-                ? String(l.price / 100)
-                : f.price,
+              : relistType === 'AUCTION'
+                ? ''
+                : l.price != null
+                  ? String(l.price / 100)
+                  : f.price,
           reservePrice:
             l.reservePrice != null
               ? String(l.reservePrice / 100)
               : f.reservePrice,
           // "How are you selling?" — asked and answered last time round.
           listingType: relistType || f.listingType,
-          durationDays: relistDuration ?? f.durationDays,
+          // An auction relist keeps its duration only when the seeded reserve
+          // unlocks it; otherwise the seller re-picks (see relistReserveCents).
+          durationDays:
+            relistType === 'AUCTION'
+              ? relistDurationAllowed
+                ? relistDuration!
+                : ''
+              : f.durationDays,
           // Each mode's own required number, so seeding the mode doesn't drop
           // the seller into a step that's suddenly incomplete: Take a Shot
           // carries the offer thresholds, and an auction's Marketplace stays
@@ -1519,17 +1550,25 @@ export default function NewListingPage() {
     if (!form.listingType) {
       step3.push('How you want to sell it — Marketplace or Auction');
     } else if (form.listingType === 'AUCTION') {
-      // Either a starting bid or a reserve satisfies an auction; say so
-      // rather than naming one field the seller may have deliberately left
-      // blank in favour of the other.
-      if (!hasPrice && !hasReserve) {
-        step3.push('A starting bid or a reserve price');
-      }
+      // Every auction requires a reserve now — the seller no longer types a
+      // starting bid, and a no-reserve auction is not offered for new
+      // listings. Both the reserve and the duration are needed, and the
+      // duration can only be one the reserve funds.
+      if (!hasReserve) step3.push('Your reserve price');
       if (!form.durationDays) step3.push('How long the auction runs');
-      // The days are advertised against a minimum value: a 3-day run only
-      // runs on an item worth R1,000+. The floor is on the RESERVE (or, with
-      // no reserve, the starting bid the seller types) — never on the
-      // derived 30%-under starting bid. See lib/auction-minimums.ts.
+      // A reserve below the LOWEST floor unlocks no duration at all, so the
+      // seller would be looking at four greyed pills with nothing saying why.
+      // Name the floor. (When a duration IS picked, its own floor is checked
+      // below instead — the two never both fire.)
+      if (hasReserve && reserveCents < AUCTION_LOWEST_FLOOR_CENTS) {
+        step3.push(
+          `Reserve of at least ${formatAuctionFloor(AUCTION_LOWEST_FLOOR_CENTS)} — the lowest any auction can run on`,
+        );
+      }
+      // The days are advertised against a minimum RESERVE: a 3-day run needs
+      // at least R2,500, a 14-day run at least R10,000. The floor is measured
+      // on the reserve only — never on the derived 30%-under opening bid,
+      // which is allowed to sit below it. See lib/auction-minimums.ts.
       //
       // Only fires once there is a figure to compare and a duration to
       // compare it against; naming the shortfall before the seller has typed
@@ -1537,22 +1576,11 @@ export default function NewListingPage() {
       const floor = auctionFloorViolation({
         durationDays: form.durationDays,
         reserveCents,
-        startingBidCents: hasPrice ? Math.round(parseFloat(form.price) * 100) : 0,
       });
       if (floor) {
-        const what = floor.field === 'reserve' ? 'Reserve' : 'Starting bid';
         step3.push(
-          `${what} of at least ${formatAuctionFloor(floor.minCents)} for a ${form.durationDays}-day auction`,
+          `Reserve of at least ${formatAuctionFloor(floor.minCents)} for a ${form.durationDays}-day auction`,
         );
-      }
-      // A seller-chosen starting bid must sit below the reserve — at or above
-      // it the reserve is not a reserve at all.
-      if (
-        hasReserve &&
-        hasPrice &&
-        Math.round(parseFloat(form.price) * 100) > reserveCents
-      ) {
-        step3.push('Starting bid below the reserve');
       }
     } else if (form.listingType !== 'TAKE_A_SHOT') {
       // TAKE_A_SHOT needs no price — the buyer names one.
@@ -1668,18 +1696,33 @@ export default function NewListingPage() {
   // because the next person wires something to it and inherits a meaning that
   // stopped being true.)
 
+  // The auction opening bid the seller will get: floor(reserve * 0.7). It is
+  // DERIVED, never typed — this one value feeds the read-only line on the
+  // form, the "How it will look" card and the Preview modal, so all three
+  // show the same number the published listing will open at. 0 while the
+  // reserve is blank (there is nothing to derive yet).
+  const openingBidCents = useMemo(
+    () =>
+      auctionStartingBidCents(
+        Math.round((parseFloat(form.reservePrice) || 0) * 100),
+      ),
+    [form.reservePrice],
+  );
+
   // Values the "How it will look" preview reads. The price is the BUYER-FACING
   // one — listPriceFromSellerAsk is the same mirror of the fee calculator the
   // rest of the form uses, so the preview can never disagree with the fee
-  // breakdown shown a few fields above it.
+  // breakdown shown a few fields above it. An auction's buyer-facing price is
+  // its OPENING BID, derived from the reserve, not anything the seller types.
   const previewPriceCents = useMemo(() => {
+    if (form.listingType === 'AUCTION') return openingBidCents;
     const typed = Number(form.price);
     if (!Number.isFinite(typed) || typed <= 0) return 0;
     const askCents = Math.round(typed * 100);
     return form.listingType === 'BUY_NOW'
       ? listPriceFromSellerAsk(askCents).listPrice
       : askCents;
-  }, [form.price, form.listingType]);
+  }, [form.price, form.listingType, openingBidCents]);
 
   // ⚠️ REVOKED ON CHANGE. images is File[], so the preview needs an object URL,
   // and every one of those pins its blob in memory until it is revoked. A
@@ -1811,6 +1854,25 @@ export default function NewListingPage() {
 
   function set(key: string, value: string | boolean) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  // Reserve changes gate the duration pills. An already-selected duration the
+  // new reserve no longer funds is CLEARED rather than left selected-but-
+  // disabled — a selected value the form would then refuse is exactly the
+  // dead end the footer lists exist to prevent. A higher reserve unlocks the
+  // shorter runs too ("backwards allowed"), so this only ever clears.
+  function setReservePrice(next: string) {
+    const reserveCents = Math.round((parseFloat(next) || 0) * 100);
+    setForm((f) => {
+      const keepDuration =
+        f.durationDays.length > 0 &&
+        isAuctionDurationAllowed(f.durationDays, reserveCents);
+      return {
+        ...f,
+        reservePrice: next,
+        durationDays: keepDuration ? f.durationDays : '',
+      };
+    });
   }
 
   // Ask Claude to tidy the seller's description — spelling, grammar, layout,
@@ -1983,13 +2045,21 @@ export default function NewListingPage() {
         ? { attributes: collectedAttributes }
         : {}),
     };
-    // `price` is sent exactly as the seller typed it. For BUY_NOW that IS the
-    // listed price; the buyer-paid Platform Fee is calculated at checkout, so
-    // never add a fee here or it would be charged twice.
-    // For AUCTION it is the starting bid (optional when a reserve is set —
-    // the backend derives a 70% default only when it is omitted).
+    // `price` is sent exactly as the seller typed it, and ONLY for a priced,
+    // non-auction mode. For BUY_NOW that IS the listed price; the buyer-paid
+    // Platform Fee is calculated at checkout, so never add a fee here or it
+    // would be charged twice.
+    // For AUCTION nothing is sent: the opening bid is DERIVED by the backend
+    // as floor(reserve * 0.7). A `price` from this form could only be stale —
+    // the seller no longer types one — and sending one would let the listing
+    // contradict the rule the read-only "Opening bid" line advertises.
     const typedPrice = parseFloat(form.price);
-    if (!isPriceless && Number.isFinite(typedPrice) && typedPrice > 0) {
+    if (
+      !isPriceless &&
+      form.listingType !== 'AUCTION' &&
+      Number.isFinite(typedPrice) &&
+      typedPrice > 0
+    ) {
       body.price = Math.round(typedPrice * 100);
     }
     // UX-7 — optional compare-at ("was") price, BUY_NOW only. Display-only;
@@ -2014,13 +2084,14 @@ export default function NewListingPage() {
       );
     }
     if (form.listingType === 'AUCTION') {
-      body.durationDays = parseInt(form.durationDays, 10);
-      if (form.reservePrice) {
-        body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
-        // The starting bid is the seller's choice (the field stays visible
-        // when a reserve is set). Left blank, we omit `price` and the backend
-        // derives a 70% default. Never override a typed value.
-      }
+      // Reserve + duration are the only auction terms the seller sets. The
+      // opening bid is not a field: the backend derives it from the reserve
+      // (floor(reserve * 0.7)), exactly as the read-only line shows.
+      if (form.durationDays) body.durationDays = parseInt(form.durationDays, 10);
+      const reserveCents = Math.round(
+        (parseFloat(form.reservePrice) || 0) * 100,
+      );
+      if (reserveCents > 0) body.reservePrice = reserveCents;
       // Auction fixed-price option is retired and create() rejects it. Nothing may send
       // buyNowPrice here, including a relist of a legacy auction.
     }
@@ -2829,7 +2900,7 @@ export default function NewListingPage() {
           <strong style={{ color: 'var(--success)' }}>Details carried over</strong> —
           {relistPriceCleared
             ? ' your previous listing’s description, specifications, selling type and delivery options are already filled in, so every step is open for review. Check each one, then add fresh photos before you publish.'
-            : ' your previous listing’s description, specifications, selling type, price and delivery options are already filled in, so every step is open for review. Check each one, adjust your price if it didn’t sell last time, then add fresh photos before you publish.'}
+            : ' your previous listing’s description, specifications, selling type, price or reserve and delivery options are already filled in, so every step is open for review. Check each one, adjust your price or reserve if it didn’t sell last time, then add fresh photos before you publish.'}
           {/* The price is the one thing a Marketplace relist can't carry over: the
               old listing only exposes the buyer-facing figure, and that number
               already includes our fee. Re-using it would list the item higher
@@ -3342,9 +3413,9 @@ export default function NewListingPage() {
 
             {/* ─── Pricing UI per surface ──────────────────────────
                 BUY_NOW  → single Price input.
-                AUCTION  → see auction block below; starting bid is
-                           either typed (no-reserve) or derived from
-                           the reserve at 70% (with-reserve).
+                AUCTION  → see auction block below; the seller sets the
+                           reserve + duration, and the opening bid is
+                           derived at 70% of the reserve (never typed).
                 TAKE_A_SHOT → handled separately under its own block. */}
             {/* The Marketplace price field is the seller's asking price and the
                 listed price. The buyer pays the Platform Fee on top at
@@ -3423,166 +3494,139 @@ export default function NewListingPage() {
               </Field>
             )}
 
-            {/* Auction block — Duration + Reserve + Starting bid.
-                The starting bid is ALWAYS the seller's choice now: typed
-                directly with no reserve, or typed as the opening figure
-                below the reserve (blank = a 70% default). A fixed 70% rule
-                made the "hidden" reserve trivially derivable, so it is no
-                longer enforced or published. Marketplace removed per
-                operator decision. */}
-            {form.listingType === 'AUCTION' && (
-              <>
-                <Field label="Duration" required>
-                  <PillGroup
-                    value={form.durationDays}
-                    onChange={(v) => set('durationDays', v)}
-                    options={AUCTION_DURATIONS.map((d) => ({
-                      value: String(d.days),
-                      label: d.label,
-                      sublabel: d.sublabel,
-                    }))}
-                  />
-                </Field>
+            {/* Auction block — Reserve → Duration → derived Opening bid.
+                The seller sets ONLY the reserve and the length. The opening
+                bid is not theirs to type: it is derived at floor(reserve ×
+                0.7), 30% below the reserve, and shown read-only. Both terms
+                are fixed after publishing. The duration pills are gated by
+                the reserve's floor, and "backwards" is allowed — a larger
+                reserve can always choose a SHORTER run. No-reserve auctions
+                are no longer offered for new listings. */}
+            {form.listingType === 'AUCTION' &&
+              (() => {
+                const reserveCents = Math.round(
+                  (parseFloat(form.reservePrice) || 0) * 100,
+                );
+                return (
+                  <>
+                    <Field
+                      label="Reserve price"
+                      required
+                      hint="Hidden from bidders. Every auction needs a reserve — the lowest price you'll accept. It also decides which durations you can run."
+                      tip={
+                        <>
+                          The lowest price you&apos;ll accept. Hidden from
+                          bidders: bids count toward closing the sale only
+                          once they meet it, and the amount is revealed only
+                          then. The opening bid is set from this reserve — you
+                          don&apos;t type it.
+                        </>
+                      }
+                    >
+                      <PriceInput
+                        value={form.reservePrice}
+                        onChange={setReservePrice}
+                        placeholder="e.g. 5000"
+                      />
+                    </Field>
 
-                <Field
-                  label="Reserve price"
-                  hint="Hidden from bidders. Leave blank for no reserve — you'll then type the starting bid directly below."
-                  tip={
-                    <>
-                      The lowest price you&apos;ll accept. Hidden from
-                      bidders. Bids count toward closing the sale only
-                      once they meet this number. You choose the starting
-                      bid below it; the reserve amount is only revealed
-                      once bidding reaches it.
-                    </>
-                  }
-                >
-                  <PriceInput
-                    value={form.reservePrice}
-                    onChange={(v) => set('reservePrice', v)}
-                    placeholder="No reserve"
-                  />
-                </Field>
+                    <Field
+                      label="Duration"
+                      required
+                      hint={
+                        !form.reservePrice
+                          ? 'Type a reserve first — it sets which durations you can pick. Reserve and duration are fixed after publishing.'
+                          : reserveCents < AUCTION_LOWEST_FLOOR_CENTS
+                            ? `Your reserve is below the ${formatAuctionFloor(AUCTION_LOWEST_FLOOR_CENTS)} minimum every auction needs — raise it to unlock a duration.`
+                            : 'Longer runs need a higher reserve. Any shorter run is allowed too — a R20,000 reserve can run for 3 days. Reserve and duration are fixed after publishing.'
+                      }
+                    >
+                      <PillGroup
+                        value={form.durationDays || null}
+                        onChange={(v) => set('durationDays', v)}
+                        options={AUCTION_DURATIONS.map((d) => ({
+                          value: String(d.days),
+                          label: d.label,
+                          sublabel: d.sublabel,
+                          disabled: !isAuctionDurationAllowed(
+                            d.days,
+                            reserveCents,
+                          ),
+                        }))}
+                      />
+                    </Field>
 
-                {form.reservePrice ? (
-                  // ─── Reserve set → seller chooses the opening bid ────
-                  (() => {
-                    const reserveCents = Math.round(
-                      parseFloat(form.reservePrice || '0') * 100,
-                    );
-                    const defaultStartCents = Math.floor(reserveCents * 0.7);
-                    const defaultStartRand = (
-                      defaultStartCents / 100
-                    ).toLocaleString('en-ZA', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    });
-                    return (
-                      <>
-                        <Field
-                          label="Starting bid"
-                          tipLabel="How you get paid"
-                          tipTitle="How you get paid"
-                          tip={
-                            <>
-                              Bidding sets the final price and our 5%
-                              commission comes off it. Accept the order
-                              within 48 hours, then hand the item over
-                              within 5 days. Your payout is released once
-                              delivery is confirmed — allow 2-3 business
-                              days to reach your bank.
-                            </>
-                          }
-                          hint={`The opening bid buyers see. Keep it below your reserve. Leave blank to start at R${defaultStartRand} (70% of your reserve).`}
-                        >
-                          <PriceInput
-                            value={form.price}
-                            onChange={(v) => set('price', v)}
-                            placeholder={`${defaultStartRand} (default)`}
-                          />
-                        </Field>
-                        <div
-                          style={{
-                            background: 'var(--bg-inset)',
-                            border: '0.5px solid var(--border)',
-                            borderRadius: 6,
-                            padding: '12px 14px',
-                          }}
-                        >
-                          {/* Payout preview is computed on the RESERVE,
-                              not the starting bid. The starting bid is a
-                              hook to get bidding going — what the seller
-                              actually cares about is what they'll receive
-                              IF the auction reaches reserve. */}
-                          <p
-                            className="text-xs uppercase mb-2"
-                            style={{
-                              color: 'var(--text-tertiary)',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
-                            If the auction reaches your reserve of R
-                            {(reserveCents / 100).toLocaleString('en-ZA', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </p>
-                          <PriceBreakdown priceCents={reserveCents} />
-                        </div>
-                      </>
-                    );
-                  })()
-                ) : (
-                  // ─── No reserve → seller types starting bid ──
-                  <Field
-                    label="Starting bid"
-                    required
-                    tipLabel="How you get paid"
-                    tipTitle="How you get paid"
-                    tip={
-                      <>
-                        Bidding sets the final price and our 5% commission
-                        comes off it. Accept the order within 48 hours, then
-                        hand the item over within 5 days. Your payout is
-                        released once delivery is confirmed — allow 2-3
-                        business days to reach your bank.
-                      </>
-                    }
-                    hint="Whole rands. Bidding sets the final price, so nothing is added on top of it — our commission comes off the winning bid."
-                  >
-                    <div style={{ position: 'relative' }}>
-                      <span
+                    <Field
+                      label="Opening bid"
+                      tipLabel="How you get paid"
+                      tipTitle="How you get paid"
+                      tip={
+                        <>
+                          Bidding starts at the opening bid and sets the final
+                          price; our 5% commission comes off the winning bid.
+                          Accept the order within 48 hours, then hand the item
+                          over within 5 days. Your payout is released once
+                          delivery is confirmed — allow 2-3 business days to
+                          reach your bank.
+                        </>
+                      }
+                      hint="Set automatically 30% below your reserve. It's read-only and can't be edited after publishing."
+                    >
+                      <input
+                        type="text"
+                        readOnly
+                        aria-label="Opening bid, set automatically 30% below your reserve"
+                        value={
+                          openingBidCents > 0 ? formatRand(openingBidCents) : ''
+                        }
+                        placeholder="Type your reserve to see it"
                         style={{
-                          position: 'absolute',
-                          left: 12,
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          color: 'var(--text-tertiary)',
-                          fontSize: 14,
+                          ...inputStyle,
+                          background: 'var(--bg-inset)',
+                          color:
+                            openingBidCents > 0
+                              ? 'var(--text-primary)'
+                              : 'var(--text-tertiary)',
+                          fontWeight: 600,
+                          fontVariantNumeric: 'tabular-nums',
+                          cursor: 'default',
+                        }}
+                      />
+                    </Field>
+
+                    {reserveCents > 0 && (
+                      <div
+                        style={{
+                          background: 'var(--bg-inset)',
+                          border: '0.5px solid var(--border)',
+                          borderRadius: 6,
+                          padding: '12px 14px',
                         }}
                       >
-                        R
-                      </span>
-                      <input
-                        type="number"
-                        required
-                        min={1}
-                        step="0.01"
-                        value={form.price}
-                        onChange={(e) => set('price', e.target.value)}
-                        style={{ ...inputStyle, paddingLeft: 26 }}
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <PriceBreakdown
-                      priceCents={Math.round(
-                        (parseFloat(form.price) || 0) * 100,
-                      )}
-                    />
-                  </Field>
-                )}
-              </>
-            )}
+                        {/* Payout preview is computed on the RESERVE, not the
+                            derived opening bid. The opening bid is a hook to
+                            get bidding going; what the seller actually cares
+                            about is what they'll receive IF the auction
+                            reaches reserve. */}
+                        <p
+                          className="text-xs uppercase mb-2"
+                          style={{
+                            color: 'var(--text-tertiary)',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          If the auction reaches your reserve of R
+                          {(reserveCents / 100).toLocaleString('en-ZA', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                        <PriceBreakdown priceCents={reserveCents} />
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
             {/* (The "Also accept offers" tick stood here for one day.
                 Operator, 2026-08-28: "Take a shot is always on by default and
@@ -4741,7 +4785,7 @@ export default function NewListingPage() {
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
                   {form.listingType === 'AUCTION'
-                    ? 'Bidding opens here. Your 5% commission comes off what the item sells for — you never pay to list.'
+                    ? 'Bidding opens at your derived opening bid — 30% below your reserve. Your 5% commission comes off what the item sells for; you never pay to list.'
                     : 'This is the price buyers see. The buyer pays the Platform Fee and delivery on top at checkout; nothing comes off your side.'}
                 </p>
               </div>
@@ -4814,11 +4858,15 @@ export default function NewListingPage() {
               // to be the marked-up figure, not the seller's ask. Handing the
               // raw ask over would show one price in the preview and another
               // on the published listing, which is exactly the surprise the
-              // breakdown under the price field exists to prevent.
+              // breakdown under the price field exists to prevent. An auction
+              // shows its OPENING BID, derived from the reserve — the same
+              // floor(reserve * 0.7) the read-only field and the backend use.
               price:
                 form.listingType === 'BUY_NOW' && buyNowQuote.listPrice > 0
                   ? String(buyNowQuote.listPrice / 100)
-                  : form.price,
+                  : form.listingType === 'AUCTION'
+                    ? String(openingBidCents / 100)
+                    : form.price,
               listingType: form.listingType as PreviewSnapshot['listingType'],
               condition: form.condition as PreviewSnapshot['condition'],
               province: form.province as PreviewSnapshot['province'],

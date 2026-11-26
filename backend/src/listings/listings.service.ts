@@ -349,20 +349,44 @@ const CLOSED_LISTING_STATUSES = new Set<ListingStatus>([
 // has to justify the days. Mirrored in the sell form
 // (frontend/lib/auction-minimums.ts, AUCTION_DURATIONS) so the seller sees
 // the floor before they hit Publish — the check here is the one that
-// actually holds, because the price fields are client-supplied.
+// actually holds, because the reserve is client-supplied.
 //
-// ⚠️ THE FLOOR IS ON THE RESERVE, NOT ON THE STARTING BID. The starting
-// bid is DERIVED at 30% under the reserve — applying the minimum to it
-// would fight the rule that produces it, and for a 14-day run it would
-// imply a reserve above R14,285. Only when there is no reserve does the
-// seller's typed starting bid stand in as the committed value and take
-// the floor.
+// ⚠️ THE FLOOR IS ON THE RESERVE, NOT ON THE OPENING BID. The seller sets
+// ONLY the reserve; the opening bid is always derived at 30% under it
+// (deriveAuctionStartingBidCents) and is never editable, so there is no
+// starting-bid value to apply the floor to. A larger reserve may pick any
+// SHORTER duration (“backwards is allowed”); a reserve below a duration's
+// floor may not pick that duration. auctionReserveMeetsDurationFloor is the
+// one rule, shared by the create path and the specs.
 export const AUCTION_MIN_VALUE_CENTS: Record<number, number> = {
   3: 250_000, // R2,500
   5: 500_000, // R5,000
   7: 750_000, // R7,500
   14: 1_000_000, // R10,000
 };
+
+/**
+ * The opening bid of an auction is ALWAYS 30% below its reserve
+ * (floor(reserve × 0.7) — 70% of the reserve). The seller never sets it and
+ * the client never supplies it, so this is the single place the rule lives.
+ */
+export function deriveAuctionStartingBidCents(reserveCents: number): number {
+  return Math.floor(reserveCents * 0.7);
+}
+
+/**
+ * Does this reserve justify a run of `durationDays`? The floor scales with the
+ * length (see AUCTION_MIN_VALUE_CENTS), and because the floors ascend, a
+ * reserve large enough for a long run is automatically large enough for every
+ * shorter one — “backwards is allowed”. An unknown duration has no floor.
+ */
+export function auctionReserveMeetsDurationFloor(
+  reserveCents: number,
+  durationDays: number,
+): boolean {
+  const floorCents = AUCTION_MIN_VALUE_CENTS[durationDays];
+  return floorCents == null || reserveCents >= floorCents;
+}
 
 // P4.3a — attribute keys are snake_case and stable (matches the DB check
 // on CategoryAttribute.key). Used both when flattening values into the
@@ -1141,8 +1165,12 @@ export class ListingsService {
       );
     }
 
-    if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
-      throw new BadRequestException('Price is required for BUY_NOW and AUCTION listings');
+    // Only a Marketplace (fixed-price) listing needs a price. An AUCTION's
+    // opening bid is derived from its reserve (floor(reserve × 0.7)), and the
+    // sell form no longer sends an auction price, so requiring one here would
+    // block a legitimate auction. TAKE_A_SHOT stays priceless.
+    if (dto.listingType === ListingType.BUY_NOW && !dto.price) {
+      throw new BadRequestException('Price is required for Marketplace listings');
     }
     if (PRICELESS_LISTING_TYPES.has(dto.listingType) && dto.price) {
       throw new BadRequestException('Take a Shot listings must not have a listed price');
@@ -1398,8 +1426,11 @@ export class ListingsService {
    * `Listing.price`. `sellerAskCents` mirrors the ask so the checkout can
    * reproduce the stored price without a reverse calculation.
    *
-   * An AUCTION price is a STARTING price that a bid then discovers; the flat
-   * 5% seller commission comes off the hammer. TAKE_A_SHOT has no sale price.
+   * An AUCTION price is the DERIVED OPENING BID: create() overwrites it with
+   * deriveAuctionStartingBidCents(reserve) before this runs, so the value here
+   * is the seller's reserve minus 30%, never a client-supplied number. A bid
+   * then discovers the real price and the flat 5% seller commission comes off
+   * the hammer. TAKE_A_SHOT has no sale price.
    */
   private priceFieldsFor(
     listingType: ListingType,
@@ -1457,8 +1488,12 @@ export class ListingsService {
       );
     }
 
-    if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
-      throw new BadRequestException('Price is required for BUY_NOW and AUCTION listings');
+    // Only a Marketplace (fixed-price) listing needs a price. An AUCTION's
+    // opening bid is derived from its reserve (floor(reserve × 0.7)), and the
+    // sell form no longer sends an auction price, so requiring one here would
+    // block a legitimate auction. TAKE_A_SHOT stays priceless.
+    if (dto.listingType === ListingType.BUY_NOW && !dto.price) {
+      throw new BadRequestException('Price is required for Marketplace listings');
     }
     if (PRICELESS_LISTING_TYPES.has(dto.listingType) && dto.price) {
       throw new BadRequestException('Take a Shot listings must not have a listed price');
@@ -1735,67 +1770,37 @@ export class ListingsService {
       if (!dto.durationDays) {
         throw new BadRequestException('Auction duration is required');
       }
-      // Starting-bid rule (2026-11 audit M2 — the seller now sets this):
-      //   • Reserve set → the seller chooses the starting bid; it must be
-      //     positive and no higher than the reserve. If they leave it blank we
-      //     derive floor(reserve * 0.7) as a default only. A FIXED 70% rule
-      //     made the "hidden" reserve trivially derivable (starting / 0.7), so
-      //     the derivation is no longer enforced or published.
-      //   • No reserve → the seller's typed `price` is the starting bid.
-      //
-      // ⚠️ THE DURATION'S MINIMUM-VALUE FLOOR APPLIES TO THE COMMITTED VALUE —
-      // the RESERVE when one is set (the derived/typed starting bid may sit
-      // below it by design), the typed starting bid when there is no reserve.
-      // See AUCTION_MIN_VALUE_CENTS.
-      const minValueCents = AUCTION_MIN_VALUE_CENTS[dto.durationDays];
-      const typedStartingBid =
-        typeof dto.price === 'number' && dto.price > 0 ? dto.price : null;
-      if (dto.reservePrice) {
-        const floorRand = minValueCents
-          ? Math.round(minValueCents / 100)
-              .toString()
-              .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-          : null;
-        if (minValueCents && dto.reservePrice < minValueCents) {
-          throw new BadRequestException(
-            `A ${dto.durationDays}-day auction needs a reserve of at least R${floorRand}.`,
-          );
-        }
-        const startingBid =
-          typedStartingBid ?? Math.floor(dto.reservePrice * 0.7);
-        if (startingBid <= 0) {
-          throw new BadRequestException(
-            'Set a starting bid for the auction.',
-          );
-        }
-        if (startingBid > dto.reservePrice) {
-          throw new BadRequestException(
-            'The starting bid must not be above the reserve.',
-          );
-        }
-        dto.price = startingBid;
-      } else {
-        if (!typedStartingBid) {
-          throw new BadRequestException(
-            'Set a starting bid for the auction.',
-          );
-        }
-        if (minValueCents && typedStartingBid < minValueCents) {
-          const floorRand = Math.round(minValueCents / 100)
-            .toString()
-            .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-          throw new BadRequestException(
-            `A ${dto.durationDays}-day auction needs a starting bid of at least R${floorRand}.`,
-          );
-        }
-        dto.price = typedStartingBid;
+      // The seller sets ONLY the reserve. No-reserve auctions are retired for
+      // new listings (legacy rows may keep running untouched), and the opening
+      // bid is never chosen by the seller or the client: it is always
+      // floor(reserve × 0.7), computed here and written over whatever the
+      // client sent in `price`.
+      if (dto.reservePrice == null || dto.reservePrice <= 0) {
+        throw new BadRequestException('Set a reserve price for the auction.');
       }
+      // The reserve is the committed value the duration floor applies to: a
+      // longer run needs a bigger reserve, and a larger reserve may choose any
+      // SHORTER duration (“backwards is allowed”). See AUCTION_MIN_VALUE_CENTS.
+      if (!auctionReserveMeetsDurationFloor(dto.reservePrice, dto.durationDays)) {
+        const minValueCents = AUCTION_MIN_VALUE_CENTS[dto.durationDays];
+        const floorRand = Math.round(minValueCents / 100)
+          .toString()
+          .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        throw new BadRequestException(
+          `A ${dto.durationDays}-day auction needs a reserve of at least R${floorRand}.`,
+        );
+      }
+      const startingBid = deriveAuctionStartingBidCents(dto.reservePrice);
+      if (startingBid <= 0) {
+        throw new BadRequestException('Set a reserve price for the auction.');
+      }
+      dto.price = startingBid;
       // Auction fixed-price option is retired (operator decision): the sell form no
       // longer offers it and there is no buyer path for it. Reject it rather
       // than store a price nobody can act on.
       if (dto.buyNowPrice != null) {
         throw new BadRequestException(
-          'Marketplace is not available on auctions. Use a Marketplace listing, or set a starting bid and let the auction run.',
+          'Marketplace is not available on auctions. Use a Marketplace listing, or let the auction run from the reserve.',
         );
       }
       startTime = new Date();
@@ -3349,14 +3354,13 @@ export class ListingsService {
     await this.assertEditable(listing);
 
     // ── Auction edit rules (2026-11 audit M1) ────────────────────────────
-    // create() enforces a whole set of auction invariants (duration ↔ value
-    // floor, starting bid ≤ reserve, no fixed-price). The edit path used to
-    // spread the raw DTO into Prisma, so a live pre-bid auction could be
-    // edited to a R1 starting bid on a 14-day run (floor R10,000), gain a
-    // reserve, or even gain the retired buyNowPrice. Those fields are fixed
-    // once published — cancel + relist to change them. The STARTING BID stays
-    // editable while there are no bids (it is the advertised opening price),
-    // but it must still satisfy the same rules as create.
+    // The seller sets the reserve (and the duration) once, at create. The
+    // opening bid is DERIVED from that reserve — floor(reserve × 0.7) — so it
+    // must not be editable either: letting a PATCH through would break the one
+    // rule that produces it and could advertise an opening bid above the
+    // hidden reserve. The edit path used to spread the raw DTO into Prisma, so
+    // those fields are all rejected here (a verbatim resubmission is allowed —
+    // only an actual change is refused). Cancel + relist to change any of them.
     if (listing.listingType === ListingType.AUCTION) {
       if (
         dto.reservePrice !== undefined ||
@@ -3367,32 +3371,10 @@ export class ListingsService {
           "An auction's length, reserve and fixed price are fixed once published — cancel and relist to change them.",
         );
       }
-      if (dto.price !== undefined) {
-        const startingBid = dto.price;
-        if (!startingBid || startingBid <= 0) {
-          throw new BadRequestException(
-            'Set a starting bid for the auction.',
-          );
-        }
-        if (listing.reservePrice !== null && startingBid > listing.reservePrice) {
-          throw new BadRequestException(
-            'The starting bid must not be above the reserve.',
-          );
-        }
-        const minValueCents = listing.durationDays
-          ? AUCTION_MIN_VALUE_CENTS[listing.durationDays]
-          : undefined;
-        const committedValueCents = listing.reservePrice ?? startingBid;
-        if (minValueCents && committedValueCents < minValueCents) {
-          const floorRand = Math.round(minValueCents / 100)
-            .toString()
-            .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-          throw new BadRequestException(
-            `A ${listing.durationDays}-day auction needs a ${
-              listing.reservePrice ? 'reserve' : 'starting bid'
-            } of at least R${floorRand}.`,
-          );
-        }
+      if (dto.price !== undefined && dto.price !== listing.price) {
+        throw new BadRequestException(
+          'The opening bid is set automatically at 30% below your reserve and cannot be edited — cancel and relist to change it.',
+        );
       }
     }
 

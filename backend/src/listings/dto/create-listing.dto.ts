@@ -32,9 +32,16 @@ export class CreateListingDto {
   @Length(10, 5000)
   description: string;
 
-  // Required for BUY_NOW and AUCTION; omit for TAKE_A_SHOT (price-less —
-  // the buyer names a price).
-  @ValidateIf((o) => o.listingType !== 'TAKE_A_SHOT')
+  // Required for BUY_NOW only. An AUCTION's opening bid is DERIVED from the
+  // reserve (floor(reserve × 0.7) — see ListingsService.create), so a
+  // client-sent auction price is ignored rather than trusted. Omit for
+  // TAKE_A_SHOT (price-less — the buyer names a price).
+  //
+  // The second half of the condition still type-checks a supplied price on an
+  // UPDATE (UpdateListingDto is PartialType(CreateListingDto), so a PATCH
+  // often omits `listingType`) — otherwise any value would skip validation and
+  // reach Prisma.
+  @ValidateIf((o) => o.listingType === 'BUY_NOW' || o.price !== undefined)
   @IsInt()
   @Min(100)
   price?: number; // ZAR cents
@@ -132,7 +139,11 @@ export class CreateListingDto {
   declaredValueCents?: number;
 
   // ---- AUCTION-only fields ----------------------------------------
-  // Hidden reserve in ZAR cents. Optional.
+  // Hidden reserve in ZAR cents. REQUIRED on a new auction — it is the only
+  // price the seller sets; the opening bid is derived from it at 30% below,
+  // and the reserve decides the longest duration the run may use. Optional at
+  // the DTO layer only because the duration-dependent floor is checked in
+  // ListingsService.create (a class-validator rule can't see the duration).
   @IsOptional()
   @IsInt()
   @Min(100)

@@ -110,7 +110,14 @@ export function PillGroup<T extends string>({
   size = 'md',
   equalCols = false,
 }: {
-  options: { value: T; label: string; sublabel?: React.ReactNode }[];
+  options: {
+    value: T;
+    label: string;
+    sublabel?: React.ReactNode;
+    /** Greys the pill and blocks clicks. Used for choices a higher field
+     *  rules out (e.g. an auction duration the reserve cannot fund). */
+    disabled?: boolean;
+  }[];
   value: T | null;
   onChange: (next: T) => void;
   size?: 'sm' | 'md';
@@ -133,6 +140,7 @@ export function PillGroup<T extends string>({
             selected={value === opt.value}
             onClick={() => onChange(opt.value)}
             size={size}
+            disabled={opt.disabled}
             fullWidth
           />
         ))}
@@ -149,6 +157,7 @@ export function PillGroup<T extends string>({
           selected={value === opt.value}
           onClick={() => onChange(opt.value)}
           size={size}
+          disabled={opt.disabled}
         />
       ))}
     </div>

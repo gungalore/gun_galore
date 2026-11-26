@@ -44,8 +44,8 @@ const MODES: {
       'When you want a deadline that creates urgency',
     ],
     how: [
-      'You set a duration and a starting bid. Buyers bid; the highest bid at the end wins.',
-      'Set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum.',
+      'You set a reserve and a duration. The opening bid is set automatically at 30% below your reserve, and buyers bid up from there.',
+      'The reserve is hidden from bidders — the item only sells if bidding reaches it. Longer runs need a higher reserve (3 days from R2,500 up to 14 days from R10,000), and a high reserve can always choose a shorter run.',
       'Bids in the final 2 minutes extend the end time by 2 minutes, so nobody wins by sniping at the last second.',
       'Because the bidding sets the price, the winning bid is the sale price. Our Platform Fee is a flat 10%, split 5% / 5%: the buyer pays 5% of the hammer plus delivery at checkout, and you pay 5% of the hammer from your payout.',
     ],

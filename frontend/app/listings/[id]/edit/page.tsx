@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../lib/auth';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
+import { auctionStartingBidCents } from '@/lib/auction-minimums';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { VideoDropzone } from '@/components/video-dropzone';
 import { VideoDecisionModal } from '@/components/media/video-decision-modal';
@@ -366,13 +367,12 @@ export default function EditListingPage() {
         condition: form.condition,
         province: form.province,
       };
-      // Price only exists on priced types — TAKE_A_SHOT and SWOP listings
-      // are price-less (buyer names a price / declared value instead), so
-      // never send `price` for them (the backend rejects it anyway).
-      if (
-        listing?.listingType === 'BUY_NOW' ||
-        listing?.listingType === 'AUCTION'
-      ) {
+      // Price exists only on a priced, editable type. TAKE_A_SHOT and SWOP
+      // listings are price-less (buyer names a price / declared value
+      // instead), and an AUCTION's opening bid is DERIVED from its reserve and
+      // fixed at publish — so `price` is never sent for an auction. The
+      // backend derives/keeps it, exactly as the read-only field says.
+      if (listing?.listingType === 'BUY_NOW') {
         body.price = Math.round(parseFloat(form.price) * 100);
       }
       // UX-7 — compare-at ("was") price, BUY_NOW only. Send the value when set,
@@ -741,6 +741,41 @@ export default function EditListingPage() {
 
   const isFirearm = listing.category.isFirearm;
 
+  // Auction opening bid — read-only, never edited here. For a listing created
+  // under the current rules the opening bid is DERIVED as floor(reserve *
+  // 0.7) and stored as `price`, which is what buyers actually see on the card.
+  // Prefer the stored figure: an older auction may carry a seller-typed
+  // starting bid, and deriving afresh would name a number the listing does
+  // not open at. The derivation is the fallback when the API omits `price`,
+  // and `auctionOpeningBidIsDerived` keeps the label honest about which case
+  // the seller is looking at. All of it is fixed at publish — the backend
+  // rejects price/reserve/duration PATCHes for an auction.
+  const auctionReserveCents =
+    listing.listingType === 'AUCTION' &&
+    listing.reservePrice != null &&
+    listing.reservePrice > 0
+      ? listing.reservePrice
+      : 0;
+  const auctionHasReserve = auctionReserveCents > 0;
+  const derivedAuctionOpeningBidCents = auctionHasReserve
+    ? auctionStartingBidCents(auctionReserveCents)
+    : 0;
+  const auctionOpeningBidCents =
+    listing.listingType === 'AUCTION'
+      ? listing.price != null && listing.price > 0
+        ? listing.price
+        : derivedAuctionOpeningBidCents
+      : 0;
+  const auctionOpeningBidIsDerived =
+    auctionHasReserve && auctionOpeningBidCents === derivedAuctionOpeningBidCents;
+  const auctionOpeningBidLabel =
+    auctionOpeningBidCents > 0
+      ? `R ${(auctionOpeningBidCents / 100).toLocaleString('en-ZA', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      : '—';
+
   // Summary line for the partial-save banner. Built from the two failure
   // lists so it always matches the detail blocks further down the form.
   const photoTrouble: string[] = [];
@@ -930,11 +965,46 @@ export default function EditListingPage() {
           {/* Price only exists on priced types — TAKE_A_SHOT and SWOP are
               price-less; rendering a required input for them made the form
               unsaveable (native validation blocked Save on an empty field
-              the listing legitimately doesn't have). */}
-          {(listing.listingType === 'BUY_NOW' ||
-            listing.listingType === 'AUCTION') && (
+              the listing legitimately doesn't have).
+              An AUCTION has no editable price at all: its opening bid is
+              DERIVED from the reserve (floor(reserve * 0.7)) and fixed after
+              publishing, so the field is read-only and nothing is PATCHed. */}
+          {listing.listingType === 'BUY_NOW' && (
             <Field label="Price (R)">
               <input type="number" required min={1} step="0.01" value={form.price} onChange={(e) => set('price', e.target.value)} style={inputStyle} />
+            </Field>
+          )}
+          {listing.listingType === 'AUCTION' && (
+            <Field
+              label={
+                auctionOpeningBidIsDerived
+                  ? 'Opening bid (set automatically)'
+                  : 'Opening bid'
+              }
+            >
+              <input
+                type="text"
+                readOnly
+                value={auctionOpeningBidLabel}
+                aria-label="Opening bid, fixed after publishing"
+                style={{
+                  ...inputStyle,
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  cursor: 'default',
+                }}
+              />
+              <p
+                className="text-xs mt-1.5"
+                style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+              >
+                {auctionOpeningBidIsDerived
+                  ? 'Set automatically 30% below your reserve. It cannot be edited after publishing.'
+                  : auctionHasReserve
+                    ? 'This auction was published before opening bids were set automatically — this fixed amount is what buyers see, and it cannot be edited after publishing.'
+                    : 'This auction was published without a reserve, so its opening bid is the amount shown. It cannot be edited after publishing.'}
+              </p>
             </Field>
           )}
           <Field label="Condition">
@@ -1085,6 +1155,7 @@ export default function EditListingPage() {
 
         {/* Auction terms are fixed at publish: the update endpoint rejects
             reserve/duration/buyNow changes, and auction Marketplace is retired.
+            The opening bid is derived from the reserve, so it is fixed too.
             The note below says so out loud, because there is no field to edit
             and a seller needs to know why (cancel + relist is the path). */}
         {listing.listingType === 'AUCTION' && (
@@ -1092,9 +1163,12 @@ export default function EditListingPage() {
             className="text-xs mb-4"
             style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
           >
-            Auction length and reserve are fixed after publishing. To change
-            them, cancel and relist the item — which is only possible while it
-            has no bids.
+            Auction length, reserve and opening bid are fixed after publishing.
+            {auctionOpeningBidIsDerived
+              ? ' The opening bid is set automatically 30% below your reserve.'
+              : ''}{' '}
+            To change them, cancel and relist the item — which is only possible
+            while it has no bids.
           </p>
         )}
 

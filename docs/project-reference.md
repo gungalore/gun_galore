@@ -942,9 +942,15 @@ registered with a provider must point at **alloutdoor.co.za**.
 - **Auctions:** proxy bidding with a stored max; increments R50/100/250/500/1000;
   a bid in the final 2 minutes extends the end by 2 minutes and republishes
   `endTimeTs` to Meilisearch. **Buy Now is retired** (create/update reject
-  `buyNowPrice`; checkout is winner-only). The seller may set the starting bid;
-  with a reserve it must not exceed the reserve and blank derives 70% as a
-  default (so the reserve is not derivable from the opening price). The reserve
+  `buyNowPrice`; checkout is winner-only). **The seller sets only the reserve;
+  the opening bid is not seller-controlled.** Every auction requires a reserve,
+  and the opening bid is always `floor(reserve × 0.7)` (30% below the reserve);
+  a client-supplied auction `price` is overwritten and PATCHing it is refused.
+  The reserve qualifies the duration: 3 days ≥ R2,500, 5 days ≥ R5,000, 7 days
+  ≥ R7,500, 14 days ≥ R10,000; a reserve that qualifies a longer run may choose
+  any shorter run, but never a longer one beyond its band. Reserve, duration and
+  derived opening bid are fixed after publish. The opening bid is public, so the
+  reserve is derivable from it even though no surface prints it. The reserve
   is met when the **high bidder's stored maximum** clears it — the visible bid is
   lifted to the reserve at that point, and finalisation also rescues a legacy
   row whose winner max cleared it (sale at the reserve). The reserve amount is

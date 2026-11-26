@@ -432,13 +432,23 @@ Proxy bidding. The bidder submits a **maximum**; the system bids the minimum
 increment on their behalf and auto-counters up to that maximum. `maxAmount` is
 never exposed publicly. Increments are tiered by current bid level —
 R50 / R100 / R250 / R500 / R1,000, defined as `INCREMENT_TIERS` in
-`auctions.service.ts`. There is an optional **hidden reserve**, and the
-starting bid is the **seller's own choice** (which may sit below the reserve;
-only when they leave it blank is a 70% default derived, so the reserve is not
-derivable from the opening price). The reserve is met when the **high bidder's
-stored maximum** clears it, not merely the visible bid — the visible bid is
-lifted to the reserve at that moment (the normal proxy-auction behaviour) so a
-lone bidder willing to pay above the reserve cannot lose the item to an
+`auctions.service.ts`.
+
+**The seller sets only the RESERVE; the opening bid is derived, never chosen.**
+Every auction requires a reserve (no-reserve auctions are retired for new
+listings), and the opening bid is always `floor(reserve × 0.7)` — 30% below the
+reserve. A client-supplied auction `price` is ignored/overwritten; the derived
+opening bid cannot be edited after publish. The reserve also qualifies the
+duration: 3 days needs ≥ R2,500, 5 days ≥ R5,000, 7 days ≥ R7,500, 14 days
+≥ R10,000 (`AUCTION_MIN_VALUE_CENTS`). A reserve that qualifies a longer run may
+choose any SHORTER run ("backwards is allowed" — a R20,000 reserve can run 3
+days), but a reserve below a duration's floor cannot choose that duration. The
+opening bid is public, so the reserve is mathematically derivable from it
+(`opening / 0.7`) even though no surface prints it; the operator accepted that
+trade-off when choosing the fixed 30% rule. The reserve is met when the **high
+bidder's stored maximum** clears it, not merely the visible bid — the visible
+bid is lifted to the reserve at that moment (normal proxy-auction behaviour) so
+a lone bidder willing to pay above the reserve cannot lose the item to an
 `EXPIRED` reserve-not-met close. `reserveMet` is public; `reservePrice` never is
 once met — the reserve figure shows only as the current bid it has become.
 
@@ -455,7 +465,8 @@ maximum, and the close runs the loser fan-out, so an offer cannot cut out a
 standing proxy bidder.
 
 **Lifecycle:** once an auction has a bid the seller can no longer cancel or
-edit it (only its starting bid while there are no bids), and a platform
+edit it, and even before bids the reserve, duration and derived opening bid are
+fixed at publish (cancel + relist is the only change path); a platform
 take-down fans out to bidders and the winner. Every terminal close is settled
 after the status flip (strike, seller/winner/loser notices, runner-up invite);
 `auctionSettledAt`/`winnerStruckAt` markers make the every-minute recovery

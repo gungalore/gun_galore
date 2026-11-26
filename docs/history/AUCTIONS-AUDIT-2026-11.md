@@ -6,6 +6,14 @@
 > performed straight afterwards lives in [`MARKETPLACE-AUDIT-2026-11.md`](MARKETPLACE-AUDIT-2026-11.md).
 > Production still has zero auction bids — the engine has never carried a real bid, so rehearse with two
 > accounts before a campaign leans on auctions.
+>
+> **Amendment (2026-11-26, operator product rule):** the seller no longer chooses the starting bid.
+> Auctions now require a reserve, and the opening bid is always `floor(reserve × 0.7)` — 30% below the
+> reserve — computed server-side and not editable. The reserve qualifies the duration band (3d ≥ R2,500,
+> 5d ≥ R5,000, 7d ≥ R7,500, 14d ≥ R10,000); a larger reserve may choose any shorter run ("backwards is
+> allowed"), but not a longer one. M2's "hidden reserve" tension is therefore accepted as a deliberate
+> trade-off: the opening bid is public, so the reserve is derivable from it. The seller-chosen
+> starting-bid decision recorded in the early HANDOFF entry is superseded by this rule.
 
 **Scope:** the auction product end to end — bidding engine, close/relist lifecycle, unpaid-win
 enforcement, money/checkout, frontend surfaces (PDP panel, SMS token pages, My Bids, sell/cancel),
