@@ -39,6 +39,7 @@ function makeMocks() {
         email: 'b@x.co',
         phone: '+27821234567', phoneVerified: true, emailVerifiedAt: new Date(),
       }),
+      update: jest.fn().mockResolvedValue({ auctionStrikes: 1, username: 'b' }),
     },
     listing: {
       findUnique: jest.fn().mockResolvedValue(null), // notify helpers no-op
@@ -47,6 +48,7 @@ function makeMocks() {
       update: jest.fn().mockResolvedValue({}),
     },
     bid: { findMany: jest.fn().mockResolvedValue([]) },
+    offer: { findFirst: jest.fn().mockResolvedValue(null) },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn(
       (fn: (t: typeof tx) => Promise<unknown>): Promise<unknown> => fn(tx),
@@ -60,6 +62,9 @@ function makeMocks() {
     auctionEndedForSeller: jest.fn().mockResolvedValue(undefined),
     auctionEndedLoser: jest.fn().mockResolvedValue(undefined),
     auctionWinnerLapsed: jest.fn().mockResolvedValue(undefined),
+    auctionRunnerUpAvailable: jest.fn().mockResolvedValue(undefined),
+    auctionCancelledForBidder: jest.fn().mockResolvedValue(undefined),
+    auctionCancelledForWinner: jest.fn().mockResolvedValue(undefined),
   };
   const actionTokens = { mint: jest.fn().mockResolvedValue('tok') };
   const search = {
@@ -679,5 +684,87 @@ describe('proxy ceiling + photo guards (M9/L11/L10)', () => {
     await expect(
       service.placeBid('clerk1', 'L1', { maxAmount: 100_000 }),
     ).rejects.toThrow('Listing not found');
+  });
+});
+
+// ── 2026-11 audit M4/M6: settlement recovery is at-least-once, the strike is
+// exactly-once, and a crash-stranded won auction is handed back to the
+// lifecycle instead of staying PAYMENT_PENDING forever.
+describe('settleAuctionEnded + recoverAuctionSettlements', () => {
+  function endedAuction(over: Record<string, unknown> = {}) {
+    return {
+      ...activeListing({
+        status: 'EXPIRED',
+        bidCount: 2,
+        currentBid: 120_000,
+        currentBidderId: 'B1',
+        reservePrice: null,
+        endTime: new Date(Date.now() - 60_000),
+        endedAt: new Date(),
+      }),
+      ...over,
+    };
+  }
+
+  it('strikes an unpaid winner exactly once across replays', async () => {
+    const { service, prisma, notifications } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(endedAuction() as never);
+    prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
+    prisma.user.update.mockResolvedValue({
+      auctionStrikes: 1,
+      username: 'bidder',
+    } as never);
+
+    await service.settleAuctionEnded('L1');
+    // Simulate the replay seeing the strike already claimed.
+    prisma.listing.updateMany.mockResolvedValue({ count: 0 } as never);
+    await service.settleAuctionEnded('L1');
+
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    // The seller is told either way; the winner-lapse notice may repeat (an
+    // accepted, vanishingly rare trade-off) but the punitive counter cannot.
+    expect(notifications.auctionEndedForSeller).toHaveBeenCalled();
+  });
+
+  it('does not re-announce a win that was closed by an accepted offer', async () => {
+    const { service, prisma, notifications } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue({
+      ...activeListing({
+        status: 'PAYMENT_PENDING',
+        bidCount: 1,
+        currentBid: 120_000,
+        currentBidderId: 'B1',
+        endTime: new Date(Date.now() - 60_000),
+        endedAt: new Date(),
+      }),
+      title: 'Test auction',
+    } as never);
+    prisma.offer.findFirst.mockResolvedValue({ id: 'offer-1' } as never);
+
+    await service.settleAuctionEnded('L1');
+
+    // Buyer + seller already heard from the offer flow; only losers remain.
+    expect(notifications.auctionWon).not.toHaveBeenCalled();
+    expect(notifications.resolveByEntity).toHaveBeenCalledWith(
+      'listing',
+      'L1',
+      expect.objectContaining({ types: ['bid_outbid'] }),
+    );
+  });
+
+  it('hands a crash-stranded PAYMENT_PENDING win back with a lapsed window', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findMany
+      .mockResolvedValueOnce([{ id: 'L1' }] as never) // stranded scan
+      .mockResolvedValueOnce([] as never); // settlement replay scan
+    prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
+
+    const res = await service.recoverAuctionSettlements();
+
+    expect(res.unstuck).toBe(1);
+    const claim = prisma.listing.updateMany.mock.calls[0][0];
+    expect(claim.data.expiresAt).toBeInstanceOf(Date);
+    // Never ACTIVE: the ended-auction zombie rule.
+    expect(claim.data.status).toBeUndefined();
   });
 });
