@@ -7,6 +7,40 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — DELIVERY ADDRESS WINDOW: SAVED BOOK + ADD NEW (FRONTEND-ONLY DEPLOY)
+
+Operator follow-up to @ruanda's report: *"when she clicks select a different address nothing happens. We
+need to open a window where they can select another address and also add a new address."*
+
+**Why it looked inert.** The control swapped the collapsed row for an INLINE editor, and that editor's
+saved-address picker (`SavedAddressPicker`) hides itself below two saved addresses. @ruanda had exactly
+one, so the only visible result was the same address in a form again — no list, no "add", from the
+outside: nothing happened.
+
+**Shipped the address WINDOW.** New `components/delivery-address-dialog.tsx`, opened by
+"Select a different address" on the standard checkout (covers auction winners), the accepted-offer
+checkout, the cart and the motivation print-delivery step. It always lists EVERY saved address (even a
+single one, with "Default" marked), and carries an **Add a new address** form in the same window:
+Google-Places autocomplete + manual fields, inline validation, POST `/users/me/addresses`, then the new
+address is applied to the order. Signed-out SMS-token checkouts (`canSaveToBook={false}`) get the typed
+address as a one-off instead of a failing book write. Accessible: `role="dialog" aria-modal="true"`,
+focus trap + Escape/backdrop close (refused mid-save), focus returns to the trigger, mobile bottom sheet,
+loading/empty/error/saving states. The old inline editor remains only as the FIRST-address capture for
+members with no coords-bearing saved address.
+- Choosing a row feeds the SAME capture/delivery state and re-quote path as before; payload unchanged.
+- Typing in the dialog clears the coordinates carried in from the old address, and the marketplace
+  checkouts require a suggestion pick so the saved row gets fresh geocoded coordinates.
+
+Deployed **`793e8739`** (frontend-only, 10:56 SAST); rollback **`alloutdoor-20261126-105441.dump`**
+(39,428,946 bytes); frontend health ×2 OK; gate 307→`/gate` + `/gate` 200; production build contains the
+dialog chunk (`.next/static/chunks/2350-*.js`, `.next/server/chunks/2284.js`). Checks: typecheck clean,
+**201 files / 2,284 tests**, production build clean; backend untouched. Regression specs cover: dialog
+lists a single saved address + "Add a new address"; a saved pick applies + closes; a new address POSTs
+the right body and applies; typing always reaches the address fields.
+
+Remaining confirmation is a member retry on her account (the signed-in flow still cannot be reproduced
+without her session).
+
 ## 2026-11-26 — MEMBER COULD NOT CHANGE THE DELIVERY ADDRESS (FRONTEND-ONLY DEPLOY)
 
 Operator forwarded a bug report from **@ruanda**, category *Delivery / Shipping*: *"I am unable to select
