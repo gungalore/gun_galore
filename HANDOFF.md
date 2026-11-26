@@ -7,6 +7,42 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — AUCTION RULES: RESERVE ONLY, DERIVED OPENING BID, RESERVE-GATED DURATIONS (FULL DEPLOY)
+
+Operator rule change: *"sellers cant decide the minimum starting bet. only the reserve. we start 30%
+below the reserve as minimum. The reserve is also the qualifier for the band they are allowed. but
+backwards is allowed so a R20k reserve can advertised for 3 days if they want. but a R2500 reserve can't
+do 7days."*
+
+- **Every new auction requires a reserve** (no-reserve auctions are retired for new/edited listings).
+  The opening bid is no longer a seller field: it is always `floor(reserve × 0.7)` — 30% below the
+  reserve — computed server-side, written over any client `price`, and refused on PATCH ("opening bid is
+  set automatically … cancel and relist to change it"). Sell form now reads Reserve → allowed durations
+  → read-only Opening bid; edit page shows the derived opening bid read-only and stops sending a price.
+- **Duration bands unchanged and now expressed as reserve floors:** 3 days ≥ R2,500; 5 days ≥ R5,000;
+  7 days ≥ R7,500; 14 days ≥ R10,000. A reserve that qualifies a longer run may choose any SHORTER run
+  ("backwards is allowed" — a R20,000 reserve can run 3 days), but a reserve below a duration's floor
+  cannot choose it (R2,500 cannot run 7 days). Reserve/duration remain fixed after publish.
+- **Consequence accepted:** the opening bid is public, so the reserve is derivable (`opening / 0.7`);
+  the old "hidden reserve" privacy is a deliberate trade-off of the fixed 30% rule. Docs and the audit
+  amendment say so.
+- Copy updated in the sell form, edit page, `/how-selling-works`, Terms, and the help-centre seed; backend
+  helpers `deriveAuctionStartingBidCents` / `auctionReserveMeetsDurationFloor` are the single source of
+  the rule, with a 27-test spec. One stale notification line ("lower starting price" → "lower reserve")
+  was corrected.
+
+Deployed **`23921539`** (full backend+frontend, 18:07 SAST; no migration); rollback
+**`alloutdoor-20261126-180717.dump`** (39,435,215 bytes); backend/frontend/warden online; health OK;
+gate 307→`/gate` + `/gate` 200. Checks: backend tsc clean + **461 suites / 6,733 tests passed** (8
+skipped; known worker-teardown warning, 0 failures); frontend typecheck clean + **206 files / 2,314
+tests passed** (1 skipped) + production build (theme-sync/fee-sync) clean. Deployed artefacts contain the
+new "Set a reserve price for the auction" and "Opening bid (set automatically)" strings.
+
+Production still has **one legacy active auction with no reserve**; it keeps running as-is (new rules
+apply to create/edit). Manual QA remaining: create a R2,500-reserve auction (3 days only, opening R1,750)
+and a R20,000-reserve auction (all four durations selectable, including 3 days, opening R14,000), and
+confirm the edit page shows the opening bid read-only.
+
 ## 2026-11-26 — ONE PAY OPTION ONLY WHEN ONE RAIL IS ENABLED (FRONTEND DEPLOY)
 
 Operator follow-up after the Peach-only deploy: *"There should be only a pay option and not EFT and Card
