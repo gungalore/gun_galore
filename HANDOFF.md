@@ -67,7 +67,8 @@ with two accounts before a campaign leans on auctions.
   dormant AuctionWatch endpoints removed (watching = wishlist; the panel's watcher count now reads the
   wishlist); Meili `categoryId`/`categorySlug` escaped; module boot spec added; specs added for the
   reserve single-bidder case, finalisation rescue, proxy-lowering, photo gate, hidden-listing 404,
-  cancel guard, edit-lock ownership, settlement/strike recovery.
+  cancel guard, edit-lock ownership, settlement/strike recovery (the last added in 466981fa, tests only — no
+  redeploy needed).
 
 **Marketplace — critical/high fixed (full detail in the marketplace audit doc).**
 - **`GET /wishlist` returned the WHOLE private Listing row** — firearm serial, licence holder's real
