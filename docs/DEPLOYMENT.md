@@ -304,6 +304,39 @@ You do not need it for:
 
 ---
 
+## Turning on Google Analytics
+
+The GA4 integration is already deployed and **inert**: the root layout
+(`frontend/app/layout.tsx`) reads a server-side env var and only mounts
+`components/google-analytics.tsx` when it contains a real `G-…` id. Missing or
+invalid → no script at all, so forgetting the variable cannot break the site.
+
+1. **Create the property under the business Google account.** Sign in as
+   `alloutdoor69@gmail.com`, open <https://analytics.google.com>, Admin → Create
+   property: name **ALL Outdoor**, timezone **South Africa**, currency **ZAR**,
+   then a **Web** stream for `https://alloutdoor.co.za` (stream name "ALL
+   Outdoor web"). Copy the **measurement ID** (`G-XXXXXXXXXX`).
+   ⚠️ This step needs the Google account signed in; an agent cannot create it
+   without interactive access to that account.
+2. On the box, add the id to the FRONTEND production env:
+
+   ```bash
+   ssh alloutdoor
+   cd /home/alloutdoor/app/frontend
+   printf '\nGA_MEASUREMENT_ID=G-XXXXXXXXXX\n' >> .env.production
+   pm2 restart alloutdoor-frontend
+   ```
+
+   It is deliberately **not** a `NEXT_PUBLIC_` variable and is read at request
+   time, so **no rebuild** is needed — just the restart.
+3. Verify: open `https://alloutdoor.co.za/gate` in a browser → Network shows
+   `googletagmanager.com/gtag/js?id=G-…` and a `page_view` hit; GA's Realtime
+   report shows the visit. Navigate between pages and confirm a second
+   `page_view` (the App Router needs the manual event; `send_page_view` is off
+   so the first page is not double-counted).
+4. Never tracked by design: `/admin` (internal Desk) and `/a/<token>` (the
+   token in the URL is a credential). See `frontend/lib/analytics.ts`.
+
 ## Rolling back
 
 There is no automation for this. Two cases:
