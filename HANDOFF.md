@@ -7,6 +7,21 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — ONE PAY OPTION ONLY WHEN ONE RAIL IS ENABLED (FRONTEND DEPLOY)
+
+Operator follow-up after the Peach-only deploy: *"There should be only a pay option and not EFT and Card
+options."* (Their screenshot was taken 14:06, before the 14:10 Peach-only deploy.) Even with one rail the
+checkout still painted a compact "Payment method" review row; Peach's hosted page is where the buyer
+actually picks card/EFT/etc., so the row duplicated a choice that does not exist here.
+
+- `components/payment-method-section.tsx` now renders **nothing when 0 or 1 rails are enabled**; the
+  checkout shows only the Pay button. With 2+ rails the block returns (review row + Change/radios), so
+  re-enabling Ozow brings the chooser back automatically. Cart's read-only block behaves the same.
+- Shipped **`956669da`** (frontend-only, 16:34 SAST); rollback **`alloutdoor-20261126-163413.dump`**
+  (39,434,286 bytes); health OK; gate checks 307→`/gate` + `/gate` 200; frontend online. Checks:
+  typecheck clean, **206 files / 2,308 tests passed** (1 skipped), production build clean.
+- Live `GET /api/transactions/payment-methods` still returns **PEACH only**; no EFT/Card choice is shown.
+
 ## 2026-11-26 — TAKEALOT-PARITY CHECKOUT, PEACH-ONLY PAYMENTS, DELIVERY INSTRUCTIONS (FULL DEPLOY)
 
 Operator: *"This is what I want to checkout process to behave like"* (Takealot screenshots), then
