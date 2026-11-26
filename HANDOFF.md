@@ -7,6 +7,35 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — EXPANDABLE Q&A BOX, ALWAYS-VISIBLE ADDRESS ADD, BUY NOW LEAVES A CART TRACE (FRONTEND DEPLOY)
+
+Operator, from phone screenshots: *"The questions and answers should be grouped in one box that is
+expandable... the question in bold with the answer below it... Then on the address picker in checkout the
+add button is not showing. And when the user exits a buy now the item is gone with no trace to be found,
+buy now should also be added to the cart."*
+
+- **Q&A**: `components/listing-faq.tsx` is one expandable card (native `<details>`). Closed it shows
+  "Questions & answers — N answered question(s)"; opening reveals the reply-time badge, every question
+  in bold with its answer underneath (in order), and the private ask-the-seller composer. `#questions`
+  and `#faq-<id>` deep links auto-open the box; sellers still cannot hide/delete an answer. Specs
+  updated (8 tests).
+- **Address picker Add**: the drawer header always had "+ Add", but on a phone it can scroll out of sight
+  with the header. The sticky footer now always shows a full-width **"+ Add a new address"** secondary
+  button above **Continue**, in addition to the header control (distinct accessible name).
+- **Buy Now cart trace**: `BuyNowCta` now adds the line to the localStorage cart before navigating to
+  checkout (signed-in and sign-in paths), without opening the added-to-cart drawer. Abandoning checkout
+  leaves the item visible in /cart; a successful payment removes it on `/checkout/complete` via the
+  `gg:buyNowListing` marker set when the gateway redirect starts. Collection-only lines stay excluded
+  (the cart cannot carry them). New `components/buy-now-cta.spec.tsx` covers add-on-click, signed-out
+  sign-in path and the no-cart-item case.
+
+Shipped **`879e394a`** (frontend-only, 20:40 SAST); rollback **`alloutdoor-20261126-204047.dump`**
+(39,442,772 bytes); frontend online, health OK, gate 200. Checks: typecheck clean,
+**206 files / 2,315 tests passed** (1 skipped), production build clean; deployed bundles contain the new
+"Add another delivery address" and "answered question" copy. The resumed-payment page does not set the
+buy-now cart marker yet, so a purchase completed via Resume may leave the cart line behind — normal
+checkout clears it.
+
 ## 2026-11-26 — OPENING BID IS A STATIC BOX; CONFIRM DECLINE IS RED (FRONTEND DEPLOY)
 
 Operator UI fixes: the sell/edit "Opening bid" figure looked editable (readOnly <input> still took focus and
