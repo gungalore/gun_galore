@@ -15,9 +15,10 @@ const ozow: PaymentMethodOption = {
   description: 'Pay from your bank.',
 };
 
-// The Peach-only launch state: one enabled rail is a compact review row with
-// nothing to choose and NO Change control. Two rails get a review row plus a
-// Change that expands the radio cards.
+// Peach-only launch state: one enabled rail means there is nothing to choose,
+// so the block renders NOTHING at all — the buyer only sees the Pay button.
+// Peach's own hosted page offers the card/EFT options. Two rails get a review
+// row plus a Change that expands the radio cards.
 describe('PaymentMethodSection', () => {
   it('renders nothing when the backend returned no enabled rail', () => {
     const { container } = render(
@@ -25,24 +26,25 @@ describe('PaymentMethodSection', () => {
     );
     expect(container.textContent).toBe('');
     expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByText('Payment method')).toBeNull();
   });
 
-  it('renders a single enabled rail as a selected review row (no Change)', () => {
-    render(
+  it('renders nothing for a single enabled rail (Peach-only: Pay only)', () => {
+    const { container } = render(
       <PaymentMethodSection
         methods={[peach]}
         value="PEACH"
         onChange={() => undefined}
       />,
     );
-    expect(screen.getByText('Credit & Debit Card')).toBeInTheDocument();
-    expect(screen.getByText('Pay securely by card.')).toBeInTheDocument();
+    expect(container.textContent).toBe('');
+    expect(screen.queryByText('Payment method')).toBeNull();
+    expect(screen.queryByText('Credit & Debit Card')).toBeNull();
     expect(screen.queryByRole('radio')).toBeNull();
-    expect(screen.queryByRole('button', { name: /change/i })).toBeNull();
   });
 
-  it('keeps one rail non-interactive when the block is read-only', () => {
-    render(
+  it('renders nothing for one rail even when read-only', () => {
+    const { container } = render(
       <PaymentMethodSection
         methods={[peach]}
         value="PEACH"
@@ -50,6 +52,7 @@ describe('PaymentMethodSection', () => {
         disabled
       />,
     );
+    expect(container.textContent).toBe('');
     expect(screen.queryByRole('button', { name: /change/i })).toBeNull();
     expect(screen.queryByRole('radio')).toBeNull();
   });

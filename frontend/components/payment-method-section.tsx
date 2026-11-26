@@ -32,11 +32,14 @@ function MethodIcon({ provider }: { provider: PaymentProvider }) {
 /**
  * Payment method block.
  *
- * Takealot-style: the buyer first sees the rail that will be used as a
- * compact review row. When the server offers MORE THAN ONE rail a Change
- * control expands the real radio cards; with exactly one enabled rail (the
- * Peach-only launch state) there is nothing to choose, so no Change control is
- * rendered at all — just the selected row.
+ * WARNING: WITH ONE RAIL THIS RENDERS NOTHING. In the Peach-only launch state the
+ * rail is already chosen for the checkout and Peach's own hosted page presents
+ * the real pay options (card, Instant EFT, etc.), so a single tile here only
+ * duplicated that choice. The buyer sees the Pay button alone.
+ *
+ * When the server offers MORE THAN ONE rail (e.g. Ozow re-enabled) the block
+ * appears as a compact review row with a Change control that expands the radio
+ * cards, so the buyer can see and switch the captured rail.
  *
  * Presentational only: the host owns the selected provider and the payload.
  */
@@ -52,7 +55,9 @@ export function PaymentMethodSection({
   disabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  if (methods.length === 0) return null;
+  // Zero rails or one rail = nothing to choose (Peach's hosted page presents
+  // the actual card/EFT options), so the block hides and the buyer only sees Pay.
+  if (methods.length <= 1) return null;
 
   const selected = methods.find((m) => m.provider === value) ?? methods[0];
   const multiple = methods.length > 1;
