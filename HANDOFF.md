@@ -7,6 +7,43 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — FILLABLE FIELDS NOW CONTRAST WITH THEIR SURFACE (FRONTEND-ONLY DEPLOY)
+
+Operator: *"anywhere where a user has to fill in something is the same color as the background with a
+box which makes it hard to see. Change the dark mode color to a much lighter shade of the background and
+the light mode to a darker shade of the background throught the website."*
+
+Shipped **`abc9465e`** (frontend-only, 09:00 SAST); rollback **`alloutdoor-20261126-085956.dump`**
+(39,426,915 bytes); frontend health ×2 OK; gate checks 307→`/gate` + `/gate` 200; backend untouched.
+Checks: backend tsc clean + **458 suites / 6,687 tests**; frontend typecheck + **199 files / 2,271
+tests** + production build (theme-sync/fee-sync) clean.
+
+- **New semantic field tokens** in `frontend/app/globals.css`, opposite per theme as instructed. Light
+  (page `#FAF8F3`, card `#FFFFFF`): `--field-bg #E4DFD4` (darker than both; 1.33:1 vs card),
+  hover `#DED8CB`, focus `#D8D1C2`, disabled `#F1EDE5`, placeholder `#645C52` (4.95:1 on the fill).
+  Dark (page `#131110`, card `#1C1A18`): `--field-bg #36312C` (**much lighter**; 1.35:1 vs card),
+  hover `#3D3732`, focus `#443D37`, disabled `#2A2622`, placeholder `#A69E93` (4.9:1).
+  Focus edge uses the existing accent edge (5.0:1 light / 7.2:1 dark); value ink stays
+  `--text-primary` (13.2:1 light / 11.4:1 dark).
+- **Base rules** for `input` (excluding checkbox/radio/range/colour/file/button types), `textarea` and
+  `select`: resting fill, hover, focus and disabled states (`!important` on the state fills so a
+  component's inline resting colour cannot make a focused field look unfocused), placeholder ink,
+  autofill repaint, and an `aria-invalid` danger border. Three `data-field-flat` opt-outs where the
+  WRAPPER is the control (number-stepper value box, nav attached search pill, scanner name bar).
+- **84 frontend files migrated** (shared `Input`, number stepper, date field, live search, filter bar,
+  checkout/offer checkout, sell new/edit, profile/settings, licence-centre/pack, community, messages,
+  transactions/disputes, consent/witness/dealer portals, support, valuation, document-centre, admin,
+  bench, dashboard). Grep audit: 260 field controls, 191 on the explicit tokens, 69 on the base rule, 0
+  field left on `--bg`/`--bg-card`/`--bg-inset`/transparent resting fills.
+- **Fixed-theme surfaces pinned** so they don't inherit the wrong direction: scanner
+  (`.gg-scan-root`/`.aos-root`) gets a fixed light field fill; `.surface-dark` gets the dark relationship.
+  The Admin Desk (`app/admin/admin.css`) gets its own lighter field tokens (`--adm-field-bg #222B33`,
+  1.42–1.73:1) plus `color-scheme: dark` so native pickers follow the Desk even when the shop is light.
+- New spec `frontend/lib/field-tokens.spec.ts` (18 tests) reads the real token values from the CSS and
+  asserts the direction, hover/focus ramp, disabled flattening and ≥4.5:1 placeholder/value contrast.
+- **Verified live** in a real browser in both themes: sign-in/browse fields compute to `#E4DFD4` (light)
+  and `#36312C` (dark) against white/near-black surfaces; screenshots reviewed. GA still fires after the
+  deploy (gtag + `g/collect` hits with `G-S33GGYYM37`).
 ## 2026-11-26 — GOOGLE ANALYTICS 4 ENABLED (RUNTIME CONFIG, NO REBUILD)
 
 The operator signed in to **alloutdoor69@gmail.com** (Chrome profile ALLOUTDOOR) and asked for the
