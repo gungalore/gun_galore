@@ -7,6 +7,23 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — GOOGLE ANALYTICS 4 ENABLED (RUNTIME CONFIG, NO REBUILD)
+
+The operator signed in to **alloutdoor69@gmail.com** (Chrome profile ALLOUTDOOR) and asked for the
+browser, so the property was created live.
+
+- **GA4 account** "ALL Outdoor" (`a417527388`) → **property** "ALL Outdoor" (`p565942168`) → **web
+  stream** "ALL Outdoor web" (`16419069172`) for `https://alloutdoor.co.za`. Timezone Africa/Johannesburg
+  (GMT+2), currency **ZAR**. **Measurement ID: `G-S33GGYYM37`.**
+- GA Terms of Service accepted for **South Africa** (GDPR Data Processing Terms deliberately left
+  unticked — not applicable); enhanced measurement left on (page views, scrolls, outbound clicks, etc.).
+- **Integration:** `GA_MEASUREMENT_ID=G-S33GGYYM37` appended to
+  `/home/alloutdoor/app/frontend/.env.production`, then `pm2 restart alloutdoor-frontend`. The id is read
+  server-side at request time, so **no rebuild** was needed; changing it later is the same two steps
+  (docs/DEPLOYMENT.md). The tag never fires on `/admin` (internal Desk) or `/a/<token>` (credential URL).
+- **Verified live:** `/gate` HTML contains the `gtag` loader + the id; a real browser visit fired
+  `page_view` and `scroll` hits to `google-analytics.com/g/collect?tid=G-S33GGYYM37`; the GA home card
+  showed **1 active user in South Africa** within minutes.
 ## 2026-11-26 — AUCTIONS FIXED, MARKETPLACE AUDITED AND FIXED (FULL DEPLOY)
 
 Operator, going to bed: *"Fix all of them systematically. When they are fixed audit the marketplace as
@@ -89,7 +106,7 @@ with two accounts before a campaign leans on auctions.
   spec; `/listings/<id>/edit` member-only with return path; `/v/<token>` gate-exempt; `/my/offers`
   empty state off the retired type; admin bulk-review 400 not 500.
 
-**Google Analytics — code shipped, property NOT created (operator action needed).** The integration is
+**Google Analytics — code shipped; property creation was blocked until the operator signed in.** (Resolved the same morning — see the dedicated GA entry above.) The integration is
 live and **inert**: root layout reads **`GA_MEASUREMENT_ID`** server-side (not `NEXT_PUBLIC_`, so the id
 can be added with an env change + frontend restart, no rebuild) and mounts
 `components/google-analytics.tsx` only for a real `G-…` id; it sends one page_view per App Router
