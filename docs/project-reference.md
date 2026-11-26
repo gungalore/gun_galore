@@ -567,13 +567,23 @@ is charged on the item plus that rate.
 
 ### Payments (Ozow + Peach) — dual rails, locked per transaction
 
-Two pay-in rails: Ozow's One API (instant EFT) and Peach Checkout V2 (card).
-Each provider also has its own payout product (Ozow Payouts, Peach Payouts).
-⚠️ **The rail is locked at checkout.** `Transaction.paymentProvider` is set
-once (`OZOW` or `PEACH`) and never changed. A refund and a seller payout must
-use the provider that captured the money. There is **no cross-rail fallback**
-— an Ozow-paid sale is never paid out via Peach, and vice versa. The buyer
-picks the rail at checkout; Ozow is the default.
+Two pay-in rails exist: Ozow's One API (instant EFT) and Peach Checkout V2
+(card). Each provider also has its own payout product (Ozow Payouts, Peach
+Payouts). ⚠️ **The rail is locked at checkout.** `Transaction.paymentProvider` is
+set once (`OZOW` or `PEACH`) and never changed. A refund and a seller payout
+must use the provider that captured the money. There is **no cross-rail
+fallback** — an Ozow-paid sale is never paid out via Peach, and vice versa.
+
+Which rails a NEW checkout may offer is controlled by the
+`CHECKOUT_PAYIN_PROVIDERS` env allowlist (`PaymentRailsService`): unset = both
+rails (Ozow first, historical default); `peach` = card-only checkout while
+historical Ozow refunds/payouts keep working; a set value with no recognised
+rail fails closed (no pay-in) rather than silently re-enabling Ozow.
+Production is temporarily **Peach-only** (2026-11-26). Address selection is the
+right-hand "Select Delivery Address" drawer backed by the member's address book
+(`GET/POST/PATCH/DELETE /users/me/addresses`, including the synthetic `profile`
+row); checkout also captures an optional 120-character delivery note persisted
+as `Transaction.deliveryInstructions` and forwarded to Bob Go on booking.
 
 - **15-minute Buy Now hold:** opening `/checkout/[listingId]` for a plain
   `BUY_NOW` listing reserves exactly ONE unit (`CheckoutHold`) and starts a

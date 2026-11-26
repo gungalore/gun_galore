@@ -572,6 +572,24 @@ without the secret wired.
 The endpoint always returns HTTP 200 even when rejecting — a house rule, so a
 carrier's retry queue does not back up against us.
 
+## Payments — checkout rail allowlist (`CHECKOUT_PAYIN_PROVIDERS`)
+
+Marketplace checkout offers only the pay-in rails named here. Comma-separated,
+case-insensitive, read at call time by `PaymentRailsService`:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `CHECKOUT_PAYIN_PROVIDERS` | Optional | Default (unset/empty) = `ozow,peach`. Set `peach` to run a **card-only** checkout while keeping Ozow payouts/refunds alive for historical sales; set `ozow,peach` (or unset) to show both again. Set but naming no recognised rail → **no** checkout rail (fail-closed, with a warning in the backend log) rather than silently falling back to Ozow. |
+
+- The switch only affects **new pay-in choices**. `Transaction.paymentProvider` is
+  locked at checkout and refunds/payouts ignore the allowlist, so a historical
+  Ozow-paid sale still refunds/pays out through Ozow under `peach`-only.
+- Peach still requires its credentials and the `peach_payin_enabled` admin flag;
+  naming `peach` alone does not configure or enable it.
+- Production currently runs `CHECKOUT_PAYIN_PROVIDERS=peach` (2026-11-26,
+  temporary). Reverting is an env edit + backend restart — no code deploy. See
+  `docs/DEPLOYMENT.md` → "Switching checkout pay-in rails".
+
 ## Payments — Ozow
 
 Ozow is the only payment provider: One API for pay-in (Pay by Bank / instant

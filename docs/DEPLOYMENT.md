@@ -337,6 +337,31 @@ invalid → no script at all, so forgetting the variable cannot break the site.
 4. Never tracked by design: `/admin` (internal Desk) and `/a/<token>` (the
    token in the URL is a credential). See `frontend/lib/analytics.ts`.
 
+## Switching checkout pay-in rails (Peach-only)
+
+`CHECKOUT_PAYIN_PROVIDERS` in `/home/alloutdoor/app/backend/.env` controls which
+pay-in rails a NEW marketplace checkout offers (default `ozow,peach`). It is read
+at call time; changing it needs a backend restart, not a frontend rebuild or
+deploy. Refunds and seller payouts are unaffected — they follow the transaction's
+locked rail.
+
+```bash
+cd /home/alloutdoor/app/backend
+grep -n '^CHECKOUT_PAYIN_PROVIDERS=' .env   # current value
+# Peach-only (current production setting):
+sed -i 's|^CHECKOUT_PAYIN_PROVIDERS=.*|CHECKOUT_PAYIN_PROVIDERS=peach|' .env
+# Missing line instead of a replacement:
+#   printf '\nCHECKOUT_PAYIN_PROVIDERS=peach\n' >> .env
+pm2 restart alloutdoor-backend --update-env
+sleep 4
+curl -s http://localhost:3001/api/transactions/payment-methods
+#  Expected peach-only: {"methods":[{"provider":"PEACH","label":"Credit & Debit Card",...}]}
+```
+
+To restore both rails, set `CHECKOUT_PAYIN_PROVIDERS=ozow,peach` (or delete the
+line) and restart the backend. Peach also still needs its credentials and the
+`peach_payin_enabled` admin flag; naming it does not configure or enable it.
+
 ## Rolling back
 
 There is no automation for this. Two cases:

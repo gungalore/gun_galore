@@ -7,6 +7,61 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — TAKEALOT-PARITY CHECKOUT, PEACH-ONLY PAYMENTS, DELIVERY INSTRUCTIONS (FULL DEPLOY)
+
+Operator: *"This is what I want to checkout process to behave like"* (Takealot screenshots), then
+*"We will use just Peach for checkout for now. Just hide Ozow for the time being."*
+
+Shipped **`0d349162`** (full backend+frontend deploy, 14:10 SAST); rollback
+**`alloutdoor-20261126-141015.dump`** (39,432,920 bytes); migration
+`20261126120000_transaction_delivery_instructions` applied ("All migrations have been successfully
+applied"). Backend/frontend/warden online; health OK; gate 307→`/gate` + `/gate` 200; `/checkout/complete` 200
+(anonymous `/checkout/<id>` 307s to sign-in as expected).
+
+**Peach-only checkout (temporary).** New backend env allowlist
+`CHECKOUT_PAYIN_PROVIDERS` (default `ozow,peach`; fail-closed if set with no recognised rail — no silent
+Ozow fallback). Production is set to `peach` in `/home/alloutdoor/app/backend/.env`, backend restarted;
+`GET /api/transactions/payment-methods` now returns exactly
+`[{"provider":"PEACH","label":"Credit & Debit Card","description":"Pay securely with your debit or credit card via Peach."}]`.
+The switch affects new pay-ins only — payouts/refunds ignore it, so historical Ozow sales still settle via
+Ozow. Revert by setting `CHECKOUT_PAYIN_PROVIDERS=ozow,peach` (or removing the line) and restarting the
+backend (docs/DEPLOYMENT.md → "Switching checkout pay-in rails"). Peach still needs its credentials + the
+`peach_payin_enabled` flag (both ON). No real Peach payment was captured during verification.
+
+**Address drawer (the @ruanda fix, now Takealot-shaped).** `components/delivery-address-dialog.tsx` is a
+right slide-over on desktop / full-height sheet on mobile, always listing ALL saved addresses (including
+exactly one), with Add / Edit / Delete / Continue, inline delete confirm, profile-row edit-only, loading/
+empty/error/retry and token-checkout one-off mode. It writes the address book (`GET/POST/PATCH/DELETE
+/users/me/addresses`); checkout seeds its single effective address from the book's default row (profile
+row fallback), and summary/quote/payload read that one object. Wired into standard checkout (auction
+winners included), accepted-offer checkout, cart and motivation print-delivery. Typing still always
+replaces the street; editing the deciding fields clears stale coordinates.
+
+**Review layout.** Checkout is now a two-column review page: left Delivery method cards → Delivery to row
+→ Delivery date & time (Fastest/Cheapest door cards + Pargo group from the real Bob Go quote, no invented
+windows) → quantity/consents → Payment method review row → delivery instructions; right sticky "Items for
+delivery" + totals + CTA; mobile fixed bottom Total/CTA bar; honest two-step progress
+("Delivery & payment" → "Confirmation") on checkout and complete pages. Page-level "You're buying" card
+removed (content moved into the summary); back link is "Back to cart" only when reached with `?from=cart`.
+
+**Delivery instructions (new).** `Transaction.deliveryInstructions VARCHAR(120)` (additive migration),
+DTO `@MaxLength(120)`, service sanitises (courier-only, no control chars, trim/cap), checkout opt-in
+textarea (120-char counter, explicit Save note) only sends it when ticked + saved, `bookForTransaction`
+forwards it to Bob Go as `instructionsDelivery`, and `/transactions/[id]` shows it in the Shipping card
+(buyer and seller). Non-courier bookings ignore/strip it.
+
+**Checks.** Backend `tsc --noEmit` clean; **460 suites / 6,706 tests passed** (8 skipped; Jest printed its
+"worker failed to exit gracefully" teardown warning and exited non-zero despite 0 failures). Frontend
+typecheck clean; **206 files / 2,308 tests passed** (1 skipped) under `--maxWorkers=2`; production build
+exit 0 with theme-sync and fee-sync gates clean. Production bundle contains the new "Select Delivery
+Address"/"Delivery instructions" strings.
+
+**Still to confirm with real accounts:** a signed-in buyer walks the drawer (select/add/edit/delete →
+Continue), a live Peach card payment completes (none was charged during verification), and the seller
+sees the delivery note on the order. `components/saved-address-picker.tsx` is now unreferenced by app code
+(kept; safe cleanup later); the drawer file keeps its `delivery-address-dialog` name for import stability.
+Docs updated: `docs/ENVIRONMENT.md`, `docs/DEPLOYMENT.md`, `docs/project-reference.md`.
+
 ## 2026-11-26 — DELIVERY ADDRESS WINDOW: SAVED BOOK + ADD NEW (FRONTEND-ONLY DEPLOY)
 
 Operator follow-up to @ruanda's report: *"when she clicks select a different address nothing happens. We
