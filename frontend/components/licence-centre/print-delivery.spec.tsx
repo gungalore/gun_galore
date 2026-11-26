@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PrintDelivery from './print-delivery';
 import { motivationsApi } from '@/lib/motivations-api';
@@ -44,10 +44,44 @@ const savedProfile = {
 function stubPrefill(profile: typeof savedProfile | null = savedProfile) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      ok: profile !== null,
-      json: async () => profile ?? {},
-    }) as Response),
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      if (url.includes('/users/me/addresses')) {
+        // The backend lists the profile address as a book row, so the address
+        // dialog has exactly one default row for a member with one address.
+        return profile
+          ? json([
+              {
+                id: 'profile',
+                label: 'Profile address',
+                building: null,
+                street: profile.addrStreet,
+                address2: profile.addrAddress2,
+                suburb: profile.addrSuburb,
+                city: profile.addrCity,
+                postalCode: profile.addrPostalCode,
+                province: 'WESTERN_CAPE',
+                lat: null,
+                lng: null,
+                isDefault: true,
+              },
+            ])
+          : json([]);
+      }
+      if (url.endsWith('/users/me')) {
+        return profile
+          ? json(profile)
+          : new Response(JSON.stringify({ message: 'Not found' }), {
+              status: 500,
+            });
+      }
+      return json({});
+    }) as unknown as typeof fetch,
   );
 }
 
@@ -113,20 +147,28 @@ describe('Print and Deliver', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('reveals the editable address fields on "Select a different address"', async () => {
+  it('opens the address window with the saved address and "Add a new address"', async () => {
     renderComponent('DELIVER');
     await userEvent.click(await screen.findByText('Select a different address'));
 
-    expect(screen.getByText('Delivery address')).toBeDefined();
-    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Use my default address' })).toBeDefined();
-    const useThis = screen.getByRole('button', { name: 'Use this address' });
-    expect(useThis).toBeDefined();
-    expect((useThis as HTMLButtonElement).disabled).toBe(false);
+    const dialog = await screen.findByRole('dialog', {
+      name: /delivery address/i,
+    });
+    // The single saved address is listed — it is NOT hidden behind a "2+"
+    // threshold (the 2026-11-26 @ruanda failure mode).
+    expect(within(dialog).getByText('Profile address')).toBeTruthy();
+    expect(within(dialog).getByText(/12 Loop Street/)).toBeTruthy();
+    expect(within(dialog).getByText('Default')).toBeTruthy();
+    expect(
+      within(dialog).getByRole('button', { name: /add a new address/i }),
+    ).toBeTruthy();
 
-    // Reset collapses back to the summary, still labelled as the default.
-    await userEvent.click(screen.getByRole('button', { name: 'Use my default address' }));
-    expect(await screen.findByText('Deliver to my default address')).toBeDefined();
+    // Cancel closes back to the collapsed default summary.
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Cancel' }),
+    );
+    expect(await screen.findByText('Deliver to my default address')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('quotes the default address without opening the editor', async () => {

@@ -29,6 +29,7 @@ import {
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
+import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import type { Address } from '@/lib/types';
 import type { Me } from '@/lib/types';
@@ -121,6 +122,12 @@ export default function CartPage() {
   // control instead of always-open pickers.
   const [profileAddr, setProfileAddr] = useState<ManualAddressValue | null>(null);
   const [addressEditing, setAddressEditing] = useState(false);
+  // The address WINDOW (2026-11-26): the summary row's change control opens a
+  // dialog holding the whole saved-address book plus "add a new address",
+  // instead of an inline editor that looked like the address already shown.
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  // Focus returns here on close (Safari does not focus a button on click).
+  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
   const profilePrefilledRef = useRef(false);
   const profileFetchedRef = useRef(false);
 
@@ -1013,7 +1020,8 @@ export default function CartPage() {
                     }
                     address={addressLine}
                     incomplete={profileAddressIncomplete && addressIsDefault}
-                    onChange={() => setAddressEditing(true)}
+                    buttonRef={addressTriggerRef}
+                    onChange={() => setAddressDialogOpen(true)}
                   />
                 ) : (
                   <div className="space-y-2">
@@ -1082,6 +1090,34 @@ export default function CartPage() {
                   </div>
                 )}
               </div>
+
+              {addressDialogOpen && (
+                <DeliveryAddressDialog
+                  returnFocusTo={addressTriggerRef.current}
+                  initialAddress={addr}
+                  // The cart prices delivery from the five address fields
+                  // only — it has never carried coordinates.
+                  requireCoords={false}
+                  getToken={getToken}
+                  onClose={() => setAddressDialogOpen(false)}
+                  onSelect={(a: Address) => {
+                    setSavedAddressPicked(true);
+                    setAddr({
+                      building: a.building ?? '',
+                      street: a.street,
+                      address2: a.address2 ?? '',
+                      suburb: a.suburb ?? '',
+                      city: a.city,
+                      postalCode: a.postalCode,
+                      province: a.province,
+                    });
+                  }}
+                  onUseOnce={(value) => {
+                    setSavedAddressPicked(true);
+                    setAddr(value);
+                  }}
+                />
+              )}
 
               <div className="mb-5">
                 <CartDeliveryPicker

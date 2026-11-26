@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../../../lib/auth';
 import { formatPrice } from '@/lib/utils';
 import { platformFeeForCents } from '@/lib/platform-fee';
@@ -14,7 +14,9 @@ import {
 } from '@/components/delivery-options-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
+import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
+import type { ManualAddressValue } from '@/components/manual-address-fields';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -198,8 +200,13 @@ export function OfferCheckoutForm({
   const [profile, setProfile] = useState<ProfileMe | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   // The editor is closed by default: the buyer sees the default address and
-  // one "Select a different address" control (operator, 2026-11-25).
-  const [addressEditing, setAddressEditing] = useState(false);
+  // one "Select a different address" control (operator, 2026-11-25). That
+  // control opens the address WINDOW (2026-11-26) — the whole saved-address
+  // book plus an "add a new address" form, rather than an inline editor that
+  // looked identical to the address already shown.
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  // Focus returns here on close (Safari does not focus a button on click).
+  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,17 +289,34 @@ export function OfferCheckoutForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getToken, actionToken]);
 
-  // Reset the editor fields to the profile default (used by "Use my default
-  // address", which also closes the editor).
-  function applyProfileAddress(p: ProfileMe) {
-    setDeliveryAddress({
-      streetAddress: p.addrStreet ?? '',
-      suburb: p.addrSuburb ?? '',
-      city: p.addrCity ?? '',
-      province: p.addrProvince ?? '',
-      postalCode: p.addrPostalCode ?? '',
-      contactName: [p.firstName, p.lastName].filter(Boolean).join(' ').trim(),
-      contactPhone: p.phone ?? '',
+  // Apply a saved address (or a typed one from the dialog) to this order. The
+  // identity fields (name / phone) are this form's own and are never taken
+  // from the address book row.
+  function applyAddressToOrder(a: {
+    street: string;
+    suburb?: string | null;
+    city: string;
+    province: string;
+    postalCode: string;
+  }) {
+    setDeliveryAddress((prev) => ({
+      ...prev,
+      streetAddress: a.street,
+      suburb: a.suburb ?? '',
+      city: a.city,
+      province: a.province,
+      postalCode: a.postalCode,
+    }));
+  }
+
+  /** The dialog's secondary action: typed address for this order only. */
+  function applyTypedAddressToOrder(v: ManualAddressValue) {
+    applyAddressToOrder({
+      street: v.street,
+      suburb: v.suburb,
+      city: v.city,
+      province: v.province || '',
+      postalCode: v.postalCode,
     });
   }
 
@@ -601,7 +625,7 @@ export function OfferCheckoutForm({
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Loading your address…
             </p>
-          ) : profileHasAddress && !addressEditing ? (
+          ) : profileHasAddress ? (
             <DeliveryAddressSummary
               label={
                 summaryMatchesProfile
@@ -610,7 +634,8 @@ export function OfferCheckoutForm({
               }
               address={summaryAddress}
               incomplete={summaryMatchesProfile && profileAddressIncomplete}
-              onChange={() => setAddressEditing(true)}
+              buttonRef={addressTriggerRef}
+              onChange={() => setAddressDialogOpen(true)}
             />
           ) : (
             <div
@@ -629,47 +654,14 @@ export function OfferCheckoutForm({
                     fontWeight: 600,
                   }}
                 >
-                  {profileHasAddress
-                    ? 'Select a different address'
-                    : 'Your delivery address'}
+                  Your delivery address
                 </p>
-                {profileHasAddress && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (profile) applyProfileAddress(profile);
-                      setAddressEditing(false);
-                    }}
-                    className="text-xs whitespace-nowrap"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      padding: 0,
-                    }}
-                  >
-                    Use my default address
-                  </button>
-                )}
               </div>
               {/* UX-3 — saved-address picker (2+ book addresses only). Picking
-                  one fills the same fields, then closes the editor. */}
-              <SavedAddressPicker
-                minToShow={1}
-                onSelect={(a: Address) => {
-                  setDeliveryAddress((prev) => ({
-                    ...prev,
-                    streetAddress: a.street,
-                    suburb: a.suburb ?? '',
-                    city: a.city,
-                    province: a.province,
-                    postalCode: a.postalCode,
-                  }));
-                  setAddressEditing(false);
-                }}
-              />
+                  one fills the same fields. Only reached when the member has no
+                  profile address yet; once one exists the summary row opens the
+                  address window instead. */}
+              <SavedAddressPicker minToShow={1} onSelect={applyAddressToOrder} />
               <div className="grid grid-cols-1 gap-3">
             {(
               [
@@ -753,32 +745,6 @@ export function OfferCheckoutForm({
               )}
             </div>
           )}
-
-              {/* Close the editor only once the address is complete; the
-                  payload's own readiness gate still applies to Pay. Only
-                  rendered when there IS a summary to close back to — a
-                  member with no profile address stays in the editor (current
-                  behaviour). */}
-              {profileHasAddress && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setAddressEditing(false)}
-                    disabled={!addressComplete}
-                    className="px-4 py-2 rounded-[6px] text-sm"
-                    style={{
-                      background: 'var(--action-primary-bg)',
-                      color: '#fff',
-                      border: 'none',
-                      fontWeight: 500,
-                      cursor: addressComplete ? 'pointer' : 'not-allowed',
-                      opacity: addressComplete ? 1 : 0.5,
-                    }}
-                  >
-                    Use this address
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -797,6 +763,32 @@ export function OfferCheckoutForm({
             />
           </div>
         </div>
+      )}
+
+      {/* The address WINDOW (2026-11-26). Choosing a row applies it to the
+          same `deliveryAddress` state the typed editor always wrote, so the
+          quote is invalidated and re-priced by the existing effect above. */}
+      {method === 'COURIER' && addressDialogOpen && (
+        <DeliveryAddressDialog
+          returnFocusTo={addressTriggerRef.current}
+          initialAddress={{
+            building: '',
+            street: deliveryAddress.streetAddress,
+            address2: '',
+            suburb: deliveryAddress.suburb,
+            city: deliveryAddress.city,
+            postalCode: deliveryAddress.postalCode,
+            province: deliveryAddress.province as ManualAddressValue['province'],
+          }}
+          // This form has never priced off coordinates — the quote and payload
+          // use the five address fields only, so coords are optional here.
+          requireCoords={false}
+          canSaveToBook={!actionToken}
+          getToken={getToken}
+          onClose={() => setAddressDialogOpen(false)}
+          onSelect={applyAddressToOrder}
+          onUseOnce={applyTypedAddressToOrder}
+        />
       )}
 
       {/* What the buyer actually pays. The agreed price is the price — an

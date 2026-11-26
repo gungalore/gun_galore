@@ -6,6 +6,7 @@ import {
   type ParsedAddressComponents,
 } from '@/components/address-autocomplete';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
+import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import {
   ManualAddressFields,
   emptyManualAddress,
@@ -129,6 +130,11 @@ export default function PrintDelivery({
     null,
   );
   const [addressEditing, setAddressEditing] = useState(false);
+  // The address WINDOW (2026-11-26): one dialog with the saved-address book
+  // plus "add a new address", opening from the summary row's change control.
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  // Focus returns here on close (Safari does not focus a button on click).
+  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
   const seq = useRef(0);
 
   // The member's saved address is the starting point, but every field stays
@@ -258,7 +264,8 @@ export default function PrintDelivery({
     setPrefilled(true);
   }
 
-  async function pickSaved(a: {
+  /** Apply an address-book row (or the dialog's saved pick) to this delivery. */
+  function applySavedAddress(a: {
     building?: string | null;
     street: string;
     address2?: string | null;
@@ -277,8 +284,9 @@ export default function PrintDelivery({
       province: a.province as ManualAddressValue['province'],
     });
     setPrefilled(true);
-    // Picking from the book is a choice, not an edit session: close the editor
-    // so the chosen address collapses straight back into the summary row.
+    // Picking from the book is a choice, not an edit session: close the inline
+    // editor so the chosen address collapses straight back into the summary
+    // row. (Inline editor only exists when no profile address was prefilled.)
     setAddressEditing(false);
   }
 
@@ -381,7 +389,8 @@ export default function PrintDelivery({
               }
               address={addressLine}
               incomplete={addressIncomplete}
-              onChange={() => setAddressEditing(true)}
+              buttonRef={addressTriggerRef}
+              onChange={() => setAddressDialogOpen(true)}
             />
           ) : (
             <div className="mt-2 rounded-lg border p-3" style={{ borderColor: 'var(--border)' }}>
@@ -407,7 +416,7 @@ export default function PrintDelivery({
                   </button>
                 ) : null}
               </div>
-              <SavedAddressPicker onSelect={(a) => void pickSaved(a)} />
+              <SavedAddressPicker onSelect={applySavedAddress} />
               <AddressAutocomplete
                 value={
                   address.street
@@ -463,6 +472,25 @@ export default function PrintDelivery({
                 </div>
               ) : null}
             </div>
+          )}
+
+          {/* The address WINDOW (2026-11-26). Choosing a row writes the same
+              `address` state the typed fields always wrote, so the debounced
+              print quote below re-prices from it. */}
+          {addressDialogOpen && (
+            <DeliveryAddressDialog
+              returnFocusTo={addressTriggerRef.current}
+              initialAddress={address}
+              // The print quote never carried coordinates.
+              requireCoords={false}
+              getToken={token}
+              onClose={() => setAddressDialogOpen(false)}
+              onSelect={applySavedAddress}
+              onUseOnce={(value) => {
+                setAddress(value);
+                setPrefilled(true);
+              }}
+            />
           )}
 
           {quoting ? (

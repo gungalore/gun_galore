@@ -18,6 +18,7 @@ import { platformFeeForCents } from '@/lib/platform-fee';
 import { useCountdown } from '@/lib/use-countdown';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
+import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { usePaymentMethods } from '@/lib/payment-methods';
@@ -406,8 +407,15 @@ export function CheckoutForm({
   const [useDifferentAddress, setUseDifferentAddress] = useState(false);
   // The address editor is closed by default: the buyer sees the DEFAULT
   // address and one "Select a different address" control (operator,
-  // 2026-11-25). Opening it reveals the address book + manual fields.
-  const [addressEditing, setAddressEditing] = useState(false);
+  // 2026-11-25). That control opens the address WINDOW (2026-11-26): a
+  // dialog with the member's whole address book plus an "add a new address"
+  // form, because the old inline editor hid the book below two saved
+  // addresses and looked like nothing had happened for a member with one
+  // (member report @ruanda).
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  // Focus returns here when the dialog closes. Held explicitly because Safari
+  // does not focus a <button> on click, so the trap's fallback would be <body>.
+  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     // On the picker path `method` is a CONSEQUENCE of the buyer's delivery
     // choice, not a choice of its own — resetting here would throw away the
@@ -554,8 +562,8 @@ export function CheckoutForm({
   // UX-3 — a picked address-book entry drives the SAME capture state a typed
   // address does, so the checkout payload is byte-identical to typing it. We
   // pin it (so the profile prefill can't clobber it) and flip to the capture
-  // path. Only surfaces for buyers with 2+ saved addresses; everyone else sees
-  // today's flow unchanged.
+  // path. The address dialog lists every saved address for every member, so
+  // this now runs for a member with only one saved address too.
   function handlePickSavedAddress(a: Address) {
     addrPinnedRef.current = true;
     setCaptureAddr({
@@ -569,6 +577,21 @@ export function CheckoutForm({
     });
     setCaptureLat(a.lat ?? null);
     setCaptureLng(a.lng ?? null);
+    setUseDifferentAddress(true);
+  }
+
+  // The dialog's secondary action: use the typed address for THIS order only,
+  // without writing the address book (the same thing the old inline editor's
+  // "Use this address" did). The payload/quote path is the capture path above.
+  function applyTypedDeliveryAddress(
+    value: ManualAddressValue,
+    lat: number | null,
+    lng: number | null,
+  ) {
+    addrPinnedRef.current = true;
+    setCaptureAddr(value);
+    setCaptureLat(lat);
+    setCaptureLng(lng);
     setUseDifferentAddress(true);
   }
 
@@ -1377,7 +1400,7 @@ export function CheckoutForm({
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Loading your address…
             </p>
-          ) : hasSavedAddress && !addressEditing ? (
+          ) : hasSavedAddress ? (
             <DeliveryAddressSummary
               label={
                 deliverSummaryIsDefault
@@ -1386,12 +1409,9 @@ export function CheckoutForm({
               }
               address={deliverSummaryLine}
               incomplete={deliverSummaryIncomplete}
-              onChange={() => {
-                setUseDifferentAddress(true);
-                setAddressEditing(true);
-              }}
+              buttonRef={addressTriggerRef}
+              onChange={() => setAddressDialogOpen(true)}
             />
-
           ) : (
             <div
               className="rounded-[6px] p-3 space-y-3"
@@ -1409,37 +1429,14 @@ export function CheckoutForm({
                     fontWeight: 600,
                   }}
                 >
-                  {hasSavedAddress ? 'Select a different address' : 'Your delivery address'}
+                  Your delivery address
                 </p>
-                {hasSavedAddress && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUseDifferentAddress(false);
-                      setAddressEditing(false);
-                    }}
-                    className="text-xs whitespace-nowrap"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      padding: 0,
-                    }}
-                  >
-                    Use my default address
-                  </button>
-                )}
               </div>
               {/* Address book — picking one fills the same capture state a
-                  typed address does, then closes the editor. */}
-              <SavedAddressPicker
-                onSelect={(a: Address) => {
-                  handlePickSavedAddress(a);
-                  setAddressEditing(false);
-                }}
-              />
+                  typed address does. Only members with 2+ book addresses see
+                  it here; everyone else gets the "add a new address" window
+                  from the summary row once a first address exists. */}
+              <SavedAddressPicker onSelect={handlePickSavedAddress} />
               <AddressAutocomplete
                 value={
                   captureAddr.street
@@ -1542,40 +1539,29 @@ export function CheckoutForm({
                   route the drop-off.
                 </p>
               )}
-              {hasSavedAddress && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setAddressEditing(false)}
-                    disabled={
-                      !captureAddr.street.trim() ||
-                      !captureAddr.city.trim() ||
-                      captureLat == null ||
-                      captureLng == null
-                    }
-                    className="px-4 py-2 rounded-[6px] text-sm"
-                    style={{
-                      background: 'var(--action-primary-bg)',
-                      color: '#fff',
-                      border: 'none',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      opacity:
-                        !captureAddr.street.trim() ||
-                        !captureAddr.city.trim() ||
-                        captureLat == null ||
-                        captureLng == null
-                          ? 0.5
-                          : 1,
-                    }}
-                  >
-                    Use this address
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
+      )}
+
+      {/* The address WINDOW. Mounted only while open; choosing a row calls the
+          same capture-state path a typed address always used, then this
+          unmounts and the delivery options re-price from the new address. */}
+      {usesDeliveryPicker && addressDialogOpen && (
+        <DeliveryAddressDialog
+          returnFocusTo={addressTriggerRef.current}
+          initialAddress={captureAddr}
+          initialLat={captureLat}
+          initialLng={captureLng}
+          getToken={getToken}
+          // A signed-out SMS-link checkout (actionToken) cannot reach the
+          // session-only address book; it gets the typed address as a one-off.
+          canSaveToBook={!actionToken}
+          requireCoords
+          onClose={() => setAddressDialogOpen(false)}
+          onSelect={handlePickSavedAddress}
+          onUseOnce={applyTypedDeliveryAddress}
+        />
       )}
 
       {/* Shipping — Bob Go door-to-door is the only courier rail, so the

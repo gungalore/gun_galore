@@ -8,6 +8,8 @@
 // when the saved default looks incomplete. The editor (address book + manual
 // fields) is each surface's own; this is presentation only.
 
+import type { Ref } from 'react';
+
 export interface DeliveryAddressSummaryProps {
   /** e.g. "Deliver to my default address" or "Deliver to". */
   label: string;
@@ -18,6 +20,12 @@ export interface DeliveryAddressSummaryProps {
   incompleteMessage?: string;
   changeLabel?: string;
   onChange: () => void;
+  /**
+   * The change control, so a host can hand it to the address dialog as the
+   * element focus returns to on close (Safari does not focus a button on
+   * click, so the trap's "whatever had focus" fallback would be the body).
+   */
+  buttonRef?: Ref<HTMLButtonElement>;
   disabled?: boolean;
 }
 
@@ -28,6 +36,7 @@ export function DeliveryAddressSummary({
   incompleteMessage,
   changeLabel = 'Select a different address',
   onChange,
+  buttonRef,
   disabled = false,
 }: DeliveryAddressSummaryProps) {
   return (
@@ -61,6 +70,7 @@ export function DeliveryAddressSummary({
           </p>
         </div>
         <button
+          ref={buttonRef}
           type="button"
           onClick={onChange}
           disabled={disabled}
