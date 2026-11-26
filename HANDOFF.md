@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — DURATION BANDS UNGREY LIVE WHILE TYPING THE RESERVE (FRONTEND DEPLOY)
+
+Operator: *"Let the duration bands ungray as the user types the reserve amount to where that amount
+qualifies."* The gating was already computed from the live reserve, but a browser `type="number"` silently
+blanks South African money typing ("20 000", "R20,000"), leaving the field empty and every duration grey.
+
+- The sell form's reserve field now strips non-numeric characters as typed (`type="text"` +
+  `inputMode="decimal"`), so the reserve value updates on every keystroke and the gated duration pills
+  ungrey the moment the typed amount crosses each floor. Added an `aria-live` line under the pills:
+  "Unlocked at this reserve: 3 days." (or "No duration unlocked yet — the lowest reserve is R2,500.").
+- Shipped **`ed7072d3`** (frontend-only, 19:09 SAST); rollback **`alloutdoor-20261126-190957.dump`**
+  (39,435,845 bytes); frontend online, health OK, gate 200. Checks: typecheck clean, **206 files / 2,314
+  tests** (1 skipped), production build clean; deployed sell-page chunk contains the unlock line.
+- Reminder: the reserve-only/derived-opening-bid rules themselves shipped earlier at **`23921539`**
+  (18:07). If a seller sees the old build, accept the PWA "Update available" prompt / hard-refresh.
+
 ## 2026-11-26 — AUCTION RULES: RESERVE ONLY, DERIVED OPENING BID, RESERVE-GATED DURATIONS (FULL DEPLOY)
 
 Operator rule change: *"sellers cant decide the minimum starting bet. only the reserve. we start 30%
