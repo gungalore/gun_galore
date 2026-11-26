@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — OPENING BID IS A STATIC BOX; CONFIRM DECLINE IS RED (FRONTEND DEPLOY)
+
+Operator UI fixes: the sell/edit "Opening bid" figure looked editable (readOnly <input> still took focus and
+showed a caret/selection), and the seller's "Confirm decline" button was neutral grey.
+
+- Opening bid (sell form + edit page) is now a plain styled display block with
+  `user-select: none` / `pointer-events: none` — no focus ring, caret or text selection.
+- `ActionButton` gains a `danger` variant; the decline-reason dialog's **Confirm decline** now renders
+  red (`var(--red)`, white ink; muted when disabled) while Back stays ghost. The action records a
+  strike, so red is the honest signal.
+- Shipped **`2f007a4c`** (frontend-only, 20:08 SAST); rollback **`alloutdoor-20261126-200657.dump`**;
+  frontend online, health OK, gate 200. Checks: typecheck clean, **206 files / 2,314 tests** (1 skipped),
+  production build clean.
+
 ## 2026-11-26 — DURATION BANDS UNGREY LIVE WHILE TYPING THE RESERVE (FRONTEND DEPLOY)
 
 Operator: *"Let the duration bands ungray as the user types the reserve amount to where that amount
