@@ -1471,11 +1471,10 @@ export default function EditProfilePage() {
                     : ''
                 }
                 onChange={(v) => {
-                  // Manual typing in the autocomplete box mirrors into
-                  // street if the seller hasn't filled it yet.
-                  if (!addr.street) {
-                    setAddr((p) => ({ ...p, street: v }));
-                  }
+                  // ⚠️ ALWAYS mirror typed text into street: the old "only
+                  // when empty" guard made the box ignore typing once a saved
+                  // address was prefilled (see checkout-form, 2026-11-26).
+                  setAddr((p) => ({ ...p, street: v }));
                 }}
                 onComponents={handleAddressComponents}
               />

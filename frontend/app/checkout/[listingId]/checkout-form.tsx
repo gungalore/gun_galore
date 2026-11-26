@@ -1447,9 +1447,14 @@ export function CheckoutForm({
                     : ''
                 }
                 onChange={(v) => {
-                  if (!captureAddr.street) {
-                    setCaptureAddr((p) => ({ ...p, street: v }));
-                  }
+                  // ⚠️ ALWAYS mirror typed text into street — never "only when
+                  // empty". The input is uncontrolled and prefilled from the
+                  // saved address, so an emptiness guard silently discarded
+                  // every keystroke once an address existed: a buyer could not
+                  // change the delivery address by typing (member report
+                  // @ruanda, 2026-11-26). Selecting a suggestion still calls
+                  // onComponents with the full parsed address.
+                  setCaptureAddr((p) => ({ ...p, street: v }));
                 }}
                 onComponents={handleAddressComponents}
               />

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
@@ -526,10 +526,11 @@ export function ProfileCompletionModal({
           <AddressAutocomplete
             value={autocompleteInitial}
             onChange={(v) => {
-              // Free-text typing into the autocomplete only updates the
-              // street field initially — the dropdown selection fires
-              // onComponents with the rest.
-              if (!addr.street) setAddr((p) => ({ ...p, street: v }));
+              // ⚠️ ALWAYS update street, not only when empty. The dropdown
+              // selection still fires onComponents with the rest, but free
+              // typing must never be silently dropped on a prefilled address
+              // (same regression as checkout-form, 2026-11-26).
+              setAddr((p) => ({ ...p, street: v }));
             }}
             onComponents={handleAddressComponents}
           />

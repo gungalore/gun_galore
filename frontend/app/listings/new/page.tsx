@@ -4454,11 +4454,11 @@ export default function NewListingPage() {
                     : ''
                 }
                 onChange={(addr) => {
-                  // Free-text typing in the autocomplete box mirrors into
-                  // street if Google hasn't picked anything yet.
-                  if (!pickupAddress.street) {
-                    setPickupAddress((p) => ({ ...p, street: addr }));
-                  }
+                  // ⚠️ ALWAYS mirror typed text into street (see checkout-form:
+                  // the old "only when empty" guard silently ignored typing on
+                  // a prefilled address). A suggestion selection still fills
+                  // the rest through onComponents.
+                  setPickupAddress((p) => ({ ...p, street: addr }));
                 }}
                 onComponents={handleAddressComponents}
               />
