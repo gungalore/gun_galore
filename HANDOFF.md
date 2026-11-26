@@ -7,6 +7,32 @@ overwritten.
 
 Last updated: **2026-11-26**.
 
+## 2026-11-26 — MEMBER COULD NOT CHANGE THE DELIVERY ADDRESS (FRONTEND-ONLY DEPLOY)
+
+Operator forwarded a bug report from **@ruanda**, category *Delivery / Shipping*: *"I am unable to select
+a different delivery address to ship the product."* Her activity log put her on
+`/checkout/cmww67jbj001fopvnlnv60ewx` (Match saver, courier) at the report time.
+
+**Root cause.** The address autocomplete in the checkout address editor was wired with an
+`if (!captureAddr.street)` guard — "only mirror typed text into street when it is still empty". The
+editor opens PREFILLED from the member's saved default address, so that guard discarded every keystroke:
+the input is uncontrolled, so the text appeared while the form state, the delivery quote and the order
+payload all stayed on the old address. The same copy-pasted guard lived in three other address forms.
+
+**Fix.** Typed text now ALWAYS replaces `street` on all four surfaces; selecting a dropdown suggestion
+still fills the full parsed address through `onComponents`. Files: checkout form, Sell form pickup
+address, Profile → Edit address, profile-completion modal. Added a real `CheckoutForm` regression test
+(`components/checkout-address-regression.spec.tsx`): it opens the editor, types a new street and asserts
+the submitted field changed — verified to **fail on the old guard and pass on the fix**.
+
+Shipped **`d04e9d73`** (frontend-only, 09:51 SAST); rollback **`alloutdoor-20261126-095008.dump`**
+(39,428,134 bytes); frontend health ×2 OK; gate checks 307→`/gate` + `/gate` 200; backend untouched
+(last backend deploy `335e1956`). Checks: frontend typecheck clean, **200 files / 2,272 tests** (1
+skipped), production build clean. The one intermittent full-suite failure seen was the known
+`licence-centre/design-picker` pdf-worker timeout flake; it passes in isolation.
+
+No data was changed. A member retry is the remaining confirmation (the signed-in flow cannot be
+reproduced without their session).
 ## 2026-11-26 — FILLABLE FIELDS NOW CONTRAST WITH THEIR SURFACE (FRONTEND-ONLY DEPLOY)
 
 Operator: *"anywhere where a user has to fill in something is the same color as the background with a
