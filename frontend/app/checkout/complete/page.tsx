@@ -3,9 +3,11 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SUPPORT_EMAIL } from '@/lib/brand';
+import { removeFromCart } from '@/lib/cart-store';
 import { CheckoutProgress } from '@/components/checkout-progress';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const PENDING_BUY_NOW_KEY = 'gg:buyNowListing';
 
 // A single verify-result call that comes back { success: false } is NOT proof
 // the buyer wasn't charged — capture can land on the webhook seconds after the
@@ -86,6 +88,18 @@ function CheckoutCompleteInner() {
     (result: VerifyResult, id: string) => {
       setStatus(result);
       if (result === 'ok') {
+        // Buy Now remembered its line in /cart while the buyer was checking
+        // out. The order is paid now, so drop that trace — leaving checkout
+        // without paying keeps it.
+        try {
+          const paidListingId = localStorage.getItem(PENDING_BUY_NOW_KEY);
+          if (paidListingId) {
+            removeFromCart(paidListingId);
+            localStorage.removeItem(PENDING_BUY_NOW_KEY);
+          }
+        } catch {
+          /* storage unavailable — the cart is best-effort */
+        }
         setTimeout(() => router.replace(`/transactions/${id}`), 1500);
       }
     },

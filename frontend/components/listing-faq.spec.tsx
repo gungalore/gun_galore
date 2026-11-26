@@ -36,7 +36,7 @@ describe('ListingFaq', () => {
     // The anonymisation is a rule in the pipeline, not a line we print at the
     // buyer (operator, 2026-11-23: "remove the personal details removed text").
     expect(
-      screen.getByText('Answers this seller has given to other buyers.'),
+      screen.getByText(/answers this seller has given to other buyers/i),
     ).toBeTruthy();
     expect(screen.queryByText(/personal details removed/i)).toBeNull();
     expect(screen.getByText('Does it come with a case?')).toBeTruthy();
@@ -109,19 +109,17 @@ describe('ListingFaq', () => {
     expect(screen.queryByText(/based on this seller's recent replies/i)).toBeNull();
   });
 
-  it('exposes a #faq-<id> anchor per entry with the answer always visible', () => {
+  it('is one expandable box that contains every question and answer', () => {
     const { container } = render(
       <ListingFaq entries={ENTRIES} sellerReply={SELLER_REPLY} />,
     );
 
+    const details = container.querySelector('details');
+    expect(details).toBeTruthy();
+    expect(details!.open).toBe(false);
+    // Every question (bold) and answer still lives inside the same box.
     const newest = container.querySelector('#faq-faq-new');
     const older = container.querySelector('#faq-faq-old');
-
-    expect(newest).toBeTruthy();
-    expect(older).toBeTruthy();
-    // No accordion: the composer's "See the full answer" anchor must land on a
-    // visible answer, not a closed <details>.
-    expect(container.querySelectorAll('details')).toHaveLength(0);
     expect(newest?.textContent).toContain('Does it come with a case?');
     expect(newest?.textContent).toContain(
       'Yes, the original hard case is included.',
@@ -129,7 +127,22 @@ describe('ListingFaq', () => {
     expect(older?.textContent).toContain(
       'No, it is the standard unthreaded barrel.',
     );
+
+    // Opening the box reveals them (native details behaviour).
+    const summary = container.querySelector('summary')!;
+    (summary as HTMLElement).click();
+    expect(details!.open).toBe(true);
     expect(container.querySelector('section#questions')).toBeTruthy();
+  });
+
+  it('opens itself when the URL targets the section or an answer anchor', () => {
+    window.location.hash = '#faq-faq-old';
+    const { container, unmount } = render(
+      <ListingFaq entries={ENTRIES} sellerReply={SELLER_REPLY} />,
+    );
+    expect(container.querySelector('details')!.open).toBe(true);
+    unmount();
+    window.location.hash = '';
   });
 
   it('renders no hide/show/report control in either state', () => {

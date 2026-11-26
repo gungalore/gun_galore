@@ -55,6 +55,10 @@ interface CreateTxResponse {
 // back from here). Kept in sync with the offer checkout form + the
 // complete page.
 const PENDING_TX_KEY = 'gg:pendingTx';
+// Buy Now keeps its line in /cart while the buyer is in checkout (2026-11-26
+// operator: an abandoned Buy Now must not vanish). A successful payment removes
+// it on /checkout/complete via this marker.
+const PENDING_BUY_NOW_KEY = 'gg:buyNowListing';
 
 // mm:ss for the 15-minute reservation clock.
 function formatHold(ms: number): string {
@@ -949,6 +953,9 @@ export function CheckoutForm({
       if (data.redirectUrl && !data.paymentId?.startsWith('mock-')) {
         try {
           localStorage.setItem(PENDING_TX_KEY, data.transactionId);
+          // Remember which Buy Now line is being paid so the confirmation
+          // step can drop it from the cart; leaving checkout keeps it.
+          localStorage.setItem(PENDING_BUY_NOW_KEY, listing.id);
         } catch {
           // Private-mode / storage-disabled: the txId also rides back via
           // the (deferred) webhook, so the order still settles server-side.

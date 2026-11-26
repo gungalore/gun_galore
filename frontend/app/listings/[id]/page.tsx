@@ -169,6 +169,26 @@ export default async function ListingDetailPage({
   // omits a separate seller.userId field. Keep the fallback for payloads that
   // may include it so owner-only controls work with both response shapes.
   const sellerUserId = listing.seller.userId ?? listing.seller.id;
+  // The local cart line Buy Now remembers while the buyer is in checkout, so
+  // abandoning it leaves a trace in /cart instead of losing the item. The cart
+  // cannot carry collection-only lines, so those are never remembered.
+  const buyNowCartItem =
+    listing.listingType === 'BUY_NOW' &&
+    !listing.collectionOnly &&
+    !listing.shippingMethods?.includes('COLLECTION')
+      ? {
+          listingId: listing.id,
+          title: listing.title,
+          price: listing.price ?? 0,
+          imageUrl:
+            listing.images?.find((i) => i.isPrimary)?.url ??
+            listing.images?.[0]?.url,
+          sellerId: sellerUserId,
+          sellerUsername: listing.seller.username ?? 'Seller',
+          isFirearm: listing.isFirearm,
+          shippingMethods: listing.shippingMethods,
+        }
+      : null;
   const isOwnListing = !!userId && userId === sellerUserId;
 
   // A buyer who backed out of the hosted payment page lands back here with an
@@ -942,6 +962,7 @@ export default async function ListingDetailPage({
                     untouched. */}
                 <BuyNowCta
                   listingId={listing.id}
+                  cartItem={buyNowCartItem}
                   className="block w-full py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-2"
                   style={{
                     background: 'var(--action-primary-bg)',
@@ -1398,6 +1419,7 @@ export default async function ListingDetailPage({
             ) : listing.listingType === 'BUY_NOW' ? (
               <BuyNowCta
                 listingId={listing.id}
+                cartItem={buyNowCartItem}
                 className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
                 style={{
                   background: 'var(--action-primary-bg)',

@@ -1,19 +1,30 @@
+'use client';
+
 // Public listing Q&A — cleaned, anonymised answers the seller has already given
 // to other buyers through the private "Contact seller" thread.
 //
-// NO 'use client' AND NO COLLAPSE, deliberately. Every answer is always visible,
-// so a #faq-<id> anchor always reveals something useful: the "Already answered
-// in the Q&A" card in the private composer links straight here, and a closed
-// accordion would have shown the buyer an empty box. Opening a targeted entry
-// would need client JS; the API caps the list at 20 entries, so there is
-// nothing to collapse away anyway.
+// 2026-11-26 operator: "The questions and answers should be grouped in one box
+// that is expandable. then the question in bold with the answer below it. Then
+// the next question below in bold and the answer below it and so on."
+//
+// So the whole section is ONE card with a native <details> disclosure. Closed,
+// the buyer sees the heading and how many questions are answered; opening it
+// reveals the reply badge, every answered question (bold) with its answer
+// underneath, and the private "Ask the seller a question" composer. The
+// composer stays inside this card because the answers and the ask belong
+// together (operator, 2026-11-23).
+//
+// ⚠️ ANCHORS STILL WORK. The private composer's "See the full answer" link
+// targets `#faq-<id>`; a closed <details> would hide it. A hashchange/mount
+// listener opens the disclosure whenever the URL targets the section or one
+// of its answers, so the deep link always reveals content.
 //
 // ⚠️ SELLERS CANNOT HIDE OR DELETE AN ANSWERED QUESTION. That is a product rule,
 // not an omission: there is no hide/show/delete/report control here, and none
 // may be added. Platform moderation sets ListingFaq.hiddenAt server-side; the
 // API only ever returns entries that are already public.
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 export interface ListingFaqEntry {
   id: string;
@@ -107,109 +118,155 @@ export function ListingFaq({
   sellerReply,
   children,
 }: ListingFaqProps) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    function openForHash() {
+      const hash = window.location.hash;
+      if (hash === '#questions' || hash.startsWith('#faq-')) {
+        if (detailsRef.current) detailsRef.current.open = true;
+      }
+    }
+    openForHash();
+    window.addEventListener('hashchange', openForHash);
+    return () => window.removeEventListener('hashchange', openForHash);
+  }, []);
+
+  const answeredLabel =
+    entries.length === 0
+      ? 'No questions answered yet'
+      : `${entries.length} answered question${entries.length === 1 ? '' : 's'}`;
+
   return (
     <section
       id="questions"
       aria-labelledby="questions-heading"
-      className="rounded-[6px] p-3 mb-4 text-sm"
+      className="rounded-[6px] text-sm"
       style={{
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
       }}
     >
-      <h2
-        id="questions-heading"
-        className="text-sm"
-        style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-      >
-        Questions &amp; answers
-      </h2>
-      <p
-        className="text-xs mt-1 mb-3"
-        style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
-      >
-        Answers this seller has given to other buyers.
-      </p>
-
-      <ReplyBadge sellerReply={sellerReply} />
-
-      {entries.length === 0 ? (
-        // REQUIRED empty state, never hidden: a buyer who scrolls this far needs
-        // to know the section was checked and found empty, and the copy points
-        // them at the private composer directly below it.
-        <p
-          className="text-xs mt-3"
-          style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+      <details ref={detailsRef} className="group">
+        <summary
+          className="flex cursor-pointer items-center justify-between gap-3 px-3 py-3"
+          style={{ listStylePosition: 'inside' }}
         >
-          No public questions yet — ask the seller below.
-        </p>
-      ) : (
-        <div className="flex flex-col mt-2">
-          {entries.map((entry, index) => (
-            <article
-              key={entry.id}
-              // The composer's "See the full answer" link targets this id. It
-              // must always reveal the answer — see the header comment.
-              id={`faq-${entry.id}`}
-              className="py-3"
-              style={{
-                // Hairline between entries, none above the first: the section
-                // card already supplies that edge.
-                borderTop:
-                  index === 0
-                    ? undefined
-                    : '0.5px solid var(--border-divider)',
-                // Clear the sticky header when the anchor scrolls here on a
-                // phone; harmless inside the independently scrolling pane at
-                // lg (same offset .gg-anchor-buy uses).
-                scrollMarginTop: 'calc(var(--nav-h) + 8px)',
-              }}
+          <span className="min-w-0">
+            <h2
+              id="questions-heading"
+              className="m-0 text-sm"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
             >
-              <h3
-                className="text-sm"
-                style={{
-                  color: 'var(--text-primary)',
-                  fontWeight: 600,
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
-                {entry.question}
-              </h3>
-              <p
-                className="text-sm mt-1.5 whitespace-pre-wrap"
-                style={{
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.6,
-                  margin: 0,
-                }}
-              >
-                {entry.answer}
-              </p>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {/* The private ask-the-seller composer. One section, not two cards: the
-          answer the buyer just read and the box that asks the next question are
-          directly correlated.
-          2026-11-24 sales-layout audit: the composer is behind a disclosure.
-          It stays inside this card (the answers and the ask belong together)
-          but the textarea no longer occupies the space before the seller card
-          on a phone. Collapsed content is still in the DOM, so the "Already
-          answered in the Q&A" anchor keeps working. */}
-      {children ? (
-        <details className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border-divider)' }}>
-          <summary
-            className="text-xs cursor-pointer"
-            style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+              Questions &amp; answers
+            </h2>
+            <span
+              className="mt-0.5 block text-xs"
+              style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+            >
+              {answeredLabel} — answers this seller has given to other buyers.
+            </span>
+          </span>
+          <svg
+            aria-hidden
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+            style={{ color: 'var(--text-tertiary)' }}
           >
-            Ask the seller a question
-          </summary>
-          <div className="mt-3">{children}</div>
-        </details>
-      ) : null}
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </summary>
+
+        <div
+          className="px-3 pb-3"
+          style={{ borderTop: '0.5px solid var(--border-divider)' }}
+        >
+          <div className="pt-3">
+            <ReplyBadge sellerReply={sellerReply} />
+          </div>
+
+          {entries.length === 0 ? (
+            // REQUIRED empty state, never hidden: a buyer who opens this
+            // section needs to know it was checked and found empty, and the
+            // copy points them at the private composer directly below it.
+            <p
+              className="text-xs mt-3 mb-0"
+              style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+            >
+              No public questions yet — ask the seller below.
+            </p>
+          ) : (
+            <div className="flex flex-col mt-2">
+              {entries.map((entry, index) => (
+                <article
+                  key={entry.id}
+                  // The composer's "See the full answer" link targets this id.
+                  id={`faq-${entry.id}`}
+                  className="py-3"
+                  style={{
+                    borderTop:
+                      index === 0
+                        ? undefined
+                        : '0.5px solid var(--border-divider)',
+                    // Clear the sticky header when the anchor scrolls here on
+                    // a phone; harmless inside the independently scrolling
+                    // pane at lg (same offset .gg-anchor-buy uses).
+                    scrollMarginTop: 'calc(var(--nav-h) + 8px)',
+                  }}
+                >
+                  <h3
+                    className="text-sm"
+                    style={{
+                      color: 'var(--text-primary)',
+                      fontWeight: 700,
+                      lineHeight: 1.5,
+                      margin: 0,
+                    }}
+                  >
+                    {entry.question}
+                  </h3>
+                  <p
+                    className="text-sm mt-1.5 whitespace-pre-wrap"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      lineHeight: 1.6,
+                      margin: 0,
+                    }}
+                  >
+                    {entry.answer}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {/* The private ask-the-seller composer, behind its own disclosure so
+              the textarea does not occupy space before the seller card on a
+              phone. Collapsed content stays in the DOM, so anchors into it
+              keep working. */}
+          {children ? (
+            <details
+              className="mt-3 pt-3"
+              style={{ borderTop: '0.5px solid var(--border-divider)' }}
+            >
+              <summary
+                className="text-xs cursor-pointer"
+                style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+              >
+                Ask the seller a question
+              </summary>
+              <div className="mt-3">{children}</div>
+            </details>
+          ) : null}
+        </div>
+      </details>
     </section>
   );
 }

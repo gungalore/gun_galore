@@ -955,23 +955,48 @@ export function DeliveryAddressDialog({
           }}
         >
           {view === 'list' ? (
-            <button
-              type="button"
-              onClick={continueWithSelected}
-              disabled={!canContinue}
-              className="w-full rounded-[6px] px-4 py-3 text-sm"
-              style={{
-                background: canContinue
-                  ? 'var(--action-primary-bg)'
-                  : 'var(--bg-inset)',
-                color: canContinue ? '#fff' : 'var(--text-tertiary)',
-                border: 'none',
-                fontWeight: 500,
-                cursor: canContinue ? 'pointer' : 'not-allowed',
-              }}
-            >
-              Continue
-            </button>
+            <div className="flex flex-col gap-2">
+              {/* The header has "+ Add" too, but on a phone the list can be
+                  long enough to push that header row out of sight; this
+                  footer button guarantees the Add action is always visible.
+                  Distinct accessible name so it does not collide with the
+                  header control. */}
+              {canSaveToBook && (
+                <button
+                  type="button"
+                  onClick={openAddForm}
+                  disabled={saving || deleting}
+                  aria-label="Add another delivery address"
+                  className="w-full rounded-[6px] px-4 py-2.5 text-sm"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-visible)',
+                    color: 'var(--text-primary)',
+                    fontWeight: 500,
+                    cursor: saving || deleting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  + Add a new address
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={continueWithSelected}
+                disabled={!canContinue}
+                className="w-full rounded-[6px] px-4 py-3 text-sm"
+                style={{
+                  background: canContinue
+                    ? 'var(--action-primary-bg)'
+                    : 'var(--bg-inset)',
+                  color: canContinue ? '#fff' : 'var(--text-tertiary)',
+                  border: 'none',
+                  fontWeight: 500,
+                  cursor: canContinue ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Continue
+              </button>
+            </div>
           ) : canSaveToBook ? (
             <button
               type="button"
