@@ -10,7 +10,9 @@ const API_URL =
 
 type ResumeResponse = {
   paid?: boolean;
+  released?: boolean;
   redirectUrl?: string;
+  checkoutUrl?: string;
   message?: string | string[];
 };
 
@@ -51,6 +53,12 @@ export default function ResumeCheckoutPage() {
         }
         if (data.paid) {
           router.replace(`/transactions/${transactionId}`);
+          return;
+        }
+        if (data.released) {
+          // The lapsed attempt was safely released; a clean checkout is the
+          // only useful next step (2026-11-26: "Retry" must never dead-end).
+          window.location.href = data.checkoutUrl ?? '/my/orders';
           return;
         }
         if (data.redirectUrl) {

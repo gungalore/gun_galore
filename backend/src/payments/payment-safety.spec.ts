@@ -187,3 +187,107 @@ describe('resumeCheckout payment guard', () => {
     });
   });
 });
+
+describe('interrupted checkout recovery (2026-11-26 Peach back-button bug)', () => {
+  it('does not advertise a lapsed attempt as resumable', async () => {
+    const { service, prisma } = makeService();
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TX1',
+      createdAt: new Date(Date.now() - 60 * 60_000),
+      manualPayByAt: new Date(Date.now() - 30 * 60_000),
+      listing: { listingType: 'BUY_NOW' },
+    });
+    await expect(
+      service.findUnpaidForListing('B1', 'L1'),
+    ).resolves.toEqual({ transactionId: null });
+  });
+
+  it('still returns a live attempt so Resume stays available', async () => {
+    const { service, prisma } = makeService();
+    prisma.transaction.findFirst.mockResolvedValue({
+      id: 'TX1',
+      createdAt: new Date(),
+      manualPayByAt: new Date(Date.now() + 10 * 60_000),
+      listing: { listingType: 'BUY_NOW' },
+    });
+    await expect(
+      service.findUnpaidForListing('B1', 'L1'),
+    ).resolves.toEqual({ transactionId: 'TX1' });
+  });
+
+  it('mints a FRESH Peach session on resume instead of reopening a dead page', async () => {
+    const ozow = { getPaymentStatus: jest.fn(), createPayment: jest.fn() };
+    const prisma = {
+      offer: { findFirst: jest.fn().mockResolvedValue(null) },
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue(
+          transaction({
+            paymentProvider: 'PEACH',
+            gatewayCheckoutId: 'OLD',
+            gatewayRedirectUrl: 'https://secure.peachpayments.com/old',
+            listing: {
+              id: 'L1',
+              sellerId: 'S1',
+              isFirearm: false,
+              status: 'PAYMENT_PENDING',
+              listingType: 'BUY_NOW',
+            },
+          }),
+        ),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const rails = {
+      getPaymentStatus: jest.fn().mockResolvedValue({
+        provider: 'PEACH',
+        paymentId: 'OLD',
+        merchantReference: 'REF1',
+        resultCode: '000.200.100',
+        amountCents: 100_000,
+        currency: 'ZAR',
+        isSuccess: false,
+      }),
+      createCheckout: jest.fn().mockResolvedValue({
+        provider: 'PEACH',
+        checkoutId: 'NEW',
+        redirectUrl: 'https://secure.peachpayments.com/new',
+        merchantReference: 'REF2',
+      }),
+    };
+    const service = new TransactionsService(
+      prisma as never,
+      new FeeCalculator() as never,
+      {} as never,
+      ozow as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      rails as never,
+    );
+
+    const result = await service.resumeCheckout(
+      'TX1',
+      'B1',
+      'https://x.test',
+    );
+
+    expect(rails.createCheckout).toHaveBeenCalledWith(
+      'PEACH',
+      expect.objectContaining({ merchantTransactionId: 'TX1' }),
+    );
+    expect(result).toMatchObject({
+      transactionId: 'TX1',
+      redirectUrl: 'https://secure.peachpayments.com/new',
+      provider: 'peach',
+    });
+    expect(prisma.transaction.update).toHaveBeenCalled();
+  });
+});

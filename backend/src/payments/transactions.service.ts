@@ -2352,6 +2352,16 @@ export class TransactionsService {
     const deadline =
       tx.manualPayByAt ?? linkedOffer?.expiresAt ?? fallbackDeadline;
     if (deadline.getTime() <= Date.now()) {
+      // The window is over. A lapsed attempt is not resumable, but the buyer
+      // should not be stuck: release it (only when the gateway proves no
+      // capture; Peach gets the 5-minute grace) and send them back to a clean
+      // checkout for the same listing.
+      if (await this.releaseLapsedUnpaidAttempt(tx)) {
+        return {
+          released: true as const,
+          checkoutUrl: `${frontendUrl}/checkout/${tx.listingId}`,
+        };
+      }
       throw new BadRequestException(
         'The payment window for this order has lapsed. Start a fresh checkout from the listing or offer.',
       );
@@ -2391,8 +2401,44 @@ export class TransactionsService {
       if (
         !this.gatewayFailureIsTerminal(tx.paymentProvider, status, false)
       ) {
-        // The original hosted page is still live. Send the buyer back to the
-        // SAME session; minting another link would risk a double charge.
+        // PEACH hosts a single-use checkout page. The API can still report the
+        // session as "created" after the buyer backed out, while the hosted
+        // page itself answers "Could not find Checkout details" when reopened —
+        // so reusing the stored redirect URL is a dead end (reported by the
+        // operator 2026-11-26). Resume is an explicit retry, so mint a FRESH
+        // Peach session for the SAME transaction instead. The transaction id is
+        // the idempotency anchor: whichever session is paid marks this row once.
+        if (tx.paymentProvider === PaymentProvider.PEACH) {
+          const remainingSeconds = Math.max(
+            60,
+            Math.floor((deadline.getTime() - Date.now()) / 1000),
+          );
+          const checkout = await this.createGatewayCheckout(
+            PaymentProvider.PEACH,
+            {
+              amountZarCents: tx.buyerTotal,
+              merchantTransactionId: tx.id,
+              returnUrl: `${frontendUrl}/checkout/complete?transactionId=${tx.id}`,
+              expirySeconds: remainingSeconds,
+            },
+          );
+          await this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: {
+              gatewayCheckoutId: checkout.checkoutId,
+              gatewayMerchantRef: checkout.merchantReference,
+              gatewayRedirectUrl: checkout.redirectUrl || null,
+            },
+          });
+          return {
+            transactionId: tx.id,
+            redirectUrl: checkout.redirectUrl,
+            provider: 'peach',
+          };
+        }
+        // Ozow's hosted page is long-lived and safe to reopen: send the buyer
+        // back to the SAME session; minting another link would risk a double
+        // charge.
         if (tx.gatewayRedirectUrl) {
           return {
             transactionId: tx.id,
@@ -5897,9 +5943,22 @@ export class TransactionsService {
         swapId: null,
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: {
+        id: true,
+        createdAt: true,
+        manualPayByAt: true,
+        listing: { select: { listingType: true } },
+      },
     });
-    return { transactionId: tx?.id ?? null };
+    // Never advertise a DEAD attempt as resumable. Past the hold window plus
+    // the release grace the buyer should simply pay again (create() releases
+    // the lapsed row first); showing "Resume payment" for it produced a stale
+    // Peach page answering "Could not find Checkout details" (2026-11-26).
+    if (!tx) return { transactionId: null };
+    const deadline = this.unpaidAttemptDeadline(tx);
+    const withinGrace =
+      deadline.getTime() + 5 * 60_000 > Date.now();
+    return { transactionId: withinGrace ? tx.id : null };
   }
 
   async findById(transactionId: string, userId: string) {

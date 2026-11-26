@@ -937,8 +937,16 @@ export function CheckoutForm({
           conflict.code === 'UNPAID_CHECKOUT_EXISTS' &&
           typeof conflict.transactionId === 'string'
         ) {
+          // A silent state update looked like a dead Pay button (2026-11-26
+          // operator report: after backing out of Peach, Pay "does not function
+          // again"). Pay must ACT: go to the resume flow, which either returns a
+          // fresh Peach session for the same transaction or tells the buyer
+          // plainly why it cannot.
           setUnpaidAttempt(conflict.transactionId);
           setSubmitting(false);
+          window.location.href = `/checkout/resume/${encodeURIComponent(
+            conflict.transactionId,
+          )}`;
           return;
         }
         throw new Error(msg);
