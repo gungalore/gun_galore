@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { OzowService } from './ozow.service';
@@ -38,6 +42,82 @@ export interface RefundResult {
 }
 
 /**
+ * TEMPORARY OPERATOR SWITCH — comma-separated, case-insensitive allowlist of the
+ * marketplace pay-in rails checkout may offer. Ozow remains the default rail;
+ * this exists so the operator can go Peach-only (or Ozow-only) without a code
+ * change. Payouts and refunds deliberately ignore it: a transaction's rail is
+ * locked at checkout, so historical Ozow money must still pay out / refund via
+ * Ozow after the switch flips.
+ */
+const CHECKOUT_PAYIN_PROVIDERS_ENV = 'CHECKOUT_PAYIN_PROVIDERS';
+
+/** The rails the env switch understands, with their checkout copy. */
+const KNOWN_PAYIN_RAILS: ReadonlyArray<{
+  provider: PaymentProvider;
+  token: string;
+  option: PaymentMethodOption;
+}> = [
+  {
+    provider: PaymentProvider.OZOW,
+    token: 'ozow',
+    option: {
+      provider: PaymentProvider.OZOW,
+      label: 'Instant EFT',
+      description: 'Pay securely from your bank account via Ozow.',
+    },
+  },
+  {
+    provider: PaymentProvider.PEACH,
+    token: 'peach',
+    option: {
+      provider: PaymentProvider.PEACH,
+      label: 'Credit & Debit Card',
+      description: 'Pay securely with your debit or credit card via Peach.',
+    },
+  },
+];
+
+interface ParsedPayInAllowlist {
+  /** Enabled rails, in the order the operator listed them. */
+  providers: PaymentProvider[];
+  /** Trimmed tokens that name no known rail. */
+  ignored: string[];
+  /** The variable was set but named no recognised rail. */
+  noneRecognised: boolean;
+}
+
+/**
+ * Parse `CHECKOUT_PAYIN_PROVIDERS`.
+ *
+ * Unset or empty means both rails (`ozow,peach`) — the historical default, so an
+ * untouched deployment keeps working. A value that names NO recognised rail
+ * yields an EMPTY allowlist rather than falling back to Ozow: the whole point of
+ * the switch is to be able to kill a rail, so a typo must fail closed, loudly.
+ */
+function parsePayInAllowlist(raw: string | undefined): ParsedPayInAllowlist {
+  if (raw === undefined || raw.trim() === '') {
+    return {
+      providers: KNOWN_PAYIN_RAILS.map((rail) => rail.provider),
+      ignored: [],
+      noneRecognised: false,
+    };
+  }
+  const providers: PaymentProvider[] = [];
+  const ignored: string[] = [];
+  for (const rawToken of raw.split(',')) {
+    const token = rawToken.trim().toLowerCase();
+    if (!token) continue;
+    const rail = KNOWN_PAYIN_RAILS.find((k) => k.token === token);
+    if (!rail) {
+      ignored.push(rawToken.trim());
+    } else if (!providers.includes(rail.provider)) {
+      providers.push(rail.provider);
+    }
+  }
+  return { providers, ignored, noneRecognised: providers.length === 0 };
+}
+
+/**
  * The single provider seam for the money engine. Every pay-in, status query
  * and refund goes through here so a transaction can never quietly move to a
  * different gateway mid-life. Payouts are partitioned by the same provider in
@@ -45,6 +125,10 @@ export interface RefundResult {
  */
 @Injectable()
 export class PaymentRailsService {
+  private readonly logger = new Logger(PaymentRailsService.name);
+  /** Raw env value the switch was last warned about — one warning, not one per request. */
+  private warnedPayInAllowlistRaw: string | undefined;
+
   constructor(
     private readonly ozow: OzowService,
     private readonly peach: PeachService,
@@ -53,16 +137,52 @@ export class PaymentRailsService {
     private readonly yoco: YocoService,
   ) {}
 
+  /**
+   * The pay-in rails enabled for THIS call. Read from env at call time (not
+   * cached) so an operator can flip the switch without a restart.
+   */
+  private payInAllowlist(): PaymentProvider[] {
+    const raw = process.env[CHECKOUT_PAYIN_PROVIDERS_ENV];
+    const parsed = parsePayInAllowlist(raw);
+    if (raw !== this.warnedPayInAllowlistRaw) {
+      this.warnedPayInAllowlistRaw = raw;
+      const allowed = KNOWN_PAYIN_RAILS.map((rail) => rail.token).join(', ');
+      if (parsed.noneRecognised) {
+        this.logger.warn(
+          `${CHECKOUT_PAYIN_PROVIDERS_ENV}="${raw}" names no recognised pay-in provider ` +
+            `(allowed: ${allowed}) — NO checkout pay-in rail is enabled. ` +
+            'Refunds and seller payouts are unaffected.',
+        );
+      } else if (parsed.ignored.length > 0) {
+        this.logger.warn(
+          `${CHECKOUT_PAYIN_PROVIDERS_ENV}="${raw}" ignored unknown token(s): ` +
+            `${parsed.ignored.join(', ')} (allowed: ${allowed})`,
+        );
+      }
+    }
+    return parsed.providers;
+  }
+
   async isPayInEnabled(provider: PaymentProvider): Promise<boolean> {
-    if (provider === PaymentProvider.OZOW) return true;
+    const allowed = this.payInAllowlist();
+    if (provider === PaymentProvider.OZOW) {
+      return allowed.includes(PaymentProvider.OZOW);
+    }
     if (provider === PaymentProvider.YOCO) return this.yoco.isUsable();
-    return (
-      this.peach.isCheckoutConfigured() &&
-      (await this.settings.get(FLAGS.peachPayinEnabled))
-    );
+    if (provider === PaymentProvider.PEACH) {
+      return (
+        allowed.includes(PaymentProvider.PEACH) &&
+        this.peach.isCheckoutConfigured() &&
+        (await this.settings.get(FLAGS.peachPayinEnabled))
+      );
+    }
+    return false;
   }
 
   async isPayoutEnabled(provider: PaymentProvider): Promise<boolean> {
+    // Deliberately independent of CHECKOUT_PAYIN_PROVIDERS: payouts follow the
+    // rail the transaction was LOCKED to at checkout, so switching checkout off
+    // Ozow must never strand an Ozow-paid sale's payout.
     if (provider === PaymentProvider.OZOW) return true;
     // Checkout API payouts are Yoco's own settlement to OUR bank account;
     // there is no seller-disbursement API here, so YOCO never pays out.
@@ -74,19 +194,14 @@ export class PaymentRailsService {
   }
 
   async enabledPayInMethods(): Promise<PaymentMethodOption[]> {
-    const methods: PaymentMethodOption[] = [
-      {
-        provider: PaymentProvider.OZOW,
-        label: 'Instant EFT',
-        description: 'Pay securely from your bank account via Ozow.',
-      },
-    ];
-    if (await this.isPayInEnabled(PaymentProvider.PEACH)) {
-      methods.push({
-        provider: PaymentProvider.PEACH,
-        label: 'Card',
-        description: 'Pay with a debit or credit card via Peach.',
-      });
+    const methods: PaymentMethodOption[] = [];
+    // Allowlist order, so the operator controls which rail the checkout offers
+    // first. A rail that is listed but not usable (Peach flag off / not
+    // configured) is simply omitted.
+    for (const provider of this.payInAllowlist()) {
+      if (!(await this.isPayInEnabled(provider))) continue;
+      const rail = KNOWN_PAYIN_RAILS.find((k) => k.provider === provider);
+      if (rail) methods.push({ ...rail.option });
     }
     return methods;
   }

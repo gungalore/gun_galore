@@ -117,6 +117,31 @@ export const OZOW_FINAL_FAILURE_SUBSTATUSES = new Set([
 export const ACCEPT_DEADLINE_HOURS = 48;
 export const DISPATCH_DEADLINE_DAYS = 5;
 
+/**
+ * Sanitise the buyer's courier delivery instructions before they are persisted
+ * (and later printed on the carrier's delivery label):
+ *
+ * - trim surrounding whitespace,
+ * - replace control characters / newlines and collapse whitespace runs to a
+ *   single space so a value cannot break out of the label line,
+ * - cap at the Transaction.deliveryInstructions column width (120),
+ * - empty (or wrong type / non-courier) becomes null, never ''.
+ */
+export function sanitizeDeliveryInstructions(
+  value: unknown,
+  shippingMethod: ShippingMethod,
+): string | null {
+  // Non-courier sales have no carrier label to print on.
+  if (shippingMethod !== 'COURIER' || typeof value !== 'string') return null;
+  const cleaned = value
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 // How long a BUY_NOW checkout may hold the item. The hold starts when the
 // buyer opens the checkout page and is also the hosted-payment link TTL once
 // they Pay, so an abandoned checkout can never strand stock for the old 24h.
@@ -845,6 +870,14 @@ export class TransactionsService {
       manualPayByAt: payByAt,
       shippingMethod: dto.shippingMethod,
       deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
+      // Courier-only free text printed on the delivery label. Sanitised here
+      // (not just at the DTO) because this method is also the seam the cart /
+      // order paths call — a caller that skips the DTO pipe must not be able to
+      // store a newline or an over-long value.
+      deliveryInstructions: sanitizeDeliveryInstructions(
+        dto.deliveryInstructions,
+        dto.shippingMethod,
+      ),
       dealerId: dto.dealerId,
       // PRIVATE_ARRANGE consent landed via DTO. We stamp the
       // timestamp here (not at markPaid time) because the consent is

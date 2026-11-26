@@ -5,10 +5,6 @@ import userEvent from '@testing-library/user-event';
 import PrintDelivery from './print-delivery';
 import { motivationsApi } from '@/lib/motivations-api';
 
-vi.mock('@/components/saved-address-picker', () => ({
-  SavedAddressPicker: () => null,
-}));
-
 vi.mock('@/lib/motivations-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/motivations-api')>();
   return {
@@ -30,17 +26,35 @@ vi.mock('@/lib/motivations-api', async (importOriginal) => {
 
 const token = async () => 't';
 
-/** The profile default the /users/me prefill fetches. */
+/** The profile default the /users/me fallback fetches. */
 const savedProfile = {
   addrStreet: '12 Loop Street',
   addrAddress2: 'Unit 4',
   addrSuburb: 'Gardens',
   addrCity: 'Cape Town',
   addrPostalCode: '8001',
-  addrProvince: 'WC',
+  addrProvince: 'WESTERN_CAPE',
 };
 
-/** Stub fetch so the prefill sees a saved address (or none, when null). */
+const profileBookRow = {
+  id: 'profile',
+  label: 'Profile address',
+  building: null,
+  street: savedProfile.addrStreet,
+  address2: savedProfile.addrAddress2,
+  suburb: savedProfile.addrSuburb,
+  city: savedProfile.addrCity,
+  postalCode: savedProfile.addrPostalCode,
+  province: 'WESTERN_CAPE',
+  lat: null,
+  lng: null,
+  isDefault: true,
+};
+
+/**
+ * Stub fetch so the prefill sees a saved address (or none, when null). The
+ * address BOOK is the source of truth now; /users/me is the fallback.
+ */
 function stubPrefill(profile: typeof savedProfile | null = savedProfile) {
   vi.stubGlobal(
     'fetch',
@@ -52,26 +66,11 @@ function stubPrefill(profile: typeof savedProfile | null = savedProfile) {
           headers: { 'Content-Type': 'application/json' },
         });
       if (url.includes('/users/me/addresses')) {
-        // The backend lists the profile address as a book row, so the address
-        // dialog has exactly one default row for a member with one address.
-        return profile
-          ? json([
-              {
-                id: 'profile',
-                label: 'Profile address',
-                building: null,
-                street: profile.addrStreet,
-                address2: profile.addrAddress2,
-                suburb: profile.addrSuburb,
-                city: profile.addrCity,
-                postalCode: profile.addrPostalCode,
-                province: 'WESTERN_CAPE',
-                lat: null,
-                lng: null,
-                isDefault: true,
-              },
-            ])
-          : json([]);
+        if (!profile) return json([]);
+        if (!profile.addrSuburb) {
+          return json([{ ...profileBookRow, suburb: '' }]);
+        }
+        return json([profileBookRow]);
       }
       if (url.endsWith('/users/me')) {
         return profile
@@ -138,45 +137,67 @@ describe('Print and Deliver', () => {
 
   it('collapses the prefilled default address into the summary row', async () => {
     renderComponent('DELIVER');
-    expect(await screen.findByText('Deliver to my default address')).toBeDefined();
+    expect(await screen.findByText('Delivery to')).toBeDefined();
     expect(
       screen.getByText('12 Loop Street, Unit 4, Gardens, Cape Town, 8001'),
     ).toBeDefined();
-    // The editor (address book + fields) is not mounted while collapsed.
-    expect(screen.queryByText('Delivery address')).toBeNull();
+    // The drawer body (address list + form) is not mounted while collapsed.
+    expect(screen.queryByText('Delivery Addresses')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('opens the address window with the saved address and "Add a new address"', async () => {
+  it('opens the address drawer with the saved address and Add', async () => {
     renderComponent('DELIVER');
-    await userEvent.click(await screen.findByText('Select a different address'));
+    await userEvent.click(await screen.findByRole('button', { name: /change/i }));
 
-    const dialog = await screen.findByRole('dialog', {
-      name: /delivery address/i,
+    const drawer = await screen.findByRole('dialog', {
+      name: /select delivery address/i,
     });
     // The single saved address is listed — it is NOT hidden behind a "2+"
     // threshold (the 2026-11-26 @ruanda failure mode).
-    expect(within(dialog).getByText('Profile address')).toBeTruthy();
-    expect(within(dialog).getByText(/12 Loop Street/)).toBeTruthy();
-    expect(within(dialog).getByText('Default')).toBeTruthy();
+    expect(within(drawer).getByText('Profile address')).toBeTruthy();
+    expect(within(drawer).getByText(/12 Loop Street/)).toBeTruthy();
+    expect(within(drawer).getByText('Default')).toBeTruthy();
     expect(
-      within(dialog).getByRole('button', { name: /add a new address/i }),
+      within(drawer).getByRole('button', { name: /add a new address/i }),
     ).toBeTruthy();
 
-    // Cancel closes back to the collapsed default summary.
-    await userEvent.click(
-      within(dialog).getByRole('button', { name: 'Cancel' }),
-    );
-    expect(await screen.findByText('Deliver to my default address')).toBeTruthy();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    // Close returns to the collapsed summary.
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText('Delivery to')).toBeTruthy();
   });
 
-  it('quotes the default address without opening the editor', async () => {
+  it('applies the saved address picked in the drawer', async () => {
+    renderComponent('DELIVER');
+    await userEvent.click(await screen.findByRole('button', { name: /change/i }));
+
+    const drawer = await screen.findByRole('dialog', {
+      name: /select delivery address/i,
+    });
+    const radio = within(drawer).getByRole('radio', {
+      name: /profile address/i,
+    });
+    if (!(radio as HTMLInputElement).checked) {
+      await userEvent.click(radio);
+    }
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Continue' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      await screen.findByText(
+        '12 Loop Street, Unit 4, Gardens, Cape Town, 8001',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('quotes the default address without opening the drawer', async () => {
     const onSelection = vi.fn();
     renderComponent('DELIVER', vi.fn(), onSelection);
 
     // The quote is debounced (550 ms) against the prefilled address; it fires
-    // without the seller ever opening the editor.
+    // without the seller ever opening the drawer.
     await waitFor(() => expect(motivationsApi.printQuote).toHaveBeenCalled(), {
       timeout: 4000,
     });
@@ -193,15 +214,29 @@ describe('Print and Deliver', () => {
   it('warns when the saved default address is incomplete', async () => {
     stubPrefill({ ...savedProfile, addrSuburb: '' });
     renderComponent('DELIVER');
-    expect(await screen.findByText('Deliver to my default address')).toBeDefined();
+    expect(await screen.findByText('Delivery to')).toBeDefined();
     expect(screen.getByText(/looks incomplete/i)).toBeDefined();
   });
 
-  it('shows the editor directly when no saved address was prefilled', async () => {
+  it('shows a "Select Delivery Address" row and the drawer form when nothing was prefilled', async () => {
     stubPrefill(null);
     renderComponent('DELIVER');
-    await waitFor(() => expect(screen.getByText('Delivery address')).toBeDefined());
-    expect(screen.queryByText('Deliver to my default address')).toBeNull();
-    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0);
+    expect(await screen.findByText('Select Delivery Address')).toBeDefined();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /^select$/i }),
+    );
+    const drawer = await screen.findByRole('dialog', {
+      name: /select delivery address/i,
+    });
+    expect(
+      await within(drawer).findByText(/don’t have any saved addresses yet/i),
+    ).toBeTruthy();
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: /add a new address/i }),
+    );
+    expect(
+      within(drawer).getByPlaceholderText('Street address *'),
+    ).toBeTruthy();
   });
 });

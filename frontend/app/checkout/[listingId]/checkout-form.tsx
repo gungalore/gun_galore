@@ -13,13 +13,13 @@ import {
   Address,
   CheckoutHold,
 } from '@/lib/types';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
 import { platformFeeForCents } from '@/lib/platform-fee';
 import { useCountdown } from '@/lib/use-countdown';
-import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
+import { CheckoutSummary, CheckoutCta } from '@/components/checkout-summary';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { usePaymentMethods } from '@/lib/payment-methods';
 import { vicinityLabel } from '@/lib/vicinity';
@@ -31,11 +31,6 @@ import {
   type DeliveryOption,
 } from '@/components/delivery-options-picker';
 import {
-  AddressAutocomplete,
-  type ParsedAddressComponents,
-} from '@/components/address-autocomplete';
-import {
-  ManualAddressFields,
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
@@ -103,6 +98,7 @@ export function CheckoutForm({
     methods: paymentMethods,
     provider: paymentProvider,
     setProvider: setPaymentProvider,
+    loading: paymentLoading,
   } = usePaymentMethods();
 
   // SMS-link checkout: when the URL has ?t=<token>, this checkout
@@ -343,6 +339,46 @@ export function CheckoutForm({
     : 1;
   const [quantity, setQuantity] = useState(1);
 
+  // ─── Delivery instructions (Phase D) ────────────────────────────────
+  // Courier-only free text printed on the delivery label: "leave at
+  // reception", "ring the bell twice". The buyer opts in with a checkbox, and
+  // an explicit Save turns the draft into the value `buildPayload()` sends —
+  // so a half-typed note can never ride along with a payment. The backend
+  // re-sanitises + caps at 120 chars and stores null on every non-courier
+  // rail; this cap is the same number, not a second rule.
+  const INSTRUCTIONS_MAX = 120;
+  const [wantInstructions, setWantInstructions] = useState(false);
+  const [instructionDraft, setInstructionDraft] = useState('');
+  const [savedInstructions, setSavedInstructions] = useState<string | null>(null);
+  const [instructionError, setInstructionError] = useState<string | null>(null);
+
+  function toggleInstructions(checked: boolean) {
+    setWantInstructions(checked);
+    setInstructionError(null);
+    if (!checked) {
+      // Unchecking clears the note everywhere: draft, saved value and payload.
+      setInstructionDraft('');
+      setSavedInstructions(null);
+    }
+  }
+
+  function saveInstructions() {
+    const cleaned = instructionDraft
+      .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, INSTRUCTIONS_MAX);
+    if (!cleaned) {
+      setInstructionError(
+        'Add a short note first — for example "Leave at reception".',
+      );
+      return;
+    }
+    setInstructionDraft(cleaned);
+    setSavedInstructions(cleaned);
+    setInstructionError(null);
+  }
+
   // Live shipping quote, refreshed whenever the buyer changes method or
   // their destination (the delivery address). Null while we're
   // waiting on the API; { error: string } when the quote endpoint
@@ -355,32 +391,32 @@ export function CheckoutForm({
     | { kind: 'ready'; quote: ShippingQuote }
   >({ kind: 'idle' });
 
-  // Buyer's saved address (from /users/me). It's what the delivery options
-  // are priced against. If the buyer has no saved address yet, the "address
-  // capture" block below appears above the options — which stay in their own
-  // empty state until enough of it is filled in to price anything.
+  // ── Effective delivery address ─────────────────────────────────────
+  // ONE address state, like every other delivery surface: the address the
+  // summary shows, the delivery picker prices and buildPayload ships. It is
+  // seeded from the address book's default row (which includes the synthetic
+  // `profile` row the backend prepends) and only falls back to the User.addr*
+  // fields when that read fails. The address drawer edits this SAME state.
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
-  // Inline address-capture state — only used when the buyer has no
-  // saved address. On save we PATCH /users/me, then re-fetch.
-  const [captureAddr, setCaptureAddr] = useState<ManualAddressValue>(
+  const [deliveryAddress, setDeliveryAddress] = useState<ManualAddressValue>(
     emptyManualAddress,
   );
-  const [captureLat, setCaptureLat] = useState<number | null>(null);
-  const [captureLng, setCaptureLng] = useState<number | null>(null);
-  const [savingAddr, setSavingAddr] = useState(false);
-  const [addrError, setAddrError] = useState<string | null>(null);
-  // UX-3 — set true once an address-book entry is picked, so the /users/me
-  // mount prefill below can't race-overwrite the picked address.
-  const addrPinnedRef = useRef(false);
-
-  // Address book, so the checkout can tell whether the address the buyer just
-  // typed is NEW. That is the question the operator asked to be asked: a new
-  // address may become their default; one they already have should never be
-  // re-offered as "new".
-  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
-  const [saveAddressToBook, setSaveAddressToBook] = useState(true);
-  const [makeAddressDefault, setMakeAddressDefault] = useState(false);
+  const [deliveryLat, setDeliveryLat] = useState<number | null>(null);
+  const [deliveryLng, setDeliveryLng] = useState<number | null>(null);
+  // The address-book row this effective address came from, so the drawer can
+  // open with it pre-selected and can tell when it has been edited/deleted.
+  const [deliveryAddressId, setDeliveryAddressId] = useState<string | null>(null);
+  // True once the book (or, on its failure, the /users/me fallback) has had its
+  // say — the summary shows a loading line until then.
+  const [addressBookLoaded, setAddressBookLoaded] = useState(false);
+  // Set once the buyer picks/keeps an address themselves; a late async read
+  // must never clobber that choice.
+  const addressChosenRef = useRef(false);
+  // Focus returns here when the drawer closes. Held explicitly because Safari
+  // does not focus a <button> on click, so the trap's fallback would be <body>.
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // AUDIT M33 — 18+/competency attestation for firearm checkouts. The
   // backend HARD-refuses any firearm transaction without the explicit
@@ -399,56 +435,49 @@ export function CheckoutForm({
 
 
 
-  // "Ship to a different address" toggle. Off by default — the
-  // delivering-to chip uses the profile values. When ON, we render the
-  // inline address-capture form and the delivery options + payload read
-  // from captureAddr instead of `me`. Reset on shipping-method change so
-  // the override doesn't silently leak between methods.
-  const [useDifferentAddress, setUseDifferentAddress] = useState(false);
-  // The address editor is closed by default: the buyer sees the DEFAULT
-  // address and one "Select a different address" control (operator,
-  // 2026-11-25). That control opens the address WINDOW (2026-11-26): a
-  // dialog with the member's whole address book plus an "add a new address"
-  // form, because the old inline editor hid the book below two saved
-  // addresses and looked like nothing had happened for a member with one
-  // (member report @ruanda).
-  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
-  // Focus returns here when the dialog closes. Held explicitly because Safari
-  // does not focus a <button> on click, so the trap's fallback would be <body>.
-  const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    // On the picker path `method` is a CONSEQUENCE of the buyer's delivery
-    // choice, not a choice of its own — resetting here would throw away the
-    // very address that produced those options the instant they picked one.
-    if (usesDeliveryPicker) return;
-    setUseDifferentAddress(false);
-  }, [method, usesDeliveryPicker]);
-
-  // The buyer's address book. Only used to answer "is this address new?", so a
-  // failure is silent: the checkout works without it, and the server still
-  // de-duplicates on save.
+  // Read the address book once and seed the effective address from its
+  // default row (the backend prepends the synthetic `profile` row, marked
+  // default while no book row is default). A failure is non-fatal: the
+  // /users/me fallback below still fills the old profile address.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { url, headers } = await authedRequest('/users/me/addresses');
         const res = await fetch(url, { headers, cache: 'no-store' });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const rows = (await res.json()) as Address[];
         if (cancelled || !Array.isArray(rows)) return;
-        setSavedAddresses(rows);
-        // A member with no default yet should get one without having to think
-        // about it — the checkbox starts ticked, and they can untick it.
-        if (!rows.some((a) => a.isDefault)) setMakeAddressDefault(true);
+        if (addressChosenRef.current) return;
+        const preferred =
+          rows.find((a) => a.isDefault) ??
+          rows.find((a) => a.id === 'profile') ??
+          rows[0];
+        if (preferred) {
+          setDeliveryAddress({
+            building: preferred.building ?? '',
+            street: preferred.street,
+            address2: preferred.address2 ?? '',
+            suburb: preferred.suburb ?? '',
+            city: preferred.city,
+            postalCode: preferred.postalCode,
+            province: preferred.province,
+          });
+          setDeliveryLat(preferred.lat ?? null);
+          setDeliveryLng(preferred.lng ?? null);
+          setDeliveryAddressId(preferred.id);
+        }
       } catch {
-        // Non-fatal.
+        // Non-fatal — the /users/me fallback below seeds the profile address.
+      } finally {
+        if (!cancelled) setAddressBookLoaded(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [getToken]);
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getToken, actionToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,26 +489,33 @@ export function CheckoutForm({
         const data = (await res.json()) as Me;
         if (cancelled) return;
         setMe(data);
-        // Pre-fill the capture form with whatever pieces they have, so
-        // the UX is "tweak and save" rather than "type from scratch".
-        // Skipped once a saved-address-book entry has been picked (UX-3) so
-        // this async prefill can't clobber the picked address.
-        if (!addrPinnedRef.current) {
-          setCaptureAddr({
-            building: data.addrBuilding ?? '',
-            street: data.addrStreet ?? '',
-            address2: data.addrAddress2 ?? '',
-            suburb: data.addrSuburb ?? '',
-            city: data.addrCity ?? '',
-            postalCode: data.addrPostalCode ?? '',
-            province: data.addrProvince ?? '',
-          });
-          setCaptureLat(data.addrLat ?? null);
-          setCaptureLng(data.addrLng ?? null);
+        // PRE-FETCH FALLBACK ONLY: the address book is the source of truth.
+        // This fills the old profile values when the book read produced
+        // nothing (failure, or a member with no usable address), and never
+        // overwrites a choice the buyer has made.
+        if (!addressChosenRef.current) {
+          setDeliveryAddress((current) =>
+            current.street.trim() || current.city.trim()
+              ? current
+              : {
+                  building: data.addrBuilding ?? '',
+                  street: data.addrStreet ?? '',
+                  address2: data.addrAddress2 ?? '',
+                  suburb: data.addrSuburb ?? '',
+                  city: data.addrCity ?? '',
+                  postalCode: data.addrPostalCode ?? '',
+                  province: data.addrProvince ?? '',
+                },
+          );
+          setDeliveryLat((current) =>
+            current == null ? (data.addrLat ?? null) : current,
+          );
+          setDeliveryLng((current) =>
+            current == null ? (data.addrLng ?? null) : current,
+          );
         }
       } catch {
-        // Non-fatal — the user can still type a delivery address by hand
-        // even if /users/me fails to load.
+        // Non-fatal — the buyer can still select an address in the drawer.
       } finally {
         if (!cancelled) setMeLoaded(true);
       }
@@ -487,86 +523,36 @@ export function CheckoutForm({
     return () => {
       cancelled = true;
     };
-  }, [getToken]);
+  }, [getToken, actionToken]);
 
-  // True if the buyer has a coords-bearing address saved on their User.
-  // Coords are what door delivery is priced and routed on; without them we
-  // capture inline instead of showing the saved-address chip.
-  const hasSavedAddress = !!(me && me.addrLat != null && me.addrLng != null);
-
-  // Single source of truth for "which address should this checkout
-  // use?" — captureAddr / captureLat / captureLng if the buyer
-  // doesn't have one saved OR has flipped "Use a different address"
-  // for this order; otherwise the profile values. Drives the delivery
-  // options and buildPayload uniformly.
-  const usingCaptureAddr = !hasSavedAddress || useDifferentAddress;
-
-  // Is the address the buyer is typing already in their book? Compared on the
-  // five fields that decide where a parcel lands, trimmed and case-insensitive,
-  // so "12 Main Rd" and "12 main rd " are the same place — the exact rule the
-  // server applies when it saves.
-  const addrKey = (a: {
-    street?: string | null;
-    suburb?: string | null;
-    city?: string | null;
-    postalCode?: string | null;
-  }) =>
-    [a.street, a.suburb, a.city, a.postalCode]
-      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
-      .join('|');
-  const captureAddressComplete = !!(
-    captureAddr.street.trim() &&
-    captureAddr.suburb.trim() &&
-    captureAddr.city.trim() &&
-    captureAddr.postalCode.trim()
+  // ── Effective-address helpers ──────────────────────────────────────
+  // The one address state every downstream path reads. It is always enough to
+  // show a summary row; a half-filled address is flagged incomplete rather
+  // than hidden (the drawer is how the buyer fixes or replaces it).
+  const hasDeliveryAddress = Boolean(
+    deliveryAddress.street.trim() || deliveryAddress.city.trim(),
   );
-  const matchingSavedAddress = captureAddressComplete
-    ? savedAddresses.find(
-        (a) => addrKey(a) === addrKey(captureAddr),
-      )
-    : undefined;
-  const captureAddressIsNew = captureAddressComplete && !matchingSavedAddress;
-  // Shown for a new address (it may become the default) and for an existing
-  // one that is not the default yet — the two moments the question is real.
-  const showDefaultPrompt =
-    captureAddressComplete &&
-    (!matchingSavedAddress || !matchingSavedAddress.isDefault) &&
-    !useDifferentAddress;
-
-  // One-line summary for the collapsed address row. When the buyer picked a
-  // different address it is the capture values; otherwise the profile default.
-  const deliverSummaryLine = (
-    useDifferentAddress && captureAddr.street.trim()
-      ? [
-          captureAddr.building,
-          captureAddr.street,
-          captureAddr.suburb,
-          captureAddr.city,
-          captureAddr.postalCode,
-        ]
-      : [
-          me?.addrBuilding,
-          me?.addrStreet,
-          me?.addrSuburb,
-          me?.addrCity,
-          me?.addrPostalCode,
-        ]
-  )
+  const deliverSummaryLine = [
+    deliveryAddress.building,
+    deliveryAddress.street,
+    deliveryAddress.address2,
+    deliveryAddress.suburb,
+    deliveryAddress.city,
+    deliveryAddress.postalCode,
+  ]
+    .map((part) => (part ?? '').trim())
     .filter(Boolean)
     .join(', ');
   const deliverSummaryIncomplete =
-    !useDifferentAddress &&
-    (!me?.addrStreet || !me?.addrSuburb || !me?.addrCity || !me?.addrPostalCode);
-  const deliverSummaryIsDefault = !useDifferentAddress;
+    !deliveryAddress.street.trim() ||
+    !deliveryAddress.suburb.trim() ||
+    !deliveryAddress.city.trim() ||
+    !deliveryAddress.postalCode.trim();
 
-  // UX-3 — a picked address-book entry drives the SAME capture state a typed
-  // address does, so the checkout payload is byte-identical to typing it. We
-  // pin it (so the profile prefill can't clobber it) and flip to the capture
-  // path. The address dialog lists every saved address for every member, so
-  // this now runs for a member with only one saved address too.
-  function handlePickSavedAddress(a: Address) {
-    addrPinnedRef.current = true;
-    setCaptureAddr({
+  /** Apply an address-book row to this order. */
+  function applyDeliveryAddress(a: Address) {
+    addressChosenRef.current = true;
+    setDeliveryAddress({
       building: a.building ?? '',
       street: a.street,
       address2: a.address2 ?? '',
@@ -575,24 +561,62 @@ export function CheckoutForm({
       postalCode: a.postalCode,
       province: a.province,
     });
-    setCaptureLat(a.lat ?? null);
-    setCaptureLng(a.lng ?? null);
-    setUseDifferentAddress(true);
+    setDeliveryLat(a.lat ?? null);
+    setDeliveryLng(a.lng ?? null);
+    setDeliveryAddressId(a.id);
   }
 
-  // The dialog's secondary action: use the typed address for THIS order only,
-  // without writing the address book (the same thing the old inline editor's
-  // "Use this address" did). The payload/quote path is the capture path above.
+  /**
+   * The drawer's secondary action: use a typed address for THIS order only,
+   * without writing the book (the token-checkout path).
+   */
   function applyTypedDeliveryAddress(
     value: ManualAddressValue,
     lat: number | null,
     lng: number | null,
   ) {
-    addrPinnedRef.current = true;
-    setCaptureAddr(value);
-    setCaptureLat(lat);
-    setCaptureLng(lng);
-    setUseDifferentAddress(true);
+    addressChosenRef.current = true;
+    setDeliveryAddress(value);
+    setDeliveryLat(lat);
+    setDeliveryLng(lng);
+    setDeliveryAddressId(null);
+  }
+
+  /**
+   * The drawer saved/edited/deleted an address-book row. Keep the effective
+   * address in step: an edit of the selected row refreshes it, and deleting
+   * the selected row falls back default → next → none (exactly the rule the
+   * server applies to the book itself).
+   */
+  function handleAddressesChanged(rows: Address[]) {
+    // A typed one-off address has no book row to sync; leave it alone.
+    if (!deliveryAddressId) return;
+    const current = rows.find((a) => a.id === deliveryAddressId);
+    if (current) {
+      addressChosenRef.current = true;
+      setDeliveryAddress({
+        building: current.building ?? '',
+        street: current.street,
+        address2: current.address2 ?? '',
+        suburb: current.suburb ?? '',
+        city: current.city,
+        postalCode: current.postalCode,
+        province: current.province,
+      });
+      setDeliveryLat(current.lat ?? null);
+      setDeliveryLng(current.lng ?? null);
+      return;
+    }
+    const fallback = rows.find((a) => a.isDefault) ?? rows[0] ?? null;
+    if (fallback) {
+      applyDeliveryAddress(fallback);
+    } else {
+      addressChosenRef.current = true;
+      setDeliveryAddress(emptyManualAddress);
+      setDeliveryLat(null);
+      setDeliveryLng(null);
+      setDeliveryAddressId(null);
+    }
   }
 
   // The address DeliveryOptionsPicker prices against — the SAME effective
@@ -600,49 +624,26 @@ export function CheckoutForm({
   // book. Memoised on the individual fields because the picker re-fetches
   // whenever this prop changes identity; a fresh object every render would
   // loop it.
-  const pickerAddress: DeliveryAddressInput = useMemo(() => {
-    if (usingCaptureAddr) {
-      return {
-        streetAddress: captureAddr.street.trim(),
-        suburb: captureAddr.suburb.trim(),
-        city: captureAddr.city.trim(),
-        postalCode: captureAddr.postalCode.trim(),
-        province: captureAddr.province || '',
-        lat: captureLat ?? undefined,
-        lng: captureLng ?? undefined,
-      };
-    }
-    return {
-      streetAddress: me?.addrStreet ?? '',
-      suburb: me?.addrSuburb ?? '',
-      city: me?.addrCity ?? '',
-      postalCode: me?.addrPostalCode ?? '',
-      province: me?.addrProvince ?? '',
-      lat: me?.addrLat ?? undefined,
-      lng: me?.addrLng ?? undefined,
-    };
-    // Keyed on the individual address FIELDS rather than on `me` itself: the
-    // User object is replaced for unrelated reasons (the inline phone capture
-    // rewrites it), and a new identity there would re-price a destination that
-    // never moved — and clear the buyer's chosen option with it. A half-typed
-    // address is fine to return; the picker won't price an incomplete one.
-  }, [
-    usingCaptureAddr,
-    captureAddr.street,
-    captureAddr.suburb,
-    captureAddr.city,
-    captureAddr.postalCode,
-    captureAddr.province,
-    captureLat,
-    captureLng,
-    me?.addrStreet,
-    me?.addrSuburb,
-    me?.addrCity,
-    me?.addrPostalCode,
-    me?.addrProvince,
-    me?.addrLat,
-    me?.addrLng,
-  ]);
+  const pickerAddress: DeliveryAddressInput = useMemo(
+    () => ({
+      streetAddress: deliveryAddress.street.trim(),
+      suburb: deliveryAddress.suburb.trim(),
+      city: deliveryAddress.city.trim(),
+      postalCode: deliveryAddress.postalCode.trim(),
+      province: deliveryAddress.province || '',
+      lat: deliveryLat ?? undefined,
+      lng: deliveryLng ?? undefined,
+    }),
+    [
+      deliveryAddress.street,
+      deliveryAddress.suburb,
+      deliveryAddress.city,
+      deliveryAddress.postalCode,
+      deliveryAddress.province,
+      deliveryLat,
+      deliveryLng,
+    ],
+  );
 
   // A changed address invalidates whatever was chosen — the collection points
   // near the new address are DIFFERENT points at different prices. Drop the
@@ -697,59 +698,6 @@ export function CheckoutForm({
     }
   }, [method]);
 
-  function handleAddressComponents(c: ParsedAddressComponents) {
-    setCaptureAddr((prev) => ({
-      ...prev,
-      street: c.street ?? prev.street,
-      suburb: c.suburb ?? prev.suburb,
-      city: c.city ?? prev.city,
-      postalCode: c.postalCode ?? prev.postalCode,
-      province: c.province
-        ? (c.province
-            .toUpperCase()
-            .replace(/[\s-]+/g, '_') as ManualAddressValue['province'])
-        : prev.province,
-    }));
-    setCaptureLat(c.lat ?? null);
-    setCaptureLng(c.lng ?? null);
-  }
-
-  async function saveCapturedAddress() {
-    setSavingAddr(true);
-    setAddrError(null);
-    try {
-      const { url, headers } = await authedRequest('/users/me');
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          addrBuilding: captureAddr.building.trim() || null,
-          addrStreet: captureAddr.street.trim() || null,
-          addrAddress2: captureAddr.address2.trim() || null,
-          addrSuburb: captureAddr.suburb.trim() || null,
-          addrCity: captureAddr.city.trim() || null,
-          addrPostalCode: captureAddr.postalCode.trim() || null,
-          addrProvince: captureAddr.province || null,
-          addrLat: captureLat,
-          addrLng: captureLng,
-        }),
-      });
-      const data = (await res.json()) as Me | { message?: string };
-      if (!res.ok) {
-        throw new Error(
-          ('message' in data && data.message) || `Save failed (${res.status})`,
-        );
-      }
-      setMe(data as Me);
-    } catch (err) {
-      setAddrError(
-        err instanceof Error ? err.message : 'Could not save address',
-      );
-    } finally {
-      setSavingAddr(false);
-    }
-  }
-
   function buildPayload() {
     // Collection papers acknowledgement - only meaningful (and only
     // accepted by the backend) for requiresPapers listings. Harmless to
@@ -761,8 +709,9 @@ export function CheckoutForm({
       listingId: listing.id,
       shippingMethod: method,
       // The rail the buyer chose. The backend locks it to the transaction and
-      // routes the refund + seller payout through the same provider.
-      paymentProvider,
+      // routes the refund + seller payout through the same provider. Only sent
+      // when the server actually returned one — never as a nil placeholder.
+      ...(paymentProvider ? { paymentProvider } : {}),
       // P8a - units to buy. Backend resolves to 1 for non-tracked listings.
       ...(listing.trackInventory ? { quantity } : {}),
       // Claim the 15-minute reservation instead of reserving again. Omitted
@@ -778,53 +727,31 @@ export function CheckoutForm({
     // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
     if (method === 'COLLECTION') return base;
     if (method === 'COURIER') {
-      // Effective address: captureAddr when toggle is on OR there's
-      // no saved address, else the profile values. The same flag drives
-      // the address the rate was priced against, so what the buyer
-      // was quoted is what we ship to. Contact name + phone are still
-      // pulled from User on the backend — even when shipping somewhere
-      // else this run we don't override identity.
-      if (!me && !usingCaptureAddr) return base;
-      const addr = usingCaptureAddr
-        ? {
-            building: captureAddr.building.trim() || undefined,
-            streetAddress: captureAddr.street.trim(),
-            address2: captureAddr.address2.trim() || undefined,
-            suburb: captureAddr.suburb.trim(),
-            city: captureAddr.city.trim(),
-            province: captureAddr.province || '',
-            postalCode: captureAddr.postalCode.trim(),
-            lat: captureLat ?? undefined,
-            lng: captureLng ?? undefined,
-          }
-        : {
-            building: me?.addrBuilding ?? undefined,
-            streetAddress: me?.addrStreet ?? '',
-            address2: me?.addrAddress2 ?? undefined,
-            suburb: me?.addrSuburb ?? '',
-            city: me?.addrCity ?? '',
-            province: me?.addrProvince ?? '',
-            postalCode: me?.addrPostalCode ?? '',
-            lat: me?.addrLat ?? undefined,
-            lng: me?.addrLng ?? undefined,
-          };
+      // Effective address: the ONE address state the summary showed, the
+      // delivery picker priced and the address drawer edited. Contact name +
+      // phone are still pulled from User on the backend — even when shipping
+      // somewhere else we don't override identity.
       return {
         ...base,
-        deliveryAddress: addr,
-        // Persist the typed address to the buyer's book (opt-out via the
-        // checkbox above). Only meaningful for a typed address — a saved one is
-        // already there. The server de-duplicates and enforces one default.
-        ...(usingCaptureAddr
-          ? {
-              saveDeliveryAddress: saveAddressToBook,
-              ...(saveAddressToBook && makeAddressDefault
-                ? { makeDeliveryAddressDefault: true }
-                : {}),
-            }
-          : {}),
+        deliveryAddress: {
+          building: deliveryAddress.building.trim() || undefined,
+          streetAddress: deliveryAddress.street.trim(),
+          address2: deliveryAddress.address2.trim() || undefined,
+          suburb: deliveryAddress.suburb.trim(),
+          city: deliveryAddress.city.trim(),
+          province: deliveryAddress.province || '',
+          postalCode: deliveryAddress.postalCode.trim(),
+          lat: deliveryLat ?? undefined,
+          lng: deliveryLng ?? undefined,
+        },
         deliveryOption: deliveryOption?.kind,
         ...(deliveryOption?.kind === 'STORE_PICKUP'
           ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
+          : {}),
+        // Courier only, opt-in only, and only once the buyer pressed Save.
+        // Never sent empty/whitespace — the backend persists null for that.
+        ...(wantInstructions && savedInstructions
+          ? { deliveryInstructions: savedInstructions }
           : {}),
       };
     }
@@ -848,6 +775,12 @@ export function CheckoutForm({
     // The reservation is the permission to buy this unit. Without it (or once
     // it lapses) Pay must wait — the server would reject the stale hold anyway.
     if (holdEligible && (!hold || holdExpired || holding)) return false;
+    // A rail the backend actually offered is required before Pay: neither the
+    // loading state nor an empty/failed payment-methods read may fall through
+    // to a fake default rail.
+    if (paymentLoading || paymentProvider == null || paymentMethods.length === 0) {
+      return false;
+    }
     // Unconditional, and FIRST — ahead of the `method === 'COLLECTION'` early
     // return below, which would otherwise let a collection buyer pay without
     // ever ticking it. Mirrors the server gate in reserveAndCreateLine.
@@ -876,11 +809,8 @@ export function CheckoutForm({
     if (method === 'COURIER') {
       // Door delivery needs coords for the destination — they're handed to the
       // courier to price and route the drop, and the backend re-quotes with
-      // them on Pay. Source depends on whether the buyer's overriding (capture
-      // values) or using their saved profile address — usingCaptureAddr decides.
-      const hasCoords = usingCaptureAddr
-        ? captureLat != null && captureLng != null
-        : me?.addrLat != null && me?.addrLng != null;
+      // them on Pay. They belong to the ONE effective address above.
+      const hasCoords = deliveryLat != null && deliveryLng != null;
       return !!deliveryOption && hasCoords && quoteState.kind === 'ready';
     }
     // The hand-over terms (dealer transfer and in-person) live in the Terms
@@ -898,6 +828,11 @@ export function CheckoutForm({
    */
   function payBlockedReason(): string | null {
     if (submitting) return null;
+    // No rail available (Peach-only launch state, or the read failed): say so
+    // plainly instead of a silent disabled Pay button.
+    if (!paymentLoading && (paymentProvider == null || paymentMethods.length === 0)) {
+      return 'Card payments are temporarily unavailable — please try again shortly.';
+    }
     if (meLoaded && me && (!me.phone || !me.phoneVerified)) {
       return 'Verify your phone number to continue.';
     }
@@ -913,9 +848,7 @@ export function CheckoutForm({
     }
     if (holdEligible && !hold) return 'Reserving this item…';
     if (method === 'COURIER') {
-      const hasCoords = usingCaptureAddr
-        ? captureLat != null && captureLng != null
-        : me?.addrLat != null && me?.addrLng != null;
+      const hasCoords = deliveryLat != null && deliveryLng != null;
       if (!hasCoords) return 'Add a delivery address to see delivery options.';
       if (quoteState.kind === 'loading') return 'Pricing delivery…';
       if (quoteState.kind === 'error') return quoteState.message;
@@ -1046,8 +979,38 @@ export function CheckoutForm({
     return <PaymentsComingSoon backHref={`/listings/${listing.id}`} />;
   }
 
+  // ─── Layout figures ───────────────────────────────────────────────
+  // ONE source for the numbers the review column and the sticky summary both
+  // show: previewBreakdown() is the display twin of the server's own maths.
+  const breakdown = previewBreakdown();
+  const summaryItemsCents = breakdown?.listing ?? 0;
+  const summaryPlatformCents = breakdown?.platform ?? 0;
+  const summaryTotalCents = breakdown?.total ?? 0;
+  const summaryIsCourier = method === 'COURIER';
+  const summaryDelivery = !summaryIsCourier
+    ? { value: '—', muted: true }
+    : quoteState.kind === 'ready'
+      ? { value: formatPrice(breakdown?.shipping ?? 0), muted: false }
+      : quoteState.kind === 'loading'
+        ? { value: 'Calculating…', muted: true }
+        : quoteState.kind === 'error'
+          ? { value: '—', muted: true }
+          : { value: 'Choose a delivery option', muted: true };
+  // The sticky CTA opens the address drawer when the courier rail has nowhere
+  // to send the parcel yet, instead of sitting disabled with no obvious fix.
+  const needsDeliveryAddress =
+    !isCollection && method === 'COURIER' && !hasDeliveryAddress;
+  const payReady = isReady();
+  const payBlocked = payBlockedReason();
+  const isAuctionWin =
+    listing.listingType === 'AUCTION' && listing.status === 'PAYMENT_PENDING';
+
   return (
-    <div className="space-y-6">
+    <>
+      <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-8 lg:items-start">
+        {/* LEFT — the review column: how it arrives, when, where, quantity,
+            consents, payment and the optional delivery note. */}
+        <div className="min-w-0 space-y-6">
       {error && (
         <div
           className="px-4 py-3 rounded-[6px] text-sm"
@@ -1205,116 +1168,34 @@ export function CheckoutForm({
         </div>
       )}
 
-      {/* Buyer phone capture — only shown if /users/me has no phone
-          on file. We don't OTP buyers (Clerk doesn't do phones and
-          we'd be paying extra SMS to verify), we just store the
-          number so dispatch/out-for-delivery SMS reaches them. The
-          block disappears once me.phone is set on the next fetch. */}
-      {meLoaded && me && !me.phone && !actionToken && (
-        <BuyerPhoneCapture
-          onSaved={(phone) => {
-            // Optimistic local update so the block hides immediately
-            // and the Pay button enables without a round-trip.
-            setMe({ ...me, phone });
-          }}
-        />
-      )}
-      {/* Verified contact points. Both are required before Pay — the server
-          refuses a checkout whose buyer has not proven them (CONTACT_UNVERIFIED),
-          so this is the visible half of that gate. `next` brings the buyer back
-          to this exact checkout. */}
-      {meLoaded && me && (me.phoneVerified === false || me.emailVerifiedAt === null) && (
-        <div
-          className="rounded-[6px] p-4 space-y-2"
-          style={{
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--red)',
-            color: 'var(--text-secondary)',
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          <p style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-            Verify your contact details to continue
-          </p>
-          <p>
-            We ask every buyer and seller to confirm their phone number and
-            email address before money changes hands — it is how we reach you
-            about delivery, and how we protect your account.
-          </p>
-          <p className="space-x-3">
-            {me.phoneVerified === false && (
-              <a
-                href={`/verify-phone?next=${encodeURIComponent(
-                  `/checkout/${listing.id}`,
-                )}`}
-                style={{ color: 'var(--red)', textDecoration: 'underline' }}
-              >
-                Verify your phone
-              </a>
-            )}
-            {me.emailVerifiedAt === null && (
-              <a
-                href={`/verify-email?email=${encodeURIComponent(me.email)}`}
-                style={{ color: 'var(--red)', textDecoration: 'underline' }}
-              >
-                Verify your email
-              </a>
-            )}
-          </p>
-        </div>
-      )}
-      {/* Token-flow buyers without a phone are an edge case (they
-          must have had a phone to receive the offer-accepted SMS in
-          the first place). If somehow it's missing, nudge them to
-          sign in instead of trying to capture via the public
-          token endpoint — phone capture stays Clerk-only for
-          security. */}
-      {meLoaded && me && !me.phone && actionToken && (
-        <div
-          className="rounded-[6px] p-4"
-          style={{
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--red)',
-            color: 'var(--text-secondary)',
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          We need a phone number on file before checkout. Please{' '}
-          <a
-            href={`/sign-in?redirect_url=/checkout/${listing.id}`}
-            style={{ color: 'var(--red)', textDecoration: 'underline' }}
-          >
-            sign in
-          </a>{' '}
-          to add one, then return to this checkout.
-        </div>
-      )}
-
-      {/* Shipping method — show the seller's chosen options as radio
-          pills. Firearm listings now allow PRIVATE_ARRANGE (the buyer
-          and seller meet at a dealer themselves) alongside the
-          previous DEALER_TRANSFER (we pre-pick the dealer). When the
-          seller only offered one option there's nothing to choose and
-          we still render the pill so the buyer can see what they're
-          getting. */}
-      {/* Collection-only panel — replaces every courier shipping surface
-          (method selector, locker picker, delivery address, quote line).
-          The item is collected in person from the seller, so there's
-          nothing to choose. Once paid, we share contact details so both
-          parties can coordinate a pickup time; payment is held until the
-          buyer confirms collection. */}
+      {/* Collection-only panel — replaces every courier surface (method
+          selector, delivery address, quote line). The item is collected in
+          person from the seller, so there is nothing to choose; the selected
+          "Collect" card plus this copy is the whole delivery section. Once
+          paid, we share contact details so both parties can coordinate a
+          pickup time; payment is held until the buyer confirms collection. */}
       {isCollection && (
         <div
-          className="rounded-[6px] p-4 text-sm space-y-2"
+          className="rounded-[8px] p-4 text-sm space-y-2"
           style={{
-            background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
+            background: 'var(--action-option-selected-bg)',
+            border: '1.5px solid var(--action-option-selected-edge)',
             color: 'var(--text-primary)',
             lineHeight: 1.55,
           }}
         >
+          <p
+            className="text-xs"
+            style={{ color: 'var(--text-tertiary)', fontWeight: 600 }}
+          >
+            Delivery method
+          </p>
+          <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+            Collect
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Collect in person from the seller
+          </p>
           <p
             className="text-xs uppercase"
             style={{
@@ -1354,26 +1235,11 @@ export function CheckoutForm({
         </div>
       )}
 
-      {/* Collection papers acknowledgement — required for requiresPapers
-          listings (trailers / caravans). Mirrors FirearmAttestation: the
-          backend refuses the transaction without collectionPapersAccepted
-          === true, so Pay is gated on it via isReady(). */}
-      {listing.requiresPapers && (
-        <CollectionPapersAck
-          accepted={collectionPapersAck}
-          onChange={setCollectionPapersAck}
-        />
-      )}
-
-
-      {/* Firearm hand-over — the two dealer routes, as option cards. Goods
-          don't come through here any more: their courier options are the
-          buyer's to choose from the priced picker below. */}
-      {allowedMethods.length > 1 && (
-        // UX-8 — option cards; onSelect is the SAME setMethod, so state +
-        // payload are unchanged. Phase 4 W2: shown whenever more than one
-        // method is legal (firearm dealer/arrange, or courier/arrange for a
-        // non-firearm the seller offers both for).
+      {/* Delivery method — option cards. onSelect is the SAME setMethod, so
+          state + payload are unchanged. A single legal method still renders
+          as a selected card so the buyer can see how the item arrives;
+          collection-only items rendered their own Collect card above. */}
+      {allowedMethods.length > 0 && (
         <DeliveryMethodCards
           methods={allowedMethods}
           selected={method}
@@ -1384,193 +1250,64 @@ export function CheckoutForm({
         />
       )}
 
-      {/* Delivery address — DEFAULT first, one control to change it
-          (operator, 2026-11-25). The old block rendered the address book, two
-          choice tiles and the default-address chip together, which is the bulk
-          the sales audit kept finding. Address/quote/payload logic is
-          unchanged: the editor writes the same capture state a pick or a typed
-          address always did. */}
+      {/* Delivery address — ONE row: the address that will be used, and one
+          control to change it. "Select Delivery Address" when the book and the
+          profile fallback are both empty. The address drawer (below) owns every
+          write: adding, editing and deleting saved addresses all happen there,
+          so there is no inline first-address capture form any more. */}
       {usesDeliveryPicker && (
         <div>
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Delivery address
-          </p>
-
-          {!meLoaded ? (
+          {(actionToken ? !meLoaded : !addressBookLoaded) && !hasDeliveryAddress ? (
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Loading your address…
             </p>
-          ) : hasSavedAddress ? (
+          ) : (
             <DeliveryAddressSummary
-              label={
-                deliverSummaryIsDefault
-                  ? 'Deliver to my default address'
-                  : 'Deliver to'
-              }
-              address={deliverSummaryLine}
-              incomplete={deliverSummaryIncomplete}
+              label={hasDeliveryAddress ? 'Delivery to' : 'Select Delivery Address'}
+              address={hasDeliveryAddress ? deliverSummaryLine : ''}
+              incomplete={hasDeliveryAddress && deliverSummaryIncomplete}
+              changeLabel={hasDeliveryAddress ? 'Change' : 'Select'}
               buttonRef={addressTriggerRef}
               onChange={() => setAddressDialogOpen(true)}
             />
-          ) : (
-            <div
-              className="rounded-[6px] p-3 space-y-3"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '1px solid var(--border-visible)',
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p
-                  className="text-xs uppercase"
-                  style={{
-                    color: 'var(--text-tertiary)',
-                    letterSpacing: '0.08em',
-                    fontWeight: 600,
-                  }}
-                >
-                  Your delivery address
-                </p>
-              </div>
-              {/* Address book — picking one fills the same capture state a
-                  typed address does. Only members with 2+ book addresses see
-                  it here; everyone else gets the "add a new address" window
-                  from the summary row once a first address exists. */}
-              <SavedAddressPicker onSelect={handlePickSavedAddress} />
-              <AddressAutocomplete
-                value={
-                  captureAddr.street
-                    ? `${captureAddr.street}${captureAddr.suburb ? `, ${captureAddr.suburb}` : ''}`
-                    : ''
-                }
-                onChange={(v) => {
-                  // ⚠️ ALWAYS mirror typed text into street — never "only when
-                  // empty". The input is uncontrolled and prefilled from the
-                  // saved address, so an emptiness guard silently discarded
-                  // every keystroke once an address existed: a buyer could not
-                  // change the delivery address by typing (member report
-                  // @ruanda, 2026-11-26). Selecting a suggestion still calls
-                  // onComponents with the full parsed address.
-                  setCaptureAddr((p) => ({ ...p, street: v }));
-                }}
-                onComponents={handleAddressComponents}
-              />
-              <ManualAddressFields
-                value={captureAddr}
-                onChange={setCaptureAddr}
-                idPrefix="checkout"
-              />
-              {addrError && (
-                <p className="text-xs" style={{ color: 'var(--red)' }}>
-                  {addrError}
-                </p>
-              )}
-              {/* Save-to-profile only when this is the buyer's first
-                  address. One-off overrides MUST NOT touch the saved profile. */}
-              {!useDifferentAddress && captureAddressComplete && (
-                <div className="space-y-2">
-                  <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={saveAddressToBook}
-                      onChange={(e) => setSaveAddressToBook(e.target.checked)}
-                      style={{ marginTop: 2 }}
-                    />
-                    <span>
-                      {captureAddressIsNew
-                        ? 'Save this address to my address book'
-                        : 'This address is already saved'}
-                    </span>
-                  </label>
-                  {saveAddressToBook && showDefaultPrompt && (
-                    <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={makeAddressDefault}
-                        onChange={(e) => setMakeAddressDefault(e.target.checked)}
-                        style={{ marginTop: 2 }}
-                      />
-                      <span>Make this my default delivery address</span>
-                    </label>
-                  )}
-                </div>
-              )}
-              {!useDifferentAddress && (
-                <button
-                  type="button"
-                  onClick={saveCapturedAddress}
-                  disabled={
-                    savingAddr ||
-                    !captureAddr.street.trim() ||
-                    !captureAddr.city.trim() ||
-                    captureLat == null ||
-                    captureLng == null
-                  }
-                  className="px-4 py-2 rounded-[6px] text-sm"
-                  style={{
-                    background:
-                      savingAddr ||
-                      !captureAddr.street.trim() ||
-                      !captureAddr.city.trim() ||
-                      captureLat == null ||
-                      captureLng == null
-                        ? 'var(--bg-card)'
-                        : 'var(--red)',
-                    color:
-                      savingAddr ||
-                      !captureAddr.street.trim() ||
-                      !captureAddr.city.trim() ||
-                      captureLat == null ||
-                      captureLng == null
-                        ? 'var(--text-tertiary)'
-                        : '#fff',
-                    border: 'none',
-                    cursor: savingAddr ? 'not-allowed' : 'pointer',
-                    fontWeight: 500,
-                  }}
-                >
-                  {savingAddr ? 'Saving…' : 'Save address to profile'}
-                </button>
-              )}
-              {captureLat == null && (
-                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Tip: pick a result from the address suggestions so we can
-                  capture coordinates — door delivery needs them to price and
-                  route the drop-off.
-                </p>
-              )}
-            </div>
           )}
         </div>
       )}
 
-      {/* The address WINDOW. Mounted only while open; choosing a row calls the
-          same capture-state path a typed address always used, then this
-          unmounts and the delivery options re-price from the new address. */}
+      {/* The address DRAWER. Every pick/add/edit/delete writes the same ONE
+          effective-address state above, so the summary, the delivery picker's
+          quote and the Pay payload can never disagree about the destination. */}
       {usesDeliveryPicker && addressDialogOpen && (
         <DeliveryAddressDialog
           returnFocusTo={addressTriggerRef.current}
-          initialAddress={captureAddr}
-          initialLat={captureLat}
-          initialLng={captureLng}
+          initialAddress={deliveryAddress}
+          initialLat={deliveryLat}
+          initialLng={deliveryLng}
+          selectedAddressId={deliveryAddressId}
           getToken={getToken}
+          recipient={{
+            name: [me?.firstName, me?.lastName].filter(Boolean).join(' ').trim() || null,
+            phone: me?.phone ?? null,
+          }}
           // A signed-out SMS-link checkout (actionToken) cannot reach the
           // session-only address book; it gets the typed address as a one-off.
           canSaveToBook={!actionToken}
           requireCoords
           onClose={() => setAddressDialogOpen(false)}
-          onSelect={handlePickSavedAddress}
+          onSelect={applyDeliveryAddress}
           onUseOnce={applyTypedDeliveryAddress}
+          onAddressesChanged={handleAddressesChanged}
         />
       )}
 
-      {/* Shipping — Bob Go door-to-door is the only courier rail, so the
-          door rate for THIS parcel to the address above is shown as a single
-          line and handed to the order summary. */}
+      {/* Delivery date & time — Bob Go door-to-door is the only courier rail,
+          so the priced options for THIS parcel to the address above are the
+          buyer's delivery-date cards. The chosen option feeds the order
+          summary and the payload. */}
       {usesDeliveryPicker && (
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Shipping
+            Delivery date &amp; time
           </p>
           <DeliveryOptionsPicker
             listingId={listing.id}
@@ -1664,173 +1401,326 @@ export function CheckoutForm({
         </div>
       )}
 
-      {/* Live order breakdown — only meaningful for the courier-routed
-          methods. Firearm transfers skip this block; they don't have
-          a courier line item. Quote state drives the visual: loading
-          spinner while we fetch, red banner on error, full line items
-          when ready. The Pay button below mirrors quoteState through
-          isReady() so the buyer can't submit on a stale estimate. */}
-      {(() => {
-          // FLOW-F4 (M23) — render the summary for EVERY method, not just
-          // courier: a DEALER_TRANSFER / PRIVATE_ARRANGE / COLLECTION buyer
-          // must see the whole total before committing, or they pay the wrong
-          // amount. Courier-only rows (shipping) are gated on isCourier.
-          //
-          // The buyer pays ONE Platform Fee on top, calculated last on the
-          // item plus delivery (operator 2026-10), shown as its own row.
-          const b = previewBreakdown();
-          if (!b) return null;
-          const isCourier = method === 'COURIER';
-          return (
-            <div
-              className="rounded-[8px] p-4"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-              }}
-            >
-              <p
-                className="text-xs uppercase mb-3"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.08em',
-                  fontWeight: 500,
-                }}
-              >
-                Order summary
-              </p>
-              <BreakdownLine label="Item" value={formatPrice(b.listing)} />
-              {isCourier && quoteState.kind === 'loading' && (
-                <BreakdownLine
-                  label="Shipping"
-                  value="Calculating…"
-                  muted
-                />
-              )}
-              {isCourier && quoteState.kind === 'error' && (
-                <p
-                  className="text-xs my-2"
-                  style={{ color: 'var(--red)', lineHeight: 1.5 }}
-                >
-                  {quoteState.message}
-                </p>
-              )}
-              {isCourier && quoteState.kind === 'idle' && (
-                <BreakdownLine
-                  label="Shipping"
-                  value="Choose a delivery option above"
-                  muted
-                />
-              )}
-              {isCourier && quoteState.kind === 'ready' && (
-                <BreakdownLine
-                  label={`Shipping (${quoteState.quote.serviceName})`}
-                  value={formatPrice(b.shipping)}
-                />
-              )}
-              {/* No handling row: there is no delivery margin since
-                  2026-10-23; shipping is the courier's figure above. */}
-              {/* Operator wording (2026-10): one combined "Platform Fee",
-                  calculated last on item + delivery. */}
-              {b.platform > 0 && (
-                <BreakdownLine
-                  label="Platform Fee"
-                  value={formatPrice(b.platform)}
-                  muted
-                />
-              )}
-              {(
-                <div
-                  className="flex justify-between items-baseline pt-2 mt-2"
-                  style={{ borderTop: '0.5px solid var(--border)' }}
-                >
-                  <span
-                    className="text-sm"
-                    style={{
-                      color: 'var(--text-primary)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    Total
-                  </span>
-                  <span
-                    className="text-base"
-                    style={{
-                      color: 'var(--red)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {formatPrice(b.total)}
-                  </span>
-                </div>
-              )}
-              {/* The Platform Fee covers payment handling and the safeguards
-                  every buyer gets; explain it rather than leaving them to
-                  wonder. */}
-              {b.platform > 0 && (
-                <p
-                  className="text-xs mt-2"
-                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
-                >
-                  Payment handling, seller checks and non-delivery protection.
-                </p>
-              )}
-            </div>
-          );
-        })()}
+      {/* Collection papers acknowledgement — required for requiresPapers
+          listings (trailers / caravans). Mirrors FirearmAttestation: the
+          backend refuses the transaction without collectionPapersAccepted
+          === true, so Pay is gated on it via isReady(). */}
+      {listing.requiresPapers && (
+        <CollectionPapersAck
+          accepted={collectionPapersAck}
+          onChange={setCollectionPapersAck}
+        />
+      )}
 
-      {/* Payment method sits directly above the Pay button: the two decisions
-          the buyer is making here are "how do I pay" and "pay". The old
-          "final delivery rate is confirmed on the payment page" note duplicated
-          the order summary and has been removed. */}
-
-      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      {/* Payment method — the second decision in the review column. */}
       <PaymentMethodSection
         methods={paymentMethods}
         value={paymentProvider}
         onChange={setPaymentProvider}
       />
 
-      {!isReady() && payBlockedReason() && (
+      {/* Delivery instructions — courier only, opt in, explicitly saved. The
+          note goes on the carrier's delivery label, so it is capped at the
+          same 120 characters the backend enforces and is never sent from a
+          half-typed draft. */}
+      {usesDeliveryPicker && (
+        <div>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Delivery instructions
+          </p>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={wantInstructions}
+              onChange={(e) => toggleInstructions(e.target.checked)}
+              style={{ marginTop: 3, accentColor: 'var(--red)' }}
+            />
+            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+              Want to add delivery instructions?
+            </span>
+          </label>
+          {wantInstructions && (
+            <div className="mt-3">
+              <label
+                htmlFor="checkout-delivery-instructions"
+                className="text-xs"
+                style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+              >
+                For the driver — for example &quot;Leave at reception&quot;. It
+                is printed on your delivery label.
+              </label>
+              <textarea
+                id="checkout-delivery-instructions"
+                value={instructionDraft}
+                onChange={(e) => {
+                  setInstructionDraft(e.target.value.slice(0, INSTRUCTIONS_MAX));
+                  if (instructionError) setInstructionError(null);
+                }}
+                maxLength={INSTRUCTIONS_MAX}
+                rows={2}
+                placeholder="e.g. Leave at reception, ring the bell twice"
+                aria-describedby="checkout-delivery-instructions-count"
+                className="w-full mt-1.5 rounded-[6px] px-3 py-2 text-sm"
+                style={{
+                  background: 'var(--field-bg)',
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span
+                  id="checkout-delivery-instructions-count"
+                  aria-live="polite"
+                  className="text-xs"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {instructionDraft.length}/{INSTRUCTIONS_MAX}
+                </span>
+                <button
+                  type="button"
+                  onClick={saveInstructions}
+                  disabled={
+                    !instructionDraft.trim() ||
+                    instructionDraft.trim() === savedInstructions
+                  }
+                  className="px-3 py-1.5 rounded-[6px] text-xs flex-shrink-0"
+                  style={{
+                    background:
+                      !instructionDraft.trim() ||
+                      instructionDraft.trim() === savedInstructions
+                        ? 'var(--bg-inset)'
+                        : 'var(--action-secondary-bg)',
+                    color:
+                      !instructionDraft.trim() ||
+                      instructionDraft.trim() === savedInstructions
+                        ? 'var(--text-tertiary)'
+                        : 'var(--action-secondary-ink)',
+                    border: 'none',
+                    fontWeight: 500,
+                    cursor:
+                      !instructionDraft.trim() ||
+                      instructionDraft.trim() === savedInstructions
+                        ? 'not-allowed'
+                        : 'pointer',
+                  }}
+                >
+                  {savedInstructions ? 'Update note' : 'Save note'}
+                </button>
+              </div>
+              {savedInstructions && instructionDraft.trim() === savedInstructions && (
+                <p className="text-xs mt-1" style={{ color: 'var(--success)' }}>
+                  Saved — this note will be printed on your delivery label.
+                </p>
+              )}
+              {instructionError && (
+                <p
+                  role="alert"
+                  className="text-xs mt-1"
+                  style={{ color: 'var(--red)' }}
+                >
+                  {instructionError}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!payReady && payBlocked && (
         <p
-          className="text-xs -mb-2"
+          className="text-xs"
           style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
         >
-          {payBlockedReason()}
+          {payBlocked}
         </p>
       )}
 
-      {/* Proceed button */}
-      <button
-        type="button"
-        onClick={handleProceed}
-        disabled={submitting || !isReady()}
-        className="w-full py-3 rounded-[6px] text-sm"
+      {/* Buyer phone capture — only shown if /users/me has no phone
+          on file. We don't OTP buyers (Clerk doesn't do phones and
+          we'd be paying extra SMS to verify), we just store the
+          number so dispatch/out-for-delivery SMS reaches them. The
+          block disappears once me.phone is set on the next fetch. */}
+      {meLoaded && me && !me.phone && !actionToken && (
+        <BuyerPhoneCapture
+          onSaved={(phone) => {
+            // Optimistic local update so the block hides immediately
+            // and the Pay button enables without a round-trip.
+            setMe({ ...me, phone });
+          }}
+        />
+      )}
+      {/* Verified contact points. Both are required before Pay — the server
+          refuses a checkout whose buyer has not proven them (CONTACT_UNVERIFIED),
+          so this is the visible half of that gate. `next` brings the buyer back
+          to this exact checkout. */}
+      {meLoaded && me && (me.phoneVerified === false || me.emailVerifiedAt === null) && (
+        <div
+          className="rounded-[6px] p-4 space-y-2"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          <p style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+            Verify your contact details to continue
+          </p>
+          <p>
+            We ask every buyer and seller to confirm their phone number and
+            email address before money changes hands — it is how we reach you
+            about delivery, and how we protect your account.
+          </p>
+          <p className="space-x-3">
+            {me.phoneVerified === false && (
+              <a
+                href={`/verify-phone?next=${encodeURIComponent(
+                  `/checkout/${listing.id}`,
+                )}`}
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                Verify your phone
+              </a>
+            )}
+            {me.emailVerifiedAt === null && (
+              <a
+                href={`/verify-email?email=${encodeURIComponent(me.email)}`}
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                Verify your email
+              </a>
+            )}
+          </p>
+        </div>
+      )}
+      {/* Token-flow buyers without a phone are an edge case (they
+          must have had a phone to receive the offer-accepted SMS in
+          the first place). If somehow it's missing, nudge them to
+          sign in instead of trying to capture via the public
+          token endpoint — phone capture stays Clerk-only for
+          security. */}
+      {meLoaded && me && !me.phone && actionToken && (
+        <div
+          className="rounded-[6px] p-4"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          We need a phone number on file before checkout. Please{' '}
+          <a
+            href={`/sign-in?redirect_url=/checkout/${listing.id}`}
+            style={{ color: 'var(--red)', textDecoration: 'underline' }}
+          >
+            sign in
+          </a>{' '}
+          to add one, then return to this checkout.
+        </div>
+      )}
+        </div>
+
+        {/* RIGHT — sticky order summary + the single primary action. Hidden on
+            phones, where the fixed bar below carries the same CTA state. */}
+        <div className="hidden lg:block lg:sticky lg:top-20 min-w-0 mt-8 lg:mt-0">
+          <CheckoutSummary
+            item={{
+              imageUrl:
+                listing.images.find((i) => i.isPrimary)?.url ??
+                listing.images[0]?.url ??
+                null,
+              title: listing.title,
+              meta: `${CONDITION_LABELS[listing.condition] ?? listing.condition} · ${listing.category.name}`,
+              sellerUsername: listing.seller.username ?? null,
+              quantity: listing.trackInventory ? quantity : 1,
+              priceCents: summaryItemsCents,
+              details: [
+                listing.make ? { label: 'Make', value: listing.make } : null,
+                listing.model ? { label: 'Model', value: listing.model } : null,
+                listing.calibre
+                  ? { label: 'Calibre', value: listing.calibre }
+                  : null,
+              ].filter(
+                (detail): detail is { label: string; value: string } =>
+                  detail !== null,
+              ),
+            }}
+            note={
+              isAuctionWin
+                ? 'Auction payment — the winning bidder must complete payment within the auction’s payment window.'
+                : null
+            }
+            itemsCents={summaryItemsCents}
+            delivery={summaryDelivery}
+            platformFeeCents={summaryPlatformCents}
+            totalCents={summaryTotalCents}
+            needsAddress={needsDeliveryAddress}
+            ready={payReady}
+            submitting={submitting}
+            blockedReason={payBlocked}
+            onSelectAddress={() => setAddressDialogOpen(true)}
+            onPay={handleProceed}
+            isFirearm={listing.isFirearm}
+          />
+        </div>
+      </div>
+
+      {/* Mobile sticky pay bar. /checkout is a PUSH route (not a tab route),
+          so the PWA tab bar is not rendered here and the bar sits flush at the
+          bottom with safe-area padding — same pattern as the cart bar. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 lg:hidden"
         style={{
-          background: submitting || !isReady() ? 'var(--bg-inset)' : 'var(--action-primary-bg)',
-          color: submitting || !isReady() ? 'var(--text-tertiary)' : '#fff',
-          fontWeight: 500,
-          cursor: submitting || !isReady() ? 'not-allowed' : 'pointer',
-          border: 'none',
+          background: 'var(--bg-deep)',
+          borderTop: '1px solid var(--border)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        {(() => {
-          if (submitting) return 'Setting up payment…';
-          const b = previewBreakdown();
-          const isCourier = method === 'COURIER';
-          // FLOW-F4 (M23) — courier still needs a ready quote for the true
-          // total (shipping unknown until then); DEALER_TRANSFER / PA /
-          // COLLECTION have no shipping, so b.total is complete immediately.
-          // On a BUY_NOW that total is simply the listed price (plus any
-          // shipping + handling) — the fee is already inside it — and on an
-          // auction win it also carries the buyer's transaction fee.
-          if (b && (!isCourier || quoteState.kind === 'ready')) {
-            return `Pay ${formatPrice(b.total)}`;
-          }
-          return `Pay ${listing.price ? formatPrice(listing.price) : 'now'}`;
-        })()}
-      </button>
-    </div>
+        <div className="max-w-[var(--page-max)] mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="min-w-0 flex-shrink-0">
+            <p
+              className="text-[11px] uppercase"
+              style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
+            >
+              Total
+            </p>
+            <p
+              className="text-sm font-semibold"
+              style={{
+                color: 'var(--text-primary)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {formatPrice(summaryTotalCents)}
+            </p>
+          </div>
+          <CheckoutCta
+            className="flex-1 min-w-0"
+            needsAddress={needsDeliveryAddress}
+            ready={payReady}
+            submitting={submitting}
+            totalCents={summaryTotalCents}
+            blockedReason={payBlocked}
+            onSelectAddress={() => setAddressDialogOpen(true)}
+            onPay={handleProceed}
+          />
+        </div>
+      </div>
+      {/* Spacer so the fixed bar never covers the last review row. */}
+      <div
+        className="lg:hidden"
+        aria-hidden
+        style={{ height: 'calc(78px + env(safe-area-inset-bottom))' }}
+      />
+    </>
   );
 }
 
@@ -1953,32 +1843,8 @@ function BuyerPhoneCapture({
   );
 }
 
-// Reusable row inside the order-summary card.
-function BreakdownLine({
-  label,
-  value,
-  muted,
-}: {
-  label: string;
-  value: string;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex justify-between text-sm py-1">
-      <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-      <span
-        style={{
-          color: muted ? 'var(--text-secondary)' : 'var(--text-primary)',
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-// Shared "Delivering to <name> · address …" chip used on the courier
-// checkout path when the buyer has a saved address on file.
+// Pre-payment acknowledgement for collection-only listings whose papers are
+// handed over at collection.
 function CollectionPapersAck({
   accepted,
   onChange,

@@ -2,26 +2,28 @@
 //
 // 2026-11-25 operator: "there should only be the default address and select
 // different address on the checkout", extended to every delivery surface
-// (standard checkout, auction checkout, accepted-offer checkout and the
-// motivation print-delivery step). Every surface renders the same row: the
-// address that will be used, one control to change it, and an honest warning
-// when the saved default looks incomplete. The editor (address book + manual
-// fields) is each surface's own; this is presentation only.
+// (standard checkout, auction checkout, accepted-offer checkout, the cart and
+// the motivation print-delivery step). Takealot parity (2026-11-26): the row
+// is titled "Delivery to" once an address exists (Change is the control), and
+// "Select Delivery Address" with a "Select" control when there is none.
+//
+// The address DRAWER is each surface's own; this is presentation only.
 
 import type { Ref } from 'react';
 
 export interface DeliveryAddressSummaryProps {
-  /** e.g. "Deliver to my default address" or "Deliver to". */
+  /** "Delivery to" when chosen, "Select Delivery Address" when there is none. */
   label: string;
-  /** Full single-line address, already assembled by the caller. */
+  /** Full single-line address, already assembled by the caller. Empty = none. */
   address: string;
   /** Shows the amber warning and warning border when true. */
   incomplete?: boolean;
   incompleteMessage?: string;
+  /** "Change" when chosen, "Select" when there is none. */
   changeLabel?: string;
   onChange: () => void;
   /**
-   * The change control, so a host can hand it to the address dialog as the
+   * The change control, so a host can hand it to the address drawer as the
    * element focus returns to on close (Safari does not focus a button on
    * click, so the trap's "whatever had focus" fallback would be the body).
    */
@@ -34,11 +36,12 @@ export function DeliveryAddressSummary({
   address,
   incomplete = false,
   incompleteMessage,
-  changeLabel = 'Select a different address',
+  changeLabel = 'Change',
   onChange,
   buttonRef,
   disabled = false,
 }: DeliveryAddressSummaryProps) {
+  const hasAddress = Boolean(address.trim());
   return (
     <div
       className="rounded-[6px] px-3 py-2.5"
@@ -50,7 +53,7 @@ export function DeliveryAddressSummary({
         opacity: disabled ? 0.6 : 1,
       }}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p
             className="text-xs"
@@ -58,16 +61,18 @@ export function DeliveryAddressSummary({
           >
             {label}
           </p>
-          <p
-            className="text-sm mt-0.5"
-            style={{
-              color: 'var(--text-primary)',
-              lineHeight: 1.45,
-              wordBreak: 'break-word',
-            }}
-          >
-            {address || 'No address on file'}
-          </p>
+          {hasAddress && (
+            <p
+              className="text-sm mt-0.5"
+              style={{
+                color: 'var(--text-primary)',
+                lineHeight: 1.45,
+                wordBreak: 'break-word',
+              }}
+            >
+              {address}
+            </p>
+          )}
         </div>
         <button
           ref={buttonRef}

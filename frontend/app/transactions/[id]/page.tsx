@@ -593,6 +593,30 @@ export default async function TransactionPage({
                 </span>
               </div>
 
+              {/* Courier-only note the buyer left at checkout. Visible to BOTH
+                  parties: the seller needs it to label the parcel, the buyer
+                  needs to see what they asked for. */}
+              {tx.deliveryInstructions && (
+                <div className="flex justify-between gap-4">
+                  <span
+                    style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}
+                  >
+                    Delivery instructions
+                  </span>
+                  <span
+                    style={{
+                      color: 'var(--text-primary)',
+                      textAlign: 'right',
+                      maxWidth: '60%',
+                      lineHeight: 1.45,
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {tx.deliveryInstructions}
+                  </span>
+                </div>
+              )}
+
               {tx.shippingStatus && (
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>Status</span>

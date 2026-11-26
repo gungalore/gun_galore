@@ -519,6 +519,10 @@ export interface Transaction {
   paidAt: string | null;
   releasedAt: string | null;
   shippingMethod: ShippingMethod | null;
+  // Courier-only free-text note the buyer added at checkout ("leave at
+  // reception"). Printed on the delivery label by the carrier; null on every
+  // non-courier rail (dealer transfer / private arrangement / collection).
+  deliveryInstructions?: string | null;
   shippingStatus: ShippingStatus | null;
   trackingReference: string | null;
   dispatchedAt: string | null;

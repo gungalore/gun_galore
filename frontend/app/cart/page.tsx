@@ -13,7 +13,7 @@ import { NumberStepper } from '@/components/number-stepper';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { DEFAULT_PAYMENT_METHODS } from '@/lib/payment-methods';
+import { usePaymentMethods } from '@/lib/payment-methods';
 import { vicinityLabel } from '@/lib/vicinity';
 import { useWishlist } from '@/lib/use-wishlist';
 import {
@@ -22,12 +22,10 @@ import {
   type CartDeliveryGroupView,
 } from '@/components/cart-delivery-picker';
 import {
-  ManualAddressFields,
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
 import { TrustBullets } from '@/components/trust-bullets';
-import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
@@ -75,6 +73,13 @@ interface LineStock {
 export default function CartPage() {
   const items = useCart();
   const { getToken } = useAuth();
+  // The read-only payment block shows the rails the backend actually has
+  // enabled (the cart checkout itself is gated off for now).
+  const {
+    methods: paymentMethods,
+    provider: paymentProvider,
+    setProvider: setPaymentProvider,
+  } = usePaymentMethods();
   // Save-for-later reads/writes the SAME wishlist store the heart icon uses
   // everywhere else (lib/use-wishlist.tsx) — no second "saved items" path.
   const wishlist = useWishlist();
@@ -118,13 +123,11 @@ export default function CartPage() {
   const deliveryAutoCollapsedRef = useRef(false);
   const addrTouchedRef = useRef(false);
   // Default-address pattern (2026-11-25): the cart matches every checkout —
-  // show the member's default address and one "Select a different address"
-  // control instead of always-open pickers.
-  const [profileAddr, setProfileAddr] = useState<ManualAddressValue | null>(null);
-  const [addressEditing, setAddressEditing] = useState(false);
-  // The address WINDOW (2026-11-26): the summary row's change control opens a
-  // dialog holding the whole saved-address book plus "add a new address",
-  // instead of an inline editor that looked like the address already shown.
+  // show the member's default address and one control to change it. The
+  // address drawer (2026-11-26) owns every saved-address write.
+  const [addressId, setAddressId] = useState<string | null>(null);
+  const [addressBookLoaded, setAddressBookLoaded] = useState(false);
+  const addressChosenRef = useRef(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   // Focus returns here on close (Safari does not focus a button on click).
   const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -315,8 +318,23 @@ export default function CartPage() {
       .values(),
   );
 
-  // Fetch the member's default address once so the cart can open on it. A
-  // failure is non-fatal: the manual fields are the fallback.
+  /** Map an address-book row onto the cart's field shape. */
+  function toManualAddress(a: Address): ManualAddressValue {
+    return {
+      building: a.building ?? '',
+      street: a.street,
+      address2: a.address2 ?? '',
+      suburb: a.suburb ?? '',
+      city: a.city,
+      postalCode: a.postalCode,
+      province: a.province,
+    };
+  }
+
+  // Fetch the member's default address once so the cart can open on it. The
+  // address BOOK is the source of truth (its default row includes the
+  // synthetic `profile` row); /users/me is only the pre-fetch fallback. A
+  // failure is non-fatal: the drawer can add an address.
   useEffect(() => {
     if (profileFetchedRef.current) return;
     profileFetchedRef.current = true;
@@ -325,15 +343,41 @@ export default function CartPage() {
       try {
         const token = await getToken();
         if (!token) return;
+        const headers = { Authorization: `Bearer ${token}` };
+        const bookRes = await fetch(`${API_URL}/users/me/addresses`, {
+          headers,
+          cache: 'no-store',
+        });
+        if (bookRes.ok) {
+          const rows = (await bookRes.json()) as Address[];
+          if (cancelled || !Array.isArray(rows) || addressChosenRef.current) {
+            return;
+          }
+          const preferred =
+            rows.find((a) => a.isDefault) ??
+            rows.find((a) => a.id === 'profile') ??
+            rows[0];
+          if (preferred) {
+            profilePrefilledRef.current = true;
+            setAddr((prev) =>
+              prev.street.trim() || prev.city.trim()
+                ? prev
+                : toManualAddress(preferred),
+            );
+            setAddressId(preferred.id);
+            setSavedAddressPicked(true);
+            return;
+          }
+        }
         const res = await fetch(`${API_URL}/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
           cache: 'no-store',
         });
         if (!res.ok) return;
         const me = (await res.json()) as Me;
-        if (cancelled) return;
+        if (cancelled || addressChosenRef.current) return;
         if (!me?.addrStreet && !me?.addrCity) return;
-        const defaultAddr: ManualAddressValue = {
+        const fallback: ManualAddressValue = {
           building: me.addrBuilding ?? '',
           street: me.addrStreet ?? '',
           address2: me.addrAddress2 ?? '',
@@ -342,18 +386,15 @@ export default function CartPage() {
           postalCode: me.addrPostalCode ?? '',
           province: (me.addrProvince as ManualAddressValue['province']) ?? '',
         };
-        setProfileAddr(defaultAddr);
-        // Prefill only when the buyer has not typed anything yet, and never
-        // after a saved-address pick.
-        if (!profilePrefilledRef.current && !savedAddressPicked) {
-          profilePrefilledRef.current = true;
-          setAddr((prev) =>
-            prev.street.trim() || prev.city.trim() ? prev : defaultAddr,
-          );
-          setSavedAddressPicked(true);
-        }
+        profilePrefilledRef.current = true;
+        setAddr((prev) =>
+          prev.street.trim() || prev.city.trim() ? prev : fallback,
+        );
+        setSavedAddressPicked(true);
       } catch {
-        // Non-fatal — the manual fields remain.
+        // Non-fatal — the drawer's add form is the fallback.
+      } finally {
+        if (!cancelled) setAddressBookLoaded(true);
       }
     })();
     return () => {
@@ -454,21 +495,7 @@ export default function CartPage() {
   ]
     .filter(Boolean)
     .join(', ');
-  const addressIsDefault = !!(
-    profileAddr &&
-    ['building', 'street', 'address2', 'suburb', 'city', 'postalCode', 'province']
-      .every((k) =>
-        String(addr[k as keyof ManualAddressValue] ?? '').trim() ===
-        String(profileAddr[k as keyof ManualAddressValue] ?? '').trim(),
-      )
-  );
-  const profileAddressIncomplete = !!(
-    profileAddr &&
-    (!profileAddr.street.trim() ||
-      !profileAddr.suburb.trim() ||
-      !profileAddr.city.trim() ||
-      !profileAddr.postalCode.trim())
-  );
+  const hasDeliveryAddress = Boolean(addr.street.trim() || addr.city.trim());
 
   const everyParcelChosen =
     deliveryGroups.length > 0 &&
@@ -948,7 +975,7 @@ export default function CartPage() {
           </p>
           <div className="flex gap-2">
             <Link
-              href={`/checkout/${i.listingId}`}
+              href={`/checkout/${i.listingId}?from=cart`}
               className="text-xs px-3 py-1.5 rounded-[6px]"
               style={{ background: 'var(--action-primary-bg)', color: '#fff', fontWeight: 500 }}
             >
@@ -1011,83 +1038,23 @@ export default function CartPage() {
           {deliveryOpen ? (
             <>
               <div className="mb-4">
-                {profileAddr && !addressEditing ? (
+                {!addressBookLoaded && !hasDeliveryAddress ? (
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    Loading your address…
+                  </p>
+                ) : (
                   <DeliveryAddressSummary
                     label={
-                      addressIsDefault
-                        ? 'Deliver to my default address'
-                        : 'Deliver to'
+                      hasDeliveryAddress
+                        ? 'Delivery to'
+                        : 'Select Delivery Address'
                     }
-                    address={addressLine}
-                    incomplete={profileAddressIncomplete && addressIsDefault}
+                    address={hasDeliveryAddress ? addressLine : ''}
+                    incomplete={hasDeliveryAddress && !addrComplete}
+                    changeLabel={hasDeliveryAddress ? 'Change' : 'Select'}
                     buttonRef={addressTriggerRef}
                     onChange={() => setAddressDialogOpen(true)}
                   />
-                ) : (
-                  <div className="space-y-2">
-                    {profileAddr && (
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddr(profileAddr);
-                            setSavedAddressPicked(true);
-                            setAddressEditing(false);
-                          }}
-                          className="text-xs"
-                          style={{
-                            color: 'var(--text-tertiary)',
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            textDecoration: 'underline',
-                            padding: 0,
-                          }}
-                        >
-                          Use my default address
-                        </button>
-                      </div>
-                    )}
-                    {/* UX-3 — saved-address picker (2+ book addresses only).
-                        Picking one fills the same `addr` state the payload reads. */}
-                    <SavedAddressPicker
-                      minToShow={1}
-                      onSelect={(a: Address) => {
-                        setSavedAddressPicked(true);
-                        setAddr({
-                          building: a.building ?? '',
-                          street: a.street,
-                          address2: a.address2 ?? '',
-                          suburb: a.suburb ?? '',
-                          city: a.city,
-                          postalCode: a.postalCode,
-                          province: a.province,
-                        });
-                        setAddressEditing(false);
-                      }}
-                    />
-                    <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
-                    {profileAddr && (
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setAddressEditing(false)}
-                          disabled={!addrComplete}
-                          className="px-4 py-2 rounded-[6px] text-sm"
-                          style={{
-                            background: 'var(--action-primary-bg)',
-                            color: '#fff',
-                            border: 'none',
-                            fontWeight: 500,
-                            cursor: addrComplete ? 'pointer' : 'not-allowed',
-                            opacity: addrComplete ? 1 : 0.5,
-                          }}
-                        >
-                          Use this address
-                        </button>
-                      </div>
-                    )}
-                  </div>
                 )}
               </div>
 
@@ -1095,26 +1062,40 @@ export default function CartPage() {
                 <DeliveryAddressDialog
                   returnFocusTo={addressTriggerRef.current}
                   initialAddress={addr}
+                  selectedAddressId={addressId}
                   // The cart prices delivery from the five address fields
                   // only — it has never carried coordinates.
                   requireCoords={false}
                   getToken={getToken}
                   onClose={() => setAddressDialogOpen(false)}
                   onSelect={(a: Address) => {
+                    addressChosenRef.current = true;
                     setSavedAddressPicked(true);
-                    setAddr({
-                      building: a.building ?? '',
-                      street: a.street,
-                      address2: a.address2 ?? '',
-                      suburb: a.suburb ?? '',
-                      city: a.city,
-                      postalCode: a.postalCode,
-                      province: a.province,
-                    });
+                    setAddr(toManualAddress(a));
+                    setAddressId(a.id);
                   }}
                   onUseOnce={(value) => {
+                    addressChosenRef.current = true;
                     setSavedAddressPicked(true);
                     setAddr(value);
+                    setAddressId(null);
+                  }}
+                  onAddressesChanged={(rows: Address[]) => {
+                    // A typed one-off has no book row to sync.
+                    if (!addressId) return;
+                    const current = rows.find((a) => a.id === addressId);
+                    const next =
+                      current ??
+                      rows.find((a) => a.isDefault) ??
+                      rows[0] ??
+                      null;
+                    if (next) {
+                      setAddr(toManualAddress(next));
+                      setAddressId(next.id);
+                    } else {
+                      setAddr(emptyManualAddress);
+                      setAddressId(null);
+                    }
                   }}
                 />
               )}
@@ -1236,11 +1217,12 @@ export default function CartPage() {
         </>
       )}
 
-      {/* Cart checkout is still gated off; show the live rail read-only. */}
+      {/* Cart checkout is still gated off; show the live rails read-only —
+          the actual enabled methods, or nothing when the backend returns none. */}
       <PaymentMethodSection
-        methods={DEFAULT_PAYMENT_METHODS}
-        value="OZOW"
-        onChange={() => undefined}
+        methods={paymentMethods}
+        value={paymentProvider}
+        onChange={setPaymentProvider}
         disabled
       />
 

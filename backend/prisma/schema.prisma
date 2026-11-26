@@ -1901,6 +1901,12 @@ model Transaction {
   // from User at shipment-creation time.
   deliveryAddress Json?
 
+  // Free-text delivery instructions the buyer types at courier checkout. Bob Go
+  // prints this on the delivery label (`instructions_delivery`). Sanitised and
+  // capped at 120 chars in TransactionsService; null on every non-courier sale
+  // (dealer transfer / private arrangement / collection have no label).
+  deliveryInstructions String? @db.VarChar(120)
+
   // Platform-arranged shipment booking (P5.2). When the seller ACCEPTS a
   // courier sale we book the real shipment with Bob Go (door-to-door) and
   // stamp the result here. trackingReference (above) holds the carrier

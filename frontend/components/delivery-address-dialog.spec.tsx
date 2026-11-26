@@ -1,21 +1,25 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import {
   DeliveryAddressDialog,
   type DeliveryAddressDialogProps,
 } from './delivery-address-dialog';
-import {
-  emptyManualAddress,
-  type ManualAddressValue,
-} from './manual-address-fields';
+import { type ManualAddressValue } from './manual-address-fields';
 import type { Address } from '@/lib/types';
 
-// The delivery-address WINDOW (2026-11-26, member report @ruanda). These specs
-// pin the three things that made "Select a different address" look inert:
-// a single saved address is still listed, "Add a new address" is reachable in
-// the same window, and saving a new address POSTs it to the book and then
-// applies it to the order.
+// The delivery-address DRAWER (2026-11-26, Takealot-parity checkout).
+// Covered here: the saved list (even a single row), Continue applies + closes,
+// Add POST body, Edit PATCH, Delete with inline confirm, the profile row's
+// hidden delete, token mode, load-error retry, and "saving disables close".
+// The d04e9d73 coordinate rules (typed text replaces street; editing a
+// deciding field clears stale coords) are pinned below too.
 
 function address(overrides: Partial<Address> = {}): Address {
   return {
@@ -30,10 +34,21 @@ function address(overrides: Partial<Address> = {}): Address {
     province: 'WESTERN_CAPE',
     lat: -33.9,
     lng: 18.4,
-    isDefault: true,
+    isDefault: false,
     ...overrides,
   };
 }
+
+const PROFILE_ROW = address({
+  id: 'profile',
+  label: 'Profile address',
+  street: '12 Loop Street',
+  suburb: 'Gardens',
+  postalCode: '8001',
+  isDefault: true,
+});
+
+const HOME_ROW = address();
 
 const INITIAL_ADDRESS: ManualAddressValue = {
   building: '',
@@ -45,36 +60,77 @@ const INITIAL_ADDRESS: ManualAddressValue = {
   province: 'WESTERN_CAPE',
 };
 
-type FetchStub = {
-  rows?: Address[];
-  postResult?: Address | null;
-  postStatus?: number;
-};
+let rows: Address[] = [];
+let failNextGet = false;
+let hangNextPost = false;
 
-function stubFetch({ rows = [], postResult = null, postStatus = 200 }: FetchStub) {
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function installFetchStub() {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const json = (body: unknown, status = 200) =>
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      if ((init?.method ?? 'GET') === 'POST') {
-        if (postStatus >= 400) {
-          return json({ message: 'Could not save that address.' }, postStatus);
-        }
-        return json(postResult ?? rows[0]);
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.includes('/listings/place-autocomplete')) {
+        return json({ suggestions: [] });
       }
-      return json(rows);
+      if (url.includes('/users/me/addresses')) {
+        if (method === 'GET') {
+          if (failNextGet) {
+            failNextGet = false;
+            return json({ message: 'boom' }, 500);
+          }
+          return json(rows);
+        }
+        if (method === 'POST') {
+          if (hangNextPost) return new Promise<Response>(() => undefined);
+          const body = JSON.parse(String(init?.body ?? '{}')) as Partial<Address>;
+          const created = address({
+            id: 'a9',
+            label: body.label ?? null,
+            street: body.street ?? '',
+            suburb: body.suburb ?? null,
+            city: body.city ?? '',
+            postalCode: body.postalCode ?? '',
+            province: body.province ?? 'WESTERN_CAPE',
+            lat: body.lat ?? null,
+            lng: body.lng ?? null,
+            isDefault: body.isDefault ?? false,
+          });
+          rows = [created, ...rows];
+          return json(created, 201);
+        }
+        if (method === 'PATCH') {
+          const id = decodeURIComponent(url.split('/').pop() ?? '');
+          const body = JSON.parse(String(init?.body ?? '{}')) as Partial<Address>;
+          const index = rows.findIndex((row) => row.id === id);
+          if (index === -1) return json({ message: 'Address not found' }, 404);
+          const updated = { ...rows[index], ...body, id } as Address;
+          rows = rows.map((row) => (row.id === id ? updated : row));
+          return json(updated);
+        }
+        if (method === 'DELETE') {
+          const id = decodeURIComponent(url.split('/').pop() ?? '');
+          rows = rows.filter((row) => row.id !== id);
+          return json({ deleted: true });
+        }
+      }
+      return json({});
     }),
   );
 }
 
-function renderDialog(overrides: Partial<DeliveryAddressDialogProps> = {}) {
+function renderDrawer(overrides: Partial<DeliveryAddressDialogProps> = {}) {
   const onSelect = vi.fn();
   const onClose = vi.fn();
   const onUseOnce = vi.fn();
+  const onAddressesChanged = vi.fn();
   const props: DeliveryAddressDialogProps = {
     initialAddress: INITIAL_ADDRESS,
     initialLat: -33.8359558,
@@ -82,185 +138,200 @@ function renderDialog(overrides: Partial<DeliveryAddressDialogProps> = {}) {
     getToken: async () => 'test-token',
     onSelect,
     onUseOnce,
+    onAddressesChanged,
     onClose,
     idPrefix: 'test',
+    recipient: { name: 'Buyer Test', phone: '+27821234567' },
     ...overrides,
   };
   render(<DeliveryAddressDialog {...props} />);
-  const dialog = screen.getByRole('dialog', { name: /delivery address/i });
-  return { dialog, onSelect, onClose, onUseOnce };
+  const dialog = screen.getByRole('dialog', { name: /select delivery address/i });
+  const closeButton = within(dialog).getByRole('button', { name: 'Close' });
+  return { dialog, closeButton, onSelect, onClose, onUseOnce, onAddressesChanged };
 }
 
 beforeEach(() => {
+  rows = [];
+  failNextGet = false;
+  hangNextPost = false;
   vi.clearAllMocks();
+  installFetchStub();
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    cb(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => undefined);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('DeliveryAddressDialog', () => {
-  it('lists a single saved address (default marked) and offers "Add a new address"', async () => {
-    stubFetch({ rows: [address()] });
-    const { dialog } = renderDialog();
+describe('DeliveryAddressDialog (drawer)', () => {
+  it('lists a single saved address with label, Default badge and recipient, plus Add', async () => {
+    rows = [PROFILE_ROW];
+    const { dialog } = renderDrawer();
 
-    expect(await within(dialog).findByText('Home')).toBeTruthy();
+    expect(await within(dialog).findByText('Profile address')).toBeTruthy();
     expect(within(dialog).getByText('Default')).toBeTruthy();
-    expect(within(dialog).getByText(/1 Main Rd/)).toBeTruthy();
+    expect(within(dialog).getByText('12 Loop Street')).toBeTruthy();
+    expect(within(dialog).getByText(/Gardens, Cape Town, 8001/)).toBeTruthy();
+    expect(within(dialog).getByText('Buyer Test · +27821234567')).toBeTruthy();
     expect(
       within(dialog).getByRole('button', { name: /add a new address/i }),
     ).toBeTruthy();
+    expect(within(dialog).getByText('Delivery Addresses')).toBeTruthy();
   });
 
-  it('reveals the add-new form from the list and prefills it from the current address', async () => {
-    stubFetch({ rows: [address()] });
-    const { dialog } = renderDialog();
+  it('keeps Continue disabled until a row is selected, then applies and closes', async () => {
+    rows = [HOME_ROW];
+    const { dialog, onSelect, onClose } = renderDrawer();
 
     await within(dialog).findByText('Home');
-    fireEvent.click(
-      within(dialog).getByRole('button', { name: /add a new address/i }),
-    );
-
-    const street = within(dialog).getByPlaceholderText(
-      'Street address *',
-    ) as HTMLInputElement;
-    expect(street.value).toBe(INITIAL_ADDRESS.street);
-    // Required fields are already satisfied by the prefill.
-    const save = within(dialog).getByRole('button', {
-      name: /save and use this address/i,
+    const cont = within(dialog).getByRole('button', {
+      name: 'Continue',
     }) as HTMLButtonElement;
-    expect(save.disabled).toBe(false);
-  });
+    expect(cont.disabled).toBe(true);
 
-  it('selects a saved address and closes', async () => {
-    const saved = address();
-    stubFetch({ rows: [saved] });
-    const { dialog, onSelect, onClose } = renderDialog();
-
-    await within(dialog).findByText('Home');
     fireEvent.click(within(dialog).getByRole('radio', { name: /Home/i }));
+    expect(cont.disabled).toBe(false);
+    fireEvent.click(cont);
 
-    expect(onSelect).toHaveBeenCalledWith(saved);
-    expect(onClose).toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledWith(HOME_ROW);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('offers the form directly when the book is empty', async () => {
-    stubFetch({ rows: [] });
-    const { dialog } = renderDialog();
-    // No saved rows: the window must not be a dead end.
-    expect(
-      await within(dialog).findByText(/don’t have any saved addresses yet/i),
-    ).toBeTruthy();
-    expect(
-      within(dialog).getByPlaceholderText('Street address *'),
-    ).toBeTruthy();
-  });
-
-  it('saves a new address to the book, then applies it to the order', async () => {
-    const saved = address({
-      id: 'a9',
-      label: null,
-      street: '10 New Road',
-      suburb: 'Athlone',
-      city: 'Cape Town',
-      postalCode: '7764',
-      lat: -33.96,
-      lng: 18.5,
-    });
-    stubFetch({ rows: [], postResult: saved });
-    const { dialog, onSelect, onClose } = renderDialog({
-      initialAddress: emptyManualAddress,
+  it('adds an address: POSTs the body, returns to the list and selects the saved row', async () => {
+    rows = [PROFILE_ROW];
+    const { dialog, onSelect, onClose, onAddressesChanged } = renderDrawer({
+      initialAddress: INITIAL_ADDRESS,
       initialLat: null,
       initialLng: null,
       requireCoords: false,
     });
 
-    // Empty book: the form opens as soon as the (empty) list lands.
-    await within(dialog).findByPlaceholderText('Street address *');
-    fireEvent.change(
-      within(dialog).getByPlaceholderText('Street address *'),
-      { target: { value: '10 New Road' } },
-    );
-    fireEvent.change(within(dialog).getByPlaceholderText('Suburb *'), {
-      target: { value: 'Athlone' },
-    });
-    fireEvent.change(within(dialog).getByPlaceholderText('City / Town *'), {
-      target: { value: 'Cape Town' },
-    });
-    fireEvent.change(within(dialog).getByPlaceholderText('Postal code *'), {
-      target: { value: '7764' },
-    });
-    fireEvent.change(document.getElementById('test-addr-province')!, {
-      target: { value: 'WESTERN_CAPE' },
-    });
-
+    await within(dialog).findByText('Profile address');
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /save and use this address/i }),
+      within(dialog).getByRole('button', { name: /add a new address/i }),
     );
 
-    await waitFor(() => expect(onSelect).toHaveBeenCalled());
-    expect(onClose).toHaveBeenCalled();
-    expect(onSelect).toHaveBeenCalledWith(saved);
+    fireEvent.change(within(dialog).getByPlaceholderText('Street address *'), {
+      target: { value: '10 New Road' },
+    });
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g. Home, Work'), {
+      target: { value: 'Work' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', {
+        name: /set as default delivery address/i,
+      }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /save address/i }),
+    );
 
+    await waitFor(() => expect(onAddressesChanged).toHaveBeenCalled());
     const call = (
       global.fetch as unknown as ReturnType<typeof vi.fn>
     ).mock.calls.find(
-      ([, init]) => (init as RequestInit | undefined)?.method === 'POST',
+      ([url, init]) =>
+        String(url).includes('/users/me/addresses') &&
+        (init as RequestInit | undefined)?.method === 'POST',
     );
     expect(call).toBeTruthy();
     const body = JSON.parse(String((call![1] as RequestInit).body));
     expect(body).toMatchObject({
-      building: null,
+      label: 'Work',
       street: '10 New Road',
-      suburb: 'Athlone',
+      suburb: 'Langeberg Glen',
       city: 'Cape Town',
-      postalCode: '7764',
+      postalCode: '7570',
       province: 'WESTERN_CAPE',
-      lat: null,
-      lng: null,
-      isDefault: false,
+      isDefault: true,
     });
+
+    // Back on the list with the new row selected; Continue applies it.
+    expect(await within(dialog).findByText('Work')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ street: '10 New Road' }),
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('shows a failed save inline and keeps the dialog open', async () => {
-    stubFetch({ rows: [address()], postStatus: 500 });
-    const { dialog, onSelect, onClose } = renderDialog();
+  it('edits the profile row with PATCH and notifies the host', async () => {
+    rows = [PROFILE_ROW];
+    const { dialog, onAddressesChanged } = renderDrawer({ requireCoords: false });
+
+    await within(dialog).findByText('Profile address');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /edit profile address/i }),
+    );
+    fireEvent.change(within(dialog).getByPlaceholderText('Street address *'), {
+      target: { value: '14 Loop Street' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /save changes/i }),
+    );
+
+    await waitFor(() => expect(onAddressesChanged).toHaveBeenCalled());
+    const call = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find(
+      ([url, init]) =>
+        String(url).includes('/users/me/addresses/profile') &&
+        (init as RequestInit | undefined)?.method === 'PATCH',
+    );
+    expect(call).toBeTruthy();
+    const body = JSON.parse(String((call![1] as RequestInit).body));
+    expect(body.street).toBe('14 Loop Street');
+    expect(await within(dialog).findByText('14 Loop Street')).toBeTruthy();
+  });
+
+  it('deletes a saved row only after the inline confirm', async () => {
+    rows = [PROFILE_ROW, HOME_ROW];
+    const { dialog, onAddressesChanged } = renderDrawer();
 
     await within(dialog).findByText('Home');
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /add a new address/i }),
+      within(dialog).getByRole('button', { name: /delete home/i }),
     );
+    expect(within(dialog).getByText(/delete this address\?/i)).toBeTruthy();
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /save and use this address/i }),
+      within(dialog).getByRole('button', { name: /^delete$/i }),
     );
 
-    expect(await within(dialog).findByRole('alert')).toBeTruthy();
-    expect(onSelect).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onAddressesChanged).toHaveBeenCalled());
+    const call = (
+      global.fetch as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.find(
+      ([url, init]) =>
+        String(url).includes('/users/me/addresses/a1') &&
+        (init as RequestInit | undefined)?.method === 'DELETE',
+    );
+    expect(call).toBeTruthy();
+    await waitFor(() =>
+      expect(within(dialog).queryByText('1 Main Rd')).toBeNull(),
+    );
   });
 
-  it('does not let the address be saved without coordinates on a courier checkout', async () => {
-    stubFetch({ rows: [address()] });
-    const { dialog } = renderDialog({ initialLat: null, initialLng: null });
+  it('hides Delete for the profile row and points at the profile instead', async () => {
+    rows = [PROFILE_ROW, HOME_ROW];
+    const { dialog } = renderDrawer();
 
-    await within(dialog).findByText('Home');
-    fireEvent.click(
-      within(dialog).getByRole('button', { name: /add a new address/i }),
-    );
-
-    const save = within(dialog).getByRole('button', {
-      name: /save and use this address/i,
-    }) as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    await within(dialog).findByText('Profile address');
+    expect(within(dialog).getByText(/edit from your profile/i)).toBeTruthy();
     expect(
-      within(dialog).getByText(/pick your address from the suggestions/i),
+      within(dialog).queryByRole('button', { name: /delete profile address/i }),
+    ).toBeNull();
+    // The book row's delete is still there.
+    expect(
+      within(dialog).getByRole('button', { name: /delete home/i }),
     ).toBeTruthy();
   });
 
-  it('uses a typed address for this order only when the book is unavailable', async () => {
-    // Signed-out SMS-link checkout: no session, so no address book.
-    stubFetch({ rows: [] });
-    const { dialog, onSelect, onUseOnce, onClose } = renderDialog({
+  it('runs in token mode: no address-book read, form only, "Use this address"', async () => {
+    const { dialog, onUseOnce, onClose } = renderDrawer({
       canSaveToBook: false,
       requireCoords: false,
     });
@@ -268,7 +339,12 @@ describe('DeliveryAddressDialog', () => {
     expect(
       within(dialog).getByText(/saved addresses aren’t available/i),
     ).toBeTruthy();
-    expect(within(dialog).queryByRole('button', { name: /save and use/i })).toBeNull();
+    expect(
+      within(dialog).queryByRole('button', { name: /add a new address/i }),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByRole('button', { name: /save address/i }),
+    ).toBeNull();
 
     fireEvent.click(
       within(dialog).getByRole('button', { name: /^use this address$/i }),
@@ -278,17 +354,69 @@ describe('DeliveryAddressDialog', () => {
       -33.8359558,
       18.6900397,
     );
-    expect(onSelect).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
     // The session-only book is never even read.
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('closes on Escape', async () => {
-    stubFetch({ rows: [address()] });
-    const { onClose } = renderDialog();
-    await screen.findByText(/1 Main Rd/);
+  it('shows a load error with Try again and recovers', async () => {
+    rows = [HOME_ROW];
+    failNextGet = true;
+    const { dialog } = renderDrawer();
+
+    expect(await within(dialog).findByRole('alert')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: /try again/i }));
+    expect(await within(dialog).findByText('Home')).toBeTruthy();
+  });
+
+  it('refuses to close while a save is in flight', async () => {
+    rows = [PROFILE_ROW];
+    hangNextPost = true;
+    const { dialog, closeButton, onClose } = renderDrawer({
+      requireCoords: false,
+    });
+
+    await within(dialog).findByText('Profile address');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /add a new address/i }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /save address/i }),
+    );
+
+    await waitFor(() => expect(closeButton).toBeDisabled());
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole('button', { name: /saving…/i })).toBeTruthy();
+  });
+
+  it('typed text replaces street and clears stale coordinates on a courier checkout', async () => {
+    rows = [PROFILE_ROW];
+    const { dialog } = renderDrawer();
+
+    await within(dialog).findByText('Profile address');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /add a new address/i }),
+    );
+
+    const street = within(dialog).getByPlaceholderText(
+      'Street address *',
+    ) as HTMLInputElement;
+    expect(street.value).toBe(INITIAL_ADDRESS.street);
+
+    fireEvent.change(within(dialog).getByPlaceholderText('Search for address…'), {
+      target: { value: '10 New Road' },
+    });
+
+    await waitFor(() => expect(street.value).toBe('10 New Road'));
+    // Coordinates came from the address we started on; typing invalidates them
+    // so a door quote can never be priced against the old location.
+    const save = within(dialog).getByRole('button', {
+      name: /save address/i,
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(
+      within(dialog).getByText(/pick your address from the suggestions/i),
+    ).toBeTruthy();
   });
 });

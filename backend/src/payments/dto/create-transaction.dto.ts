@@ -13,6 +13,7 @@ import {
   IsPostalCode,
   MinLength,
   IsDateString,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DeliveryOption, PaymentProvider, ShippingMethod } from '@prisma/client';
@@ -95,6 +96,15 @@ export class CreateTransactionDto {
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
+
+  // Courier: free-text instructions for the delivery label — "leave at
+  // reception", "ring the bell twice". A label field, so hard-capped at 120
+  // characters; the service also strips control characters/newlines before it
+  // reaches Bob Go. Ignored (persisted as null) on non-courier sales.
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deliveryInstructions?: string;
 
   // Courier: keep this address in the buyer's address book. Defaults to true —
   // an address typed at checkout is one the buyer will want again — so only an

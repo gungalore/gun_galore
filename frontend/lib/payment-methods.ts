@@ -13,24 +13,25 @@ export interface PaymentMethodOption {
   description: string;
 }
 
-export const DEFAULT_PAYMENT_METHODS: PaymentMethodOption[] = [
-  {
-    provider: 'OZOW',
-    label: 'Instant EFT',
-    description: 'Pay securely from your bank account via Ozow.',
-  },
-];
-
 /**
- * Fetch the enabled pay-in rails once per checkout page. Ozow is always
- * available; Peach appears only when the backend has it configured AND the
- * admin pay-in flag is on. The default is Ozow so a failed fetch never hides
- * the rail that is already live.
+ * The pay-in rails the backend has actually enabled, read once per checkout.
+ *
+ * ⚠️ THERE IS NO LOCAL FALLBACK RAIL. This used to start on a hardcoded Ozow
+ * option so "a failed fetch never hides the rail that is already live". That
+ * promise is now wrong: the server can return Peach ONLY (or nothing at all
+ * while a rail is being switched), and painting an EFT row the backend cannot
+ * actually open would walk the buyer into a gateway failure after Pay. So the
+ * resting state is empty + loading, and a failed fetch leaves it empty — the
+ * checkout then says card payments are unavailable instead of inventing a
+ * rail.
+ *
+ * After a successful fetch the current choice is kept while the server still
+ * offers it; otherwise the first enabled method is selected. `provider` is
+ * null while loading and whenever the server returns no method.
  */
 export function usePaymentMethods() {
-  const [methods, setMethods] =
-    useState<PaymentMethodOption[]>(DEFAULT_PAYMENT_METHODS);
-  const [provider, setProvider] = useState<PaymentProvider>('OZOW');
+  const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
+  const [provider, setProvider] = useState<PaymentProvider | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,23 +39,33 @@ export function usePaymentMethods() {
     fetch(`${API_URL}/transactions/payment-methods`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { methods?: PaymentMethodOption[] } | null) => {
-        if (cancelled || !data?.methods?.length) return;
-        setMethods(data.methods);
-        // Keep the current selection if it is still offered; otherwise fall
-        // back to the first enabled method.
-        if (!data.methods.some((m) => m.provider === provider)) {
-          setProvider(data.methods[0].provider);
-        }
+        if (cancelled) return;
+        const rows = Array.isArray(data?.methods) ? data.methods : [];
+        setMethods(rows);
+        setProvider((current) => {
+          if (rows.length === 0) return null;
+          if (
+            current &&
+            rows.some((method) => method.provider === current)
+          ) {
+            return current;
+          }
+          return rows[0].provider;
+        });
       })
-      .catch(() => undefined)
+      // A failed read must not fall back to a fabricated rail. The host shows
+      // the "temporarily unavailable" message and Pay stays disabled.
+      .catch(() => {
+        if (cancelled) return;
+        setMethods([]);
+        setProvider(null);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-    // The selection is intentionally read once; changing it must not refetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { methods, provider, setProvider, loading };

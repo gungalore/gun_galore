@@ -8,11 +8,7 @@ import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { usePaymentMethods } from '@/lib/payment-methods';
 import { FeeBreakdown, ListingType, ShippingMethod, Address } from '@/lib/types';
-import {
-  DeliveryOptionsPicker,
-  type DeliveryOption,
-} from '@/components/delivery-options-picker';
-import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryOptionsPicker, type DeliveryOption } from '@/components/delivery-options-picker';
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
@@ -36,20 +32,10 @@ interface CreateTxResponse {
   breakdown: FeeBreakdown;
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--field-bg)',
-  border: '0.5px solid var(--border)',
-  color: 'var(--text-primary)',
-  borderRadius: '6px',
-  padding: '8px 12px',
-  fontSize: '14px',
-};
-
 // Only the pieces this form needs from GET /users/me: the profile's default
-// delivery address and the contact identity used to prefill the editor. Typed
-// locally (not imported from the marketplace checkout) so the two forms stay
-// independent.
+// delivery address and the contact identity used to prefill the address.
+// Typed locally (not imported from the marketplace checkout) so the two forms
+// stay independent.
 interface ProfileMe {
   firstName?: string | null;
   lastName?: string | null;
@@ -78,32 +64,10 @@ interface ProfileMe {
 // the bands, the R10 floor and the auction 5%; `scripts/fee-sync.cjs` now fails
 // the build if that module and backend/src/payments/fee.calculator.ts disagree.
 
-// FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
-// The backend DeliveryAddressDto requires `province` (@IsNotEmpty), so an
-// offer checkout with no province ALWAYS 400'd. Bob Go quotes off the full
-// address, so the select alone unblocks it.
-const SA_PROVINCES: { value: string; label: string }[] = [
-  { value: 'EASTERN_CAPE', label: 'Eastern Cape' },
-  { value: 'FREE_STATE', label: 'Free State' },
-  { value: 'GAUTENG', label: 'Gauteng' },
-  { value: 'KWAZULU_NATAL', label: 'KwaZulu-Natal' },
-  { value: 'LIMPOPO', label: 'Limpopo' },
-  { value: 'MPUMALANGA', label: 'Mpumalanga' },
-  { value: 'NORTH_WEST', label: 'North West' },
-  { value: 'NORTHERN_CAPE', label: 'Northern Cape' },
-  { value: 'WESTERN_CAPE', label: 'Western Cape' },
-];
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}
+// FLOW-F5 — the backend DeliveryAddressDto requires `province`
+// (@IsNotEmpty), so an offer checkout with no province ALWAYS 400'd. The
+// address drawer supplies the province now; this form keeps the full address
+// object it is handed.
 
 export function OfferCheckoutForm({
   offerId,
@@ -166,6 +130,7 @@ export function OfferCheckoutForm({
     methods: paymentMethods,
     provider: paymentProvider,
     setProvider: setPaymentProvider,
+    loading: paymentLoading,
   } = usePaymentMethods();
 
   // Every listing class offers the courier/dealer rail plus an in-person
@@ -188,44 +153,56 @@ export function OfferCheckoutForm({
     contactName: '',
     contactPhone: '',
   });
-  // The address book decides whether the typed address is NEW, which is what
-  // makes the "make it your default" question honest. A failure here is
-  // non-fatal — checkout still works and the server de-duplicates.
-  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
-  const [saveAddressToBook, setSaveAddressToBook] = useState(true);
-  const [makeAddressDefault, setMakeAddressDefault] = useState(false);
-  // Profile default address + identity (GET /users/me). This is the checkout's
-  // resting address — the collapsed summary shows it, and it prefills the
-  // editor fields. The payload builder below is unchanged.
+  // The address-book row the effective address came from (the drawer opens
+  // with it selected, and we can tell when it was edited or deleted).
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [addressBookLoaded, setAddressBookLoaded] = useState(false);
+  // Set once the buyer picks/keeps an address themselves; a late async read
+  // must never clobber that choice.
+  const addressChosenRef = useRef(false);
+  // Profile default address + identity (GET /users/me). This is the PRE-FETCH
+  // fallback for the address (the book is the source of truth) and the source
+  // of the contact prefill.
   const [profile, setProfile] = useState<ProfileMe | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
-  // The editor is closed by default: the buyer sees the default address and
-  // one "Select a different address" control (operator, 2026-11-25). That
-  // control opens the address WINDOW (2026-11-26) — the whole saved-address
-  // book plus an "add a new address" form, rather than an inline editor that
-  // looked identical to the address already shown.
+  // The address DRAWER opens from the one summary row.
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   // Focus returns here on close (Safari does not focus a button on click).
   const addressTriggerRef = useRef<HTMLButtonElement | null>(null);
 
+  // Read the address book once and seed the effective address from its default
+  // row (the backend prepends the synthetic `profile` row, default while no
+  // book row is default). ⚠️ TOKEN BUYERS GET A 401 HERE, AND THAT IS FINE:
+  // the book is session-managed, and the /users/me fallback below still
+  // supplies their profile address. A failure is non-fatal by design.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // ⚠️ TOKEN BUYERS GET A 401 HERE, AND THAT IS FINE. The address book is
-        // a session-managed list (GET /users/me/addresses is AuthGuard-only),
-        // not something the checkout token can read — but the profile default
-        // below is the address checkout actually uses, so the form still
-        // prefills. A failure is non-fatal by design.
         const { url, headers } = await authedRequest('/users/me/addresses');
         const res = await fetch(url, { headers, cache: 'no-store' });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const rows = (await res.json()) as Address[];
-        if (cancelled || !Array.isArray(rows)) return;
-        setSavedAddresses(rows);
-        if (!rows.some((a) => a.isDefault)) setMakeAddressDefault(true);
+        if (cancelled || !Array.isArray(rows) || addressChosenRef.current) return;
+        const preferred =
+          rows.find((a) => a.isDefault) ??
+          rows.find((a) => a.id === 'profile') ??
+          rows[0];
+        if (preferred) {
+          setDeliveryAddress((prev) => ({
+            ...prev,
+            streetAddress: preferred.street,
+            suburb: preferred.suburb ?? '',
+            city: preferred.city,
+            province: preferred.province,
+            postalCode: preferred.postalCode,
+          }));
+          setSelectedAddressId(preferred.id);
+        }
       } catch {
-        // Non-fatal.
+        // Non-fatal — the /users/me fallback below seeds the profile address.
+      } finally {
+        if (!cancelled) setAddressBookLoaded(true);
       }
     })();
     return () => {
@@ -289,7 +266,7 @@ export function OfferCheckoutForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getToken, actionToken]);
 
-  // Apply a saved address (or a typed one from the dialog) to this order. The
+  // Apply a saved address (or a typed one from the drawer) to this order. The
   // identity fields (name / phone) are this form's own and are never taken
   // from the address book row.
   function applyAddressToOrder(a: {
@@ -309,8 +286,16 @@ export function OfferCheckoutForm({
     }));
   }
 
-  /** The dialog's secondary action: typed address for this order only. */
+  /** Apply a full address-book row; remembers which row is in effect. */
+  function applySavedAddress(a: Address) {
+    addressChosenRef.current = true;
+    applyAddressToOrder(a);
+    setSelectedAddressId(a.id);
+  }
+
+  /** The drawer's secondary action: typed address for this order only. */
   function applyTypedAddressToOrder(v: ManualAddressValue) {
+    addressChosenRef.current = true;
     applyAddressToOrder({
       street: v.street,
       suburb: v.suburb,
@@ -318,6 +303,34 @@ export function OfferCheckoutForm({
       province: v.province || '',
       postalCode: v.postalCode,
     });
+    setSelectedAddressId(null);
+  }
+
+  /**
+   * The drawer saved/edited/deleted a book row. Keep the effective address in
+   * step: an edit refreshes it, deleting it falls back default → next → none.
+   */
+  function handleAddressesChanged(rows: Address[]) {
+    if (!selectedAddressId) return;
+    const current = rows.find((a) => a.id === selectedAddressId);
+    const next = current ?? rows.find((a) => a.isDefault) ?? rows[0] ?? null;
+    if (next) {
+      addressChosenRef.current = true;
+      applyAddressToOrder(next);
+      setSelectedAddressId(next.id);
+    } else {
+      addressChosenRef.current = true;
+      setSelectedAddressId(null);
+      setDeliveryOption(null);
+      setDeliveryAddress((prev) => ({
+        ...prev,
+        streetAddress: '',
+        suburb: '',
+        city: '',
+        province: '',
+        postalCode: '',
+      }));
+    }
   }
 
   const [submitting, setSubmitting] = useState(false);
@@ -353,52 +366,12 @@ export function OfferCheckoutForm({
       }
     : null;
 
-  // The same five-field comparison the server uses to de-duplicate, so the
-  // "already saved" label cannot disagree with what saving will do.
-  const addrKey = (a: {
-    street?: string | null;
-    streetAddress?: string | null;
-    suburb?: string | null;
-    city?: string | null;
-    postalCode?: string | null;
-  }) =>
-    [a.street ?? a.streetAddress, a.suburb, a.city, a.postalCode]
-      .map((v) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase())
-      .join('|');
-  const matchingSavedAddress = addressComplete
-    ? savedAddresses.find((a) => addrKey(a) === addrKey(deliveryAddress))
-    : undefined;
-  const showDefaultPrompt =
-    addressComplete && (!matchingSavedAddress || !matchingSavedAddress.isDefault);
-
-  // Profile-default summary (operator, 2026-11-25): the resting state is the
-  // profile address + one control to change it. `profileHasAddress` decides
-  // summary vs editor; a partial profile address is still shown, flagged
-  // `incomplete`, so the amber warning is reachable before Pay.
-  const profileHasAddress = Boolean(
-    profile?.addrStreet?.trim() ||
-      profile?.addrSuburb?.trim() ||
-      profile?.addrCity?.trim() ||
-      profile?.addrPostalCode?.trim(),
+  // One-line summary for the collapsed address row. A half-filled address is
+  // still shown, flagged `incomplete`, so the amber warning is reachable
+  // before Pay; the drawer is how it gets fixed.
+  const hasDeliveryAddress = Boolean(
+    deliveryAddress.streetAddress.trim() || deliveryAddress.city.trim(),
   );
-  const profileAddressIncomplete = Boolean(
-    profile &&
-      (!profile.addrStreet?.trim() ||
-        !profile.addrSuburb?.trim() ||
-        !profile.addrCity?.trim() ||
-        (profile.addrPostalCode ?? '').trim().length < 4),
-  );
-  const effectiveAddressKey = addrKey(deliveryAddress);
-  const profileAddressKey = addrKey({
-    street: profile?.addrStreet ?? '',
-    suburb: profile?.addrSuburb ?? '',
-    city: profile?.addrCity ?? '',
-    postalCode: profile?.addrPostalCode ?? '',
-  });
-  const summaryMatchesProfile =
-    profileHasAddress &&
-    !!effectiveAddressKey &&
-    effectiveAddressKey === profileAddressKey;
   const summaryAddress = [
     deliveryAddress.streetAddress,
     deliveryAddress.suburb,
@@ -407,6 +380,11 @@ export function OfferCheckoutForm({
   ]
     .filter((v) => v.trim())
     .join(', ');
+  const summaryIncomplete =
+    addressComplete === false &&
+    (deliveryAddress.streetAddress.trim().length > 0 ||
+      deliveryAddress.suburb.trim().length > 0 ||
+      deliveryAddress.city.trim().length > 0);
 
   // A price quoted against the old address must never survive an edit.
   useEffect(() => {
@@ -436,21 +414,17 @@ export function OfferCheckoutForm({
       listingId,
       offerId,
       shippingMethod: effectiveMethod,
-      // Locks the refund + payout to the rail that received the money.
-      paymentProvider,
+      // Locks the refund + payout to the rail that received the money. Only
+      // sent when the server actually returned one.
+      ...(paymentProvider ? { paymentProvider } : {}),
     };
     if (isCourier) {
       // The address rides on the courier line. The server re-quotes this leg
       // at Pay, so the address the rate was priced against must go with it.
+      // Saved-address writes happen in the drawer; checkout does not re-save.
       return {
         ...base,
         deliveryAddress: deliveryAddress,
-        // Remember the address; the server de-duplicates and enforces one
-        // default. Saving is opt-out via the checkbox above.
-        saveDeliveryAddress: saveAddressToBook,
-        ...(saveAddressToBook && makeAddressDefault
-          ? { makeDeliveryAddressDefault: true }
-          : {}),
         deliveryOption: deliveryOption?.kind,
         ...(deliveryOption?.kind === 'STORE_PICKUP'
           ? { pickupPointLocationId: deliveryOption.pickupPointLocationId }
@@ -469,15 +443,16 @@ export function OfferCheckoutForm({
   }
 
   function isReady() {
+    // No enabled rail (Peach-only launch state, or the read failed) means Pay
+    // stays disabled — never a fabricated default rail.
+    if (paymentLoading || paymentProvider == null || paymentMethods.length === 0) {
+      return false;
+    }
     if (method === 'COURIER') {
       // Not "an address exists" - a CHOSEN, PRICED option. Otherwise the
       // buyer can reach Pay without us knowing what delivery costs.
-      return !!(
-        addressComplete &&
-        deliveryAddress.contactName &&
-        deliveryAddress.contactPhone &&
-        deliveryOption
-      );
+      return !!(addressComplete &&
+        deliveryOption);
     }
     if (method === 'DEALER_TRANSFER') return true;
     if (method === 'PRIVATE_ARRANGE') return true;
@@ -621,139 +596,31 @@ export function OfferCheckoutForm({
       {method === 'COURIER' && (
         <div className="space-y-3">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Delivery address</p>
-          {!profileLoaded ? (
+          {(actionToken ? !profileLoaded : !addressBookLoaded) &&
+          !hasDeliveryAddress ? (
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               Loading your address…
             </p>
-          ) : profileHasAddress ? (
+          ) : (
             <DeliveryAddressSummary
               label={
-                summaryMatchesProfile
-                  ? 'Deliver to my default address'
-                  : 'Deliver to'
+                hasDeliveryAddress ? 'Delivery to' : 'Select Delivery Address'
               }
-              address={summaryAddress}
-              incomplete={summaryMatchesProfile && profileAddressIncomplete}
+              address={hasDeliveryAddress ? summaryAddress : ''}
+              incomplete={hasDeliveryAddress && summaryIncomplete}
+              changeLabel={hasDeliveryAddress ? 'Change' : 'Select'}
               buttonRef={addressTriggerRef}
               onChange={() => setAddressDialogOpen(true)}
             />
-          ) : (
-            <div
-              className="rounded-[6px] p-3 space-y-3"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '1px solid var(--border-visible)',
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p
-                  className="text-xs uppercase"
-                  style={{
-                    color: 'var(--text-tertiary)',
-                    letterSpacing: '0.08em',
-                    fontWeight: 600,
-                  }}
-                >
-                  Your delivery address
-                </p>
-              </div>
-              {/* UX-3 — saved-address picker (2+ book addresses only). Picking
-                  one fills the same fields. Only reached when the member has no
-                  profile address yet; once one exists the summary row opens the
-                  address window instead. */}
-              <SavedAddressPicker minToShow={1} onSelect={applyAddressToOrder} />
-              <div className="grid grid-cols-1 gap-3">
-            {(
-              [
-                ['streetAddress', 'Street address'],
-                ['suburb', 'Suburb'],
-                ['city', 'City'],
-              ] as [keyof typeof deliveryAddress, string][]
-            ).map(([key, label]) => (
-              <Field key={key} label={label}>
-                <input
-                  type="text"
-                  required
-                  value={deliveryAddress[key]}
-                  onChange={(e) => setDeliveryAddress((a) => ({ ...a, [key]: e.target.value }))}
-                  style={inputStyle}
-                />
-              </Field>
-            ))}
-            {/* FLOW-F5 — province is required by the backend DTO; it was
-                missing entirely, so every courier offer 400'd. */}
-            <Field label="Province">
-              <select
-                value={deliveryAddress.province}
-                onChange={(e) => setDeliveryAddress((a) => ({ ...a, province: e.target.value }))}
-                style={inputStyle}
-              >
-                <option value="">Select a province…</option>
-                {SA_PROVINCES.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {(
-              [
-                ['postalCode', 'Postal code'],
-                ['contactName', 'Full name'],
-                ['contactPhone', 'Phone number'],
-              ] as [keyof typeof deliveryAddress, string][]
-            ).map(([key, label]) => (
-              <Field key={key} label={label}>
-                <input
-                  type="text"
-                  required
-                  value={deliveryAddress[key]}
-                  onChange={(e) => setDeliveryAddress((a) => ({ ...a, [key]: e.target.value }))}
-                  style={inputStyle}
-                />
-              </Field>
-            ))}
-          </div>
-
-          {/* Offer this address to the address book, and ask the only question
-              worth asking: should it be the default? */}
-          {addressComplete && (
-            <div className="space-y-2">
-              <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={saveAddressToBook}
-                  onChange={(e) => setSaveAddressToBook(e.target.checked)}
-                  style={{ marginTop: 2 }}
-                />
-                <span>
-                  {matchingSavedAddress
-                    ? 'This address is already saved'
-                    : 'Save this address to my address book'}
-                </span>
-              </label>
-              {saveAddressToBook && showDefaultPrompt && (
-                <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={makeAddressDefault}
-                    onChange={(e) => setMakeAddressDefault(e.target.checked)}
-                    style={{ marginTop: 2 }}
-                  />
-                  <span>Make this my default delivery address</span>
-                </label>
-              )}
-            </div>
-          )}
-            </div>
           )}
 
-          {/* Door rate for this parcel + address. The buyer is never asked to
-              choose a carrier, and the same component serves the Marketplace
-              checkout, so the two cannot drift. */}
+          {/* Door rate for this parcel + address, presented as the same
+              delivery-date cards the single-item checkout uses. The buyer is
+              never asked to choose a carrier, and the same component serves
+              both checkouts, so the two cannot drift. */}
           <div className="pt-1">
             <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-              Shipping
+              Delivery date &amp; time
             </p>
             <DeliveryOptionsPicker
               listingId={listingId}
@@ -765,9 +632,9 @@ export function OfferCheckoutForm({
         </div>
       )}
 
-      {/* The address WINDOW (2026-11-26). Choosing a row applies it to the
-          same `deliveryAddress` state the typed editor always wrote, so the
-          quote is invalidated and re-priced by the existing effect above. */}
+      {/* The address DRAWER. A pick/edit/delete here writes the same
+          `deliveryAddress` state above, so the quote is invalidated and
+          re-priced by the existing effect. */}
       {method === 'COURIER' && addressDialogOpen && (
         <DeliveryAddressDialog
           returnFocusTo={addressTriggerRef.current}
@@ -780,14 +647,24 @@ export function OfferCheckoutForm({
             postalCode: deliveryAddress.postalCode,
             province: deliveryAddress.province as ManualAddressValue['province'],
           }}
+          selectedAddressId={selectedAddressId}
+          recipient={{
+            name:
+              [profile?.firstName, profile?.lastName]
+                .filter(Boolean)
+                .join(' ')
+                .trim() || null,
+            phone: profile?.phone ?? null,
+          }}
           // This form has never priced off coordinates — the quote and payload
           // use the five address fields only, so coords are optional here.
           requireCoords={false}
           canSaveToBook={!actionToken}
           getToken={getToken}
           onClose={() => setAddressDialogOpen(false)}
-          onSelect={applyAddressToOrder}
+          onSelect={applySavedAddress}
           onUseOnce={applyTypedAddressToOrder}
+          onAddressesChanged={handleAddressesChanged}
         />
       )}
 
@@ -874,12 +751,23 @@ export function OfferCheckoutForm({
         )}
       </div>
 
-      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      {/* UX-8 — payment-method section shell. The server decides the enabled
+          rails; with none (or a failed read) Pay stays disabled and we say so. */}
       <PaymentMethodSection
         methods={paymentMethods}
         value={paymentProvider}
         onChange={setPaymentProvider}
       />
+      {!paymentLoading &&
+        (paymentProvider == null || paymentMethods.length === 0) && (
+          <p
+            className="text-xs"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            Card payments are temporarily unavailable — please try again
+            shortly.
+          </p>
+        )}
 
       <button
         type="button"

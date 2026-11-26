@@ -123,6 +123,31 @@ describe('ShippingService.bookForTransaction', () => {
     );
   });
 
+  it('forwards the buyer’s delivery instructions to Bob Go', async () => {
+    const { svc, bobgo } = makeService({
+      tx: { ...TX, deliveryInstructions: 'Leave at reception, ring twice' },
+    });
+    (bobgo.createShipment as jest.Mock).mockResolvedValue(BOOKED);
+
+    await svc.bookForTransaction('TX1');
+
+    expect(bobgo.createShipment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructionsDelivery: 'Leave at reception, ring twice',
+      }),
+    );
+  });
+
+  it('omits delivery instructions when the row has none', async () => {
+    const { svc, bobgo } = makeService({ tx: { ...TX, deliveryInstructions: null } });
+    (bobgo.createShipment as jest.Mock).mockResolvedValue(BOOKED);
+
+    await svc.bookForTransaction('TX1');
+
+    const sent = (bobgo.createShipment as jest.Mock).mock.calls[0][0];
+    expect(sent.instructionsDelivery).toBeUndefined();
+  });
+
   it('is idempotent: a lost claim (count 0) books nothing', async () => {
     const { svc, bobgo } = makeService({ claimCount: 0, tx: TX });
     const res = await svc.bookForTransaction('TX1');

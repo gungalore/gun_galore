@@ -1316,6 +1316,10 @@ export class ShippingService {
         providerSlug: tx.shippingProviderSlug,
         serviceLevelCode: tx.shippingServiceLevelCode,
         customerReference: transactionId,
+        // Buyer's checkout instructions for the courier's delivery label
+        // (Bob Go `instructions_delivery`). Null on rows created before the
+        // field existed and on every non-courier sale — omitted, not ''.
+        instructionsDelivery: tx.deliveryInstructions ?? undefined,
         collectionMinDate: tx.collectionNotBeforeAt
           ? collectionMinDateFromDate(tx.collectionNotBeforeAt)
           : undefined,

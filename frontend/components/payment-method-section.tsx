@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type {
   PaymentMethodOption,
   PaymentProvider,
@@ -24,6 +25,21 @@ function EftIcon() {
   );
 }
 
+function MethodIcon({ provider }: { provider: PaymentProvider }) {
+  return provider === 'PEACH' ? <CardIcon /> : <EftIcon />;
+}
+
+/**
+ * Payment method block.
+ *
+ * Takealot-style: the buyer first sees the rail that will be used as a
+ * compact review row. When the server offers MORE THAN ONE rail a Change
+ * control expands the real radio cards; with exactly one enabled rail (the
+ * Peach-only launch state) there is nothing to choose, so no Change control is
+ * rendered at all — just the selected row.
+ *
+ * Presentational only: the host owns the selected provider and the payload.
+ */
 export function PaymentMethodSection({
   methods,
   value,
@@ -31,63 +47,125 @@ export function PaymentMethodSection({
   disabled = false,
 }: {
   methods: PaymentMethodOption[];
-  value: PaymentProvider;
+  value: PaymentProvider | null;
   onChange: (provider: PaymentProvider) => void;
   disabled?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (methods.length === 0) return null;
+
+  const selected = methods.find((m) => m.provider === value) ?? methods[0];
+  const multiple = methods.length > 1;
+  const showCards = multiple && expanded && !disabled;
 
   return (
     <div className="mb-3">
       <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
         Payment method
       </p>
-      <div className="space-y-2">
-        {methods.map((method) => {
-          const selected = method.provider === value;
-          return (
-            <label
-              key={method.provider}
-              className="flex gap-3 items-start rounded-[8px] p-4 cursor-pointer"
-              style={{
-                background: selected
-                  ? 'var(--action-option-selected-bg)'
-                  : 'transparent',
-                border: `1.5px solid ${
-                  selected
-                    ? 'var(--action-option-selected-edge)'
-                    : 'var(--action-option-edge)'
-                }`,
-                color: selected
-                  ? 'var(--action-option-selected-ink)'
-                  : 'var(--text-primary)',
-                opacity: disabled ? 0.6 : 1,
-              }}
-            >
-              <input
-                type="radio"
-                name="payment-provider"
-                value={method.provider}
-                checked={selected}
-                disabled={disabled}
-                onChange={() => onChange(method.provider)}
-                className="mt-0.5"
-              />
-              <span style={{ flexShrink: 0, color: 'var(--text-tertiary)' }}>
-                {method.provider === 'PEACH' ? <CardIcon /> : <EftIcon />}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {method.label}
-                </span>
-                <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                  {method.description}
-                </span>
-              </span>
-            </label>
-          );
-        })}
+
+      {/* Selected-rail review row — always visible, one row for one rail. */}
+      <div
+        className="flex items-start gap-3 rounded-[8px] p-4"
+        style={{
+          background: 'var(--action-option-selected-bg)',
+          border: '1.5px solid var(--action-option-selected-edge)',
+          color: 'var(--action-option-selected-ink)',
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        <span style={{ flexShrink: 0, color: 'var(--text-tertiary)' }}>
+          <MethodIcon provider={selected.provider} />
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span
+            className="block text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            {selected.label}
+          </span>
+          <span
+            className="block text-xs"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            {selected.description}
+          </span>
+        </span>
+        {multiple && !disabled && (
+          <button
+            type="button"
+            onClick={() => setExpanded((open) => !open)}
+            aria-expanded={showCards}
+            className="flex-shrink-0 px-3 py-2 rounded-[6px] text-xs"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border-visible)',
+              color: 'var(--text-primary)',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {showCards ? 'Done' : 'Change'}
+          </button>
+        )}
       </div>
+
+      {/* Expanded choice — only when the server offers 2+ rails. */}
+      {showCards && (
+        <div className="space-y-2 mt-2">
+          {methods.map((method) => {
+            const active = method.provider === selected.provider;
+            return (
+              <label
+                key={method.provider}
+                className="flex gap-3 items-start rounded-[8px] p-4 cursor-pointer"
+                style={{
+                  background: active
+                    ? 'var(--action-option-selected-bg)'
+                    : 'transparent',
+                  border: `1.5px solid ${
+                    active
+                      ? 'var(--action-option-selected-edge)'
+                      : 'var(--action-option-edge)'
+                  }`,
+                  color: active
+                    ? 'var(--action-option-selected-ink)'
+                    : 'var(--text-primary)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="payment-provider"
+                  value={method.provider}
+                  checked={active}
+                  onChange={() => {
+                    onChange(method.provider);
+                    setExpanded(false);
+                  }}
+                  className="mt-0.5"
+                />
+                <span style={{ flexShrink: 0, color: 'var(--text-tertiary)' }}>
+                  <MethodIcon provider={method.provider} />
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span
+                    className="block text-sm"
+                    style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                  >
+                    {method.label}
+                  </span>
+                  <span
+                    className="block text-xs"
+                    style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                  >
+                    {method.description}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

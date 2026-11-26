@@ -1,11 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { serverAuth as auth } from '../../../lib/auth-server';
 import { apiFetch } from '@/lib/api';
 import { Listing, CheckoutHold } from '@/lib/types';
-import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
 import { CheckoutForm } from './checkout-form';
+import { CheckoutProgress } from '@/components/checkout-progress';
 
 /**
  * Read the listing this checkout is for.
@@ -62,10 +61,10 @@ export default async function CheckoutPage({
   searchParams,
 }: {
   params: Promise<{ listingId: string }>;
-  searchParams: Promise<{ t?: string }>;
+  searchParams: Promise<{ t?: string; from?: string }>;
 }) {
   const { listingId } = await params;
-  const { t: actionToken } = await searchParams;
+  const { t: actionToken, from } = await searchParams;
 
   // Members-only stock (firearms) 404s for anonymous callers, so the buyer's
   // session token MUST be forwarded or every firearm Marketplace dead-ends on
@@ -151,112 +150,47 @@ export default async function CheckoutPage({
     ? { ...listing, price: listing.currentBid ?? listing.price }
     : listing;
 
+  // Back link context: the cart links here with ?from=cart (its
+  // "buy this item on its own" escape for a collection-only line), so that is
+  // the only case where "Back to cart" is literally true. Everything else —
+  // a listing, a winner's SMS/token link — goes back to the listing.
+  const backHref =
+    from === 'cart' && !actionToken ? '/cart' : `/listings/${listing.id}`;
+  const backLabel =
+    from === 'cart' && !actionToken ? 'Back to cart' : 'Back to listing';
+
   return (
-    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
-      <Link href={`/listings/${listing.id}`} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
-        ← Back to listing
+    <main className="max-w-[var(--content-max)] mx-auto px-4 py-6">
+      <Link
+        href={backHref}
+        className="text-sm inline-block mb-4"
+        style={{ color: 'var(--text-tertiary)' }}
+      >
+        ← {backLabel}
       </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 items-start">
-        {/* Left: listing summary */}
-        <div
-          className="rounded-[8px] p-5"
-          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-        >
-          <h2 className="text-xs uppercase mb-4" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-            You&apos;re buying
-          </h2>
+      <h1
+        className="text-xl font-medium mb-1"
+        style={{ color: 'var(--text-primary)' }}
+      >
+        Checkout
+      </h1>
+      <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+        Review how your item arrives, then pay securely.
+      </p>
 
-          <div className="flex gap-4">
-            {listing.images[0] && (
-              <Image
-                src={listing.images.find((i) => i.isPrimary)?.url ?? listing.images[0].url}
-                alt={listing.title}
-                width={80}
-                height={80}
-                sizes="80px"
-                className="w-20 h-20 rounded-[6px] object-cover flex-shrink-0"
-                style={{ background: 'var(--bg-inset)' }}
-              />
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-medium leading-snug mb-1" style={{ color: 'var(--text-primary)' }}>
-                {listing.title}
-              </p>
-              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-                {CONDITION_LABELS[listing.condition]} · {listing.category.name}
-              </p>
-              <p className="text-lg font-medium" style={{ color: 'var(--red)' }}>
-                {effectiveListing.price
-                  ? formatPrice(effectiveListing.price)
-                  : 'Make an offer'}
-              </p>
-              {isAuctionWin && (
-                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  Auction payment — the winning bidder must complete payment
-                  within the auction’s payment window.
-                </p>
-              )}
-            </div>
-          </div>
+      <CheckoutProgress current={1} />
 
-          {(listing.make || listing.model || listing.calibre) && (
-            <dl className="mt-4 pt-4 space-y-1 text-sm" style={{ borderTop: '0.5px solid var(--border-divider)' }}>
-              {listing.make && (
-                <div className="flex justify-between">
-                  <dt style={{ color: 'var(--text-tertiary)' }}>Make</dt>
-                  <dd style={{ color: 'var(--text-primary)' }}>{listing.make}</dd>
-                </div>
-              )}
-              {listing.model && (
-                <div className="flex justify-between">
-                  <dt style={{ color: 'var(--text-tertiary)' }}>Model</dt>
-                  <dd style={{ color: 'var(--text-primary)' }}>{listing.model}</dd>
-                </div>
-              )}
-              {listing.calibre && (
-                <div className="flex justify-between">
-                  <dt style={{ color: 'var(--text-tertiary)' }}>Calibre</dt>
-                  <dd style={{ color: 'var(--text-primary)' }}>{listing.calibre}</dd>
-                </div>
-              )}
-            </dl>
-          )}
-
-          <div className="mt-4 pt-4 text-sm" style={{ borderTop: '0.5px solid var(--border-divider)' }}>
-            <div className="flex items-center justify-between">
-              <span style={{ color: 'var(--text-tertiary)' }}>Seller</span>
-              <span style={{ color: 'var(--text-primary)' }}>
-                {/* Platform policy — public-facing surfaces show the
-                    seller's username only, no @ prefix, never the
-                    real name. */}
-                {listing.seller.username ?? 'Anonymous seller'}
-              </span>
-            </div>
-          </div>
-
-          {/* Big-4 copy interim: the "collect in person OR send a transporter"
-              framing now lives in the checkout form's own Collection panel
-              (checkout-form.tsx), gated on the same getCollectionMode check.
-              Saying it in both columns of one page just reads as repetition. */}
-        </div>
-
-        {/* Right: checkout form */}
-        <div
-          className="rounded-[8px] p-5"
-          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-        >
-          <h1 className="text-base font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
-            Checkout
-          </h1>
-          <CheckoutForm
-            listing={effectiveListing}
-            initialHold={initialHold}
-            holdIncludedInListing={initialHold != null}
-            unpaidTransactionId={unpaidTransactionId}
-          />
-        </div>
-      </div>
+      {/* ONE form owns the whole review layout: the left review column and the
+          sticky order summary/CTA are the same state, so the price beside the
+          button is always the price the payload will submit. The listing card
+          that used to sit outside the form now lives inside the summary. */}
+      <CheckoutForm
+        listing={effectiveListing}
+        initialHold={initialHold}
+        holdIncludedInListing={initialHold != null}
+        unpaidTransactionId={unpaidTransactionId}
+      />
     </main>
   );
 }

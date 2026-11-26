@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SUPPORT_EMAIL } from '@/lib/brand';
+import { CheckoutProgress } from '@/components/checkout-progress';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -277,6 +278,10 @@ function CheckoutCompleteInner() {
 export default function CheckoutCompletePage() {
   return (
     <main className="max-w-[400px] mx-auto px-4 py-20 text-center">
+      {/* Step 2 of 2. The gateway's hosted payment page sits BETWEEN these two
+          steps and is not ours to render — so the progress rail never invents
+          a local payment step. */}
+      <CheckoutProgress current={2} />
       <Suspense
         fallback={
           <div

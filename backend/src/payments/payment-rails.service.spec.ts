@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
 import { PaymentRailsService } from './payment-rails.service';
 import { FLAGS } from '../settings/settings.service';
@@ -95,7 +96,24 @@ function makeService(opts?: {
 }
 
 describe('PaymentRailsService', () => {
-  it('always offers Ozow, and Peach only when configured and flagged on', async () => {
+  // The temporary CHECKOUT_PAYIN_PROVIDERS switch is process-wide env, so every
+  // case clears it and each case that needs a value sets it explicitly.
+  const ORIGINAL_ALLOWLIST = process.env.CHECKOUT_PAYIN_PROVIDERS;
+
+  beforeEach(() => {
+    delete process.env.CHECKOUT_PAYIN_PROVIDERS;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_ALLOWLIST === undefined) {
+      delete process.env.CHECKOUT_PAYIN_PROVIDERS;
+    } else {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = ORIGINAL_ALLOWLIST;
+    }
+  });
+
+  it('offers Ozow and Peach by default, Peach only when configured and flagged on', async () => {
+    // Env unset = the historical both-rails default.
     const off = makeService({ peachConfigured: true, peachPayin: false });
     expect(
       (await off.service.enabledPayInMethods()).map((m) => m.provider),
@@ -106,6 +124,128 @@ describe('PaymentRailsService', () => {
       (await on.service.enabledPayInMethods()).map((m) => m.provider),
     ).toEqual([PaymentProvider.OZOW, PaymentProvider.PEACH]);
   });
+
+  it('uses the updated Peach card copy and keeps the Ozow copy', async () => {
+    const { service } = makeService({
+      peachConfigured: true,
+      peachPayin: true,
+    });
+    expect(await service.enabledPayInMethods()).toEqual([
+      {
+        provider: PaymentProvider.OZOW,
+        label: 'Instant EFT',
+        description: 'Pay securely from your bank account via Ozow.',
+      },
+      {
+        provider: PaymentProvider.PEACH,
+        label: 'Credit & Debit Card',
+        description: 'Pay securely with your debit or credit card via Peach.',
+      },
+    ]);
+  });
+
+  describe('CHECKOUT_PAYIN_PROVIDERS allowlist', () => {
+    it('goes Peach-only for "peach" (case-insensitive) and refuses Ozow checkout', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'PeAcH';
+      const { service, peach } = makeService({
+        peachConfigured: true,
+        peachPayin: true,
+      });
+
+      expect(
+        (await service.enabledPayInMethods()).map((m) => m.provider),
+      ).toEqual([PaymentProvider.PEACH]);
+      expect(await service.isPayInEnabled(PaymentProvider.OZOW)).toBe(false);
+      await expect(
+        service.createCheckout(PaymentProvider.OZOW, {
+          amountZarCents: 5000,
+          merchantTransactionId: 'tx1',
+          returnUrl: 'https://app/checkout/complete',
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      // The enabled Peach rail still works.
+      expect(await service.isPayInEnabled(PaymentProvider.PEACH)).toBe(true);
+      await service.createCheckout(PaymentProvider.PEACH, {
+        amountZarCents: 5000,
+        merchantTransactionId: 'tx2',
+        returnUrl: 'https://app/checkout/complete',
+      });
+      expect(peach.createCheckout).toHaveBeenCalled();
+    });
+
+    it('offers NO methods when Peach is requested but not usable', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'peach';
+
+      // Peach asked for, flag off.
+      const flagOff = makeService({ peachConfigured: true, peachPayin: false });
+      expect(await flagOff.service.enabledPayInMethods()).toEqual([]);
+
+      // Peach asked for, flag on but the gateway is not configured.
+      const notConfigured = makeService({
+        peachConfigured: false,
+        peachPayin: true,
+      });
+      expect(await notConfigured.service.enabledPayInMethods()).toEqual([]);
+    });
+
+    it('enables NO rails (and does not fall back to Ozow) when every token is unknown', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'stripe,payfast';
+      const { service } = makeService({
+        peachConfigured: true,
+        peachPayin: true,
+      });
+
+      expect(await service.enabledPayInMethods()).toEqual([]);
+      expect(await service.isPayInEnabled(PaymentProvider.OZOW)).toBe(false);
+      expect(await service.isPayInEnabled(PaymentProvider.PEACH)).toBe(false);
+    });
+
+    it('ignores unknown tokens but keeps the recognised ones', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'stripe, OZOW';
+      const { service } = makeService();
+      expect(
+        (await service.enabledPayInMethods()).map((m) => m.provider),
+      ).toEqual([PaymentProvider.OZOW]);
+    });
+
+    it('returns enabled rails in the order the operator listed them', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'peach,ozow';
+      const { service } = makeService({
+        peachConfigured: true,
+        peachPayin: true,
+      });
+      expect(
+        (await service.enabledPayInMethods()).map((m) => m.provider),
+      ).toEqual([PaymentProvider.PEACH, PaymentProvider.OZOW]);
+    });
+
+    it('treats an empty value as the both-rails default', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = '   ';
+      const { service } = makeService({
+        peachConfigured: true,
+        peachPayin: true,
+      });
+      expect(
+        (await service.enabledPayInMethods()).map((m) => m.provider),
+      ).toEqual([PaymentProvider.OZOW, PaymentProvider.PEACH]);
+    });
+
+    it('keeps Ozow payouts and refund routing despite a Peach-only pay-in switch', async () => {
+      process.env.CHECKOUT_PAYIN_PROVIDERS = 'peach';
+      const { service, ozow } = makeService({
+        peachConfigured: true,
+        peachPayin: true,
+        peachPayouts: true,
+      });
+
+      // Historical Ozow money must still settle + refund through Ozow.
+      expect(await service.isPayoutEnabled(PaymentProvider.OZOW)).toBe(true);
+      const refund = await service.refund(PaymentProvider.OZOW, 'ozow-tx', 100);
+      expect(refund.success).toBe(true);
+      expect(ozow.refundPayment).toHaveBeenCalledWith('ozow-tx', 100);
+    });
+  });
+
 
   it('routes checkout creation to the selected adapter', async () => {
     const { service, ozow, peach } = makeService({
