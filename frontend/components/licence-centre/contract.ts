@@ -343,7 +343,24 @@ export interface SheetResponse {
   documents: SheetDocument[];
   /** What the pack still wants, by tier. Separate from `documents`. */
   needs: {
-    needs: { kind: string; label: string; tier: string; why: string; have: boolean }[];
+    needs: {
+      kind: string;
+      label: string;
+      tier: string;
+      why: string;
+      have: boolean;
+      /**
+       * How many files the row wants, and how many it already has.
+       *
+       * ⚠️ THE LICENCE ROW IS PER-FIREARM. A print-ready pack wants one photo or
+       * scan per firearm the member owns, so the review screen reads this pair
+       * to say "3 of 6 licence cards added". Gating stays `have` — the server
+       * decides whether the pack can be written.
+       */
+      minFiles?: number;
+      minFilesNote?: string;
+      haveFiles?: number;
+    }[];
     /**
      * Required kinds with nothing attached. The generation gate refuses on
      * these, so the sheet must count them too — `sections[].missing` only

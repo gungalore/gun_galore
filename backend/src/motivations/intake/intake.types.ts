@@ -2,6 +2,7 @@ import type { MotivationLicenceType } from '@prisma/client';
 import type { EvidenceGroup } from '../evidence-taxonomy';
 import type { MotivationOutputMode } from '../motivation-output';
 import type { DetailGap } from '../motivation-completeness';
+import type { OwnedFirearmFact } from '../motivation-fields';
 
 export type IntakeMode = 'DOCUMENTS' | 'INTERVIEW';
 
@@ -128,6 +129,14 @@ export interface IntakeDocumentNeed {
   have: boolean;
   minFiles?: number;
   minFilesNote?: string;
+  /**
+   * How many files of this kind are attached.
+   *
+   * ⚠️ SERVED SO THE SCREEN CAN SAY "3 of 6". The owned-firearm licence row now
+   * wants one photograph PER firearm, and "still needed" alone cannot tell a
+   * member who has five of six whether to look for the last one or start over.
+   */
+  haveFiles?: number;
 }
 
 export type IntakeTopicId =
@@ -171,6 +180,14 @@ export interface IntakeGroup {
   /** Every visible field in this category, answered or not. */
   totalInGroup: number;
   questions: IntakeQuestion[];
+  /**
+   * The owned firearm this card is about, 1-based, when the card is one row of
+   * the "Firearms you already hold" table. `title` then reads "Firearm n of
+   * total", and `ownedTotal` is the effective number of firearms on the
+   * application. Absent on every other topic.
+   */
+  ownedIndex?: number;
+  ownedTotal?: number;
 }
 
 export interface IntakeState {
@@ -231,6 +248,25 @@ export interface IntakeState {
   question: IntakeQuestion | null;
   /** One-sentence acknowledgement of the answer just given. */
   acknowledgement?: string;
+  /**
+   * The firearms the application says the member already holds, one entry per
+   * firearm, read through `ownedGate()`.
+   *
+   * ⚠️ IT IS THE "TELL THEM WHAT WE SEE" PAYLOAD. A vault or upload fills the
+   * rows without asking anything; the interview then asks the member to confirm
+   * the count and to complete only the facts we could not find. The same rows
+   * are what the review sheet lists, so the two cannot disagree.
+   */
+  ownedFirearms: OwnedFirearmFact[];
+  /**
+   * True once the member pressed finish (`intakeCompletedAt` set).
+   *
+   * ⚠️ RESUMABILITY IS A ROUTE DECISION, SO IT IS SERVED. `stage === 'REVIEW'`
+   * with `completed: false` means the interview has run out of cards but the
+   * member never finished it — the screen must keep it resumable instead of
+   * bouncing them to the pack.
+   */
+  completed: boolean;
   /**
    * True while the narrative answers are being drafted from the file.
    *

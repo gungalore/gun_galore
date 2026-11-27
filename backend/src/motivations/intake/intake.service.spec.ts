@@ -324,6 +324,49 @@ describe('the species advisory follows the chosen cartridge', () => {
   });
 });
 
+describe('state() reports the owned firearms and whether the intake is finished', () => {
+  const stateInternal = async (h: {
+    svc: MotivationIntakeService;
+  }): Promise<IntakeState> =>
+    (
+      h.svc as unknown as {
+        stateInternal: (u: string, i: string) => Promise<IntakeState>;
+      }
+    ).stateInternal('user-1', 'mo-1');
+
+  it('serves one line per firearm we can see, placeholders removed', async () => {
+    const h = harness({
+      answers: {
+        existing_firearm_1_make: 'Marlin',
+        existing_firearm_1_model: 'NONE',
+        existing_firearm_1_calibre: '.45-70 Government',
+        existing_firearm_1_serial: 'MR90189D',
+      },
+    });
+    const state = await stateInternal(h);
+    expect(state.ownedFirearms).toEqual([
+      {
+        index: 1,
+        make: 'Marlin',
+        model: '',
+        calibre: '.45-70 Government',
+        serial: 'MR90189D',
+      },
+    ]);
+  });
+
+  it('marks completed only once the member pressed finish', async () => {
+    const open = harness({ answers: {}, intakeCompletedAt: null });
+    expect((await stateInternal(open)).completed).toBe(false);
+
+    const finished = harness({
+      answers: {},
+      intakeCompletedAt: new Date(),
+    });
+    expect((await stateInternal(finished)).completed).toBe(true);
+  });
+});
+
 describe('state() drafts the narrative in the background', () => {
   it('fires the drafter and reports the drafting flag', async () => {
     // Only the narrative is missing: every factual gap the gate names is

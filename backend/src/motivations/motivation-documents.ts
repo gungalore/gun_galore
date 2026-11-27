@@ -1,9 +1,11 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   FIREARM_SOURCE_KEY,
+  OWNED_ROWS,
   SOURCE_DEALER,
   SOURCE_ESTATE,
   SOURCE_PRIVATE,
+  ownedGate,
 } from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
@@ -94,6 +96,15 @@ export interface DocumentNeed {
    * most easily lost by collapsing them.
    */
   minFilesNote?: string;
+  /**
+   * How many files of this kind are attached right now.
+   *
+   * ⚠️ "3 of 6" NEEDS BOTH NUMBERS. The owned-firearm licence row wants one
+   * photograph per firearm (see `minFiles` on the needs built below); telling a
+   * member "still needed" when they have five of six cannot distinguish
+   * "look for the last one" from "start again".
+   */
+  haveFiles?: number;
   /**
    * Offer the seller-consent flow on this row.
    *
@@ -552,10 +563,14 @@ export function documentStatus(
   //
   // A first-time applicant owns nothing and is never asked for one. Asking
   // everybody would be the same false demand as never asking anybody.
-  const ownsFirearms = Object.keys(answers).some(
-    (k) =>
-      /^existing_firearm_\d+_calibre$/.test(k) && (answers[k] ?? '').trim(),
-  );
+  //
+  // ⚠️ AND IT IS ONE LICENCE PER FIREARM (2026-11-27). The row used to be one
+  // file of kind CURRENT_LICENCE, which a vault application with six firearms
+  // could tick with a single photograph. `ownedGate` is the one reader of "do
+  // they own any, and how many": a Yes answer, a count, or the rows themselves.
+  const owned = ownedGate(answers);
+  const ownsFirearms = owned.has;
+  const ownedCount = Math.max(1, Math.min(owned.count, OWNED_ROWS));
   if (ownsFirearms && !required.includes('CURRENT_LICENCE')) {
     required.push('CURRENT_LICENCE');
   }
@@ -595,8 +610,17 @@ export function documentStatus(
   // the other two. Before 2026-08-23 that was enforced by three separate KINDS;
   // it is now enforced by counting files, which is weaker in theory and no
   // weaker in practice — see minFiles on DocumentNeed.
-  const minFilesFor = (kind: MotivationUploadKind): number =>
-    kind === 'SAFE_PHOTOGRAPHS' ? SAFE_PHOTO_MIN : 1;
+  const minFilesFor = (kind: MotivationUploadKind): number => {
+    if (kind === 'SAFE_PHOTOGRAPHS') return SAFE_PHOTO_MIN;
+    // ⚠️ ONE LICENCE PHOTOGRAPH PER FIREARM OWNED. A single photo cannot show
+    // six licence cards, and the pack must carry a licence for every firearm
+    // the SAPS 271 lists. Required only for the PRINT_READY pack — the
+    // motivation-only product ignores the document gate entirely (see the
+    // `&& !motivationOnly` in generation), so this never blocks a narrative-only
+    // order.
+    if (kind === 'CURRENT_LICENCE' && ownsFirearms) return ownedCount;
+    return 1;
+  };
   const satisfied = (kind: MotivationUploadKind): boolean =>
     (counts.get(kind) ?? 0) >= minFilesFor(kind);
 
@@ -619,10 +643,20 @@ export function documentStatus(
             ? sourceProofWhy(source)
             : (WHY[kind] ?? ''),
       have: satisfied(kind),
+      /** "3 of 6" — the count the screen shows beside a multi-file row. */
+      haveFiles: counts.get(kind) ?? 0,
       ...(kind === 'FIREARM_SOURCE_PROOF' && source === SOURCE_PRIVATE
         ? { sellerConsent: true as const }
         : {}),
-      ...(min > 1 ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE } : {}),
+      ...(min > 1
+        ? {
+            minFiles: min,
+            minFilesNote:
+              kind === 'CURRENT_LICENCE'
+                ? `One licence photo for each of the ${min} firearms you own.`
+                : SAFE_SHOTS_NOTE,
+          }
+        : {}),
     };
   };
 

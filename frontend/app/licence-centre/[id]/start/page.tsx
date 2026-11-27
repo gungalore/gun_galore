@@ -18,6 +18,7 @@ import BetaNotice from '@/components/licence-centre/beta-notice';
 import DocumentAddButtons, {
   type DocumentAddOutcome,
 } from '@/components/motivation/document-add-buttons';
+import { startRedirectFor } from '@/lib/intake-routing';
 
 const keyOf = (i: IntakeDocumentItem) => `${i.source}:${i.sourceId}`;
 
@@ -180,12 +181,15 @@ export default function IntakeStartPage() {
 
   useEffect(() => {
     if (!data) return;
-    if (data.stage === 'INTERVIEW') {
-      router.replace(`/licence-centre/${id}/interview`);
-      return;
-    }
-    if (data.stage === 'REVIEW') {
-      router.replace(`/licence-centre/${id}/pack`);
+    /**
+     * ⚠️ MID-INTERVIEW RESUMES IN THE INTERVIEW. This used to send a REVIEW-stage
+     * application to the pack screen; an unfinished one now returns to the
+     * interview, and only a finished one goes on to the review screen. See
+     * lib/intake-routing.ts, which the interview page shares.
+     */
+    const target = startRedirectFor(id, data.stage, data.completed);
+    if (target) {
+      router.replace(target);
       return;
     }
     setSelected((prev) => {

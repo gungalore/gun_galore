@@ -61,11 +61,25 @@ function answersExcept(...keep: string[]): Record<string, string> {
   const answers: Record<string, string> = {};
   for (const field of fieldsFor(TYPE)) {
     if (keep.includes(field.key)) continue;
+    /**
+     * ⚠️ THE OWNED-FIREARMS TABLE IS NOW ASKED BY THE WALK. Filling its columns
+     * with "x" would make `ownedGate` see a table full of firearms and hold the
+     * count pending for confirmation; this test is about a skip on the safe
+     * block, so the gate is answered No and the table stays closed.
+     */
+    if (
+      field.key === 'has_existing_firearms' ||
+      field.key === 'existing_firearm_count' ||
+      /^existing_firearm_/.test(field.key)
+    ) {
+      continue;
+    }
     answers[field.key] =
       field.key === 'shooting_history'
         ? Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ')
         : 'x';
   }
+  if (!keep.includes('has_existing_firearms')) answers.has_existing_firearms = 'No';
   // The safe follow-ups are showIf children of this one; keep the door open so
   // a required safe question is genuinely on the card.
   if (!keep.includes('safe_present')) answers.safe_present = 'Yes';

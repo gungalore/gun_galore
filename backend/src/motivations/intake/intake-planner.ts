@@ -1,10 +1,12 @@
 import type { MotivationLicenceType } from '@prisma/client';
 import {
   CASE_NOTE_KEYS,
+  OWNED_ASKED_COLUMNS,
   fieldByKey,
   fieldsFor,
   isSelfDefence,
   isVisible,
+  ownedGate,
   type MotivationField,
 } from '../motivation-fields';
 import { resolveSportingPurpose } from '../motivation-purpose';
@@ -165,6 +167,23 @@ function detailsFor(
     }));
 }
 
+/**
+ * Can this field be put on a card at all?
+ *
+ * ⚠️ ALMOST EVERYTHING IS JUST isVisible(), WITH ONE EXCEPTION. The firearm
+ * COUNT hangs off `has_existing_firearms = Yes` in the registry, and a vault or
+ * upload can give us rows without ever asking the gate. In that case the count
+ * is a CONFIRMATION of what we can already see and must be askable even though
+ * the stored gate answer is empty — the alternative is an application with
+ * licence cards it never asks the member to check.
+ */
+function canShow(field: MotivationField, answers: Record<string, string>): boolean {
+  if (field.key === 'existing_firearm_count' && ownedGate(answers).rows.length) {
+    return true;
+  }
+  return isVisible({ ...field, internal: undefined }, answers);
+}
+
 function visibleFields(
   type: MotivationLicenceType,
   strategy: IntakeStrategy,
@@ -235,7 +254,7 @@ function visibleFields(
      * in the registry and in the writer's fact pack. The interview is the door
      * they were kept for, so test their showIf clause without the hide flag.
      */
-    if (!isVisible({ ...field, internal: undefined }, answers)) continue;
+    if (!canShow(field, answers)) continue;
     out.push({ key, field });
   }
 
@@ -257,50 +276,41 @@ function visibleFields(
     if (!field.required || field.internal) continue;
     if (field.formOnly || field.key.startsWith('history_')) continue;
     if (SELF_DEFENCE_ONLY_KEYS.has(field.key) && !isSelfDefence(type)) continue;
-    if (!isVisible({ ...field, internal: undefined }, answers)) continue;
+    if (!canShow(field, answers)) continue;
     out.push({ key: field.key, field });
     covered.add(field.key);
   }
 
   /**
-   * ⚠️ THE OWNED-FIREARMS TABLE IS ASKED ONLY WHEN THE GATE SAYS YES.
+   * ⚠️ THE OWNED-FIREARMS TABLE IS ASKED FROM THE GATE WE CAN SEE, NOT ONLY
+   * FROM THE MEMBER'S ANSWER.
    *
-   * The registry has fourteen rows × eight columns for the SAPS 271, and none
-   * of them is required. Asking all of them would put a hundred questions on a
-   * first-time applicant who owns nothing. The gate and the count turn it into
-   * a short table: one row per firearm, six facts each, and only the rows the
-   * member said they have. The old review sheet still owns the rest.
+   * The table used to be added only when `has_existing_firearms === 'Yes'` and
+   * `existing_firearm_count` parsed. A vault/upload read fills the ROWS and
+   * never the gate, so those applications were asked nothing and either a
+   * half-read table reached the writer or the member was left to type it on the
+   * review sheet. `ownedGate()` is the one reader: any taken row (or a Yes
+   * answer) opens the table, and the count controls how many rows are put.
+   *
+   * Four facts per row, not six — the operator's own list is make, model,
+   * calibre and serial. `type` and `section_held` stay on the sheet and in the
+   * writer's pack.
    */
-  if ((answers.has_existing_firearms ?? '').trim() === 'Yes') {
-    const count = Number.parseInt(
-      (answers.existing_firearm_count ?? '').trim(),
-      10,
-    );
-    if (Number.isFinite(count) && count > 0) {
-      for (let n = 1; n <= Math.min(count, 14); n++) {
-        for (const column of OWNED_ASKED_COLUMNS) {
-          const key = `existing_firearm_${n}_${column}`;
-          if (covered.has(key)) continue;
-          const field = fieldByKey(type, key);
-          if (!field) continue;
-          out.push({ key, field });
-          covered.add(key);
-        }
+  const owned = ownedGate(answers);
+  if (owned.has && owned.count > 0) {
+    for (let n = 1; n <= owned.count; n += 1) {
+      for (const column of OWNED_ASKED_COLUMNS) {
+        const key = `existing_firearm_${n}_${column}`;
+        if (covered.has(key)) continue;
+        const field = fieldByKey(type, key);
+        if (!field) continue;
+        out.push({ key, field });
+        covered.add(key);
       }
     }
   }
   return out;
 }
-
-/** The six facts that make the owned table useful to the DFO and the writer. */
-const OWNED_ASKED_COLUMNS = [
-  'type',
-  'make',
-  'model',
-  'calibre',
-  'serial',
-  'section_held',
-] as const;
 
 export interface PlannerInput {
   type: MotivationLicenceType;
@@ -450,6 +460,23 @@ function buildQuestion(args: {
       : isPrimaryQuarry
         ? `What game or species do you intend to hunt with this ${calibre || 'firearm'}?`
         : field.label;
+  /**
+   * ⚠️ THE OWNED-FIREARMS COUNT IS WORDED FROM WHAT WE CAN SEE. When the vault
+   * or an upload already gave us rows, the member is confirming a number rather
+   * than inventing one: the label says how many we found, the help says we will
+   * ask about the rest, and the answer is prefilled below so confirming is one
+   * tap. A cold applicant, by contrast, has nothing to confirm.
+   */
+  const owned = key === 'existing_firearm_count' ? ownedGate(merged) : null;
+  const seenRows = owned?.rows.length ?? 0;
+  const countLabel =
+    seenRows > 0
+      ? `We can see ${seenRows} firearm${seenRows === 1 ? '' : 's'} on your documents. How many firearms do you own in total?`
+      : 'How many firearms do you own?';
+  const countHelp =
+    seenRows > 0
+      ? 'Add every firearm you own — we will ask for the make, model, calibre and serial of any we could not find.'
+      : field.help ?? '';
   const choices = mergeBriefChoices(
     field,
     baseChoices,
@@ -501,24 +528,38 @@ function buildQuestion(args: {
       value = stored;
     }
   }
+  /**
+   * ⚠️ A DERIVED COUNT ARRIVES PREFILLED FOR CONFIRMATION. The card asks the
+   * member to check a number we worked out from their own documents, so the
+   * number is already in the control and one tap (or the Continue button)
+   * confirms it. It is still pending until that confirmation is stamped MEMBER.
+   */
+  if (key === 'existing_firearm_count' && value === undefined && seenRows > 0) {
+    value = String(seenRows);
+  }
   return {
     id: key,
     fieldKey: key,
-    label: !sensitive && briefEntry?.question
-      ? briefEntry.question
-      : plainLabel,
+    label:
+      key === 'existing_firearm_count'
+        ? countLabel
+        : !sensitive && briefEntry?.question
+          ? briefEntry.question
+          : plainLabel,
     why: briefEntry?.why ?? '',
     help:
-      (huntClasses
-        ? `Tap every class that is true of this ${calibre}.`
-        : isPrimaryThreat
-          ? 'Select any options that fit your situation, or type your own.'
-          : isPrimaryQuarry
-            ? 'Select the game you intend to hunt, or type your own.'
-            : field.help) ??
-      (sensitive
-        ? 'This is typed here and never sent to the writing assistant.'
-        : ''),
+      key === 'existing_firearm_count'
+        ? countHelp
+        : (huntClasses
+            ? `Tap every class that is true of this ${calibre}.`
+            : isPrimaryThreat
+              ? 'Select any options that fit your situation, or type your own.'
+              : isPrimaryQuarry
+                ? 'Select the game you intend to hunt, or type your own.'
+                : field.help) ??
+          (sensitive
+            ? 'This is typed here and never sent to the writing assistant.'
+            : ''),
     kind: field.kind,
     choices,
     ...(details.length ? { details } : {}),
@@ -527,7 +568,13 @@ function buildQuestion(args: {
     customPlaceholder:
       field.kind === 'date' ? 'Choose a date' : 'Or type your own answer…',
     progress: { answered, total },
-    optional: field.required !== true,
+    /**
+     * ⚠️ THE OWNED GATE IS NOT SKIPPABLE. It is an optional registry field, and
+     * the card would otherwise offer "Skip this one" on the one question the
+     * operator said must be asked. The count is already required; this keeps the
+     * gate in the same pair.
+     */
+    optional: field.required !== true && key !== 'has_existing_firearms',
     ...(value !== undefined ? { value } : {}),
     ...(values !== undefined ? { values } : {}),
   };
@@ -553,12 +600,30 @@ function isPending(
    * ⚠️ A VAULT LICENCE IS THE ANSWER TO THE GATE. When the table already holds
    * a firearm, asking "do you already own any?" would make the member say yes
    * to facts we just read off their own card. The rows speak for themselves.
+   * (2026-11-27: read through `ownedGate`, so a count answer alone also means
+   * the gate is settled.)
    */
-  if (
-    key === 'has_existing_firearms' &&
-    Object.keys(merged).some((k) => k.startsWith('existing_firearm_'))
-  ) {
-    return false;
+  if (key === 'has_existing_firearms') {
+    return ownedGate(merged).rows.length === 0
+      ? valueOf(key, merged, items).trim() === ''
+      : false;
+  }
+  /**
+   * ⚠️ THE COUNT IS ASKED EVEN WHEN WE CAN DERIVE IT — AS A ONE-TAP CONFIRMATION.
+   *
+   * When rows exist (vault/upload), the count is prefilled from what we can see
+   * and stays pending until the member CONFIRMS it (provenance MEMBER). Without
+   * that, a vault application would be finished on facts the member never
+   * checked, and there would be no way for them to say "there are more". An
+   * increase creates the extra rows' questions; a decrease removes them.
+   */
+  if (key === 'existing_firearm_count') {
+    if (ownedGate(merged).rows.length) {
+      return provenance?.[key]?.source !== 'MEMBER';
+    }
+    // No rows: the registry's own showIf already hides it until the gate is
+    // Yes, and this keeps the ordinary "answered settles it" rule.
+    return valueOf(key, merged, items).trim() === '';
   }
   /**
    * ⚠️ THE CARTRIDGE IS ASKED ONLY WHEN THE SHEET SAID IT IS OUTSTANDING.
@@ -740,6 +805,19 @@ export interface PlannedGroup {
   /** Every visible field in this category, answered or not. */
   totalInGroup: number;
   questions: { key: string; field: MotivationField }[];
+  /**
+   * The owned firearm this card is about, 1-based, when the card is one row of
+   * the "Firearms you already hold" table.
+   *
+   * ⚠️ ONE FIREARM PER CARD (2026-11-27). The row facts used to be spread over
+   * as many cards as the cap allowed, which separated one firearm's serial from
+   * its own make; a vault applicant with six firearms also met a card holding
+   * fragments of three of them. When set, `title` is "Firearm n of total" and
+   * `questions` carry only that row's pending columns.
+   */
+  ownedIndex?: number;
+  /** How many firearms the application covers (the effective count). */
+  ownedTotal?: number;
 }
 
 /**
@@ -811,6 +889,24 @@ function askablePlan(
     if ((CASE_NOTE_KEYS as readonly string[]).includes(entry.key)) {
       return briefKeys.has(entry.key);
     }
+    /**
+     * ⚠️ THE OWNED-FIREARMS TABLE IS ASKED BY THIS FUNCTION, NOT BY THE GATE.
+     *
+     * None of these keys is required in the registry (`existing_firearm_count`
+     * is, but hidden behind the gate answer), and none is a detail-gate key, so
+     * `asked()` filtered every one of them out of the grouped interview — the
+     * member was never asked what they own, even after saying Yes. The gate and
+     * the count are always put to the member; the row facts (the four the
+     * operator named) are asked for the rows `visibleFields` has already built
+     * up to the count. `isPending` decides which of them still need an answer.
+     */
+    if (
+      entry.key === 'has_existing_firearms' ||
+      entry.key === 'existing_firearm_count' ||
+      /^existing_firearm_\d+_(make|model|calibre|serial)$/.test(entry.key)
+    ) {
+      return true;
+    }
     return (
       entry.field.required === true ||
       detailKeys.has(entry.key) ||
@@ -853,6 +949,13 @@ function countedInTopic(
       gap.code.slice(gap.code.indexOf(':') + 1),
     ),
   );
+  /**
+   * ⚠️ THE OWNED ROWS COUNT TOWARDS THEIR CARD'S PROGRESS. They are askable
+   * (see `askablePlan`) but none of them is registry-required or detail-gated,
+   * so a per-firearm card would have read "0 of 0 answered" above four
+   * questions. Only rows this application actually covers are counted.
+   */
+  const ownedCount = ownedGate(merged).count;
   return fields.filter(
     (f) =>
       topicForField(f.key) === id &&
@@ -860,7 +963,10 @@ function countedInTopic(
         countedDetail.has(f.key) ||
         CASE_KEYS.has(f.key) ||
         ((CASE_NOTE_KEYS as readonly string[]).includes(f.key) &&
-          briefKeys.has(f.key))),
+          briefKeys.has(f.key)) ||
+        (ownedCount > 0 &&
+          /^existing_firearm_\d+_(make|model|calibre|serial)$/.test(f.key) &&
+          Number(/^existing_firearm_(\d+)_/.exec(f.key)![1]) <= ownedCount)),
   );
 }
 
@@ -912,14 +1018,55 @@ export function planGroup(
   const id = order[0];
   const groupPending = byTopic.get(id) ?? [];
   const inTopic = countedInTopic(input, merged, fields, id, briefKeys);
+  /**
+   * ⚠️ ONE FIREARM PER CARD. In the `existing` topic the owned rows are asked
+   * one firearm at a time: the gate/count first (that is the card that opens the
+   * table), then the lowest incomplete firearm's four facts. The title names it
+   * — "Firearm 2 of 6" — and `ownedIndex`/`ownedTotal` are served so the screen
+   * can render the same progress the card knows.
+   */
+  let title = TOPIC_TITLES[id];
+  let questions = groupPending;
+  let ownedIndex: number | undefined;
+  let ownedTotal: number | undefined;
+  if (id === 'existing') {
+    const owned = ownedGate(merged);
+    const gateCard = groupPending.filter(
+      (entry) =>
+        entry.key === 'has_existing_firearms' ||
+        entry.key === 'existing_firearm_count',
+    );
+    const rowCard = groupPending.filter((entry) =>
+      /^existing_firearm_\d+_/.test(entry.key),
+    );
+    if (gateCard.length) {
+      // The gate/count card asks only those. Rows come once the count is
+      // confirmed (or derived), so a member is never shown row two before
+      // saying how many firearms there are.
+      questions = gateCard;
+    } else if (rowCard.length) {
+      const indices = rowCard.map((entry) =>
+        Number(/^existing_firearm_(\d+)_/.exec(entry.key)![1]),
+      );
+      const first = Math.min(...indices);
+      questions = rowCard.filter(
+        (entry) =>
+          Number(/^existing_firearm_(\d+)_/.exec(entry.key)![1]) === first,
+      );
+      ownedIndex = first;
+      ownedTotal = Math.max(owned.count, first);
+      title = `Firearm ${first} of ${ownedTotal}`;
+    }
+  }
   return {
     id,
-    title: TOPIC_TITLES[id],
+    title,
     index: order.indexOf(id) + 1,
     total: order.length,
     answered: Math.max(0, inTopic.length - groupPending.length),
     totalInGroup: inTopic.length,
-    questions: groupPending.slice(0, Math.max(1, cap)),
+    questions: questions.slice(0, Math.max(1, cap)),
+    ...(ownedIndex !== undefined ? { ownedIndex, ownedTotal } : {}),
   };
 }
 

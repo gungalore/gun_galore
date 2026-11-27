@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import IntakeGroupCard from './intake-group-card';
 import type { IntakeGroup, IntakeQuestion } from '@/lib/motivations-api';
@@ -696,5 +696,113 @@ describe('the grouped interview card - closed choices', () => {
     expect(
       screen.getByPlaceholderText(/type your own answer/i),
     ).toBeDefined();
+  });
+});
+
+describe('the grouped interview card — owned firearm boxes', () => {
+  /**
+   * ⚠️ ONE BOX PER FIREARM, WITH THE FOUR LABELS THE OPERATOR SETTLED ON. Six
+   * owned firearms as a flat run of twenty-four questions was the "endless form"
+   * complaint in its worst form; the prefixed keys carry the index, so the boxes
+   * come from the answer keys rather than from an assumption about the card.
+   */
+  const owned = (index: number, field: string, label: string) =>
+    question({
+      fieldKey: `existing_firearm_${index}_${field}`,
+      id: `existing_firearm_${index}_${field}`,
+      label,
+    });
+
+  it('groups each firearm’s fields into its own box, leaving the count outside', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'existing_firearm_count',
+            id: 'existing_firearm_count',
+            label: 'How many firearms do you own?',
+            kind: 'choice',
+            choices: [
+              { value: '1', label: 'One' },
+              { value: '2', label: 'Two' },
+            ],
+          }),
+          owned(1, 'make', 'Make of firearm 1'),
+          owned(1, 'model', 'Model of firearm 1'),
+          owned(1, 'calibre', 'Calibre of firearm 1'),
+          owned(1, 'serial', 'Serial of firearm 1'),
+          owned(2, 'make', 'Make of firearm 2'),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    const first = screen.getByRole('region', { name: 'Firearm 1' });
+    const second = screen.getByRole('region', { name: 'Firearm 2' });
+    expect(within(first).getByRole('heading', { name: 'Firearm 1' })).toBeDefined();
+    // The four labels, not the backend's per-firearm sentence.
+    expect(within(first).getByText('Make')).toBeDefined();
+    expect(within(first).getByText('Model')).toBeDefined();
+    expect(within(first).getByText('Calibre')).toBeDefined();
+    expect(within(first).getByText('Serial')).toBeDefined();
+    expect(within(second).getByText('Make')).toBeDefined();
+    // The count question is a normal row outside the boxes.
+    expect(within(first).queryByText('How many firearms do you own?')).toBeNull();
+    expect(screen.getByText('How many firearms do you own?')).toBeDefined();
+  });
+
+  it('draws two firearms on one card as two boxes, not one', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          owned(1, 'make', 'Make'),
+          owned(2, 'make', 'Make'),
+          owned(3, 'calibre', 'Calibre'),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Firearm 1' })).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Firearm 2' })).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Firearm 3' })).toBeDefined();
+  });
+
+  /**
+   * ⚠️ THE COUNT CARD IS A PREFILLED CHOICE. Back/edit re-opens it with the saved
+   * value; the chip must render selected, not as an empty question that looks
+   * like the answer was lost.
+   */
+  it('renders a prefilled choice as a selected chip', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'existing_firearm_count',
+            id: 'existing_firearm_count',
+            label: 'How many firearms do you own?',
+            kind: 'choice',
+            choices: [
+              { value: '2', label: 'Two' },
+              { value: '3', label: 'Three' },
+            ],
+            value: '2',
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Two' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'existing_firearm_count', value: '2' },
+    ]);
   });
 });

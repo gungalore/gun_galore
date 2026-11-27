@@ -61,6 +61,8 @@ function build(
       slug: string | null;
       aliases: { printed: string }[];
     }[];
+    /** Which product this sheet is for; the docs gate differs between them. */
+    outputMode?: 'PRINT_READY' | 'MOTIVATION_ONLY';
   } = {},
 ) {
   const prisma = {
@@ -74,6 +76,7 @@ function build(
         status: MotivationStatus.DRAFT,
         answersEncrypted: encryptJson(answers),
         answerProvenance: opts.provenance ?? {},
+        outputMode: opts.outputMode ?? 'PRINT_READY',
         uploads: opts.uploads ?? [],
       })),
     },
@@ -748,5 +751,147 @@ describe('an ambiguous calibre', () => {
     );
     expect(choices.length).toBeLessThanOrEqual(8);
     expect(new Set(choices).size).toBe(choices.length);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE OWNED-FIREARMS TABLE ON THE REVIEW SHEET (operator, 2026-11-27).
+//
+// A vault or upload gives us the rows and never the gate question or the count,
+// so the sheet used to show a member their own licence cards beside "Do you
+// already own any firearms?" and an outstanding required count row. The display
+// layer now derives both — and NEVER writes them, and never touches a MEMBER
+// answer.
+// ────────────────────────────────────────────────────────────────────
+describe('effective owned-firearms answers, for display only', () => {
+  const OWNS = {
+    existing_firearm_1_make: 'Marlin',
+    existing_firearm_1_calibre: '.45-70 Government',
+  };
+
+  it('fills the gate and the count from the rows, stamped DERIVED + inferred', async () => {
+    const { svc } = build(OWNS);
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const gate = itemFor(sheet.items, 'has_existing_firearms');
+    // `inferred` renders as `suggested` ("worked out — check"), not `filled`.
+    expect(gate.state).toBe('suggested');
+    expect(gate.value).toBe('Yes');
+    expect(gate.provenance).toMatchObject({
+      source: 'DERIVED',
+      from: 'your licence cards',
+      inferred: true,
+    });
+
+    const count = itemFor(sheet.items, 'existing_firearm_count');
+    expect(count.state).toBe('suggested');
+    expect(count.value).toBe('1');
+    expect(count.provenance?.source).toBe('DERIVED');
+    // The derived count is not outstanding work on a complete file.
+    expect(sheet.missing).not.toContain('existing_firearm_count');
+  });
+
+  it('derives nothing when there are no rows to read', async () => {
+    const { svc } = build({});
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(itemFor(sheet.items, 'has_existing_firearms')?.value).toBe('');
+    expect(itemFor(sheet.items, 'existing_firearm_count')?.value).toBe('');
+    expect(itemFor(sheet.items, 'has_existing_firearms')?.provenance).toBeNull();
+  });
+
+  it('never overwrites a MEMBER answer', async () => {
+    const { svc } = build(
+      { ...OWNS, has_existing_firearms: 'No' },
+      {
+        provenance: {
+          has_existing_firearms: {
+            source: 'MEMBER',
+            from: 'You entered this',
+            at: new Date().toISOString(),
+          },
+        },
+      },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const gate = itemFor(sheet.items, 'has_existing_firearms');
+    expect(gate.value).toBe('No');
+    expect(gate.provenance?.source).toBe('MEMBER');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// PRINT-READY VS MOTIVATION-ONLY: ONE LICENCE PER OWNED FIREARM.
+//
+// ⚠️ THE PRINTED PACK NEEDS A LICENCE PHOTOGRAPH FOR EVERY FIREARM THE SAPS 271
+// LISTS. The motivation-only product carries no annexures at all, so the same
+// requirement must not block it — the sheet demotes those rows to `extra` and
+// empties missingRequired, and generation's own gate is guarded by
+// `!motivationOnly`.
+// ────────────────────────────────────────────────────────────────────
+describe('one licence per owned firearm, print-ready only', () => {
+  const TWO_OWNED = {
+    existing_firearm_1_calibre: '.45-70 Government',
+    existing_firearm_2_calibre: '.308 Winchester',
+  };
+
+  it('print-ready requires two licence files and says how many are in', async () => {
+    const { svc } = build(TWO_OWNED, { outputMode: 'PRINT_READY' });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const need = sheet.needs.needs.find(
+      (entry) => entry.kind === 'CURRENT_LICENCE',
+    )!;
+    expect(need.tier).toBe('required');
+    expect(need.minFiles).toBe(2);
+    expect(need.minFilesNote).toBe(
+      'One licence photo for each of the 2 firearms you own.',
+    );
+    expect(need.haveFiles).toBe(0);
+    expect(sheet.needs.missingRequired).toContain('CURRENT_LICENCE');
+  });
+
+  it('still needs both when only one is attached, and reports the count', async () => {
+    const { svc } = build(TWO_OWNED, {
+      outputMode: 'PRINT_READY',
+      uploads: [
+        {
+          id: 'u1',
+          kind: 'CURRENT_LICENCE',
+          mimeType: 'image/jpeg',
+          extractionOk: true,
+        },
+      ],
+    });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const need = sheet.needs.needs.find(
+      (entry) => entry.kind === 'CURRENT_LICENCE',
+    )!;
+    expect(need.have).toBe(false);
+    expect(need.haveFiles).toBe(1);
+    expect(sheet.needs.missingRequired).toContain('CURRENT_LICENCE');
+  });
+
+  it('is satisfied by one licence per firearm', async () => {
+    const { svc } = build(TWO_OWNED, {
+      outputMode: 'PRINT_READY',
+      uploads: [
+        { id: 'u1', kind: 'CURRENT_LICENCE', mimeType: 'image/jpeg', extractionOk: true },
+        { id: 'u2', kind: 'CURRENT_LICENCE', mimeType: 'image/jpeg', extractionOk: true },
+      ],
+    });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(sheet.needs.missingRequired).not.toContain('CURRENT_LICENCE');
+    expect(
+      sheet.needs.needs.find((entry) => entry.kind === 'CURRENT_LICENCE')
+        ?.haveFiles,
+    ).toBe(2);
+  });
+
+  it('motivation-only never blocks on the licences', async () => {
+    const { svc } = build(TWO_OWNED, { outputMode: 'MOTIVATION_ONLY' });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(sheet.needs.missingRequired).toEqual([]);
+    const need = sheet.needs.needs.find(
+      (entry) => entry.kind === 'CURRENT_LICENCE',
+    )!;
+    expect(need.tier).toBe('extra');
   });
 });

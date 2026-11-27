@@ -7,8 +7,10 @@ import {
   allFieldsFor,
   fieldsFor,
   OWNED_LISTING_COLUMNS,
+  OWNED_ASKED_COLUMNS,
   OWNED_ROWS,
   ownedFirearmSerial,
+  ownedGate,
   ownedRowTaken,
   nextOwnedRow,
   isVisible,
@@ -1488,3 +1490,99 @@ describe('the shooting-life fields', () => {
   });
 });
 
+
+// ────────────────────────────────────────────────────────────────────
+// THE OWNED-FIREARMS GATE — one reader for the planner, the state, the
+// review sheet and the document checklist.
+//
+// ⚠️ THE BUG THIS CLOSES: the interview, the sheet and the licence checklist
+// each decided "does this applicant own firearms, and how many" from a
+// different key. A vault application carried rows, an empty gate answer and a
+// derived count, and every surface said something different about it. The
+// operator's live test then never asked a single owned-firearm question at all.
+// ────────────────────────────────────────────────────────────────────
+describe('ownedGate', () => {
+  it('is empty and closed for a cold applicant', () => {
+    expect(ownedGate({})).toEqual({ has: false, count: 0, rows: [] });
+  });
+
+  it('opens from the member answer and trusts the count', () => {
+    expect(
+      ownedGate({ has_existing_firearms: 'Yes', existing_firearm_count: '3' }),
+    ).toEqual({ has: true, count: 3, rows: [] });
+  });
+
+  it('opens from rows the vault already gave us, and derives the count', () => {
+    const gate = ownedGate({
+      existing_firearm_1_make: 'Marlin',
+      existing_firearm_1_model: '1895',
+      existing_firearm_1_calibre: '.45-70 Government',
+      existing_firearm_1_serial: 'MR90189D',
+    });
+    expect(gate.has).toBe(true);
+    expect(gate.count).toBe(1);
+    expect(gate.rows).toEqual([
+      {
+        index: 1,
+        make: 'Marlin',
+        model: '1895',
+        calibre: '.45-70 Government',
+        serial: 'MR90189D',
+      },
+    ]);
+  });
+
+  it('lets the count answer override the number of visible rows', () => {
+    const gate = ownedGate({
+      existing_firearm_1_make: 'Marlin',
+      existing_firearm_count: '4',
+    });
+    expect(gate.has).toBe(true);
+    expect(gate.count).toBe(4);
+    expect(gate.rows).toHaveLength(1);
+  });
+
+  it('never prints a card placeholder as a model or serial', () => {
+    const gate = ownedGate({
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_model: 'NONE',
+      existing_firearm_1_calibre: 'NONE',
+      existing_firearm_1_serial: 'NONE',
+    });
+    expect(gate.rows[0].model).toBe('');
+    expect(gate.rows[0].calibre).toBe('');
+    // The row is still taken — a card printing NONE is evidence somebody was
+    // here, which is what ownedRowTaken deliberately tests without answerValue.
+    expect(gate.rows[0].make).toBe('CZ');
+  });
+
+  it('reads the retired serial keys through ownedFirearmSerial', () => {
+    const gate = ownedGate({ existing_firearm_2_barrel_serial: 'B-22' });
+    expect(gate.rows[0]).toMatchObject({ index: 2, serial: 'B-22' });
+  });
+
+  it('caps the count at the registry table', () => {
+    expect(
+      ownedGate({ has_existing_firearms: 'Yes', existing_firearm_count: '99' })
+        .count,
+    ).toBe(OWNED_ROWS);
+  });
+
+  it('asks the interview for four facts, not six', () => {
+    expect(OWNED_ASKED_COLUMNS).toEqual([
+      'make',
+      'model',
+      'calibre',
+      'serial',
+    ]);
+  });
+
+  it('does not make the gate or count a generation requirement when rows exist', () => {
+    const answers = { existing_firearm_1_make: 'Marlin' };
+    expect(requiredKeys(T, answers)).not.toContain('existing_firearm_count');
+    expect(requiredKeys(T, answers)).not.toContain('has_existing_firearms');
+    expect(missingRequired(T, answers)).not.toContain(
+      'existing_firearm_count',
+    );
+  });
+});

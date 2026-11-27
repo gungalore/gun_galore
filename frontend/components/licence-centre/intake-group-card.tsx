@@ -72,6 +72,42 @@ function signatureOf(group: IntakeGroup): string {
 }
 
 /**
+ * One owned firearm's fields are keyed `existing_firearm_<n>_<field>`.
+ *
+ * ⚠️ ONE BOX PER FIREARM, NOT ONE FIELD PER FIREARM. The interview asks for a
+ * card's Make/Model/Calibre/Serial together, and a flat run of four questions
+ * under a shared "Your firearms" heading reads as one firearm with four
+ * properties — on somebody who owns six, that is six times the confusion. The
+ * prefixed keys carry the index, so the box (and its heading) is derived, not
+ * asked for again.
+ */
+const OWNED_KEY = /^existing_firearm_(\d+)_(.+)$/;
+
+/** The four labels the operator settled on, in the order they are asked. */
+const OWNED_LABELS: Record<string, string> = {
+  make: 'Make',
+  model: 'Model',
+  calibre: 'Calibre',
+  serial: 'Serial',
+};
+const OWNED_ORDER = ['make', 'model', 'calibre', 'serial'];
+
+function ownedFieldOf(question: IntakeQuestion): string {
+  return OWNED_KEY.exec(question.fieldKey)?.[2] ?? '';
+}
+
+/** Make, Model, Calibre, Serial first; anything else after, in card order. */
+function ownedOrder(question: IntakeQuestion): number {
+  const index = OWNED_ORDER.indexOf(ownedFieldOf(question));
+  return index === -1 ? OWNED_ORDER.length : index;
+}
+
+interface OwnedBox {
+  index: number;
+  questions: IntakeQuestion[];
+}
+
+/**
  * ⚠️ THE TICK AND THE CROSS ARE THE "DID MY TAP REGISTER" SIGNAL. A card of
  * six questions gives no feedback between the tap and Continue; a member who
  * cannot see that an answer landed taps again. Green tick = this question has
@@ -270,6 +306,30 @@ export default function IntakeGroupCard({
     return out.values?.length || out.value || out.message ? out : null;
   }
 
+  /**
+   * ⚠️ THE COUNT AND YES/NO STAY OUTSIDE; EACH FIREARM'S FOUR FIELDS GO IN A BOX.
+   * The backend can put more than one firearm on one card (or one per card with
+   * `ownedIndex`), so the boxes are derived from the keys rather than assumed to
+   * be one-per-card. Nothing here reorders the submitted answers — only display.
+   */
+  const plainQuestions: IntakeQuestion[] = [];
+  const ownedBoxes: OwnedBox[] = [];
+  for (const question of group.questions) {
+    const owned = OWNED_KEY.exec(question.fieldKey);
+    if (!owned) {
+      plainQuestions.push(question);
+      continue;
+    }
+    const index = Number(owned[1]);
+    const box = ownedBoxes.find((entry) => entry.index === index);
+    if (box) box.questions.push(question);
+    else ownedBoxes.push({ index, questions: [question] });
+  }
+  ownedBoxes.sort((a, b) => a.index - b.index);
+  for (const box of ownedBoxes) {
+    box.questions.sort((a, b) => ownedOrder(a) - ownedOrder(b));
+  }
+
   const answered = group.questions
     .map((question) => ({ question, answer: answerFor(question) }))
     .filter((entry) => entry.answer !== null);
@@ -314,6 +374,157 @@ export default function IntakeGroupCard({
     void onSubmit(answers);
   }
 
+  /**
+   * One question, as a fieldset. Extracted so an owned firearm's four fields can
+   * be drawn inside their own box without a second copy of this markup.
+   */
+  function questionField(question: IntakeQuestion, labelOverride?: string) {
+    const draft = draftFor(question.fieldKey);
+    const answeredNow = answerFor(question) !== null;
+    const closedChoice =
+      question.choices.length > 0 &&
+      (question.kind === 'choice' || question.kind === 'yesno');
+    const showDetails =
+      question.details?.length &&
+      draft.picked.some((value) => value.toLowerCase() === 'yes');
+    return (
+      <fieldset key={question.fieldKey} className="m-0 min-w-0 border-0 p-0">
+        <legend className="m-0 p-0 text-[13.5px] font-medium text-[var(--text-primary)]">
+          {labelOverride ?? question.label}
+          {question.optional ? (
+            <span className="ml-2 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Optional
+            </span>
+          ) : null}
+          {answeredNow ? (
+            <AnsweredMark />
+          ) : question.optional ? null : (
+            <NeedsAnswerMark />
+          )}
+        </legend>
+        {question.why || question.help ? (
+          <p className="mb-0 mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+            {question.why || question.help}
+          </p>
+        ) : null}
+
+        {question.choices.length ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {question.choices.map((choice) => {
+              const on = draft.picked.includes(choice.value);
+              return (
+                <button
+                  key={choice.value}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={on}
+                  onClick={() => toggle(question, choice.value)}
+                  className="rounded-full border px-3 py-2 text-left text-[12.5px] leading-4"
+                  style={{
+                    borderColor: on ? 'var(--red)' : 'var(--border)',
+                    background: on ? 'var(--red-wash)' : 'var(--bg-inset)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {choice.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {closedChoice ? null : question.kind === 'date' ? (
+          /**
+           * ⚠️ THE HOUSE DATE CONTROL, NOT THE BROWSER'S. A native
+           * `<input type="date">` opens whatever picker the OS ships —
+           * on Windows a month/year wheel that has to be scrolled twice
+           * before a day can be picked. DateField is the control the
+           * rest of the Licence Centre uses: type it, or open the
+           * year → month → day sheet.
+           */
+          <div className="mt-2">
+            <DateField
+              value={draft.typed}
+              onChange={(iso) => update(question.fieldKey, { typed: iso })}
+              label={labelOverride ?? question.label}
+              placeholder="yyyy-mm-dd"
+            />
+          </div>
+        ) : (
+          <input
+            value={draft.typed}
+            type="text"
+            onChange={(e) => update(question.fieldKey, { typed: e.target.value })}
+            placeholder={
+              question.choices.length
+                ? 'Or type your own answer…'
+                : question.customPlaceholder
+            }
+            className="mt-2 min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--field-bg)',
+              color: 'var(--text-primary)',
+            }}
+          />
+        )}
+
+        {showDetails ? (
+          <div
+            className="mt-2 grid gap-2 rounded-lg border p-3"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            {question.details!.map((detail) => (
+              <label key={detail.key} className="block">
+                <span className="block text-[12px] font-medium text-[var(--text-primary)]">
+                  {detail.label}
+                </span>
+                <input
+                  value={draft.details[detail.key] ?? ''}
+                  onChange={(e) =>
+                    update(question.fieldKey, {
+                      details: {
+                        ...draft.details,
+                        [detail.key]: e.target.value,
+                      },
+                    })
+                  }
+                  className="mt-1 min-h-[44px] w-full rounded-lg border px-3 text-[13px]"
+                  style={{
+                    borderColor: 'var(--border)',
+                    background: 'var(--field-bg)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        ) : null}
+
+        {question.minWords && draftWords(draft) < question.minWords ? (
+          <p
+            className="mb-0 mt-1 text-[12px] leading-5"
+            style={{ color: 'var(--warning)' }}
+          >
+            Pick a few of these, or add a sentence — who introduced you, what you
+            shoot and how often.
+          </p>
+        ) : null}
+
+        {question.optional ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => submit(question.fieldKey)}
+            className="mt-2 text-[12px] text-[var(--text-secondary)] underline"
+          >
+            Skip this one
+          </button>
+        ) : null}
+      </fieldset>
+    );
+  }
+
   if (!first) return null;
 
   return (
@@ -339,7 +550,8 @@ export default function IntakeGroupCard({
       ) : null}
 
       <div className="mt-3 grid gap-4">
-        {group.questions.map((question) => {
+        {/* The count / yes-no / anything that is not a firearm's field. */}
+        {plainQuestions.map((question) => {
           const draft = draftFor(question.fieldKey);
           const answeredNow = answerFor(question) !== null;
           const closedChoice =
@@ -489,6 +701,36 @@ export default function IntakeGroupCard({
             </fieldset>
           );
         })}
+
+        {/*
+          ⚠️ ONE BORDERED BOX PER FIREARM. The four fields share a heading so the
+          member can see which firearm they are describing, and two firearms on
+          one card (or one per card) both read correctly — the boxes come from
+          the keys, not from an assumption about the card.
+        */}
+        {ownedBoxes.map((box) => (
+          <section
+            key={box.index}
+            aria-label={`Firearm ${box.index}`}
+            className="rounded-xl border p-3"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--bg-page)',
+            }}
+          >
+            <h3 className="m-0 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Firearm {box.index}
+            </h3>
+            <div className="mt-2 grid gap-4">
+              {box.questions.map((question) =>
+                questionField(
+                  question,
+                  OWNED_LABELS[ownedFieldOf(question)],
+                ),
+              )}
+            </div>
+          </section>
+        ))}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

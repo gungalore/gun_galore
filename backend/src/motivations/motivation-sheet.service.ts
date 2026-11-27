@@ -17,6 +17,7 @@ import {
   isVisible,
   missingRequired,
   ownedFirearmSerial,
+  ownedGate,
   ownedRowTaken,
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
@@ -734,6 +735,50 @@ export class MotivationSheetService {
       ...parseProvenance(row.answerProvenance),
     };
 
+    /**
+     * ⚠️ EFFECTIVE ANSWERS FOR DISPLAY ONLY — NEVER A DB WRITE.
+     *
+     * A vault or upload gives us the owned-firearm ROWS but never the gate
+     * question or the count. Without this, the sheet showed a member their
+     * licence cards and still asked "Do you already own any firearms?" and
+     * "How many?" as if we had read nothing — and the count row (required,
+     * showIf gate = Yes) rendered as outstanding work on a complete file.
+     *
+     * So the display layer fills the two answers it can derive, stamped
+     * DERIVED + inferred so the row reads "Worked out from your answers —
+     * check" rather than claiming the member typed it. The stored blob is
+     * untouched: the interview still asks the count as a one-tap confirmation,
+     * and nothing downstream treats this as an answer.
+     *
+     * ⚠️ A MEMBER VALUE IS NEVER TOUCHED — not even an empty one. A cleared
+     * gate is the member's own decision and gets no synthetic chip.
+     */
+    const derived = ownedGate(answers);
+    const displayAnswers = { ...answers };
+    const displayProvenance: ProvenanceMap = { ...provenance };
+    const derivedStamp = (): AnswerProvenance => ({
+      source: 'DERIVED',
+      from: 'your licence cards',
+      at: new Date().toISOString(),
+      inferred: true,
+    });
+    if (derived.rows.length) {
+      if (
+        !(answers.has_existing_firearms ?? '').trim() &&
+        provenance.has_existing_firearms?.source !== 'MEMBER'
+      ) {
+        displayAnswers.has_existing_firearms = 'Yes';
+        displayProvenance.has_existing_firearms = derivedStamp();
+      }
+      if (
+        !(answers.existing_firearm_count ?? '').trim() &&
+        provenance.existing_firearm_count?.source !== 'MEMBER'
+      ) {
+        displayAnswers.existing_firearm_count = String(derived.rows.length);
+        displayProvenance.existing_firearm_count = derivedStamp();
+      }
+    }
+
     // ⚠️ BEFORE THE ITEMS, because stateOf reads it — the overlap question is
     // not applicable to somebody who holds nothing similar.
     const overlap = overlapFromAnswers(row.licenceType, answers);
@@ -783,15 +828,19 @@ export class MotivationSheetService {
     );
 
     const items: SheetItem[] = served.map((f) => {
-      const state = this.stateOf(f, answers, provenance);
+      const state = this.stateOf(f, displayAnswers, displayProvenance);
       const item: SheetItem = {
         key: f.key,
         label: f.label,
         kind: f.kind,
         state,
         // ⚠️ IN FULL. See the masking note at the top of this file.
-        value: shownValue(answers[f.key], provenance[f.key], f.key),
-        provenance: provenance[f.key] ?? null,
+        value: shownValue(
+          displayAnswers[f.key],
+          displayProvenance[f.key],
+          f.key,
+        ),
+        provenance: displayProvenance[f.key] ?? null,
         section: SECTION_OF[f.section] ?? 'case',
         scope: f.scope ?? 'application',
         required: !!f.required,
@@ -823,7 +872,10 @@ export class MotivationSheetService {
      * name touches, plus the always-open text box for anything not held. It is
      * appended rather than registered so it appears ONLY while unresolved.
      */
-    const cartridgeItem = await this.cartridgeChoice(answers, provenance);
+    const cartridgeItem = await this.cartridgeChoice(
+      displayAnswers,
+      displayProvenance,
+    );
     if (cartridgeItem) items.push(cartridgeItem);
 
     /**
@@ -834,8 +886,8 @@ export class MotivationSheetService {
      */
     const missing = [
       ...new Set([
-        ...missingRequired(row.licenceType, answers),
-        ...missingDetail(answers, row.licenceType).map((gap) =>
+        ...missingRequired(row.licenceType, displayAnswers),
+        ...missingDetail(displayAnswers, row.licenceType).map((gap) =>
           gap.code.slice(gap.code.indexOf(':') + 1),
         ),
       ]),
@@ -1017,12 +1069,12 @@ export class MotivationSheetService {
             u.kind,
             ...(u.coversKinds ?? []),
           ]),
-          answers,
+          displayAnswers,
         ),
       ),
       credentials,
       overlap,
-      preview: previewFor(row.licenceType, answers).sections,
+      preview: previewFor(row.licenceType, displayAnswers).sections,
       missing: [...missingSet],
       ownedRows: ownedRowsFor(answers),
     };

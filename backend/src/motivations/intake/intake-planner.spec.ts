@@ -9,7 +9,7 @@ import {
   purposeForAnswers,
   questionForField,
 } from './intake-planner';
-import { fieldByKey, requiredKeys } from '../motivation-fields';
+import { fieldByKey, fieldsFor, requiredKeys } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
 import { topicForField, TOPIC_TITLES } from './intake-topics';
 import { missingDetail, MIN_HISTORY_WORDS } from '../motivation-completeness';
@@ -600,7 +600,11 @@ function walk(
   type: MotivationLicenceType,
   seed: Record<string, string> = {},
   provenance: Record<string, { source?: string }> = {},
-): { asked: string[]; answers: Record<string, string> } {
+): {
+  asked: string[];
+  answers: Record<string, string>;
+  provenance: Record<string, { source?: string }>;
+} {
   const answers: Record<string, string> = { ...seed };
   const asked: string[] = [];
   for (let i = 0; i < 60; i += 1) {
@@ -613,8 +617,15 @@ function walk(
     if (!question) break;
     asked.push(question.fieldKey);
     answers[question.fieldKey] = answerFor(question.fieldKey, type);
+    /**
+     * ⚠️ AN ANSWER GIVEN IN THE WALK IS STAMPED MEMBER, LIKE A REAL SAVE.
+     * `saveAnswers` marks every moved answer MEMBER, and the owned-firearms
+     * count is only settled by a MEMBER confirmation once rows are visible —
+     * without this the walk would sit on the count forever.
+     */
+    provenance[question.fieldKey] = { source: 'MEMBER' };
   }
-  return { asked, answers };
+  return { asked, answers, provenance };
 }
 
 function answerFor(key: string, type: MotivationLicenceType): string {
@@ -768,15 +779,208 @@ describe('the case questions', () => {
   it('does not re-ask a question the member skipped', () => {
     // premises_enclosure is a real CASE key that is still asked; the narrative
     // routine cards that used to hold this test are never asked at all now.
-    const base = walk(MotivationLicenceType.S13_SELF_DEFENCE).answers;
+    const first = walk(MotivationLicenceType.S13_SELF_DEFENCE);
+    const base = { ...first.answers };
     delete base.premises_enclosure;
-    const withoutSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base);
+    const withoutSkip = walk(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      base,
+      { ...first.provenance },
+    );
     expect(withoutSkip.asked).toContain('premises_enclosure');
 
     const afterSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base, {
+      ...first.provenance,
       premises_enclosure: { source: 'SKIPPED' },
     });
     expect(afterSkip.asked).not.toContain('premises_enclosure');
+  });
+});
+
+/**
+ * ────────────────────────────────────────────────────────────────────────────
+ * THE OWNED FIREARMS (operator, 2026-11-27).
+ *
+ * ⚠️ THEY WERE NEVER ASKED. The registry rows are neither required nor
+ * detail-gated nor CASE_KEYS, so `asked()` filtered every one of them out of
+ * the grouped interview: a cold applicant said Yes and was never asked which
+ * firearms, and a vault application was never asked to confirm what we could
+ * read. These specs walk the whole gate.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+describe('the owned firearms', () => {
+  /** Every question answered EXCEPT the owned-firearms table. */
+  function filledExceptOwned(): Record<string, string> {
+    const answers: Record<string, string> = {};
+    for (const field of fieldsFor(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      if (
+        field.key === 'has_existing_firearms' ||
+        field.key === 'existing_firearm_count' ||
+        /^existing_firearm_/.test(field.key)
+      ) {
+        continue;
+      }
+      answers[field.key] = 'x';
+    }
+    return answers;
+  }
+  const input = (answers: Record<string, string>, provenance = {}) => ({
+    type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+    answers,
+    sheet: EMPTY_SHEET,
+    provenance,
+  });
+
+  it('asks the gate first for a cold applicant, and nothing else owned', () => {
+    const answers = filledExceptOwned();
+    const pending = pendingFields(input(answers)).map((entry) => entry.key);
+    expect(pending).toContain('has_existing_firearms');
+    expect(pending).not.toContain('existing_firearm_count');
+    expect(pending.some((key) => /^existing_firearm_/.test(key))).toBe(false);
+
+    const group = planGroup(input(answers));
+    expect(group?.id).toBe('existing');
+    expect(group?.title).toBe('Firearms you already hold');
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'has_existing_firearms',
+    ]);
+    expect(group?.ownedIndex).toBeUndefined();
+  });
+
+  it('asks the count after Yes, then ONE firearm per card, with its title', () => {
+    const answers = filledExceptOwned();
+    answers.has_existing_firearms = 'Yes';
+    let group = planGroup(input(answers));
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_count',
+    ]);
+    const countQuestion = questionForField(input(answers), 'existing_firearm_count');
+    expect(countQuestion?.label).toBe('How many firearms do you own?');
+    expect(countQuestion?.value).toBeUndefined();
+
+    answers.existing_firearm_count = '2';
+    group = planGroup(input(answers));
+    expect(group?.title).toBe('Firearm 1 of 2');
+    expect(group?.ownedIndex).toBe(1);
+    expect(group?.ownedTotal).toBe(2);
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_1_make',
+      'existing_firearm_1_model',
+      'existing_firearm_1_calibre',
+      'existing_firearm_1_serial',
+    ]);
+    // type and section_held are sheet/writer facts, never asked here.
+    expect(group?.questions.map((entry) => entry.key)).not.toContain(
+      'existing_firearm_1_type',
+    );
+
+    answers.existing_firearm_1_make = 'Marlin';
+    answers.existing_firearm_1_model = '1895';
+    answers.existing_firearm_1_calibre = '.45-70 Government';
+    answers.existing_firearm_1_serial = 'MR90189D';
+    /**
+     * ⚠️ ONCE ROWS EXIST THE COUNT NEEDS ITS MEMBER CONFIRMATION. A real save
+     * stamps the count MEMBER when the member answers it; the spec has to say so
+     * or the card correctly asks the count again.
+     */
+    group = planGroup(
+      input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
+    );
+    expect(group?.title).toBe('Firearm 2 of 2');
+    expect(group?.ownedIndex).toBe(2);
+    expect(group?.questions.map((entry) => entry.key)).toEqual(
+      expect.arrayContaining([
+        'existing_firearm_2_make',
+        'existing_firearm_2_model',
+        'existing_firearm_2_calibre',
+        'existing_firearm_2_serial',
+      ]),
+    );
+  });
+
+  it('skips the gate for a vault applicant and asks the count as a prefilled confirmation', () => {
+    const answers = filledExceptOwned();
+    answers.existing_firearm_1_make = 'Marlin';
+    answers.existing_firearm_1_calibre = '.45-70 Government';
+
+    expect(pendingFields(input(answers)).map((entry) => entry.key)).not.toContain(
+      'has_existing_firearms',
+    );
+    const group = planGroup(input(answers));
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_count',
+    ]);
+    const countQuestion = questionForField(input(answers), 'existing_firearm_count');
+    expect(countQuestion?.label).toBe(
+      'We can see 1 firearm on your documents. How many firearms do you own in total?',
+    );
+    expect(countQuestion?.help).toBe(
+      'Add every firearm you own — we will ask for the make, model, calibre and serial of any we could not find.',
+    );
+    // One tap confirms: the derived number is already in the control.
+    expect(countQuestion?.value).toBe('1');
+  });
+
+  it('keeps the count pending until the member CONFIRMS it, then asks the row', () => {
+    const answers = filledExceptOwned();
+    answers.existing_firearm_1_make = 'Marlin';
+    answers.existing_firearm_1_calibre = '.45-70 Government';
+
+    // Answered by the member, but not yet stamped MEMBER: still a confirmation.
+    answers.existing_firearm_count = '1';
+    let group = planGroup(input(answers));
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_count',
+    ]);
+
+    group = planGroup(
+      input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
+    );
+    expect(group?.title).toBe('Firearm 1 of 1');
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_1_model',
+      'existing_firearm_1_serial',
+    ]);
+  });
+
+  it('an increased count adds the extra firearms; a decrease drops them', () => {
+    const answers = filledExceptOwned();
+    answers.existing_firearm_1_make = 'Marlin';
+    answers.existing_firearm_1_model = '1895';
+    answers.existing_firearm_1_calibre = '.45-70 Government';
+    answers.existing_firearm_1_serial = 'MR90189D';
+    answers.existing_firearm_count = '3';
+    const provenance = { existing_firearm_count: { source: 'MEMBER' } };
+
+    let group = planGroup(input(answers, provenance));
+    expect(group?.title).toBe('Firearm 2 of 3');
+    expect(group?.questions[0].key).toBe('existing_firearm_2_make');
+
+    answers.existing_firearm_count = '1';
+    group = planGroup(input(answers, provenance));
+    // Row 1 is complete and the count now covers only it, so the table is done.
+    expect(group?.id).not.toBe('existing');
+  });
+
+  it('reports the lowest incomplete firearm, not merely the first', () => {
+    const answers = filledExceptOwned();
+    for (const column of ['make', 'model', 'calibre', 'serial']) {
+      answers[`existing_firearm_1_${column}`] = 'filled';
+    }
+    answers.existing_firearm_2_make = 'Howa';
+    answers.existing_firearm_count = '3';
+    const group = planGroup(
+      input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
+    );
+    // Row 1 is complete, so the card is row 2 — "the lowest firearm with work
+    // left", not simply row 1 of the table.
+    expect(group?.title).toBe('Firearm 2 of 3');
+    expect(group?.ownedIndex).toBe(2);
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_2_model',
+      'existing_firearm_2_calibre',
+      'existing_firearm_2_serial',
+    ]);
   });
 });
 
@@ -1222,22 +1426,21 @@ describe('the brief guides the walk', () => {
   });
 
   it('keeps a required question ahead of a brief’s optional one', () => {
-    // Fill the walk, then put the required safe type and the optional alarm
-    // back as pending. The brief ranks the alarm first; the required question
-    // must still be the one asked.
-    const remaining = walk(MotivationLicenceType.S16_DEDICATED_HUNTER, {
+    // Fill the walk, then put the required safe type back as pending. The brief
+    // ranks another question first; the required question must still be asked.
+    const walked = walk(MotivationLicenceType.S16_DEDICATED_HUNTER, {
       firearm_use_kind: 'hunting',
-    }).answers;
+    });
+    const remaining = { ...walked.answers };
     remaining.safe_present = 'Yes';
     delete remaining.safe_type;
-    delete remaining.alarm_present;
     const ordered: InterviewBrief = {
       ...brief,
       questions: [
         {
-          fieldKey: 'alarm_present',
-          question: 'Is there an alarm?',
-          why: 'The DFO reads the security measures.',
+          fieldKey: 'intended_quarry',
+          question: 'What do you hunt?',
+          why: 'The DFO reads the quarry against the calibre.',
           priority: 0,
         },
       ],
@@ -1247,6 +1450,7 @@ describe('the brief guides the walk', () => {
       answers: remaining,
       sheet: EMPTY_SHEET,
       brief: ordered,
+      provenance: walked.provenance,
     });
     expect(question?.fieldKey).toBe('safe_type');
   });

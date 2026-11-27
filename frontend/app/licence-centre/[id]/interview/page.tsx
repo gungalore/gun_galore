@@ -18,7 +18,9 @@ import IntakeGroupCard, {
   type GroupAnswer,
 } from '@/components/licence-centre/intake-group-card';
 import ConsentCard from '@/components/licence-centre/consent-card';
+import OwnedFirearmsPanel from '@/components/licence-centre/owned-firearms-panel';
 import DateField from '@/components/date-field';
+import { interviewRedirectFor } from '@/lib/intake-routing';
 import type { SheetResponse } from '@/components/licence-centre/contract';
 import DocumentAddButtons, {
   type DocumentAddOutcome,
@@ -273,19 +275,22 @@ export default function IntakeInterviewPage() {
 
   useEffect(() => {
     if (!data) return;
-    if (data.stage === 'MODE' || data.stage === 'DOCUMENTS') {
-      router.replace(`/licence-centre/${id}/start`);
-      return;
-    }
-    // A REVIEW stage may still need a document. The edit sheet links back
-    // here for that upload, so this page must not bounce it to the pack.
-    if (data.stage === 'REVIEW' && !data.documents.missing.length) {
-      router.replace(`/licence-centre/${id}/pack`);
-    }
+    /**
+     * ⚠️ MID-INTERVIEW MUST STAY IN THE INTERVIEW. Only MODE/DOCUMENTS bounce
+     * back to the start screen, and only a FINISHED review (`completed === true`)
+     * goes on to the review screen. A REVIEW-stage state served to somebody who
+     * never pressed "Review my answers" (a reload, a notification link) keeps the
+     * completion card, so they finish on purpose instead of being teleported to
+     * the pack — the operator's "another screen" bug.
+     */
+    const target = interviewRedirectFor(id, data.stage, data.completed);
+    if (target) router.replace(target);
   }, [data, id, router]);
 
   const q = data?.question ?? null;
   const group = data?.group ?? null;
+  /** The card on screen: the live one, or the earlier topic opened for editing. */
+  const activeCardGroup = editCard?.group ?? group;
   const historyTurn =
     historyIndex !== null ? (turns[historyIndex] ?? null) : null;
   const choices = q?.choices ?? [];
@@ -961,6 +966,20 @@ export default function IntakeInterviewPage() {
       ) : null}
 
 
+
+      {/*
+        ⚠️ WHAT THE FILE ALREADY KNOWS ABOUT THEIR FIREARMS. Shown above the
+        owned-firearms card (and its Back-edit twin) so the member corrects the
+        four fields a licence card already answers instead of retyping them.
+      */}
+      {activeCardGroup &&
+      (activeCardGroup.id === 'existing' ||
+        activeCardGroup.ownedIndex !== undefined) ? (
+        <OwnedFirearmsPanel
+          firearms={data.ownedFirearms}
+          outputMode={data.outputMode}
+        />
+      ) : null}
 
       {editCard ? (
         <>

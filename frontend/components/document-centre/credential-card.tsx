@@ -672,13 +672,13 @@ export default function CredentialCard({
                 setRenewErr(null);
                 try {
                   const started = await licenceCentreApi.renew(token, row.id);
-                  // ⚠️ ONE DESTINATION NOW. This used to be a
-                  // canOpenPackScreen() ternary between two live wizards, and
-                  // three separate call sites had each hand-rolled it — one of
-                  // them wrongly, which sent members to the retired screen.
-                  // Both wizards were deleted on 2026-09-08 and the flag with
-                  // them; there is one review sheet and nothing left to choose.
-                  router.push(`/licence-centre/${started.motivationId}`);
+                  // ⚠️ THE START SCREEN, NOT THE REVIEW SHEET. `[id]` is now the
+                  // editable answers screen, and landing there for an application
+                  // that was just created (mode not chosen, or interview not
+                  // begun) is the "another screen" bug: it sent a member who had
+                  // not answered anything to a review page. `/start` is where the
+                  // product and fulfilment are chosen and the interview is opened.
+                  router.push(`/licence-centre/${started.motivationId}/start`);
                 } catch (ex) {
                   setRenewErr(
                     ex instanceof LicenceApiError

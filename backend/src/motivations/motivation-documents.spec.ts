@@ -642,3 +642,78 @@ describe('the annexures a motivation-only pack must carry', () => {
     expect(kinds).toContain(K.SAFE_PHOTOGRAPHS);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// ONE LICENCE PER OWNED FIREARM (operator, 2026-11-27).
+//
+// The row used to be satisfied by ONE CURRENT_LICENCE file however many
+// firearms the applicant owned — a six-firearm SAPS 271 could be lodged with a
+// single photograph. `minFiles` now carries the effective count, and
+// `haveFiles` carries what is in so the screen can say "3 of 6".
+// ────────────────────────────────────────────────────────────────────
+describe('one licence per owned firearm', () => {
+  const TWO_OWNED = {
+    existing_firearm_1_calibre: '.45-70 Government',
+    existing_firearm_2_calibre: '.308 Winchester',
+  };
+
+  const licenceNeed = (s: ReturnType<typeof documentStatus>) =>
+    s.needs.find((need) => need.kind === K.CURRENT_LICENCE)!;
+
+  it('wants as many licence files as the applicant owns firearms', () => {
+    const need = licenceNeed(documentStatus(S13, [], TWO_OWNED));
+    expect(need.minFiles).toBe(2);
+    expect(need.minFilesNote).toBe(
+      'One licence photo for each of the 2 firearms you own.',
+    );
+    expect(need.haveFiles).toBe(0);
+    expect(need.tier).toBe('required');
+  });
+
+  it('is not satisfied by one file, and counts the one that is in', () => {
+    const s = documentStatus(S13, [K.CURRENT_LICENCE], TWO_OWNED);
+    expect(licenceNeed(s).have).toBe(false);
+    expect(licenceNeed(s).haveFiles).toBe(1);
+    expect(s.missingRequired).toContain(K.CURRENT_LICENCE);
+  });
+
+  it('is satisfied by one licence per firearm', () => {
+    const s = documentStatus(
+      S13,
+      [K.CURRENT_LICENCE, K.CURRENT_LICENCE],
+      TWO_OWNED,
+    );
+    expect(licenceNeed(s).have).toBe(true);
+    expect(licenceNeed(s).haveFiles).toBe(2);
+    expect(s.missingRequired).not.toContain(K.CURRENT_LICENCE);
+  });
+
+  it('derives the count from rows the vault filled without the gate answer', () => {
+    const need = licenceNeed(
+      documentStatus(S13, [], {
+        existing_firearm_1_make: 'Marlin',
+        existing_firearm_1_model: '1895',
+      }),
+    );
+    // One firearm is the default want, so no minFiles/minFilesNote is needed —
+    // absent means one, the registry-wide convention.
+    expect(need.minFiles).toBeUndefined();
+    expect(need.minFilesNote).toBeUndefined();
+    expect(need.haveFiles).toBe(0);
+  });
+
+  it('still asks a first-time applicant for nothing', () => {
+    const s = documentStatus(S13, []);
+    expect(s.needs.some((need) => need.kind === K.CURRENT_LICENCE)).toBe(false);
+  });
+
+  it('reports every other need with its attached count', () => {
+    const s = documentStatus(S13, [K.IDENTITY_DOCUMENT]);
+    expect(
+      s.needs.find((need) => need.kind === K.IDENTITY_DOCUMENT)?.haveFiles,
+    ).toBe(1);
+    expect(
+      s.needs.find((need) => need.kind === K.ADDRESS_CONFIRMATION)?.haveFiles,
+    ).toBe(0);
+  });
+});

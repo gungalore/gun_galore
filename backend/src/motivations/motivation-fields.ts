@@ -747,6 +747,80 @@ export function ownedRowTaken(
 }
 
 /**
+ * The four facts the INTERVIEW asks about one owned firearm.
+ *
+ * ⚠️ FOUR, NOT SIX (2026-11-27). `type` and `section_held` are still registry
+ * fields — the writer argues from the section, motivation-overlap classifies the
+ * calibre and the 271 prints the type — but the interview no longer asks them:
+ * the operator's own list is make, model, calibre and serial. They stay on the
+ * review sheet for correction and arrive with a vault read.
+ */
+export const OWNED_ASKED_COLUMNS = ['make', 'model', 'calibre', 'serial'] as const;
+
+/** One owned firearm as the member sees it: what we can actually read. */
+export interface OwnedFirearmFact {
+  /** 1-based, matching the `existing_firearm_N_` key prefix. */
+  index: number;
+  make: string;
+  model: string;
+  calibre: string;
+  serial: string;
+}
+
+/**
+ * THE OWNED-FIREARMS GATE, READ THE SAME WAY EVERYWHERE.
+ *
+ * ⚠️ ONE READER, BECAUSE THE GATE, THE COUNT AND THE ROWS DISAGREED. The
+ * interview, the review sheet and the document checklist each worked out
+ * "does this applicant own firearms, and how many" from different keys: one
+ * counted rows, one trusted `has_existing_firearms`, one trusted
+ * `existing_firearm_count`. A vault application therefore carried licence
+ * cards, an empty gate and a derived count, and every surface said something
+ * different about it.
+ *
+ * - `has`  — effective yes: any taken row, a positive count answer, or a Yes
+ *            gate answer. Vault/upload rows are the strongest evidence.
+ * - `count` — the member's count answer when present (capped at the table),
+ *            otherwise the number of rows we can see.
+ * - `rows` — the rows that hold a firearm, read with `answerValue` so a card
+ *            printing "NONE" against the model or serial is NOT printed back as
+ *            one. The taken-test is `ownedRowTaken`, which deliberately does the
+ *            opposite — see its note.
+ *
+ * Pure: no Prisma, no clock. The planner, the intake state, the sheet and
+ * `documentStatus` all call this one function.
+ */
+export function ownedGate(answers: Record<string, string>): {
+  has: boolean;
+  count: number;
+  rows: OwnedFirearmFact[];
+} {
+  const rows: OwnedFirearmFact[] = [];
+  for (let n = 1; n <= OWNED_ROWS; n += 1) {
+    if (!ownedRowTaken(answers, n)) continue;
+    const p = `existing_firearm_${n}_`;
+    rows.push({
+      index: n,
+      make: answerValue(answers[`${p}make`]).trim(),
+      model: answerValue(answers[`${p}model`]).trim(),
+      calibre: answerValue(answers[`${p}calibre`]).trim(),
+      serial: ownedFirearmSerial(answers, n),
+    });
+  }
+
+  const parsed = Number.parseInt(
+    (answers.existing_firearm_count ?? '').trim(),
+    10,
+  );
+  const answerCount =
+    Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, OWNED_ROWS) : 0;
+  const count = answerCount || rows.length;
+  const gateAnswer = (answers.has_existing_firearms ?? '').trim().toLowerCase();
+  const has = rows.length > 0 || count > 0 || gateAnswer === 'yes';
+  return { has, count, rows };
+}
+
+/**
  * The first owned-firearm row nothing has been written into, or null when all
  * {@link OWNED_ROWS} are in use.
  *
@@ -3702,12 +3776,26 @@ export function requiredKeys(
   type: MotivationLicenceType,
   answers: Record<string, string> = {},
 ): string[] {
+  /**
+   * ⚠️ THE GATE WE CAN ANSWER OURSELVES IS NEVER A REQUIREMENT. When licence
+   * rows are already on the application (read from the vault or an upload), the
+   * answer to "do you own firearms" is Yes and the count is derivable, so
+   * demanding either would block a member on a question the system can answer.
+   * The count is still ASKED as a one-tap confirmation in the interview — this
+   * only stops it gating generation.
+   */
+  const ownedRows = ownedGate(answers).rows.length > 0;
   return fieldsFor(type)
     .filter(
       (f) =>
         f.required &&
         !f.formOnly &&
         !f.key.startsWith('history_') &&
+        !(
+          ownedRows &&
+          (f.key === 'has_existing_firearms' ||
+            f.key === 'existing_firearm_count')
+        ) &&
         isVisible(f, answers),
     )
     .map((f) => f.key);

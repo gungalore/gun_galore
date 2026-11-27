@@ -1728,6 +1728,56 @@ projection and the validator; `intake-draft.service.ts` owns the one model call.
   the typed calibre everywhere the cartridge is resolved. Nothing is ever
   chosen for the member.
 
+### Owned firearms are asked, one firearm at a time
+
+Operator, 2026-11-27 (live S16 test MO000159): the interview never asked what
+the member already owned. The registry's owned-row columns are neither required
+nor detail-gated, so `askablePlan().asked()` filtered all of them — and
+`has_existing_firearms` / `existing_firearm_count` — out of the grouped
+interview; only the old single-question path could ever have served them.
+
+- **`ownedGate(answers)`** (motivation-fields.ts) is the one reader: effective
+  `has` (any taken row, a positive count, or a Yes answer), `count` (the member's
+  answer capped at 14, else the number of taken rows) and `rows`
+  `{ index, make, model, calibre, serial }` read with `answerValue` so a card's
+  "NONE" is never printed as a model or serial. The planner, `IntakeState`, the
+  review sheet and `documentStatus` all call it.
+- **The interview asks the table.** `asked()` now returns true for
+  `has_existing_firearms`, `existing_firearm_count` and
+  `^existing_firearm_\d+_(make|model|calibre|serial)$`; `visibleFields()` builds
+  rows 1..count from the gate. The four asked facts are the operator's list —
+  `type` and `section_held` stay registry/sheet/writer facts.
+  - no rows: ask the gate Yes/No, then the count, then the four facts per row;
+  - rows already read (vault/upload): the gate is effectively Yes and not asked;
+    the count is asked as a one-tap confirmation, prefilled with the number of
+    rows we can see (label "We can see N firearm(s) on your documents…"), and
+    stays pending until provenance is MEMBER; an increase adds the extra rows'
+    questions and a decrease drops them.
+  - `missingRequired` never lists the gate or count when rows exist, so a vault
+    application is never blocked on a question the system can answer.
+- **One firearm per card.** `planGroup` restricts the `existing` topic to the
+  lowest incomplete row, titles it "Firearm n of N" and serves
+  `ownedIndex`/`ownedTotal` (`PlannedGroup`/`IntakeGroup`); the count/gate card
+  comes first and asks only those.
+- **`IntakeState`** now serves `ownedFirearms: { index, make, model, calibre,
+  serial }[]` and `completed: boolean` (`intakeCompletedAt != null`). REVIEW +
+  `completed: false` means the cards are finished but the member never pressed
+  finish — the screen must keep that application resumable.
+- **The review sheet derives what it can, without writing it.** When rows exist
+  and the gate/count are empty, `sheetFor` serves `has_existing_firearms: 'Yes'`
+  and `existing_firearm_count: '<visible rows>'` with a synthesized
+  `{ source: 'DERIVED', from: 'your licence cards', inferred: true }` chip, so
+  the table renders as worked-out rather than outstanding. A MEMBER value —
+  including a cleared one — is never touched, and nothing is written to the
+  database.
+- **One licence per owned firearm, print-ready only.** `documentStatus` now sets
+  `CURRENT_LICENCE.minFiles` to the effective owned count (cap 14) with
+  `minFilesNote` "One licence photo for each of the N firearms you own." and
+  serves `haveFiles` (files attached of that kind) on every need so the screen
+  can say "3 of 6". The generation gate applies the document check only when the
+  output mode is not `MOTIVATION_ONLY`, so the narrative-only product is
+  unaffected.
+
 ### The motivation itself — a FIXED skeleton, not a varied one
 
 `docs/MOTIVATION-GUIDE-BOOK.md` is the legal manual the whole pipeline is built

@@ -667,6 +667,22 @@ export interface IntakeNavigation {
   back: { id: IntakeTopicId; title: string } | null;
 }
 
+/**
+ * A firearm the member already owns, as the server can already see one.
+ *
+ * ⚠️ READ FROM THE DOCUMENTS, NOT TYPED HERE. The interview opens its owned
+ * firearms step with what the Document Vault already holds, so the applicant
+ * corrects a value instead of retyping six. Absent fields render as —; they are
+ * optional because an old or partially-read licence card yields what it yields.
+ */
+export interface IntakeOwnedFirearm {
+  index: number;
+  make?: string;
+  model?: string;
+  calibre?: string;
+  serial?: string;
+}
+
 export interface IntakeQuestion {
   id: string;
   fieldKey: string;
@@ -762,6 +778,16 @@ export interface IntakeGroup {
   answered: number;
   totalInGroup: number;
   questions: IntakeQuestion[];
+  /**
+   * The owned-firearm step asks one firearm per card: which one this is.
+   *
+   * ⚠️ PRESENT ONLY ON THE OWNED-FIREARMS CARDS. It is how the page knows to
+   * show the "firearms we can see" panel even when the card's questions happen
+   * to be empty for a moment.
+   */
+  ownedIndex?: number;
+  /** How many owned firearms this step will walk through. */
+  ownedTotal?: number;
 }
 
 export interface IntakeState {
@@ -774,6 +800,20 @@ export interface IntakeState {
   stage: IntakeStage;
   blocked: IntakeBlocked | null;
   summary: string;
+  /**
+   * True once the interview has actually been finished.
+   *
+   * ⚠️ THE STAGE ALONE IS NOT ENOUGH. A REVIEW-stage state can also be served to
+   * a member who never pressed "Review my answers" (a reload, a notification
+   * link), and bouncing them past the completion card is the "another screen"
+   * bug. `completed` separates "finished" from "there is nothing left to ask".
+   */
+  completed?: boolean;
+  /**
+   * Firearms we can already see on the member's documents, for the owned-firearms
+   * step's opening panel. Absent on old servers/sheets.
+   */
+  ownedFirearms?: IntakeOwnedFirearm[];
   /**
    * The writer is drafting the narrative answers right now.
    *
@@ -1015,6 +1055,14 @@ export interface DocumentNeed {
   tier: 'required' | 'expected' | 'strengthens' | 'extra';
   why: string;
   have: boolean;
+  /**
+   * How many FILES are already attached where the need wants `minFiles`.
+   *
+   * ⚠️ THE PRINT-READY LICENCE ROW IS A COUNT, NOT A TICK. "Each firearm's
+   * licence" is met by six files, not one, and the row has to be able to say
+   * "3 of 6 licence cards added" without the client counting uploads itself.
+   */
+  haveFiles?: number;
   /**
    * How many FILES this line wants before `have` goes true. Absent means one.
    *

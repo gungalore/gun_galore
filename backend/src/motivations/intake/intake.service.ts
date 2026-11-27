@@ -28,6 +28,7 @@ import {
   fieldsFor,
   isVisible,
   LICENCE_TYPE_LABELS,
+  ownedGate,
   type MotivationField,
 } from '../motivation-fields';
 import {
@@ -445,6 +446,19 @@ export class MotivationIntakeService {
        * Generate, rather than an SMS afterwards.
        */
       needsDetail,
+      /**
+       * ⚠️ THE FIREARMS WE CAN SEE, ONE LINE EACH. A vault or upload fills rows
+       * without asking anything; the interview confirms the count and completes
+       * only what we could not read. The review screen lists the same rows, so
+       * the two cannot tell different stories.
+       */
+      ownedFirearms: ownedGate(answers).rows,
+      /**
+       * ⚠️ RESUMABILITY IS A ROUTE DECISION. REVIEW + !completed means the cards
+       * are finished but the member never pressed finish; the screen keeps that
+       * application resumable instead of bouncing it to the pack.
+       */
+      completed: row.intakeCompletedAt !== null,
       vaultEmpty: !(library.items ?? []).some((i) => i.source === 'credential'),
       documents,
       evidence,
@@ -1460,6 +1474,9 @@ export class MotivationIntakeService {
         total: plan.total,
         answered: plan.answered,
         totalInGroup: plan.totalInGroup,
+        ...(plan.ownedIndex !== undefined
+          ? { ownedIndex: plan.ownedIndex, ownedTotal: plan.ownedTotal }
+          : {}),
         questions: card.questions,
       },
       navigation,
@@ -1643,6 +1660,10 @@ export class MotivationIntakeService {
         why: n.why,
         have: n.have,
         ...(n.minFiles ? { minFiles: n.minFiles, minFilesNote: n.minFilesNote } : {}),
+        // ⚠️ "3 of 6" — the owned-firearm licence row wants one photo per
+        // firearm, so the screen needs the count it already has, not only
+        // whether the row is satisfied.
+        ...(n.haveFiles !== undefined ? { haveFiles: n.haveFiles } : {}),
       }));
 
     return {
@@ -2147,6 +2168,9 @@ export class MotivationIntakeService {
         total: plan.total,
         answered: plan.answered,
         totalInGroup: plan.totalInGroup,
+        ...(plan.ownedIndex !== undefined
+          ? { ownedIndex: plan.ownedIndex, ownedTotal: plan.ownedTotal }
+          : {}),
       },
       questions: card.questions,
       /**

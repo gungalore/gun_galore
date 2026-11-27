@@ -144,6 +144,98 @@ export function reviewFormOnly(sheet: SheetResponse): SheetItem[] {
   );
 }
 
+// ── owned firearms: one box per firearm, in the section they belong to ──
+
+/** `existing_firearm_<n>_<field>` — the same pattern the interview card reads. */
+const OWNED_KEY = /^existing_firearm_(\d+)_(.+)$/;
+const OWNED_FIELDS = ['make', 'model', 'calibre', 'serial'];
+
+/**
+ * How many owned-firearm boxes to show.
+ *
+ * ⚠️ THE COUNT ANSWER WINS. The sheet can hold rows for firearms the member has
+ * since told us they do not own; the interview's own count is the truth, and a
+ * box per stale row is a form that grows back. With no count answer the highest
+ * row index is the best available fallback.
+ */
+export function ownedFirearmCount(sheet: SheetResponse): number {
+  const answer = Number.parseInt(
+    (sheet.items.find((item) => item.key === 'existing_firearm_count')?.value ??
+      '').trim(),
+    10,
+  );
+  if (Number.isFinite(answer) && answer > 0) return answer;
+  let highest = 0;
+  for (const item of sheet.items) {
+    const match = OWNED_KEY.exec(item.key);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  return highest;
+}
+
+export interface OwnedFirearmBoxView {
+  index: number;
+  /** "GLOCK · 19 · 9MM · ABC" from the rows, or null when nothing is set yet. */
+  summary: string | null;
+  items: SheetItem[];
+  /** Which of `items` the sheet is still holding out for. */
+  missing: SheetItem[];
+}
+
+/** The bordered box for one owned firearm, from that firearm's rows. */
+export function ownedFirearmBoxes(
+  sheet: SheetResponse,
+  items: SheetItem[],
+  count = ownedFirearmCount(sheet),
+): OwnedFirearmBoxView[] {
+  const byIndex = new Map<number, SheetItem[]>();
+  for (const item of items) {
+    const match = OWNED_KEY.exec(item.key);
+    if (!match) continue;
+    const index = Number(match[1]);
+    if (index < 1 || index > count) continue;
+    const list = byIndex.get(index) ?? [];
+    list.push(item);
+    byIndex.set(index, list);
+  }
+  const boxes: OwnedFirearmBoxView[] = [];
+  for (let index = 1; index <= count; index += 1) {
+    const rows = byIndex.get(index);
+    if (!rows?.length) continue;
+    const valueOf = (field: string) =>
+      rows.find((row) => row.key === `existing_firearm_${index}_${field}`)?.value
+        ?.trim() ?? '';
+    const summary =
+      OWNED_FIELDS.map(valueOf).filter(Boolean).join(' · ') || null;
+    // Make, Model, Calibre, Serial first, then type/expiry/section in card order.
+    const itemsOrdered = [...rows].sort((a, b) => {
+      const orderOf = (row: SheetItem) => {
+        const at = OWNED_FIELDS.indexOf(OWNED_KEY.exec(row.key)?.[2] ?? '');
+        return at === -1 ? OWNED_FIELDS.length : at;
+      };
+      return orderOf(a) - orderOf(b);
+    });
+    const missingKeys = new Set(sheet.missing);
+    for (const section of sheet.sections) {
+      for (const key of section.missing ?? []) missingKeys.add(key);
+    }
+    boxes.push({
+      index,
+      summary,
+      items: itemsOrdered,
+      missing: itemsOrdered.filter((item) =>
+        isMissingAnswer(item, missingKeys),
+      ),
+    });
+  }
+  return boxes;
+}
+
+/** True when this item belongs in an owned-firearm box rather than a flat row. */
+export function isOwnedFirearmItem(item: SheetItem): boolean {
+  return OWNED_KEY.test(item.key);
+}
+
 function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
@@ -197,13 +289,59 @@ function AttentionPanel({ stats }: { stats: ReviewStats }) {
   );
 }
 
+/** One bordered box per owned firearm: heading, summary line, row editors. */
+function OwnedFirearmBox({
+  box,
+  busyKey,
+  confirmingKey,
+  onSave,
+  onConfirm,
+}: {
+  box: OwnedFirearmBoxView;
+  busyKey: string | null;
+  confirmingKey: string | null;
+  onSave: (key: string, value: string) => Promise<void>;
+  onConfirm: (key: string) => void | Promise<void>;
+}) {
+  return (
+    <section
+      aria-label={`Firearm ${box.index}`}
+      className="my-3 rounded-xl border p-3"
+      style={{ borderColor: 'var(--border)', background: 'var(--bg-page)' }}
+    >
+      <h3 className="m-0 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+        Firearm {box.index}
+      </h3>
+      {box.summary ? (
+        <p className="m-0 mt-1 text-[14.5px] font-medium leading-[1.3] text-[var(--text-primary)]">
+          {box.summary}
+        </p>
+      ) : null}
+      <div className="mt-1">
+        {box.items.map((item) => (
+          <AnswerReviewRow
+            key={item.key}
+            item={item}
+            autoOpen={box.missing.includes(item)}
+            busy={busyKey === item.key || confirmingKey === item.key}
+            onSave={onSave}
+            onConfirm={item.state === 'suggested' ? onConfirm : undefined}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SectionFold({
+  sheet,
   view,
   busyKey,
   confirmingKey,
   onSave,
   onConfirm,
 }: {
+  sheet: SheetResponse;
   view: ReviewSectionView;
   busyKey: string | null;
   confirmingKey: string | null;
@@ -216,6 +354,13 @@ function SectionFold({
   useEffect(() => {
     if (view.autoOpen) setOpen(true);
   }, [view.autoOpen]);
+  const all = [...view.missing, ...view.rest];
+  /**
+   * ⚠️ THE OWNED FIREARMS COME OUT OF THE FLAT RUN. In the section they are one
+   * box per firearm; the count/gate rows stay ordinary rows above them.
+   */
+  const flat = all.filter((item) => !isOwnedFirearmItem(item));
+  const boxes = ownedFirearmBoxes(sheet, all);
   return (
     <details
       className="mt-5 rounded-[var(--r-lg)] border"
@@ -248,7 +393,7 @@ function SectionFold({
         className="border-t px-4"
         style={{ borderColor: 'var(--border-divider)' }}
       >
-        {[...view.missing, ...view.rest].map((item) => {
+        {flat.map((item) => {
           const isMissing = view.missing.includes(item);
           return (
             <AnswerReviewRow
@@ -261,10 +406,21 @@ function SectionFold({
             />
           );
         })}
+        {boxes.map((box) => (
+          <OwnedFirearmBox
+            key={box.index}
+            box={box}
+            busyKey={busyKey}
+            confirmingKey={confirmingKey}
+            onSave={onSave}
+            onConfirm={onConfirm}
+          />
+        ))}
       </div>
     </details>
   );
 }
+
 
 export interface AnswersReviewProps {
   sheet: SheetResponse;
@@ -292,9 +448,24 @@ export default function AnswersReview({
   const stats = reviewStats(sheet);
   const sections = reviewSections(sheet);
   const formOnly = reviewFormOnly(sheet);
+  const ownedCount = ownedFirearmCount(sheet);
   const missingDocuments = sheet.needs.needs.filter(
     (need) => need.tier === 'required' && !need.have,
   );
+  /**
+   * ⚠️ A PRINT-READY PACK WANTS A LICENCE CARD PER OWNED FIREARM. That is a
+   * count, not a tick: the backend's CURRENT_LICENCE need carries minFiles /
+   * haveFiles and decides `have` itself. This only renders the progress line —
+   * it never changes what Continue is gated on.
+   */
+  const licenceNeed =
+    sheet.application.outputMode === 'PRINT_READY' && ownedCount > 0
+      ? sheet.needs.needs.find((need) => need.kind === 'CURRENT_LICENCE')
+      : undefined;
+  const documentRows = licenceNeed
+    ? missingDocuments.filter((need) => need.kind !== 'CURRENT_LICENCE')
+    : missingDocuments;
+  const showDocuments = documentRows.length > 0 || Boolean(licenceNeed);
   return (
     <>
       <AttentionPanel stats={stats} />
@@ -302,6 +473,7 @@ export default function AnswersReview({
       {sections.map((view) => (
         <SectionFold
           key={view.section.id}
+          sheet={sheet}
           view={view}
           busyKey={busyKey}
           confirmingKey={confirmingKey}
@@ -310,16 +482,40 @@ export default function AnswersReview({
         />
       ))}
 
-      {missingDocuments.length ? (
+      {showDocuments ? (
         <section className="mt-6">
           <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
-            Documents still needed
+            {missingDocuments.length ? 'Documents still needed' : 'Licence cards for the pack'}
           </h2>
-          <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
-            {missingDocuments.map((need) => (
-              <li key={need.kind}>{need.label}</li>
-            ))}
-          </ul>
+          {documentRows.length ? (
+            <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
+              {documentRows.map((need) => (
+                <li key={need.kind}>{need.label}</li>
+              ))}
+            </ul>
+          ) : null}
+          {licenceNeed ? (
+            <div
+              className="mt-3 rounded-lg border px-3 py-2"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-inset)',
+              }}
+            >
+              <p className="m-0 text-[13px] font-medium text-[var(--text-primary)]">
+                {licenceNeed.label}
+              </p>
+              <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                {licenceNeed.haveFiles ?? 0} of{' '}
+                {licenceNeed.minFiles ?? ownedCount} licence cards added
+              </p>
+              {licenceNeed.minFilesNote ? (
+                <p className="m-0 mt-1 text-[11.5px] leading-4 text-[var(--text-tertiary)]">
+                  {licenceNeed.minFilesNote}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {interviewHref ? (
             <Link
               href={interviewHref}

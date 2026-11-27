@@ -270,3 +270,92 @@ describe('the attention panel', () => {
     expect(screen.getByText(/1 document still needed/)).toBeDefined();
   });
 });
+
+describe('owned firearms — one box per firearm, only as many as the count', () => {
+  const ownedRow = (
+    index: number,
+    field: string,
+    label: string,
+    value: string,
+  ): SheetItem =>
+    filled({
+      key: `existing_firearm_${index}_${field}`,
+      label,
+      value,
+      section: 'existing',
+    });
+
+  const countRow = (value: string): SheetItem =>
+    filled({
+      key: 'existing_firearm_count',
+      label: 'How many firearms do you own?',
+      kind: 'choice',
+      value,
+      section: 'existing',
+    });
+
+  it('groups the rows into boxes and stops at the count', () => {
+    renderReview(
+      sheet({
+        sections: [section('existing', 'Firearms you own')],
+        items: [
+          countRow('2'),
+          ownedRow(1, 'make', 'Make', 'GLOCK'),
+          ownedRow(1, 'model', 'Model', '19'),
+          ownedRow(1, 'calibre', 'Calibre', '9MM'),
+          ownedRow(1, 'serial', 'Serial', 'ABC'),
+          ownedRow(2, 'make', 'Make', 'MAUSER'),
+          // A stale row beyond the count must not grow a third box.
+          ownedRow(3, 'make', 'Make', 'OLD'),
+        ],
+        missing: [],
+        needs: { needs: [] },
+      }),
+    );
+
+    const first = screen.getByRole('region', { name: 'Firearm 1' });
+    expect(
+      within(first).getByRole('heading', { name: 'Firearm 1' }),
+    ).toBeDefined();
+    // The box header reads the firearm back in the order a licence card prints.
+    expect(within(first).getByText('GLOCK · 19 · 9MM · ABC')).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Firearm 2' })).toBeDefined();
+    expect(screen.queryByRole('region', { name: 'Firearm 3' })).toBeNull();
+    expect(screen.queryByText('OLD')).toBeNull();
+    // The count question stays an ordinary row, outside the boxes.
+    expect(within(first).queryByText('How many firearms do you own?')).toBeNull();
+    expect(screen.getByText('How many firearms do you own?')).toBeDefined();
+  });
+
+  it('shows the per-firearm licence progress for a print-ready pack', () => {
+    renderReview(
+      sheet({
+        application: { ...sheet().application, outputMode: 'PRINT_READY' },
+        sections: [section('existing', 'Firearms you own')],
+        items: [
+          countRow('6'),
+          ownedRow(1, 'make', 'Make', 'GLOCK'),
+        ],
+        missing: [],
+        needs: {
+          needs: [
+            {
+              kind: 'CURRENT_LICENCE',
+              label: "Each firearm's licence",
+              tier: 'required',
+              why: 'A print-ready pack shows the DFO every firearm we mention.',
+              have: false,
+              minFiles: 6,
+              haveFiles: 3,
+              minFilesNote: 'One photo or scan per firearm.',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(screen.getByText('3 of 6 licence cards added')).toBeDefined();
+    expect(screen.getByText('One photo or scan per firearm.')).toBeDefined();
+    expect(screen.getByText("Each firearm's licence")).toBeDefined();
+  });
+});
