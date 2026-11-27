@@ -7,6 +7,69 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — MULTI-ITEM CHECKOUT LIVE (FULL `533ef5d2`, BACKEND `6abd1e3c`)
+
+Operator: build the multi-item checkout with an aggregate Platform Fee, per-seller shipping, per-group
+Courier/Private/Dealer Stock toggles, per-item distance, Zoho item lines, auction exclusion and remove/relist.
+
+**Deployed:** full `533ef5d2` at 18:37 SAST (rollback `alloutdoor-20261127-183755.dump`), then backend-only
+`6abd1e3c` at 19:05 (rollback `alloutdoor-20261127-190557.dump`; HEAD 6abd1e3c). Migration
+`20261127150000_order_payment_multi_item` applied; `prisma migrate status` = up to date. Backend/frontend/warden
+online, health + payment-methods 200, gate 307 → `/gate` 200, `/orders/checkout` unauth 401, `/orders`
+unauth 401, order verify route registered.
+
+- **ONE payment, N purchases.** `POST /orders/checkout` now creates an `AWAITING_PAYMENT` Order, one
+  gateway capture for `order.buyerTotal`, and only fans the capture out to each child Transaction after
+  `POST /orders/:id/verify-result` or the provider webhook re-queries and binds provider + amount + current
+  merchant reference. 15-minute pay window, 5-minute expiry sweep (cancel + restock), resume/cancel routes,
+  and a paid-order race guard so a gateway timeout that actually captured can never be unwound.
+- **ONE Platform Fee.** Base = Σ(item + actual shipping); existing bands + R10 floor applied once; the total
+  is allocated to the child lines proportionally (largest remainder, exact sum). Child `processingFee`/
+  `buyerTotal` are rewritten so a full item refund returns that item's fee share; seller payout is untouched.
+  Single-item/offer/auction maths unchanged.
+- **Per-seller shipping and per-group toggles.** Cart and checkout group by seller + delivery class:
+  accessories = Courier / Private; firearms = Dealer Stock / Private. A seller with both shows two independent
+  toggles. All courier accessories from one seller share one combined quote and ONE booking (carrier charged,
+  siblings `shippingCost=0` + `shipsWithId`); private/collection/firearm handovers book nothing. Mixed
+  firearm+accessories orders are legal. Collection-only/Private cart lines are allowed.
+- **Remove & relist while unpaid.** `DELETE /orders/:id/lines/:transactionId` releases the line immediately
+  (listing ACTIVE/stock restored), re-quotes the seller's remaining goods group (including a group that is now
+  a single parcel, or promotes a surviving carrier), re-allocates the ONE fee, rewrites the Order totals and
+  mints a fresh per-attempt payment session. Last line cancels the order; a paid order refuses (409, refund
+  flow only). The cart can remove locally before checkout and through the order while unpaid.
+- **Zoho.** One buyer invoice per paid order: item line per item, one delivery line per seller courier booking,
+  one Platform Fee line; total must equal `order.buyerTotal`; per-child buyer invoices suppressed. Commission
+  and shipping journals remain per child at release.
+- **Labels.** Courier / Private / Dealer Stock site-wide; “meet in person”, “arrange privately” and “collection
+  only” display as Private. Single/offer checkout, sell form and delivery components use the same pairs.
+- **Distance and cross-sell.** Batched `POST /listings/distances` (≤50 ids, 5 km snapped, no coordinates);
+  compact `150km` + info tooltip on listing cards, PDP, more-from-seller, cart and order lines, one batch per
+  page. PDP “More listings from this seller — save on shipping when you buy more from this seller.”
+- **Auctions/offers** stay single-item; client guard and backend prevalidation reject cart entries.
+- **Order surfaces.** Order status `PAID → PARTIALLY_FULFILLED → COMPLETED/REFUNDED`, `CANCELLED` only unpaid;
+  inline sync plus 30-minute sweep. `/orders/[id]` groups seller lines, shows shipping groups, totals, unpaid
+  actions and the rating section; `/my/orders` is order-first. `/checkout/complete?orderId=` verifies and
+  clears the purchased cart lines.
+- **Server overspend guard.** A second overlapping `AWAITING_PAYMENT` order for the same listings returns
+  409 `UNPAID_ORDER_EXISTS` with the existing order id; the cart routes to Resume/Cancel instead of attempting
+  a duplicate reservation.
+
+**Remaining known gaps (not hidden):**
+- A superseded Ozow/Ozow-thin webhook that carries only an old checkout id and no merchant reference cannot be
+  mapped back to its order; reference-bearing stale deliveries raise `ORDER_PAYMENT_SUPERSEDED` and never mark
+  paid. Monitor gateway alerts until this is closed.
+- The cart delivery-menu API still quotes courier parcels (not per-class toggle objects); the UI builds the
+  seller/class groups and checkout enforces the one-method-per-group rule, so shown and charged agree.
+- A seller whose GOODS group mixes a collection-only line with a courier line has no common method; the cart
+  flags the group and asks the buyer to remove one (rather than choosing an illegal rail).
+- Zoho order invoicing does not run the single-invoice client-funds settlement finalisation; journals remain
+  per child at release.
+- No live payment smoke was possible without a buyer test card; the first live cart order should be watched.
+
+**Checks:** backend tsc clean + **476 suites / 6,993 tests passed, 0 failed** (full rerun after the guard);
+frontend typecheck clean + **229 files / 2,519 passed, 1 skipped** + production build clean; Prisma schema
+validated and migration applied. Deploy verification: HEAD, health 200, payment-methods 200, gate 307/200.
+
 ## 2026-11-27 — RATING FOLLOW-UPS (BUYER NOTIFY, JEV ABUSE, PER-SELLER ORDER RATINGS) + MULTI-SELLER CART AUDIT
 
 Operator: "notify the buyer as well. Let JEV also do abuse filter, negative feedback is allowed but derogatory
