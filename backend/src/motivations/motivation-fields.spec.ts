@@ -381,17 +381,27 @@ describe('requiredKeys', () => {
   });
 
   it('grows as conditions come true', () => {
+    /**
+     * ⚠️ THE GROWTH IS STILL REAL — pinned on the SAFE chain, which is the one
+     * that still hangs off an answer (safe_present = Yes opens the type, the
+     * mounting and the key holder). The spouse chain no longer grows: marital
+     * status and the spouse's name became SAPS 271-only boxes on 2026-11-27.
+     */
+    const noSafe = requiredKeys(T, { safe_present: 'No' });
+    const withSafe = requiredKeys(T, { safe_present: 'Yes' });
+    expect(withSafe.length).toBeGreaterThan(noSafe.length);
+    expect(withSafe).toEqual(
+      expect.arrayContaining(['safe_type', 'safe_mounted']),
+    );
+
+    // ⚠️ MARRIED ADDS NOTHING NOW. `marital_status` and `spouse_name` are
+    // formOnly: they are 271 section D boxes, and the product does not fill in a
+    // 271. requiredKeys() excludes formOnly, so they can never gate a pack.
     const single = requiredKeys(T, { marital_status: 'Single' });
     const married = requiredKeys(T, { marital_status: 'Married' });
-    /**
-     * ⚠️ MARRIED NOW ADDS ONLY THE SPOUSE'S NAME. The ID-type question and the
-     * ID number behind it were both `formOnly` — they existed to fill boxes on
-     * the SAPS 271 we no longer produce, and they left the interview with it on
-     * 2026-11-05. The name is still asked because it is the one spouse fact the
-     * writer can use.
-     */
-    expect(married.length).toBe(single.length + 1);
-    expect(married).toContain('spouse_name');
+    expect(married).toEqual(single);
+    expect(married).not.toContain('marital_status');
+    expect(married).not.toContain('spouse_name');
     expect(married).not.toContain('spouse_id_type');
     expect(married).not.toContain('spouse_id_number');
 
@@ -649,24 +659,27 @@ describe('requirements that appear only once something is answered', () => {
     expect(keys).not.toContain('spouse_id_type');
   });
 
-  it('ADDS the spouse name the moment marital status becomes Married', () => {
+  it('does NOT add the spouse name — it is a SAPS 271-only box', () => {
+    // ⚠️ INVERTED 2026-11-27. The operator's live S16 test (MO000159) met
+    // "Marital status" and "Spouse or partner's full name" as interview
+    // questions. They are 271 section D boxes and the product does not fill in a
+    // 271, so they are formOnly now: requiredKeys() excludes them and no answer
+    // can make them required.
     const before = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
       marital_status: 'Single',
     });
     const after = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, married());
-    const added = after.filter((k) => !before.includes(k));
-    // The exact list may grow; that it grows AT ALL is the point.
-    expect(added.length).toBeGreaterThan(0);
-    expect(added).toContain('spouse_name');
+    expect(after).toEqual(before);
+    expect(after).not.toContain('spouse_name');
+    expect(after).not.toContain('marital_status');
   });
 
-  it('reports the spouse name as MISSING, so generate refuses', () => {
-    // Exactly the shape of the live failure: every question the applicant
-    // could see was answered, and the document still would not generate.
+  it('does NOT report the spouse name as missing', () => {
+    // The live failure this block documented was "every visible question
+    // answered and generate still refuses". A 271 box may never be that reason.
     const missing = missingRequired(MotivationLicenceType.S16_DEDICATED_SPORT, married());
-    expect(missing).toContain('spouse_name');
-    // ⚠️ The form-only ID chain is not a question any more, so it can never be
-    // the reason a member is refused.
+    expect(missing).not.toContain('marital_status');
+    expect(missing).not.toContain('spouse_name');
     expect(missing).not.toContain('spouse_id_type');
     expect(missing).not.toContain('spouse_id_number');
   });
@@ -684,24 +697,27 @@ describe('requirements that appear only once something is answered', () => {
     expect(withType).not.toContain('spouse_id_number');
   });
 
-  it('asks the spouse questions of a married applicant, and of nobody else', () => {
-    // ⚠️ INVERTED FROM WHAT IT SAID, 2026-09-08. This used to assert that on
-    // the dealer path the whole form-only block was out of scope, so marital
-    // status could not drag the spouse fields in behind it. There is no dealer
-    // path now: the SAPS 271 is always produced, so both are asked — and the
-    // gate that matters is the one this test is really about, which is that
-    // they hang off being married rather than off a form choice.
-    const married = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
-      marital_status: 'Married',
-    });
-    expect(married).toContain('marital_status');
-    expect(married).toContain('spouse_name');
-
-    const single = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
-      marital_status: 'Single',
-    });
-    expect(single).toContain('marital_status');
-    expect(single).not.toContain('spouse_name');
+  it('never requires the marital-status or spouse boxes, married or not', () => {
+    // ⚠️ INVERTED 2026-11-27. This used to assert they WERE asked of a married
+    // applicant. They are SAPS 271 section D boxes (formOnly), so the interview
+    // and the generation gate must never see them for any type or status. The
+    // value stays accepted and editable on the review sheet's collapsed 271
+    // block, and the spouse fields still `showIf` on it.
+    for (const type of Object.values(MotivationLicenceType)) {
+      for (const status of ['Married', 'Single']) {
+        const keys = requiredKeys(type, { marital_status: status });
+        expect({ type, status, marital: keys.includes('marital_status') }).toEqual({
+          type,
+          status,
+          marital: false,
+        });
+        expect({ type, status, spouse: keys.includes('spouse_name') }).toEqual({
+          type,
+          status,
+          spouse: false,
+        });
+      }
+    }
   });
 });
 

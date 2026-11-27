@@ -4,7 +4,13 @@ import type { SheetResponse } from '../motivation-sheet.service';
 import { fieldsFor } from '../motivation-fields';
 import { MotivationIntakeService } from './intake.service';
 
-const TYPE = MotivationLicenceType.S16_DEDICATED_HUNTER;
+/**
+ * ⚠️ A SELF-DEFENCE CARD, BECAUSE THE PREMISES BLOCK IS THE ONLY OPTIONAL CASE
+ * KEY LEFT THAT IS NOT DRAFTED. On S15/S16/S24 the security paragraph and the
+ * comparison are no longer asked (see intake-strategies.ts, 2026-11-27), so
+ * there is nothing optional on those cards to skip.
+ */
+const TYPE = MotivationLicenceType.S13_SELF_DEFENCE;
 
 const SHEET = {
   application: {

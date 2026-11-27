@@ -53,7 +53,7 @@ import {
   onlyNarrativeGapsRemain,
 } from './intake-draft';
 import { MotivationNarrativeDraftService } from './intake-draft.service';
-import { familyVariantsFor } from '../motivation-cartridge';
+import { familyVariantsFor, cartridgeSource } from '../motivation-cartridge';
 import {
   normaliseOutputMode,
   type MotivationOutputMode,
@@ -875,6 +875,36 @@ export class MotivationIntakeService {
         }
       } else if (!(extractedKey in patch)) {
         patch[extractedKey] = extractedValue;
+      }
+    }
+
+    /**
+     * ⚠️ THE CHOSEN CARTRIDGE BECOMES THE CALIBRE WHEN THE TYPED ONE WAS A
+     * FAMILY — AND ONLY THEN.
+     *
+     * Live app MO000159 stored `firearm_calibre: "6.5"` and
+     * `firearm_cartridge: "6,5 Creedmoor"`. The cartridge question had done its
+     * job, but everything downstream (the species research, the hunt-class menu,
+     * the question labels, the brief, the fact pack and the writer) still read
+     * the family, because the answer lived in a second field. The cartridge is
+     * the exact round and outranks the typed family everywhere — `cartridgeSource`
+     * already says so — so write it into the calibre AT THE ANSWER BOUNDARY too.
+     *
+     * ⚠️ NEVER OVER A FULL TYPED CALIBRE. A member who typed ".308 Winchester"
+     * keeps it; "6.5" / "9mm" / ".38" are the only values that may be replaced,
+     * and `familyVariantsFor` is the same family test the cartridge question and
+     * the extractor guard use. Nothing is guessed: the replacement is the value
+     * the applicant chose.
+     */
+    const chosenCartridge = (patch.firearm_cartridge ?? '').trim();
+    if (chosenCartridge) {
+      const calibre = (
+        patch.firearm_calibre ??
+        answers.firearm_calibre ??
+        ''
+      ).trim();
+      if (familyVariantsFor(calibre).length) {
+        patch.firearm_calibre = chosenCartridge;
       }
     }
 
@@ -1747,7 +1777,15 @@ export class MotivationIntakeService {
   private async speciesChoices(
     answers: Record<string, string>,
   ): Promise<IntakeChoice[]> {
-    const calibre = (answers.firearm_calibre ?? '').trim();
+    /**
+     * ⚠️ THE CHOSEN CARTRIDGE, NOT THE TYPED FAMILY. A "6.5" advisory asked the
+     * model for species suited to six-point-five-anything; the member had
+     * already chosen "6,5 Creedmoor". `cartridgeSource` is the same resolver the
+     * drawing, the fact pack and the sheet use, so legacy rows that stored both
+     * fields get the exact round without a migration. The cache key moves with
+     * it.
+     */
+    const calibre = cartridgeSource(answers).trim();
     if (!calibre || !this.llm.isConfigured()) return [];
     const type = (answers.firearm_type ?? '').trim();
     const action = (answers.firearm_action ?? '').trim();

@@ -167,6 +167,42 @@ describe('the narrative drafter fills the answers the interview never asks', () 
     expect(h.answers().shooting_history).toBe(VALID_HISTORY);
   });
 
+  /**
+   * ⚠️ THE COMPARISON IS A SHORT TARGET. "What else did you consider" moved out
+   * of the interview on 2026-11-27: the drafter composes one sentence from the
+   * firearm applied for and the battery, the validator's SHORT branch checks the
+   * field's maxLength, and it is stored in the same single update.
+   */
+  it('stores a SHORT drafted answer (the comparison) in the same update', async () => {
+    const short = 'I considered a .308, but this rifle suits the bushveld ranges I actually shoot.';
+    const h = harness({
+      answers: {
+        firearm_use_kind: 'hunting',
+        shooting_history: VALID_HISTORY,
+        training_history: 'Training.',
+        hunt_game_class: 'plains_medium',
+        hunt_terrain: 'bushveld',
+        hunt_where: 'bushveld',
+        hunt_reasons: 'I hunt for the meat.',
+        hunting_history: 'A record.',
+      },
+      replies: [
+        JSON.stringify({
+          drafts: [{ key: 'alternative_considered', text: short }],
+        }),
+      ],
+    });
+
+    const result = await h.svc.ensure('user-1', 'mo-1');
+
+    expect(result.drafted).toBe(1);
+    expect(h.answers().alternative_considered).toBe(short);
+    expect(h.provenance().alternative_considered).toMatchObject({
+      source: 'DRAFTED',
+      inferred: true,
+    });
+  });
+
   it('never overwrites a MEMBER answer — including one the member cleared', async () => {
     for (const value of ['My own words about the shooting I do.', '']) {
       const h = harness({
@@ -193,6 +229,7 @@ describe('the narrative drafter fills the answers the interview never asks', () 
         hunt_where: 'bushveld',
         hunt_reasons: 'I hunt for the meat.',
         hunting_history: 'A record.',
+        alternative_considered: 'I considered a .308, and chose this one.',
       },
     });
     const result = await h.svc.ensure('user-1', 'mo-1');
@@ -212,6 +249,7 @@ describe('the narrative drafter fills the answers the interview never asks', () 
         hunt_where: 'bushveld',
         hunt_reasons: 'I hunt for the meat.',
         hunting_history: 'A record.',
+        alternative_considered: 'I considered a .308, and chose this one.',
       },
       provenance: {
         shooting_history: draftStamp(),

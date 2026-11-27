@@ -1623,11 +1623,36 @@ projection and the validator; `intake-draft.service.ts` owns the one model call.
   `s13_movements`, `s13_carry_style`, `hunting_history`, `hunting_locations`,
   `hunt_reasons`, `hunt_terrain`, `hunt_where`, `hunt_game_class`,
   `sport_reasons`, `sport_formats`, `activity_record`, `competition_record`,
-  `continued_use`. `visibleFields()` excludes every one of them, in the
-  single-question path and the grouped one, so **no interview plan can ask a
-  narrative field for any licence type**. The hunting/sport branch is chosen
-  with `resolveSportingPurpose()` — the same resolver the document uses, so a
-  handgun gets its sport narrative and never a hunting paragraph.
+  `continued_use`, `alternative_considered`. `visibleFields()` excludes every
+  one of them, in the single-question path and the grouped one, so **no
+  interview plan can ask a narrative field for any licence type**. The
+  hunting/sport branch is chosen with `resolveSportingPurpose()` — the same
+  resolver the document uses, so a handgun gets its sport narrative and never a
+  hunting paragraph. The comparison is a `short` target (one sentence from the
+  battery, no word band) and is stored by the same single update.
+- **SAPS 271-only boxes are never asked.** `licence_holder_type`,
+  `marital_status`, `spouse_name` (with `spouse_id_type` /
+  `spouse_id_number`) are `formOnly`: `visibleFields()` skips formOnly in every
+  path and `requiredKeys()` excludes it, so they cannot gate a pack. The review
+  sheet still serves them — `SheetItem.formOnly` is true and the screen moves
+  those rows into a collapsed "SAPS 271 details (optional)" block, still
+  editable, so an uploaded 271 read-back and the owned-firearm rows stay
+  correctable.
+- **The security paragraph is self-defence only.** `premises_*`,
+  `alarm_present`, `armed_response`, `burglar_bars`, `security_gates` and
+  `travelled_areas_text` are askable only on S13/S14 (`SELF_DEFENCE_ONLY_KEYS`,
+  enforced in `visibleFields`); safe storage (`safe_*`) stays on every type.
+  The live S16 test (MO000159) was asked about burglar bars and gates.
+- **The chosen cartridge propagates.** A typed family ("6.5", "9mm", ".38")
+  must never survive once the member has chosen the exact cartridge:
+  `patchForAnswer` writes `firearm_cartridge` into `firearm_calibre` when — and
+  only when — the typed calibre is a family; `cartridgeSource()` is then read by
+  the species advisory, the hunt-class menu, the question labels, the brief
+  (`briefFacts` carries a Cartridge fact and `briefHash` includes it), the
+  fact pack (`firearm_calibre: displayCalibre(cartridgeSource(...))`), the
+  suitability argument, the rendered cover/footer and `packConsistency`, which
+  accepts the cartridge as a form of the calibre. Rows stored before the change
+  need no migration: every reader resolves the cartridge first.
 - **What the model may see.** `draftFacts()` projects the licence type label,
   the firearm (type/action/make/model/calibre/cartridge), the resolved purpose,
   the quarry, the game class, the exercise, the association (name/joined/

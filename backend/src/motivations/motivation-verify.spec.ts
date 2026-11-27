@@ -43,6 +43,32 @@ describe('packConsistency', () => {
     expect(packConsistency(CLEAN, ANSWERS, ANNEXURES)).toEqual([]);
   });
 
+  /**
+   * ⚠️ THE CHOSEN CARTRIDGE IS A FORM OF THE CALIBRE. Live MO000159 stored the
+   * typed family "6.5" AND the chosen cartridge "6,5 Creedmoor", and the fact
+   * pack now hands the writer the exact round. A document that names the
+   * cartridge is correct and must not be refused for "losing" the family.
+   */
+  it('passes when the document names the chosen cartridge over a stored family', () => {
+    const answers = {
+      firearm_calibre: '6.5',
+      firearm_cartridge: '6,5 Creedmoor',
+    };
+    expect(
+      packConsistency('I apply for a rifle chambered in 6,5 Creedmoor.', answers, []),
+    ).toEqual([]);
+
+    // ...and a document that names neither form still fails.
+    const issues = packConsistency('I apply for a rifle.', answers, []);
+    expect(issues.some((issue) => issue.includes('calibre'))).toBe(true);
+  });
+
+  it('still passes a document that names only the family when no cartridge was chosen', () => {
+    expect(
+      packConsistency('I apply for a 6.5 rifle.', { firearm_calibre: '6.5' }, []),
+    ).toEqual([]);
+  });
+
   it('⚠️ catches a citation to an annexure the pack does not have', () => {
     const doc = CLEAN + '\n(Refer to Annexure Q: Imagined Document)';
     const issues = packConsistency(doc, ANSWERS, ANNEXURES);

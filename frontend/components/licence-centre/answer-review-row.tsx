@@ -117,6 +117,15 @@ export interface AnswerReviewRowProps {
   onConfirm?: (key: string) => void | Promise<void>;
   /** This row — or the screen — is saving. */
   busy?: boolean;
+  /**
+   * Start with the editor open on a `needs_you` row.
+   *
+   * ⚠️ DEFAULTS TO `required`. A gap the sheet is actually holding out for opens
+   * its control; an optional empty field stays a one-line row with a Change
+   * button until the member asks to fill it. Rendering every optional field open
+   * is most of what made the review screen an endless form.
+   */
+  autoOpen?: boolean;
 }
 
 export default function AnswerReviewRow({
@@ -124,6 +133,7 @@ export default function AnswerReviewRow({
   onSave,
   onConfirm,
   busy = false,
+  autoOpen,
 }: AnswerReviewRowProps) {
   const chips = item.kind === 'cards' || item.kind === 'multi';
   const suggested = item.state === 'suggested';
@@ -144,7 +154,8 @@ export default function AnswerReviewRow({
   /** Save was pressed, so its own click handles the write, not the blur. */
   const savingSoon = useRef(false);
 
-  const open = editing || needsYou;
+  const opensAsGap = needsYou && (autoOpen ?? item.required);
+  const open = editing || opensAsGap;
   const options = optionsFor(item);
   const chipOptions = chips ? chipOptionsFor(item) : [];
   const selected = chips ? parseList(draft) : [];
@@ -275,8 +286,14 @@ export default function AnswerReviewRow({
     <div className="flex items-baseline justify-between gap-[10px] text-[12.5px] leading-[1.3] text-[var(--text-secondary)]">
       <span>{item.label}</span>
       {needsYou ? (
-        <span className="text-[11px] font-medium text-[var(--warning)]">
-          Still needed
+        <span
+          className={`text-[11px] font-medium ${
+            opensAsGap
+              ? 'text-[var(--warning)]'
+              : 'text-[var(--text-tertiary)]'
+          }`}
+        >
+          {opensAsGap ? 'Still needed' : 'Optional'}
         </span>
       ) : null}
     </div>

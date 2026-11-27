@@ -1,4 +1,4 @@
-﻿import { withoutRefusedCopy } from './motivation-scope';
+import { withoutRefusedCopy } from './motivation-scope';
 import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +11,7 @@ import {
   resolveSportingPurpose,
 } from './motivation-purpose';
 import { buildPlateSpecs } from './motivation-plates';
+import { cartridgeSource } from './motivation-cartridge';
 import { LegalService } from '../legal/legal.service';
 import { MotivationCaseResearchService } from './motivation-case-research.service';
 
@@ -164,7 +165,14 @@ export function targetsFor(
 
   const make = a('firearm_make');
   const model = a('firearm_model');
-  const calibre = a('firearm_calibre');
+  /**
+   * ⚠️ THE EXACT CARTRIDGE WHEN THE MEMBER CHOSE ONE. The research block is what
+   * the reason paragraph and the brief argue from; "6.5" can only produce a
+   * vague answer while "6,5 Creedmoor" names the round. `cartridgeSource` falls
+   * back to the typed calibre, so an application without a cartridge answer is
+   * unchanged, and a legacy row that holds both fields gets the round.
+   */
+  const calibre = cartridgeSource(answers).trim();
   const type = a('firearm_type');
   const action = a('firearm_action');
   /**
@@ -539,12 +547,15 @@ export class MotivationResearchService {
     // â€” the same discipline the brief this replaces used. Three named
     // cartridges is already a wide comparison, and an owned table with six
     // rows in one class would otherwise spend the budget on the sixth.
-    const applied = (answers.firearm_calibre ?? '').trim().toLowerCase();
+    const applied = [
+      (answers.firearm_calibre ?? '').trim().toLowerCase(),
+      (answers.firearm_cartridge ?? '').trim().toLowerCase(),
+    ].filter(Boolean);
     const held = [
       ...new Set(
         (opts.heldCalibres ?? [])
           .map((c) => c.trim())
-          .filter((c) => c && c.toLowerCase() !== applied),
+          .filter((c) => c && !applied.includes(c.toLowerCase())),
       ),
     ].slice(0, 3);
 

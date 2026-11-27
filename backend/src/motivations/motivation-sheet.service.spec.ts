@@ -625,6 +625,23 @@ describe('a certificate that is also the letter of good standing', () => {
   });
 });
 
+describe('the sheet marks SAPS 271-only rows so the screen can collapse them', () => {
+  it('serves formOnly on the 271 boxes and not on ordinary arguments', async () => {
+    const { svc } = build({ marital_status: 'Married', spouse_name: 'A B' });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    // ⚠️ The product does not fill in a 271; these rows stay served (a stored
+    // value must be correctable) but carry formOnly so the review screen moves
+    // them into a collapsed "SAPS 271 details (optional)" block instead of
+    // showing them as open "still needed" editors.
+    expect(itemFor(sheet.items, 'marital_status')?.formOnly).toBe(true);
+    expect(itemFor(sheet.items, 'spouse_name')?.formOnly).toBe(true);
+    expect(itemFor(sheet.items, 'licence_holder_type')?.formOnly).toBe(true);
+    // Ordinary motivation fields are untouched by the flag.
+    expect(itemFor(sheet.items, 'firearm_make')?.formOnly).toBeUndefined();
+    expect(itemFor(sheet.items, 'residence_type')?.formOnly).toBeUndefined();
+  });
+});
+
 describe('an ambiguous calibre', () => {
   const CARTRIDGES = [
     {

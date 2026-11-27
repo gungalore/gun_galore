@@ -110,6 +110,31 @@ const PREMISES = [
   'security_gates',
 ];
 
+/**
+ * ⚠️ THE SECURITY PARAGRAPH IS A SELF-DEFENCE PARAGRAPH, NOT A HUNTING ONE.
+ *
+ * The premises block exists to write the section 13/14 sentence "what I already
+ * do and where it stops" — the argument that the need cannot reasonably be met
+ * another way. A hunting or sport motivation does not carry it, and a renewal
+ * does not either. On the operator's live S16 test (MO000159) the interview
+ * asked about burglar bars and security gates: questions that belong to another
+ * section entirely. They are askable ONLY for S13/S14; safe storage stays on
+ * every type because that IS required everywhere.
+ *
+ * `travelled_areas_text` is the optional "dangerous areas you pass through" box
+ * that feeds the same argument; keep it here so a future strategy edit cannot
+ * put it on a sporting card.
+ */
+export const SELF_DEFENCE_ONLY_KEYS: ReadonlySet<string> = new Set<string>([
+  'premises_enclosure',
+  'premises_access_control',
+  'alarm_present',
+  'armed_response',
+  'burglar_bars',
+  'security_gates',
+  'travelled_areas_text',
+]);
+
 const DECLARATIONS = [
   'history_conviction',
   'history_conviction_detail',
@@ -191,7 +216,6 @@ const S24_FIELDS = [
   'continued_use',
   'has_existing_firearms',
   'existing_firearm_count',
-  ...PREMISES,
   ...SAFE,
   ...DECLARATIONS,
 ];
@@ -223,15 +247,11 @@ export const CASE_KEYS: ReadonlySet<string> = new Set([
    */
   'firearm_cartridge',
   /**
-   * ⚠️ OFFERED, NEVER FORCED. "What else did you consider" stays on the card
-   * for every type, but a member with nothing to compare must be able to Skip
-   * it — it was `required: true` and held the whole card behind a red cross.
-   */
-  'alternative_considered',
-  /**
-   * ⚠️ THE OPTIONAL HALF OF THE CLIPPING PICKER. The area's reports are
-   * selected automatically; this is where a member names a road or suburb they
-   * know. Optional and skippable — the auto selection stands without it.
+   * ⚠️ THE OPTIONAL HALF OF THE CLIPPING PICKER, AND ONE OF THE FEW QUESTIONS
+   * RESERVED TO SELF-DEFENCE. The area's reports are selected automatically;
+   * this is where a member names a road or suburb they know. Optional and
+   * skippable, and only reachable on an S13/S14 card — see
+   * SELF_DEFENCE_ONLY_KEYS.
    */
   'travelled_areas_text',
   'premises_enclosure',
@@ -356,7 +376,6 @@ const S15: IntakeStrategy = {
     ...SPORTING_COMMON,
     ...HUNTING_FIELDS,
     ...SPORT_FIELDS,
-    ...PREMISES,
     ...SAFE,
     ...DECLARATIONS,
   ],

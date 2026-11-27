@@ -146,6 +146,17 @@ export function briefFacts(
   const calibre = value('firearm_calibre');
   if (calibre) out.push({ label: 'Calibre', value: calibre });
 
+  /**
+   * ⚠️ THE EXACT CARTRIDGE, WHEN ONE WAS CHOSEN. The brief words the quarry and
+   * hunt-class questions; a "6.5" family is a different pool of species from
+   * "6,5 Creedmoor". It is a non-sensitive application fact (unlike a serial)
+   * and it is already what the sheet, the fact pack and the drawing resolve.
+   */
+  const cartridge = value('firearm_cartridge');
+  if (cartridge && cartridge !== calibre) {
+    out.push({ label: 'Cartridge', value: cartridge });
+  }
+
   const useKind = value('firearm_use_kind');
   if (useKind) {
     const field = fieldsFor(type).find((f) => f.key === 'firearm_use_kind');
@@ -225,6 +236,13 @@ export function briefHash(
     norm('firearm_make'),
     norm('firearm_model'),
     norm('firearm_calibre'),
+    /**
+     * ⚠️ THE CARTRIDGE IS PART OF THE HASH. Answering the cartridge question
+     * (or storing it on a legacy row) changes which quarry and hunt classes the
+     * brief should ask about, so it must rebuild the brief — the same rule as
+     * the calibre directly above.
+     */
+    norm('firearm_cartridge'),
     norm('firearm_use_kind'),
     norm('association_name'),
     norm('discipline_exercise'),

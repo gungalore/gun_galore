@@ -384,9 +384,25 @@ export function packConsistency(
    * which owns the list and the reasoning.
    */
   const calibre = (answers.firearm_calibre ?? '').trim();
-  if (calibre && !calibreForms(calibre).some((f) => doc.includes(squash(f)))) {
+  /**
+   * ⚠️ THE CHOSEN CARTRIDGE IS A FORM OF THE CALIBRE. A member may have typed
+   * the family "6.5" and then answered the cartridge question with
+   * "6,5 Creedmoor"; the fact pack now hands the writer the cartridge, so a
+   * document that names the exact round is correct and must pass. Accept either
+   * stored string as the calibre the document may use — this widens what counts
+   * as writing the answer, not what counts as true.
+   */
+  const cartridge = (answers.firearm_cartridge ?? '').trim();
+  const calibreFormsList = [
+    ...calibreForms(calibre),
+    ...calibreForms(cartridge),
+  ];
+  if (
+    (calibre || cartridge) &&
+    !calibreFormsList.some((f) => doc.includes(squash(f)))
+  ) {
     issues.push(
-      `The calibre the applicant gave (${calibre}) does not appear in the document.`,
+      `The calibre the applicant gave (${calibre || cartridge}) does not appear in the document.`,
     );
   }
 

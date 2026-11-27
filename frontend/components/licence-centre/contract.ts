@@ -102,6 +102,19 @@ export interface SheetItem {
   section: string;
   scope: 'profile' | 'application';
   required: boolean;
+  /**
+   * A box that only exists on the SAPS 271 form.
+   *
+   * ⚠️ NOT A QUESTION THIS PRODUCT ASKS. Form boxes are read off a document
+   * when the member supplies one; the product does not fill in the 271, so an
+   * empty formOnly row is never a gap and must never disable writing. The review
+   * screen files them into one collapsed "SAPS 271 details (optional)" block at
+   * the bottom instead of letting twelve of them lengthen the main page.
+   *
+   * Optional on the wire so an older sheet (or a server that has not yet been
+   * rolled forward) renders as it did before rather than throwing.
+   */
+  formOnly?: boolean;
   help?: string;
   /** Tiles, for `kind: 'cards'`. Ranked by the server where it can. */
   options?: CardOption[];

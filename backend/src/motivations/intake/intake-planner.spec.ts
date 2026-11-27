@@ -9,10 +9,12 @@ import {
   purposeForAnswers,
   questionForField,
 } from './intake-planner';
-import { fieldByKey } from '../motivation-fields';
+import { fieldByKey, requiredKeys } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
 import { topicForField, TOPIC_TITLES } from './intake-topics';
 import { missingDetail, MIN_HISTORY_WORDS } from '../motivation-completeness';
+import { huntGameClassOptions } from '../motivation-hunt-classes';
+import { cartridgeSource } from '../motivation-cartridge';
 import { DRAFTED_KEYS, fallbackDraft } from './intake-draft';
 import type { InterviewBrief } from './intake-brief';
 import type { MotivationField } from '../motivation-fields';
@@ -501,23 +503,22 @@ describe('the document gate decides what the conversation asks', () => {
     expect(next?.questions[0]?.key).not.toBe('alarm_present');
   });
 
-  it('offers the comparison as an optional case question', () => {
+  it('never asks the comparison — it is drafted from the battery', () => {
+    // ⚠️ MOVED TO DRAFTED_KEYS (2026-11-27). "What else did you consider" is a
+    // short narrative the drafter composes from the firearm applied for and the
+    // battery rows; the applicant reviews it. It is not a question, so it can
+    // never hold a card.
     const answers = filled(MotivationLicenceType.S13_SELF_DEFENCE);
-    delete answers.alternative_considered;
-
+    expect(answers.alternative_considered).toBeUndefined();
     const input = {
       type: MotivationLicenceType.S13_SELF_DEFENCE,
       answers,
       sheet: EMPTY_SHEET,
     };
-    const group = planGroup(input);
-    expect(group?.questions.map((q) => q.key)).toContain(
+    expect(planGroup(input)?.questions.map((q) => q.key) ?? []).not.toContain(
       'alternative_considered',
     );
-    const question = questionForField(input, 'alternative_considered');
-    // Offered once, skippable — the card's red cross and "still to answer"
-    // footer must not treat it as required.
-    expect(question?.optional).toBe(true);
+    expect(questionForField(input, 'alternative_considered')).toBeNull();
   });
 
   it('does not re-ask the comparison once the member answers None', () => {
@@ -844,6 +845,176 @@ describe('the narrative fields are never interview questions', () => {
 
 /**
  * ────────────────────────────────────────────────────────────────────────────
+ * WHAT MUST NEVER BE ON A CARD AGAIN (operator, live S16 test MO000159):
+ *  - the SAPS 271 form boxes (main licence holder, marital status, spouse), and
+ *  - the home-security paragraph on a hunting/sport/renewal application.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+describe('the SAPS 271-only boxes are never interview questions', () => {
+  const FORM_ONLY_271 = [
+    'licence_holder_type',
+    'marital_status',
+    'spouse_name',
+    'spouse_id_type',
+    'spouse_id_number',
+  ];
+
+  it('for all six licence types, no path serves one of them', () => {
+    for (const type of ALL_TYPES) {
+      const pending = pendingFields({
+        type,
+        answers: {},
+        sheet: EMPTY_SHEET,
+      }).map((entry) => entry.key);
+      const grouped =
+        planGroup({ type, answers: {}, sheet: EMPTY_SHEET })?.questions.map(
+          (entry) => entry.key,
+        ) ?? [];
+      for (const key of FORM_ONLY_271) {
+        expect({ type, key, asked: pending.includes(key) }).toEqual({
+          type,
+          key,
+          asked: false,
+        });
+        expect({ type, key, grouped: grouped.includes(key) }).toEqual({
+          type,
+          key,
+          grouped: false,
+        });
+        // And the single-question builder refuses it by name.
+        expect(
+          questionForField({ type, answers: {}, sheet: EMPTY_SHEET }, key),
+        ).toBeNull();
+      }
+    }
+  });
+
+  it('leaves them accepted, so a stored 271 value still saves and shows', () => {
+    // formOnly is a HIDE flag, never a delete: an uploaded 271 that filled one
+    // of these keeps its value, and the review sheet's collapsed block edits it.
+    const type = MotivationLicenceType.S16_DEDICATED_HUNTER;
+    const field = fieldByKey(type, 'marital_status');
+    expect(field?.formOnly).toBe(true);
+    expect(requiredKeys(type, { marital_status: 'Married' })).not.toContain(
+      'marital_status',
+    );
+  });
+});
+
+describe('the security paragraph is self-defence only', () => {
+  const SECURITY_KEYS = [
+    'premises_enclosure',
+    'premises_access_control',
+    'alarm_present',
+    'armed_response',
+    'burglar_bars',
+    'security_gates',
+    'travelled_areas_text',
+  ];
+
+  it('is never on a hunting, sport or renewal card', () => {
+    for (const type of [
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+      MotivationLicenceType.S24_RENEWAL,
+    ]) {
+      const asked = pendingFields({
+        type,
+        answers: {
+          firearm_use_kind: 'both',
+          has_existing_firearms: 'Yes',
+          existing_firearm_count: '2',
+          safe_present: 'Yes',
+        },
+        sheet: EMPTY_SHEET,
+      }).map((entry) => entry.key);
+      for (const key of SECURITY_KEYS) {
+        expect({ type, key, asked: asked.includes(key) }).toEqual({
+          type,
+          key,
+          asked: false,
+        });
+      }
+    }
+  });
+
+  it('is still asked on a self-defence application', () => {
+    for (const type of [
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+    ]) {
+      const asked = pendingFields({ type, answers: {}, sheet: EMPTY_SHEET }).map(
+        (entry) => entry.key,
+      );
+      expect(asked).toEqual(
+        expect.arrayContaining([
+          'premises_enclosure',
+          'alarm_present',
+          'burglar_bars',
+          'security_gates',
+        ]),
+      );
+    }
+  });
+});
+
+describe('the chosen cartridge drives the labels and the hunt classes', () => {
+  const input = {
+    type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+    answers: {
+      ...COMMON,
+      firearm_use_kind: 'hunting',
+      firearm_calibre: '6.5',
+      firearm_cartridge: '6,5 Creedmoor',
+    },
+    sheet: EMPTY_SHEET,
+  };
+
+  it('names the exact cartridge in the quarry question', () => {
+    // The quarry is still asked; the hunt-class cards are drafted now, so this
+    // is the observable label that proves buildQuestion reads the cartridge.
+    expect(questionForField(input, 'intended_quarry')?.label).toBe(
+      'What game or species do you intend to hunt with this 6,5 Creedmoor?',
+    );
+  });
+
+  it('keeps the typed calibre when no cartridge was chosen', () => {
+    const familyOnly = {
+      ...input,
+      answers: {
+        ...input.answers,
+        firearm_cartridge: '',
+      },
+    };
+    expect(questionForField(familyOnly, 'intended_quarry')?.label).toBe(
+      'What game or species do you intend to hunt with this 6.5?',
+    );
+  });
+
+  it('offers only the game classes the chosen cartridge supports', () => {
+    // `huntGameClassOptions` is the menu `choicesFor` builds for the class
+    // cards (currently drafted, so reached through the same helper rather than
+    // a card). "6,5 Creedmoor" is medium game; the bare family classifies
+    // nowhere and would offer the whole national menu.
+    const fromCartridge = huntGameClassOptions(
+      cartridgeSource(input.answers),
+    ).map((option) => option.key);
+    expect(fromCartridge).toEqual(
+      expect.arrayContaining(['plains_light', 'plains_medium']),
+    );
+    expect(fromCartridge).not.toContain('dangerous');
+
+    const fromFamily = huntGameClassOptions('6.5').map(
+      (option) => option.key,
+    );
+    expect(fromFamily.length).toBeGreaterThan(fromCartridge.length);
+  });
+});
+
+
+/**
+ * ────────────────────────────────────────────────────────────────────────────
  * EDITING AN EARLIER TOPIC. Back is stateless: the page names a topic, the
  * server rebuilds that card from the saved answers, and the controls are
  * prefilled from `value`/`values`. Nothing is stored between screens.
@@ -873,7 +1044,10 @@ describe('editing an earlier topic (Back)', () => {
     // blank form that looks like the answer was lost.
     expect(byKey.get('full_name')?.value).toBe('A B');
     expect(byKey.get('id_number')?.value).toBe('8001015009087');
-    expect(byKey.get('marital_status')?.value).toBe('Married');
+    expect(byKey.get('occupation')?.value).toBe('Engineer');
+    // ⚠️ marital_status / spouse_name are formOnly now — not on any card.
+    expect(byKey.has('marital_status')).toBe(false);
+    expect(byKey.has('spouse_name')).toBe(false);
   });
 
   it('splits a saved multi answer into values, matched against the current choices', () => {
@@ -1002,10 +1176,12 @@ describe('the brief guides the walk', () => {
       },
     ],
     chips: {
-      alternative_considered: [
-        { value: 'A .308 for the shorter action', label: 'A .308 for the shorter action' },
-        { value: 'A 6.5 Creedmoor for the range', label: 'A 6.5 Creedmoor for the range' },
-        { value: 'A .270 for the flatter trajectory', label: 'A .270 for the flatter trajectory' },
+      // ⚠️ A FIELD THAT IS STILL ASKED. `alternative_considered` is drafted now,
+      // so it can never carry chips into the interview.
+      firearm_make: [
+        { value: 'Tikka', label: 'Tikka' },
+        { value: 'Mauser', label: 'Mauser' },
+        { value: 'Howa', label: 'Howa' },
       ],
     },
     sources: [],
@@ -1040,11 +1216,9 @@ describe('the brief guides the walk', () => {
         sheet: EMPTY_SHEET,
         brief,
       },
-      'alternative_considered',
+      'firearm_make',
     );
-    expect(question?.choices[0].value).toBe(
-      'A .308 for the shorter action',
-    );
+    expect(question?.choices[0].value).toBe('Tikka');
   });
 
   it('keeps a required question ahead of a brief’s optional one', () => {

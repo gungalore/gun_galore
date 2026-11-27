@@ -1522,13 +1522,29 @@ export class MotivationGenerationService {
           : research;
         const suitabilityInput = {
           licenceType: row.licenceType,
-          answers,
+          /**
+           * ⚠️ THE CARTRIDGE OUTRANKS THE TYPED FAMILY HERE TOO. The suitability
+           * argument's bullets are built from these answers; handing it "6.5"
+           * while the firearm line says "6,5 Creedmoor" would write about two
+           * different rounds. Legacy rows that store both fields are covered.
+           */
+          answers: {
+            ...answers,
+            firearm_calibre: displayCalibre(cartridgeSource(answers)),
+          },
           research: rawResearch ?? '',
           exhibits,
           firearmLine: [
             displayMake(answers.firearm_make),
             displayModel(answers.firearm_model),
-            displayCalibre(answers.firearm_calibre),
+            /**
+             * ⚠️ THE EXACT CARTRIDGE WHEN CHOSEN, NOT THE TYPED FAMILY. The
+             * suitability paragraph argues about a specific round; "6.5" tells
+             * the writer nothing it can reason from. `cartridgeSource` resolves
+             * the member's chosen cartridge first, with the calibre as the
+             * fallback, and covers legacy rows that store both fields.
+             */
+            displayCalibre(cartridgeSource(answers)),
           ]
             .filter(Boolean)
             .join(' · '),
@@ -1701,7 +1717,14 @@ export class MotivationGenerationService {
          */
         answers: {
           ...packAnswers,
-          firearm_calibre: displayCalibre(packAnswers.firearm_calibre),
+          /**
+           * ⚠️ THE CARTRIDGE OUTRANKS THE TYPED CALIBRE IN THE FACT PACK. The
+           * member may have typed "6.5" and then chosen "6,5 Creedmoor"; the
+           * writer must be told the exact round or it can only write about a
+           * family. This also resolves a row stored before the propagation
+           * change — no migration needed.
+           */
+          firearm_calibre: displayCalibre(cartridgeSource(packAnswers)),
           /**
            * âš ï¸ AND THE ACTION, FOR THE SAME REASON AND TO STOP A BLEND.
            * "Semi-automatic (self-loading)" is a choice label carrying two

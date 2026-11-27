@@ -302,6 +302,39 @@ describe('a missing answer', () => {
     expect(screen.getByRole('textbox')).toBeDefined();
     expect(screen.getByText('Still needed')).toBeDefined();
   });
+
+  // ⚠️ A REQUIRED EMPTY FIELD IS A GAP; AN OPTIONAL ONE IS NOT. Rendering every
+  // optional row open was most of what made the review screen an endless form,
+  // so an optional gap stays a one-line row until the member asks for it.
+  it('leaves an optional gap closed until Change is tapped', async () => {
+    const user = userEvent.setup();
+    render(
+      <AnswerReviewRow
+        item={needsYou({ required: false })}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('Optional')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Change' })).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  // The sheet's own missing list can contain a field the registry does not mark
+  // required (the detail gates). The row must open when the page says so.
+  it('opens when the page marks the gap as missing even if not required', () => {
+    render(
+      <AnswerReviewRow
+        item={needsYou({ required: false })}
+        autoOpen
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('textbox')).toBeDefined();
+    expect(screen.getByText('Still needed')).toBeDefined();
+  });
 });
 
 describe('autosave', () => {

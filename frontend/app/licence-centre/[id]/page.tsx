@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import { motivationsApi } from '@/lib/motivations-api';
-import type {
-  SheetItem,
-  SheetResponse,
-} from '@/components/licence-centre/contract';
+import type { SheetResponse } from '@/components/licence-centre/contract';
 import BetaNotice from '@/components/licence-centre/beta-notice';
-import AnswerReviewRow from '@/components/licence-centre/answer-review-row';
+import AnswersReview, {
+  canContinueToWrite,
+  reviewStats,
+} from '@/components/licence-centre/answers-review';
 
 // ────────────────────────────────────────────────────────────────────
 // CHECK YOUR ANSWERS — the editable review screen.
@@ -21,6 +21,13 @@ import AnswerReviewRow from '@/components/licence-centre/answer-review-row';
 // interview again, so a wrong calibre or a wrong date stayed wrong all the way
 // onto a police form. It now shows EVERY answer, grouped the way the sheet
 // groups them, and every one of them can be changed before we write.
+//
+// ⚠️ NOT AN ENDLESS FORM ANY MORE. The operator's live report was "These seem to
+// be 271 form questions? And why do I have to scroll and fill in this endless
+// page?" The rows below are FOLDED (see answers-review.tsx): an attention panel
+// at the top, one section per group opening only where it has a gap or a drafted
+// answer, and the 271's own boxes in a collapsed optional block that never
+// counts and never gates "Continue to write".
 //
 // ⚠️ DRAFTED ANSWERS ARE FLAGGED, NOT HIDDEN. The personal history is composed
 // by the writer from the applicant's own documents and application; the gold
@@ -41,23 +48,6 @@ import AnswerReviewRow from '@/components/licence-centre/answer-review-row';
  */
 const DRAFT_POLL_MS = 90_000;
 const DRAFT_TICK_MS = 2_000;
-
-/**
- * A required answer the sheet still owes.
- *
- * ⚠️ A DRAFTED VALUE IS NOT MISSING. It is present and flagged for checking —
- * the one state that asks for a decision, not for an answer. Counting it as a
- * gap would disable Continue until the applicant found and confirmed something
- * the warning had already told them was fine to leave.
- */
-function isMissing(item: SheetItem, missingKeys: Set<string>): boolean {
-  if (item.state === 'na') return false;
-  if (item.state === 'suggested') return false;
-  if (item.state === 'needs_you') {
-    return item.required || missingKeys.has(item.key);
-  }
-  return missingKeys.has(item.key) && !item.value;
-}
 
 export default function CheckAnswersPage() {
   const { getToken } = useAuth();
@@ -196,46 +186,15 @@ export default function CheckAnswersPage() {
   );
 
   /**
-   * Every section in the sheet's own order — including the ones that are
-   * already done — with the missing rows first inside each.
+   * ONE SOURCE FOR THE COUNTS AND THE GATING.
+   *
+   * ⚠️ 271 FORM BOXES ARE EXCLUDED THERE, IN ONE PLACE. `reviewStats` filters
+   * them out of `missingCount`, which is both what the attention panel says and
+   * what enables Continue — a second count on this page is how the two drift.
    */
-  const sections = useMemo(() => {
-    if (!sheet) return [];
-    const missingKeys = new Set<string>(sheet.missing ?? []);
-    for (const section of sheet.sections) {
-      for (const key of section.missing ?? []) missingKeys.add(key);
-    }
-    const bySection = new Map<string, SheetItem[]>();
-    for (const item of sheet.items) {
-      if (item.state === 'na') continue;
-      const list = bySection.get(item.section) ?? [];
-      list.push(item);
-      bySection.set(item.section, list);
-    }
-    return sheet.sections
-      .map((section) => {
-        const items = bySection.get(section.id) ?? [];
-        return {
-          section,
-          missing: items.filter((item) => isMissing(item, missingKeys)),
-          rest: items.filter((item) => !isMissing(item, missingKeys)),
-        };
-      })
-      .filter((entry) => entry.missing.length + entry.rest.length > 0);
-  }, [sheet]);
-
-  const missingDocuments = useMemo(
-    () =>
-      (sheet?.needs.needs ?? []).filter(
-        (need) => need.tier === 'required' && !need.have,
-      ),
-    [sheet],
-  );
-
-  const missingAnswers = sheet?.missing.length ?? 0;
-  const missingCount = missingAnswers + missingDocuments.length;
-  const nothingMissing = sheet !== null && missingCount === 0;
-  const canContinue = sheet !== null && !drafting && missingCount === 0;
+  const stats = useMemo(() => (sheet ? reviewStats(sheet) : null), [sheet]);
+  const canContinue =
+    sheet !== null && stats !== null && canContinueToWrite(stats, drafting);
 
   if (!sheet) {
     return (
@@ -282,83 +241,14 @@ export default function CheckAnswersPage() {
         </p>
       ) : null}
 
-      {nothingMissing ? (
-        <section
-          className="mt-4 rounded-[var(--r-lg)] border px-4 py-3"
-          style={{
-            borderColor: 'var(--success-line)',
-            background: 'var(--success-wash)',
-          }}
-        >
-          <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
-            Nothing is missing. Your motivation is ready to write.
-          </p>
-          <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-            Check the answers below once more, then continue.
-          </p>
-        </section>
-      ) : (
-        <section
-          className="mt-4 rounded-[var(--r-lg)] border px-4 py-3"
-          style={{
-            borderColor: 'var(--warning-line)',
-            background: 'var(--warning-wash)',
-          }}
-        >
-          <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
-            {missingCount} thing{missingCount === 1 ? '' : 's'} still needed
-          </p>
-          <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-            Finish the outstanding answers or documents before writing.
-          </p>
-        </section>
-      )}
-
-      {sections.map(({ section, missing, rest }) => (
-        <section key={section.id} className="mt-6">
-          <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
-            {section.title}
-          </h2>
-          <div
-            className="rounded-[var(--r-lg)] border px-4"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-card)',
-            }}
-          >
-            {/* ⚠️ THE GAPS FIRST, so a section never hides the one row that needs an answer under eight that do not. */}
-            {[...missing, ...rest].map((item) => (
-              <AnswerReviewRow
-                key={item.key}
-                item={item}
-                busy={busyKey === item.key || confirmingKey === item.key}
-                onSave={saveRow}
-                onConfirm={item.state === 'suggested' ? confirmRow : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-
-      {missingDocuments.length ? (
-        <section className="mt-6">
-          <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
-            Documents still needed
-          </h2>
-          <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
-            {missingDocuments.map((need) => (
-              <li key={need.kind}>{need.label}</li>
-            ))}
-          </ul>
-          <Link
-            href={`/licence-centre/${id}/interview`}
-            className="mt-3 inline-flex rounded-lg border px-3 py-2 text-[12.5px] font-medium text-[var(--text-primary)]"
-            style={{ borderColor: 'var(--border)' }}
-          >
-            Upload these in the interview
-          </Link>
-        </section>
-      ) : null}
+      <AnswersReview
+        sheet={sheet}
+        busyKey={busyKey}
+        confirmingKey={confirmingKey}
+        onSave={saveRow}
+        onConfirm={confirmRow}
+        interviewHref={`/licence-centre/${id}/interview`}
+      />
 
       {error ? (
         <p className="mt-4 text-[12.5px] leading-5 text-[var(--red)]">
@@ -369,9 +259,8 @@ export default function CheckAnswersPage() {
       {/*
         ⚠️ THE PRIMARY ACTION WRITES NOTHING. It goes to the pack, where the
         declaration is confirmed and payment happens. Disabled while a drafted
-        answer is landing or while the document still lacks a required answer or
-        document — the pack would only refuse after the member had been told they
-        were ready.
+        answer is landing or while the sheet is actually holding out for a
+        required answer or document — a 271 form box is never one of those.
       */}
       <div className="mt-8 border-t border-[var(--border-divider)] pt-5">
         <button
@@ -386,7 +275,7 @@ export default function CheckAnswersPage() {
         <p className="m-0 mt-2 text-[12px] leading-5 text-[var(--text-tertiary)]">
           {drafting
             ? 'We are drafting from your documents — you can continue as soon as it lands.'
-            : missingCount
+            : stats && stats.missingCount
               ? 'Finish the outstanding answers or documents before writing.'
               : 'We write the motivation from these answers. You can still change them on the next screen.'}
         </p>

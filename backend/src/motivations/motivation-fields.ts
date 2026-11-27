@@ -1211,10 +1211,21 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // back to Other where it cannot be told.
     choices: ['Single', 'Married', 'Life partner', 'Divorced', 'Widowed'],
     required: true,
-    // âš ï¸ PROFILE, NOT APPLICATION. Somebody's marital status is a fact about
-    // them, not about this firearm, and asking it again on their second
-    // application is the clearest way to say we were not listening on the
-    // first. Same for the spouse's name below.
+    /**
+     * ⚠️ FORM-ONLY SINCE 2026-11-27. Marital status is SAPS 271 section D; it is
+     * not a reason anybody needs a firearm and the product does not fill the
+     * form. It was being asked as the second question of the interview
+     * (MO000159). formOnly takes it out of the interview and the gate and
+     * withholds it from the writer; the value stays accepted and re-servable on
+     * the review sheet's collapsed 271 block, and the spouse fields still
+     * `showIf` on it.
+     *
+     * ⚠️ PROFILE, NOT APPLICATION. Somebody's marital status is a fact about
+     * them, not about this firearm, and asking it again on their second
+     * application is the clearest way to say we were not listening on the
+     * first. Same for the spouse's name below.
+     */
+    formOnly: true,
     scope: 'profile',
   },
   {
@@ -1225,6 +1236,8 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     showIf: { key: 'marital_status', equals: 'Married' },
     required: true,
     sensitive: true,
+    /** ⚠️ FORM-ONLY SINCE 2026-11-27 — a 271 section D box, not an argument. */
+    formOnly: true,
     scope: 'profile',
     maxLength: 120,
   },
@@ -2364,6 +2377,17 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // about and we cannot infer. This module's rule holds: a missing answer
     // leaves a box empty, and section 120(9)(f) makes a wrong one an offence.
     required: true,
+    /**
+     * ⚠️ FORM-ONLY SINCE 2026-11-27: THIS IS A SAPS 271 BOX, NOT A MOTIVATION
+     * ARGUMENT, AND THE PRODUCT NO LONGER FILLS THE 271. The operator tested a
+     * live S16 application (MO000159) and the interview opened with "Will you
+     * be the main licence holder?" — section D of the 271, on a screen that is
+     * supposed to gather what the DOCUMENT argues. Marking it formOnly takes it
+     * out of the interview and out of the generation gate while leaving it in
+     * the registry so an uploaded 271 is still read and the applicant can still
+     * correct the row on the review sheet (collapsed "SAPS 271 details" block).
+     */
+    formOnly: true,
   },
   {
     key: 'spouse_id_type',

@@ -3,16 +3,19 @@ import {
   CASE_NOTE_KEYS,
   fieldByKey,
   fieldsFor,
+  isSelfDefence,
   isVisible,
   type MotivationField,
 } from '../motivation-fields';
 import { resolveSportingPurpose } from '../motivation-purpose';
 import { MIN_HISTORY_WORDS, missingDetail } from '../motivation-completeness';
 import { huntGameClassOptions } from '../motivation-hunt-classes';
+import { cartridgeSource } from '../motivation-cartridge';
 import type { SheetItem, SheetResponse } from '../motivation-sheet.service';
 import {
   sportingFields,
   CASE_KEYS,
+  SELF_DEFENCE_ONLY_KEYS,
   strategyFor,
 } from './intake-strategies';
 import { DRAFTED_KEYS } from './intake-draft';
@@ -50,7 +53,10 @@ function choicesFor(
     const options = ctx ? rankCardOptions(source, ctx) : source;
     const huntClassOptions =
       field.key === 'hunt_game_class' && answers
-        ? huntGameClassOptions(answers.firearm_calibre ?? '')
+        ? // ⚠️ THE CHOSEN CARTRIDGE, NOT THE TYPED FAMILY. A member who typed
+          // "6.5" and then chose "6,5 Creedmoor" must see the classes that
+          // cartridge supports, not the family's union.
+          huntGameClassOptions(cartridgeSource(answers))
         : options;
     return huntClassOptions.map((o) => ({ value: o.key, label: o.sentence }));
   }
@@ -216,6 +222,14 @@ function visibleFields(
      */
     if (field.formOnly || key.startsWith('history_')) continue;
     /**
+     * ⚠️ THE SECURITY PARAGRAPH BELONGS TO SELF-DEFENCE ONLY. The premises block
+     * and the travelled-areas box write the section 13/14 "what I already do and
+     * where it stops" argument; a hunting, sport or renewal application does not
+     * carry it. The operator's live S16 test was asked about burglar bars and
+     * security gates — see SELF_DEFENCE_ONLY_KEYS in intake-strategies.ts.
+     */
+    if (SELF_DEFENCE_ONLY_KEYS.has(key) && !isSelfDefence(type)) continue;
+    /**
      * âš ï¸ INTERNAL IS A SHEET DECISION, NOT AN INTERVIEW DECISION. The purpose
      * cards and long answers were hidden from the sheet in 2026-10-17 but kept
      * in the registry and in the writer's fact pack. The interview is the door
@@ -242,6 +256,7 @@ function visibleFields(
     if (DRAFTED_KEYS.has(field.key)) continue;
     if (!field.required || field.internal) continue;
     if (field.formOnly || field.key.startsWith('history_')) continue;
+    if (SELF_DEFENCE_ONLY_KEYS.has(field.key) && !isSelfDefence(type)) continue;
     if (!isVisible({ ...field, internal: undefined }, answers)) continue;
     out.push({ key: field.key, field });
     covered.add(field.key);
@@ -397,7 +412,15 @@ function buildQuestion(args: {
             key === 'hunting_locations' ||
             key === 'competition_record'));
 
-  const calibre = (merged.firearm_calibre ?? '').trim();
+  /**
+   * ⚠️ THE EXACT CARTRIDGE WHEN ONE WAS CHOSEN, NOT THE TYPED FAMILY. A member
+   * who typed "6.5" and answered the cartridge question with "6,5 Creedmoor"
+   * must see "What you hunt with your 6,5 Creedmoor?" and the hunt classes that
+   * round supports — `cartridgeSource` is the one resolver the fact pack, the
+   * drawing and the sheet already use. Legacy rows that hold both fields are
+   * covered without a migration.
+   */
+  const calibre = cartridgeSource(merged).trim();
   const huntClasses = key === 'hunt_game_class' && calibre;
   const isPrimaryThreat = key === 'threat_circumstances';
   const isPrimaryQuarry = key === 'intended_quarry';

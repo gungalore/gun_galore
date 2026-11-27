@@ -153,6 +153,8 @@ function harness(options: HarnessOptions = {}) {
     MotivationIntakeService.prototype,
   ) as MotivationIntakeService;
   Object.assign(svc as unknown as Record<string, unknown>, {
+    // Class field initialisers do not run through Object.create.
+    speciesCache: new Map(),
     prisma: {
       motivation: {
         findFirst: async () => ROW,
@@ -259,6 +261,69 @@ function harness(options: HarnessOptions = {}) {
   };
 }
 
+describe('the species advisory follows the chosen cartridge', () => {
+  it('asks about the cartridge, not the typed family, and caches under it', async () => {
+    const h = harness({});
+    const calls: Record<string, unknown>[] = [];
+    Object.assign(
+      (h.svc as unknown as { llm: Record<string, unknown> }).llm,
+      {
+        isConfigured: () => true,
+        complete: async (req: Record<string, unknown>) => {
+          calls.push(req);
+          return {
+            text: JSON.stringify({
+              choices: [{ value: 'Kudu', label: 'Kudu' }],
+            }),
+          };
+        },
+      },
+    );
+    const speciesChoices = (
+      h.svc as unknown as {
+        speciesChoices: (
+          answers: Record<string, string>,
+        ) => Promise<{ value: string }[]>;
+      }
+    ).speciesChoices.bind(h.svc);
+
+    const answers = {
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_calibre: '6.5',
+      firearm_cartridge: '6,5 Creedmoor',
+    };
+    const choices = await speciesChoices(answers);
+    expect(choices[0].value).toBe('Kudu');
+    expect(JSON.stringify(calls[0])).toContain('6,5 Creedmoor');
+
+    // The cache key includes the cartridge: a second call is free.
+    await speciesChoices(answers);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('falls back to the typed calibre when no cartridge was chosen', async () => {
+    const h = harness({});
+    const calls: Record<string, unknown>[] = [];
+    Object.assign(
+      (h.svc as unknown as { llm: Record<string, unknown> }).llm,
+      {
+        isConfigured: () => true,
+        complete: async (req: Record<string, unknown>) => {
+          calls.push(req);
+          return { text: JSON.stringify({ choices: [] }) };
+        },
+      },
+    );
+    await (
+      h.svc as unknown as {
+        speciesChoices: (answers: Record<string, string>) => Promise<unknown>;
+      }
+    ).speciesChoices({ firearm_calibre: '6.5', firearm_type: 'Rifle' });
+    expect(JSON.stringify(calls[0])).toContain('6.5');
+  });
+});
+
 describe('state() drafts the narrative in the background', () => {
   it('fires the drafter and reports the drafting flag', async () => {
     // Only the narrative is missing: every factual gap the gate names is
@@ -332,6 +397,7 @@ describe('state() drafts the narrative in the background', () => {
         sport_formats: 'Postal.',
         competition_record: 'A record.',
         activity_record: 'A record.',
+        alternative_considered: 'I considered a .308, and chose this one.',
         firearm_use_kind: 'both',
       },
     });
@@ -420,6 +486,10 @@ describe('cardForTopic — Back re-opens an earlier card with its answers', () =
       ...FACTUAL,
       firearm_use_kind: 'hunting',
     };
+    // Leave the safe-storage question outstanding so a topic before it has a
+    // Back target. (The premises block is no longer asked on S16, so it cannot
+    // serve as that pending topic any more.)
+    delete (answers as Record<string, string | undefined>).safe_present;
     const h = harness({ answers });
     Object.assign(h.svc as unknown as Record<string, unknown>, {
       phrasedCard: async (

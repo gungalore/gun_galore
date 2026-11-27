@@ -91,7 +91,7 @@ export function draftSystemPrompt(): string {
     '16. A long target is one paragraph of 60 to 190 words; continued_use is 40 to 190 words.',
     '17. Make the paragraph specific to THIS firearm and THIS purpose, using only the supplied facts. It must read as one person\'s own account, not as a template.',
     '18. Stay calm and factual. No drama, no excuses, no praise for the applicant.',
-    '19. A cards target returns `choices`: one to four option keys taken EXACTLY from that target\'s own option list. Never invent an option key. A long target returns `text` and no choices.',
+    '19. A cards target returns `choices`: one to four option keys taken EXACTLY from that target\'s own option list. Never invent an option key. A long target returns `text` and no choices. A short target returns ONE plain sentence in `text`, within the stated character limit, and no choices — for the comparison target, name what else was considered and why this firearm won, using the battery in FACTS and the firearm applied for.',
     '20. Return exactly one draft per target key, and no keys that were not asked for.',
     '',
     'Return JSON only, matching the schema.',
@@ -121,6 +121,9 @@ export function draftUserPrompt(args: {
         target.key === 'continued_use' ? '40 to 190 words' : '60 to 190 words';
       const parts = [`- ${target.key} (${target.kind}): ${target.label}`];
       if (target.kind === 'long') parts.push(`  Length: ${words}.`);
+      if (target.kind === 'short') {
+        parts.push('  One plain first-person sentence in `text`; no choices.');
+      }
       if (target.options?.length) {
         parts.push(
           `  Option keys (choices must be taken from these): ${target.options

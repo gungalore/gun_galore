@@ -61,6 +61,18 @@ export const DRAFTED_KEYS: ReadonlySet<string> = new Set<string>([
   'activity_record',
   'competition_record',
   'continued_use',
+  /**
+   * ⚠️ "WHAT ELSE DID YOU CONSIDER" IS WRITTEN FROM THE BATTERY NOW.
+   *
+   * Operator decision 2026-11-27 (live S16 test MO000159): the comparison is a
+   * short narrative, not a question. The writer has the firearm applied for and
+   * the battery rows, so the paragraph can be composed from facts the applicant
+   * already gave — "I considered a .308 but this rifle suits the bushveld ranges
+   * I actually shoot" — and the applicant reviews it like any other drafted
+   * answer. A `short` target (maxLength, no word band) is handled by the
+   * validator's short branch and the drafter stores it in the same one update.
+   */
+  'alternative_considered',
 ]);
 
 /** The word band a drafted long answer must land in. */

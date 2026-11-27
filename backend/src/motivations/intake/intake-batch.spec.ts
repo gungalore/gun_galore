@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
-import { fieldsFor } from '../motivation-fields';
+import { fieldByKey, fieldsFor } from '../motivation-fields';
 import { MotivationIntakeService } from './intake.service';
 import { pendingFields, planGroup } from './intake-planner';
 
@@ -91,6 +91,13 @@ function makeService(answers: Record<string, string> = {}) {
       isConfigured: () => false,
       isConfiguredFor: () => false,
       complete: async () => ({ text: '{}' }),
+    },
+    // A batch that ends the interview calls finish(), which now drafts first.
+    drafts: {
+      ensure: async () => ({ drafted: 0, failed: 0 }),
+      ensureDeterministic: async () => ({ drafted: 0, failed: 0 }),
+      isDrafting: () => false,
+      ensureIfDrafted: async () => undefined,
     },
     logger: { warn: () => undefined, log: () => undefined },
     stateInternal: async () => ({ stage: 'INTERVIEW' }),
@@ -183,6 +190,11 @@ describe('answering a group', () => {
    * make and model were filled with the Glock 42 from the applicant's answer
    * "I considered a Glock 42 but it was too bulky" — the cross-field extractor
    * read a rejected alternative as the choice.
+   *
+   * ⚠️ AND THE COMPARISON IS DRAFTED NOW (2026-11-27), so it is never on a card.
+   * The guard still lives on the answer boundary because the review screen can
+   * save an edited comparison, and the extractor must never treat it as the
+   * applied-for firearm. This exercises that door directly.
    */
   it('never fills the applied-for firearm from the alternative considered', async () => {
     const answers: Record<string, string> = {};
@@ -190,7 +202,7 @@ describe('answering a group', () => {
       answers[field.key] = field.key === 'shooting_history' ? 'word '.repeat(20).trim() : 'x';
     }
     delete answers.alternative_considered;
-    const { svc, writes } = makeService(answers);
+    const { svc } = makeService(answers);
     const extract = jest.fn(async () => ({
       firearm_make: 'Glock',
       firearm_model: '42',
@@ -198,19 +210,121 @@ describe('answering a group', () => {
     (svc as unknown as { agent: { extractFacts: typeof extract } }).agent.extractFacts =
       extract;
 
-    await svc.answerBatch('user-1', 'mo-1', [
-      {
-        fieldKey: 'alternative_considered',
+    const current = {
+      id: 'alternative_considered',
+      fieldKey: 'alternative_considered',
+      label: 'What else you considered, and why this one',
+      help: '',
+      kind: 'short' as const,
+      choices: [],
+      multi: false,
+      sensitive: false,
+      customPlaceholder: 'Or type your own answer…',
+      progress: { answered: 0, total: 1 },
+      optional: true,
+    };
+    const patch = await (
+      svc as unknown as {
+        patchForAnswer: (args: unknown) => Promise<Record<string, string>>;
+      }
+    ).patchForAnswer({
+      row: ROW,
+      sheet: SHEET,
+      answers,
+      current,
+      key: 'alternative_considered',
+      field: fieldByKey(
+        MotivationLicenceType.S16_DEDICATED_HUNTER,
+        'alternative_considered',
+      ),
+      body: {
         message: 'I considered a Glock 42 but it was a little too bulky',
       },
-    ]);
+    });
 
     expect(extract).not.toHaveBeenCalled();
-    expect(writes[0]).toMatchObject({
-      alternative_considered: 'I considered a Glock 42 but it was a little too bulky',
+    expect(patch.alternative_considered).toContain('Glock 42');
+    expect(patch).not.toHaveProperty('firearm_make');
+    expect(patch).not.toHaveProperty('firearm_model');
+  });
+
+  /**
+   * ⚠️ THE CHOSEN CARTRIDGE BECOMES THE CALIBRE WHEN THE TYPED ONE WAS A FAMILY.
+   * Live app MO000159 stored calibre "6.5" + cartridge "6,5 Creedmoor"; every
+   * downstream reader (species, labels, brief, fact pack) still saw the family.
+   * The cartridge is the exact round and outranks the family — never a full
+   * typed calibre.
+   */
+  it('writes the chosen cartridge into a bare-family calibre', async () => {
+    const answers = { firearm_calibre: '6.5', firearm_type: 'Rifle' };
+    const { svc } = makeService(answers);
+    const patch = await (
+      svc as unknown as {
+        patchForAnswer: (args: unknown) => Promise<Record<string, string>>;
+      }
+    ).patchForAnswer({
+      row: ROW,
+      sheet: SHEET,
+      answers,
+      current: {
+        id: 'firearm_cartridge',
+        fieldKey: 'firearm_cartridge',
+        label: 'Which cartridge is it?',
+        help: '',
+        kind: 'short',
+        choices: [],
+        multi: false,
+        sensitive: false,
+        customPlaceholder: 'Or type your own answer…',
+        progress: { answered: 0, total: 1 },
+        optional: true,
+      },
+      key: 'firearm_cartridge',
+      field: fieldByKey(
+        MotivationLicenceType.S16_DEDICATED_HUNTER,
+        'firearm_cartridge',
+      ),
+      body: { value: '6,5 Creedmoor' },
     });
-    expect(writes[0]).not.toHaveProperty('firearm_make');
-    expect(writes[0]).not.toHaveProperty('firearm_model');
+
+    expect(patch.firearm_cartridge).toBe('6,5 Creedmoor');
+    expect(patch.firearm_calibre).toBe('6,5 Creedmoor');
+  });
+
+  it('never overwrites a full typed calibre with the cartridge', async () => {
+    const answers = { firearm_calibre: '.308 Winchester' };
+    const { svc } = makeService(answers);
+    const patch = await (
+      svc as unknown as {
+        patchForAnswer: (args: unknown) => Promise<Record<string, string>>;
+      }
+    ).patchForAnswer({
+      row: ROW,
+      sheet: SHEET,
+      answers,
+      current: {
+        id: 'firearm_cartridge',
+        fieldKey: 'firearm_cartridge',
+        label: 'Which cartridge is it?',
+        help: '',
+        kind: 'short',
+        choices: [],
+        multi: false,
+        sensitive: false,
+        customPlaceholder: 'Or type your own answer…',
+        progress: { answered: 0, total: 1 },
+        optional: true,
+      },
+      key: 'firearm_cartridge',
+      field: fieldByKey(
+        MotivationLicenceType.S16_DEDICATED_HUNTER,
+        'firearm_cartridge',
+      ),
+      body: { value: '.308 Win' },
+    });
+
+    expect(patch.firearm_cartridge).toBe('.308 Win');
+    expect(patch).not.toHaveProperty('firearm_calibre');
   });
 
   /**

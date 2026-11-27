@@ -865,6 +865,40 @@ export default function IntakeInterviewPage() {
     />
   );
 
+  /**
+   * The document door, folded shut.
+   *
+   * ⚠️ THE CARD IS THE FOCUS. A full DocumentAddButtons block — upload, scan,
+   * phone hand-off, preview — sat open under every card and was most of what
+   * made the interview feel like a form. It is still the same control and the
+   * same behaviour; it just waits behind one tap on a summary that says what it
+   * is for.
+   */
+  const documentDisclosure = (
+    <details
+      className="mt-4 rounded-xl border"
+      style={{
+        borderColor: 'var(--border)',
+        background: 'var(--bg-card)',
+      }}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+        <span className="text-[13px] font-medium text-[var(--text-primary)]">
+          Add a document for this step
+        </span>
+        <span className="text-[11.5px] text-[var(--text-tertiary)]">
+          Optional
+        </span>
+      </summary>
+      <div
+        className="border-t px-4 pb-4 pt-3"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        {documentButtons}
+      </div>
+    </details>
+  );
+
   return (
     <main className="mx-auto w-full max-w-[720px] px-4 pb-32 pt-5">
       <p className="text-[12px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
@@ -906,7 +940,19 @@ export default function IntakeInterviewPage() {
           <p className="m-0 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
             Already in your file
           </p>
-          <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+          {/*
+            ⚠️ ONE LINE, CAP IT. The fact strip grows with the research (firearm,
+            association, province, species, station), and on a phone it was
+            pushing the card below the fold before a single question was asked.
+            It stays the same strip — same facts, same order — with an ellipsis
+            and the full text on the title for anyone who needs it.
+          */}
+          <p
+            className="m-0 mt-1 truncate text-[12.5px] leading-5 text-[var(--text-secondary)]"
+            title={data.brief.facts
+              .map((fact) => `${fact.label}: ${fact.value}`)
+              .join(' · ')}
+          >
             {data.brief.facts
               .map((fact) => `${fact.label}: ${fact.value}`)
               .join(' · ')}
@@ -968,12 +1014,7 @@ export default function IntakeInterviewPage() {
               {error}
             </p>
           ) : null}
-          <div className="mt-3">
-            <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-              Have a document for this?
-            </p>
-            {documentButtons}
-          </div>
+          {documentDisclosure}
         </>
       ) : q ? (
         <div className="mt-4">
@@ -1131,12 +1172,7 @@ export default function IntakeInterviewPage() {
               </p>
             ) : null}
 
-            <div className="mt-3">
-              <p className="mb-1 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-                Have a document for this?
-              </p>
-              {documentButtons}
-            </div>
+            {documentDisclosure}
 
             {choices.length ? (
               <div className="mt-3 flex flex-wrap gap-2">

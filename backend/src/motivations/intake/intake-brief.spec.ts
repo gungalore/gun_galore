@@ -37,10 +37,22 @@ describe('the brief hash', () => {
     );
   });
 
-  it('changes when the calibre, purpose or section changes', () => {
+  it('changes when the calibre, cartridge, purpose or section changes', () => {
     const base = { firearm_type: 'Rifle', firearm_calibre: '.30-06' };
     expect(briefHash(S16, base)).not.toBe(
       briefHash(S16, { ...base, firearm_calibre: '.375 H&H' }),
+    );
+    /**
+     * ⚠️ THE CHOSEN CARTRIDGE IS A FACT THE BRIEF REACTS TO. Answering the
+     * cartridge question changes which quarry and hunt classes the brief should
+     * ask about, so it must rebuild the brief — live app MO000159 typed "6.5"
+     * then chose "6,5 Creedmoor".
+     */
+    expect(briefHash(S16, base)).not.toBe(
+      briefHash(S16, { ...base, firearm_cartridge: '6,5 Creedmoor' }),
+    );
+    expect(briefHash(S16, { ...base, firearm_cartridge: '6,5 Creedmoor' })).not.toBe(
+      briefHash(S16, { ...base, firearm_cartridge: '6.5 PRC' }),
     );
     expect(briefHash(S16, base)).not.toBe(
       briefHash(S16, { ...base, firearm_use_kind: 'sport' }),
@@ -102,6 +114,23 @@ describe('the facts projection', () => {
     expect(labels).toEqual(
       expect.arrayContaining(['Firearm', 'Calibre', 'Purpose']),
     );
+  });
+
+  it('carries the chosen cartridge as its own fact, never as a serial', () => {
+    // ⚠️ Live MO000159: "6.5" typed, "6,5 Creedmoor" chosen. The brief words the
+    // quarry question, so the exact round must reach it.
+    const facts = briefFacts(S16, {
+      ...answers,
+      firearm_calibre: '6.5',
+      firearm_cartridge: '6,5 Creedmoor',
+    });
+    const labels = facts.map((fact) => fact.label);
+    expect(labels).toContain('Cartridge');
+    expect(facts.find((fact) => fact.label === 'Cartridge')?.value).toBe(
+      '6,5 Creedmoor',
+    );
+    expect(labels).toContain('Calibre');
+    expect(JSON.stringify(facts)).not.toContain('ABC123');
   });
 
   it('never includes a name, ID, serial or address', () => {

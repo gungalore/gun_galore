@@ -358,7 +358,15 @@ function firearmLine(answers: Record<string, string>): string | undefined {
   ]
     .filter(Boolean)
     .join(' ');
-  const calibre = displayCalibre(clean(answers.firearm_calibre));
+  /**
+   * ⚠️ THE EXACT CARTRIDGE WHEN ONE WAS CHOSEN. A member who typed "6.5" and
+   * answered the cartridge question with "6,5 Creedmoor" has identified the
+   * round; printing the family on the cover and in the running footer while the
+   * body and the drawing name the cartridge reads as a discrepancy. This also
+   * covers legacy rows that hold both fields. `cartridgeSource` falls back to the
+   * typed calibre, so an application without a cartridge answer is unchanged.
+   */
+  const calibre = displayCalibre(cartridgeSource(answers));
   const base = [
     makeModel,
     // âš ï¸ NOT TWICE. "Browning" is both a model and part of the calibre's name
@@ -441,7 +449,9 @@ function cartridgeArticle(
  */
 function heroSubtitle(answers: Record<string, string>): string | undefined {
   const make = (answers.firearm_make ?? '').trim();
-  const calibre = displayCalibre(answers.firearm_calibre);
+  // ⚠️ The chosen cartridge outranks the typed family here for the same reason
+  // as the running footer (see firearmLine).
+  const calibre = displayCalibre(cartridgeSource(answers));
   if (!calibre) return undefined;
   return make ? `${displayMake(make)} · ${calibre}` : calibre;
 }
@@ -491,12 +501,13 @@ function coverParticulars(
   push('Firearm type and action', typeAndAction);
   push('Make', displayMake(v('firearm_make')));
   push('Model', displayModel(v('firearm_model')));
-  // âš ï¸ THE SAME TIDIED STRING THE BODY USES. The card stores ".45-70
+  // ⚠️ THE SAME TIDIED STRING THE BODY USES — and the chosen CARTRIDGE when
+  // the member identified one (see firearmLine), so the cover, the footer and
+  // the prose cannot name two different rounds. The card stores ".45-70
   // GOVERNMENT"; the prose and the cartridge heading both say ".45-70
-  // Government". A cover reading one way and a body the other is the
-  // inconsistency this closes. (The consent annexure is a copy of the licence
-  // and keeps the card's own string verbatim.)
-  push('Calibre', displayCalibre(v('firearm_calibre')));
+  // Government". (The consent annexure is a copy of the licence and keeps the
+  // card's own string verbatim.)
+  push('Calibre', displayCalibre(cartridgeSource(answers)));
   push('Serial number', v('firearm_serial'));
   push('Section applied under', licenceTypeLabel);
   push(

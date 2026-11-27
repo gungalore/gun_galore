@@ -152,6 +152,23 @@ export interface SheetItem {
   section: string;
   scope: 'profile' | 'application';
   required: boolean;
+  /**
+   * A SAPS 271 form box, not a motivation argument.
+   *
+   * ⚠️ SERVED SO THE REVIEW SCREEN CAN COLLAPSE IT. The product no longer fills
+   * in a 271, but the registry still carries the form's boxes because an
+   * applicant may upload one and because a stored value must stay correctable.
+   * The review screen moves `formOnly` rows into a collapsed "SAPS 271 details
+   * (optional)" block instead of showing them as open "still needed" editors —
+   * the operator's live S16 test (MO000159) met "Will you be the main licence
+   * holder?" as an interview question and that is exactly the confusion this
+   * flag removes.
+   *
+   * ⚠️ FORM-ONLY IS NOT "HIDDEN". The row is still served, still editable and
+   * still validated through the ordinary save path; the owned-firearm serial and
+   * licence rows and the 271 declarations must stay correctable.
+   */
+  formOnly?: boolean;
   help?: string;
   /** The tiles, for `kind: 'cards'`. */
   options?: readonly { key: string; sentence: string }[];
@@ -778,6 +795,7 @@ export class MotivationSheetService {
         section: SECTION_OF[f.section] ?? 'case',
         scope: f.scope ?? 'application',
         required: !!f.required,
+        ...(f.formOnly ? { formOnly: true } : {}),
       };
       if (f.help) item.help = f.help;
       // ⚠️ THE OVERLAP-ANGLE FILTERING THAT USED TO LIVE HERE IS GONE WITH THE

@@ -4,6 +4,7 @@ import { classifyCalibre, type QuarryClass } from '../motivation-overlap';
 import { resolveAssociation } from '../association-rules';
 import { strategyFor } from './intake-strategies';
 import { resolveSportingPurpose } from '../motivation-purpose';
+import { cartridgeSource } from '../motivation-cartridge';
 import type { InterviewBrief } from './intake-brief';
 
 // ────────────────────────────────────────────────────────────────────
@@ -66,7 +67,9 @@ export function rankCardOptions(
   const policeStation = (ctx.answers.police_station ?? '').trim();
   const occupation = (ctx.answers.occupation ?? '').trim();
   const association = (ctx.answers.association_name ?? '').trim();
-  const quarry = classifyCalibre(ctx.answers.firearm_calibre ?? '');
+  // ⚠️ The cartridge when one was chosen: "6.5" classifies nowhere, while
+  // "6,5 Creedmoor" selects the cards that round actually supports.
+  const quarry = classifyCalibre(cartridgeSource(ctx.answers));
 
   const preferred = (option: CardOption): boolean => {
     switch (option.rankBy) {

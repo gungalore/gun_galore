@@ -54,6 +54,7 @@ describe('the drafted narrative fields', () => {
     expect([...DRAFTED_KEYS].sort()).toEqual(
       [
         'activity_record',
+        'alternative_considered',
         'competition_record',
         'continued_use',
         'daily_movements',
