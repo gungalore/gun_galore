@@ -895,3 +895,53 @@ describe('one licence per owned firearm, print-ready only', () => {
     expect(need.tier).toBe('extra');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE OWNED-FIREARM MODEL "None" (operator, 2026-11-27, MO000160).
+//
+// A licence card prints NONE in a row that does not apply, and the interview now
+// offers it as a chip. The sheet must render the saved word as an ANSWER — an
+// empty `needs_you` row would re-serve the same Model card forever — while the
+// writer's battery still treats it as no model at all (ownedGate/answerValue).
+// ────────────────────────────────────────────────────────────────────
+describe('the owned-firearm Model None answer', () => {
+  it('renders a saved None as a filled answer, not as outstanding work', async () => {
+    const { svc } = build(
+      {
+        existing_firearm_1_make: 'Marlin',
+        existing_firearm_1_model: 'None',
+        existing_firearm_1_calibre: '.45-70 Government',
+        existing_firearm_1_serial: 'MR90189D',
+      },
+      {
+        provenance: {
+          existing_firearm_1_model: {
+            source: 'MEMBER',
+            from: 'You entered this',
+            at: new Date().toISOString(),
+          },
+        },
+      },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const item = itemFor(sheet.items, 'existing_firearm_1_model');
+    expect(item.value).toBe('None');
+    expect(item.state).toBe('filled');
+    expect(sheet.missing).not.toContain('existing_firearm_1_model');
+  });
+
+  it('keeps the prose boundary: the battery row still has no model', async () => {
+    // The sheet shows the answer; the writer must not read it as a model name.
+    const { svc } = build({
+      existing_firearm_1_make: 'Marlin',
+      existing_firearm_1_model: 'None',
+      existing_firearm_1_calibre: '.45-70 Government',
+      existing_firearm_1_serial: 'MR90189D',
+    });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    // The item shows None (above); the owned-firearm summary line is built from
+    // answerValue, so it names the make and calibre, never "NONE".
+    expect(sheet.ownedRows[0].summary).toBe('Marlin · .45-70 Government');
+    expect(sheet.ownedRows[0].summary).not.toContain('NONE');
+  });
+});

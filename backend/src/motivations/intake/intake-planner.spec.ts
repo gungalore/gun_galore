@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import {
+  GROUP_CAP,
   navigationFor,
   pendingFields,
   planCard,
@@ -847,7 +848,7 @@ describe('the owned firearms', () => {
     expect(group?.ownedIndex).toBeUndefined();
   });
 
-  it('asks the count after Yes, then ONE firearm per card, with its title', () => {
+  it('asks the count after Yes, then the whole owned table on ONE card', () => {
     const answers = filledExceptOwned();
     answers.has_existing_firearms = 'Yes';
     let group = planGroup(input(answers));
@@ -860,14 +861,24 @@ describe('the owned firearms', () => {
 
     answers.existing_firearm_count = '2';
     group = planGroup(input(answers));
-    expect(group?.title).toBe('Firearm 1 of 2');
-    expect(group?.ownedIndex).toBe(1);
+    /**
+     * ⚠️ NOT ONE FIREARM PER CARD (2026-11-27, MO000160). The pending row
+     * questions arrive together, ordered by firearm index then column, and the
+     * cap decides how many fit — 2 × 4 facts = 8, so the first card carries
+     * row 1 and the first three facts of row 2.
+     */
+    expect(group?.title).toBe('Firearms you already hold');
+    expect(group?.ownedIndex).toBeUndefined();
     expect(group?.ownedTotal).toBe(2);
+    expect(group?.questions).toHaveLength(GROUP_CAP);
     expect(group?.questions.map((entry) => entry.key)).toEqual([
       'existing_firearm_1_make',
       'existing_firearm_1_model',
       'existing_firearm_1_calibre',
       'existing_firearm_1_serial',
+      'existing_firearm_2_make',
+      'existing_firearm_2_model',
+      'existing_firearm_2_calibre',
     ]);
     // type and section_held are sheet/writer facts, never asked here.
     expect(group?.questions.map((entry) => entry.key)).not.toContain(
@@ -886,16 +897,45 @@ describe('the owned firearms', () => {
     group = planGroup(
       input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
     );
+    // Row 1 is complete, so the card holds one firearm's facts and DOES name it.
     expect(group?.title).toBe('Firearm 2 of 2');
     expect(group?.ownedIndex).toBe(2);
-    expect(group?.questions.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining([
-        'existing_firearm_2_make',
-        'existing_firearm_2_model',
-        'existing_firearm_2_calibre',
-        'existing_firearm_2_serial',
-      ]),
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_2_make',
+      'existing_firearm_2_model',
+      'existing_firearm_2_calibre',
+      'existing_firearm_2_serial',
+    ]);
+  });
+
+  /**
+   * ⚠️ THE LIVE BUG THIS ROUND EXISTS FOR (MO000160, 2026-11-27). Six
+   * vault-read firearms had make/calibre/serial and only the model missing, and
+   * the one-firearm-per-card rule served six nearly identical Model cards.
+   */
+  it('puts six missing models on a single card', () => {
+    const answers = filledExceptOwned();
+    answers.has_existing_firearms = 'Yes';
+    answers.existing_firearm_count = '6';
+    for (let n = 1; n <= 6; n += 1) {
+      answers[`existing_firearm_${n}_make`] = `Make${n}`;
+      answers[`existing_firearm_${n}_calibre`] = '.308 Winchester';
+      answers[`existing_firearm_${n}_serial`] = `SER${n}`;
+    }
+    const group = planGroup(
+      input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
     );
+    expect(group?.title).toBe('Firearms you already hold');
+    expect(group?.ownedIndex).toBeUndefined();
+    expect(group?.ownedTotal).toBe(6);
+    expect(group?.questions.map((entry) => entry.key)).toEqual([
+      'existing_firearm_1_model',
+      'existing_firearm_2_model',
+      'existing_firearm_3_model',
+      'existing_firearm_4_model',
+      'existing_firearm_5_model',
+      'existing_firearm_6_model',
+    ]);
   });
 
   it('skips the gate for a vault applicant and asks the count as a prefilled confirmation', () => {
@@ -953,7 +993,11 @@ describe('the owned firearms', () => {
     const provenance = { existing_firearm_count: { source: 'MEMBER' } };
 
     let group = planGroup(input(answers, provenance));
-    expect(group?.title).toBe('Firearm 2 of 3');
+    // Rows 2 and 3 are new, so the card spans more than one firearm and carries
+    // no per-firearm title — but the total is still served.
+    expect(group?.title).toBe('Firearms you already hold');
+    expect(group?.ownedIndex).toBeUndefined();
+    expect(group?.ownedTotal).toBe(3);
     expect(group?.questions[0].key).toBe('existing_firearm_2_make');
 
     answers.existing_firearm_count = '1';
@@ -962,7 +1006,7 @@ describe('the owned firearms', () => {
     expect(group?.id).not.toBe('existing');
   });
 
-  it('reports the lowest incomplete firearm, not merely the first', () => {
+  it('puts every incomplete firearm’s remaining facts on one card, in order', () => {
     const answers = filledExceptOwned();
     for (const column of ['make', 'model', 'calibre', 'serial']) {
       answers[`existing_firearm_1_${column}`] = 'filled';
@@ -972,15 +1016,62 @@ describe('the owned firearms', () => {
     const group = planGroup(
       input(answers, { existing_firearm_count: { source: 'MEMBER' } }),
     );
-    // Row 1 is complete, so the card is row 2 — "the lowest firearm with work
-    // left", not simply row 1 of the table.
-    expect(group?.title).toBe('Firearm 2 of 3');
-    expect(group?.ownedIndex).toBe(2);
+    // Row 1 is complete; row 2 is partial and row 3 untouched — all of their
+    // remaining facts share one card, still ordered by firearm then column.
+    expect(group?.title).toBe('Firearms you already hold');
+    expect(group?.ownedIndex).toBeUndefined();
+    expect(group?.ownedTotal).toBe(3);
     expect(group?.questions.map((entry) => entry.key)).toEqual([
       'existing_firearm_2_model',
       'existing_firearm_2_calibre',
       'existing_firearm_2_serial',
+      'existing_firearm_3_make',
+      'existing_firearm_3_model',
+      'existing_firearm_3_calibre',
+      'existing_firearm_3_serial',
     ]);
+  });
+
+  /**
+   * ⚠️ "NONE" IS A REAL ANSWER FOR A MODEL. A licence card prints NONE in a row
+   * that does not apply, and the operator's six vault-read rifles had no way to
+   * say so except Skip on every card.
+   */
+  it('offers None for an owned model, and keeps the free-text box', () => {
+    const answers = filledExceptOwned();
+    answers.has_existing_firearms = 'Yes';
+    answers.existing_firearm_count = '1';
+    const question = questionForField(input(answers), 'existing_firearm_1_model');
+    expect(question?.kind).toBe('short');
+    expect(question?.choices[0]).toEqual({
+      value: 'None',
+      label: 'None — the licence prints NONE',
+    });
+    expect(question?.customPlaceholder).toContain('type your own');
+    // ...and it is not offered on the other owned facts.
+    expect(
+      questionForField(input(answers), 'existing_firearm_1_serial')?.choices ?? [],
+    ).not.toContainEqual(expect.objectContaining({ value: 'None' }));
+  });
+
+  it('gives every owned fact honest help, not the sensitive-field warning', () => {
+    const answers = filledExceptOwned();
+    answers.has_existing_firearms = 'Yes';
+    answers.existing_firearm_count = '1';
+    for (const column of ['make', 'model', 'calibre', 'serial']) {
+      const key = `existing_firearm_1_${column}`;
+      const question = questionForField(input(answers), key);
+      expect({ key, help: question?.help }).not.toEqual({
+        key,
+        help: expect.stringContaining('never sent to the writing assistant'),
+      });
+      // The registry's own guidance wins where it exists; the generic licence
+      // line is the fallback (make and model carry no help of their own).
+      expect(question?.help).toBe(
+        fieldByKey(MotivationLicenceType.S16_DEDICATED_HUNTER, key)?.help ??
+          'Exactly as it appears on your licence card.',
+      );
+    }
   });
 });
 

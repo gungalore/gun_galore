@@ -127,9 +127,19 @@ function shownValue(
    * sheet item read as unanswered, and the optional comparison came back on
    * every card (operator, 2026-11-23: "if I say None it comes up again"). The
    * word is the answer here; the writer is still free to omit it.
+   *
+   * ⚠️ AND THE OWNED-FIREARM MODEL (2026-11-27, MO000160). A licence card prints
+   * "Model NONE" in a row that does not apply, and the interview now offers None
+   * as an explicit answer for exactly that. Blanking it here made the saved
+   * answer read as `needs_you`, so the card would be re-served forever and the
+   * review screen would show an empty box the member had already answered. The
+   * prose boundary is unchanged: `ownedGate()` and the writer's battery still run
+   * answerValue(), so the document never describes a firearm whose model is None.
    */
   if (
-    (key === 'firearm_model' || key === 'alternative_considered') &&
+    (key === 'firearm_model' ||
+      key === 'alternative_considered' ||
+      /^existing_firearm_\d+_model$/.test(key ?? '')) &&
     /^none$/i.test(text)
   ) {
     return text;

@@ -51,7 +51,10 @@ const ROW = {
  * validated in full and written once, so the rest is stubbed and the state
  * rebuild is replaced.
  */
-function makeService(answers: Record<string, string> = {}) {
+function makeService(
+  answers: Record<string, string> = {},
+  provenance: unknown = null,
+) {
   const svc = Object.create(
     MotivationIntakeService.prototype,
   ) as MotivationIntakeService;
@@ -59,8 +62,8 @@ function makeService(answers: Record<string, string> = {}) {
   Object.assign(svc as unknown as Record<string, unknown>, {
     prisma: {
       motivation: {
-        findFirst: async () => ROW,
-        findUnique: async () => ROW,
+        findFirst: async () => ({ ...ROW, answerProvenance: provenance }),
+        findUnique: async () => ({ ...ROW, answerProvenance: provenance }),
         update: async () => ROW,
       },
     },
@@ -160,9 +163,9 @@ describe('answering a group', () => {
   });
 
   /**
-   * ⚠️ A DATE SENT AS A TYPED MESSAGE IS STILL A DATE. The card used to post
+   * âš ï¸ A DATE SENT AS A TYPED MESSAGE IS STILL A DATE. The card used to post
    * the chosen date in `message`, which fell through to the chip matcher and
-   * was refused with "choose one of the options" — so a date question could not
+   * was refused with "choose one of the options" â€” so a date question could not
    * be saved at all. The card posts `value` now; this keeps the older bundle
    * working and closes the failure for good.
    */
@@ -186,12 +189,12 @@ describe('answering a group', () => {
   });
 
   /**
-   * ⚠️ AN ALTERNATIVE IS NOT THE FIREARM APPLIED FOR. MO000112's applied-for
+   * âš ï¸ AN ALTERNATIVE IS NOT THE FIREARM APPLIED FOR. MO000112's applied-for
    * make and model were filled with the Glock 42 from the applicant's answer
-   * "I considered a Glock 42 but it was too bulky" — the cross-field extractor
+   * "I considered a Glock 42 but it was too bulky" â€” the cross-field extractor
    * read a rejected alternative as the choice.
    *
-   * ⚠️ AND THE COMPARISON IS DRAFTED NOW (2026-11-27), so it is never on a card.
+   * âš ï¸ AND THE COMPARISON IS DRAFTED NOW (2026-11-27), so it is never on a card.
    * The guard still lives on the answer boundary because the review screen can
    * save an edited comparison, and the extractor must never treat it as the
    * applied-for firearm. This exercises that door directly.
@@ -219,7 +222,7 @@ describe('answering a group', () => {
       choices: [],
       multi: false,
       sensitive: false,
-      customPlaceholder: 'Or type your own answer…',
+      customPlaceholder: 'Or type your own answerâ€¦',
       progress: { answered: 0, total: 1 },
       optional: true,
     };
@@ -249,10 +252,10 @@ describe('answering a group', () => {
   });
 
   /**
-   * ⚠️ THE CHOSEN CARTRIDGE BECOMES THE CALIBRE WHEN THE TYPED ONE WAS A FAMILY.
+   * âš ï¸ THE CHOSEN CARTRIDGE BECOMES THE CALIBRE WHEN THE TYPED ONE WAS A FAMILY.
    * Live app MO000159 stored calibre "6.5" + cartridge "6,5 Creedmoor"; every
    * downstream reader (species, labels, brief, fact pack) still saw the family.
-   * The cartridge is the exact round and outranks the family — never a full
+   * The cartridge is the exact round and outranks the family â€” never a full
    * typed calibre.
    */
   it('writes the chosen cartridge into a bare-family calibre', async () => {
@@ -275,7 +278,7 @@ describe('answering a group', () => {
         choices: [],
         multi: false,
         sensitive: false,
-        customPlaceholder: 'Or type your own answer…',
+        customPlaceholder: 'Or type your own answerâ€¦',
         progress: { answered: 0, total: 1 },
         optional: true,
       },
@@ -311,7 +314,7 @@ describe('answering a group', () => {
         choices: [],
         multi: false,
         sensitive: false,
-        customPlaceholder: 'Or type your own answer…',
+        customPlaceholder: 'Or type your own answerâ€¦',
         progress: { answered: 0, total: 1 },
         optional: true,
       },
@@ -328,7 +331,7 @@ describe('answering a group', () => {
   });
 
   /**
-   * ⚠️ THE EXTRACTOR NEVER "UPGRADES" A TYPED CALIBRE — THE SHEET ASKS.
+   * âš ï¸ THE EXTRACTOR NEVER "UPGRADES" A TYPED CALIBRE â€” THE SHEET ASKS.
    *
    * The cross-field extractor reads a typed sentence for facts about other
    * fields. For the calibre that used to mean a typed family could be replaced
@@ -390,5 +393,55 @@ describe('answering a group', () => {
       sheet: withItem,
     }).map((entry) => entry.key);
     expect(pending).toContain('firearm_cartridge');
+  });
+
+  /**
+   * ⚠️ THE MODEL "None" CHIP, END TO END (2026-11-27, MO000160). A SAPS card
+   * prints NONE in a row that does not apply; the interview offers it as a chip,
+   * the save stores the word, and the planner must stop asking that firearm's
+   * model afterwards.
+   */
+  it('saves None for an owned model and stops asking it', async () => {
+    const answers: Record<string, string> = {
+      has_existing_firearms: 'Yes',
+      existing_firearm_count: '1',
+      existing_firearm_1_make: 'Marlin',
+      existing_firearm_1_calibre: '.45-70 Government',
+      existing_firearm_1_serial: 'MR90189D',
+    };
+    // Every other question answered, so the current card is the owned table.
+    for (const field of fieldsFor(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      if (
+        field.key === 'has_existing_firearms' ||
+        field.key === 'existing_firearm_count' ||
+        /^existing_firearm_/.test(field.key)
+      ) {
+        continue;
+      }
+      answers[field.key] = 'x';
+    }
+    const provenance = {
+      existing_firearm_count: {
+        source: 'MEMBER',
+        from: 'You entered this',
+        at: new Date().toISOString(),
+      },
+    };
+    const { svc, writes } = makeService(answers, provenance);
+
+    await svc.answerBatch('user-1', 'mo-1', [
+      { fieldKey: 'existing_firearm_1_model', value: 'None' },
+    ]);
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ existing_firearm_1_model: 'None' });
+
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...answers, existing_firearm_1_model: 'None' },
+      sheet: SHEET,
+      provenance,
+    }).map((entry) => entry.key);
+    expect(pending).not.toContain('existing_firearm_1_model');
   });
 });

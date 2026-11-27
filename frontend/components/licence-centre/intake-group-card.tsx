@@ -377,8 +377,16 @@ export default function IntakeGroupCard({
   /**
    * One question, as a fieldset. Extracted so an owned firearm's four fields can
    * be drawn inside their own box without a second copy of this markup.
+   *
+   * ⚠️ `hideHelp` IS FOR OWNED FIELDS. Six firearms × four fields × a why-line
+   * each is a page of commentary about the licence card; the box carries one
+   * line and the fields stay quiet.
    */
-  function questionField(question: IntakeQuestion, labelOverride?: string) {
+  function questionField(
+    question: IntakeQuestion,
+    labelOverride?: string,
+    opts?: { hideHelp?: boolean },
+  ) {
     const draft = draftFor(question.fieldKey);
     const answeredNow = answerFor(question) !== null;
     const closedChoice =
@@ -402,7 +410,7 @@ export default function IntakeGroupCard({
             <NeedsAnswerMark />
           )}
         </legend>
-        {question.why || question.help ? (
+        {!opts?.hideHelp && (question.why || question.help) ? (
           <p className="mb-0 mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
             {question.why || question.help}
           </p>
@@ -522,6 +530,103 @@ export default function IntakeGroupCard({
           </button>
         ) : null}
       </fieldset>
+    );
+  }
+
+  /**
+   * The control for a COMPACT owned row (single-field firearm box).
+   *
+   * ⚠️ SAME ANSWER, LESS CHROME. After a vault read most firearm boxes hold one
+   * field — the Model — and a full fieldset with legend, why-line and Skip block
+   * is four lines of furniture around one input. The chip set, date field and
+   * input are the same controls as the expanded box, so the None chip the server
+   * now offers arrives here too.
+   */
+  function ownedControl(question: IntakeQuestion) {
+    const draft = draftFor(question.fieldKey);
+    if (question.choices.length) {
+      return (
+        <div className="flex flex-wrap gap-2">
+          {question.choices.map((choice) => {
+            const on = draft.picked.includes(choice.value);
+            return (
+              <button
+                key={choice.value}
+                type="button"
+                disabled={busy}
+                aria-pressed={on}
+                onClick={() => toggle(question, choice.value)}
+                className="min-h-[36px] rounded-full border px-3 py-1.5 text-left text-[12.5px] leading-4"
+                style={{
+                  borderColor: on ? 'var(--red)' : 'var(--border)',
+                  background: on ? 'var(--red-wash)' : 'var(--bg-inset)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {choice.label}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+    if (question.kind === 'date') {
+      return (
+        <DateField
+          value={draft.typed}
+          onChange={(iso) => update(question.fieldKey, { typed: iso })}
+          label={question.label}
+          placeholder="yyyy-mm-dd"
+        />
+      );
+    }
+    return (
+      <input
+        value={draft.typed}
+        type="text"
+        onChange={(e) => update(question.fieldKey, { typed: e.target.value })}
+        placeholder={question.customPlaceholder}
+        className="min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--field-bg)',
+          color: 'var(--text-primary)',
+        }}
+      />
+    );
+  }
+
+  /**
+   * A one-question firearm box, as two tight lines: the firearm on top, its one
+   * field name on the left and the control on the right.
+   */
+  function compactOwnedField(question: IntakeQuestion) {
+    const answeredNow = answerFor(question) !== null;
+    const label = OWNED_LABELS[ownedFieldOf(question)] ?? question.label;
+    return (
+      <>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="w-[74px] shrink-0 text-[11.5px] text-[var(--text-tertiary)]">
+            {label}
+          </span>
+          <div className="min-w-0 flex-1">{ownedControl(question)}</div>
+          {answeredNow ? (
+            <AnsweredMark />
+          ) : question.optional ? null : (
+            <NeedsAnswerMark />
+          )}
+        </div>
+        {question.optional ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => submit(question.fieldKey)}
+            className="mt-1 text-[11.5px] text-[var(--text-secondary)] underline"
+          >
+            Skip this one
+          </button>
+        ) : null}
+      </>
     );
   }
 
@@ -708,29 +813,62 @@ export default function IntakeGroupCard({
           one card (or one per card) both read correctly — the boxes come from
           the keys, not from an assumption about the card.
         */}
-        {ownedBoxes.map((box) => (
-          <section
-            key={box.index}
-            aria-label={`Firearm ${box.index}`}
-            className="rounded-xl border p-3"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-page)',
-            }}
-          >
-            <h3 className="m-0 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-              Firearm {box.index}
-            </h3>
-            <div className="mt-2 grid gap-4">
-              {box.questions.map((question) =>
-                questionField(
-                  question,
-                  OWNED_LABELS[ownedFieldOf(question)],
-                ),
+        {ownedBoxes.map((box) => {
+          /**
+           * ⚠️ ONE FIELD COMPACTS; FOUR FIELDS GET A BOX. A vault read usually
+           * leaves one question per firearm (the Model), and rendering that as a
+           * full fieldset made six near-empty boxes on a phone. Two or more
+           * fields keep the boxed layout, with one helper line at box level
+           * instead of a why-line per field.
+           */
+          const single = box.questions.length === 1;
+          const only = box.questions[0];
+          return (
+            <section
+              key={box.index}
+              aria-label={`Firearm ${box.index}`}
+              className="rounded-xl border p-3"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-page)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12.5px] font-medium text-[var(--text-primary)]">
+                  Firearm {box.index}
+                </span>
+                {single ? (
+                  <span className="flex items-center gap-2 text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+                    {only.optional ? 'Optional' : null}
+                  </span>
+                ) : (
+                  <span className="text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+                    On the licence card
+                  </span>
+                )}
+              </div>
+              {single ? (
+                compactOwnedField(only)
+              ) : (
+                <>
+                  <p className="m-0 mt-1 text-[11.5px] leading-4 text-[var(--text-tertiary)]">
+                    Make, model, calibre and serial as they appear on the licence
+                    card.
+                  </p>
+                  <div className="mt-2 grid gap-3">
+                    {box.questions.map((question) =>
+                      questionField(
+                        question,
+                        OWNED_LABELS[ownedFieldOf(question)],
+                        { hideHelp: true },
+                      ),
+                    )}
+                  </div>
+                </>
               )}
-            </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

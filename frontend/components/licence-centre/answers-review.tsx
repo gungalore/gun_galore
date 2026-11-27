@@ -128,8 +128,14 @@ export function reviewSections(sheet: SheetResponse): ReviewSectionView[] {
         section,
         missing,
         rest,
-        autoOpen:
-          missing.length > 0 || rest.some((item) => item.state === 'suggested'),
+        /**
+         * ⚠️ MISSING ONLY. A drafted/suggested answer used to auto-open its
+         * section; with ten drafted paragraphs that turned the review screen
+         * into an endless scroll. The attention panel already counts them and
+         * the summary says "N to check" — the member opens the section when they
+         * are ready to.
+         */
+        autoOpen: missing.length > 0,
         answers: items.length,
         toCheck: items.filter((item) => item.state === 'suggested').length,
       };
@@ -289,7 +295,16 @@ function AttentionPanel({ stats }: { stats: ReviewStats }) {
   );
 }
 
-/** One bordered box per owned firearm: heading, summary line, row editors. */
+/**
+ * One owned firearm, collapsed to a single line: "Firearm 3 · GLOCK · 19 · 9MM ·
+ * ABC · complete". Expanding it shows the four licence-card fields first and
+ * tucks type/expiry/section/serials under a second fold, so ten rows per firearm
+ * are never on screen at once.
+ *
+ * ⚠️ AUTO-OPENS ONLY ON A MISSING ANSWER. Six firearms auto-opening because they
+ * carry drafted text is the endless scroll the operator reported; the section
+ * summary still says "N to check" and the gold flags are inside.
+ */
 function OwnedFirearmBox({
   box,
   busyKey,
@@ -303,32 +318,77 @@ function OwnedFirearmBox({
   onSave: (key: string, value: string) => Promise<void>;
   onConfirm: (key: string) => void | Promise<void>;
 }) {
+  const [open, setOpen] = useState(box.missing.length > 0);
+  useEffect(() => {
+    if (box.missing.length > 0) setOpen(true);
+  }, [box.missing.length]);
+  const fieldOf = (item: SheetItem) => OWNED_KEY.exec(item.key)?.[2] ?? '';
+  const essentials = box.items.filter((item) =>
+    OWNED_FIELDS.includes(fieldOf(item)),
+  );
+  const extras = box.items.filter(
+    (item) => !OWNED_FIELDS.includes(fieldOf(item)),
+  );
+  const row = (item: SheetItem) => (
+    <AnswerReviewRow
+      key={item.key}
+      item={item}
+      autoOpen={box.missing.includes(item)}
+      busy={busyKey === item.key || confirmingKey === item.key}
+      onSave={onSave}
+      onConfirm={item.state === 'suggested' ? onConfirm : undefined}
+    />
+  );
   return (
     <section
       aria-label={`Firearm ${box.index}`}
-      className="my-3 rounded-xl border p-3"
+      className="my-2 rounded-xl border"
       style={{ borderColor: 'var(--border)', background: 'var(--bg-page)' }}
     >
-      <h3 className="m-0 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-        Firearm {box.index}
-      </h3>
-      {box.summary ? (
-        <p className="m-0 mt-1 text-[14.5px] font-medium leading-[1.3] text-[var(--text-primary)]">
-          {box.summary}
-        </p>
-      ) : null}
-      <div className="mt-1">
-        {box.items.map((item) => (
-          <AnswerReviewRow
-            key={item.key}
-            item={item}
-            autoOpen={box.missing.includes(item)}
-            busy={busyKey === item.key || confirmingKey === item.key}
-            onSave={onSave}
-            onConfirm={item.state === 'suggested' ? onConfirm : undefined}
-          />
-        ))}
-      </div>
+      <details
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2">
+          <span className="min-w-0">
+            <span className="block text-[12px] font-medium text-[var(--text-primary)]">
+              Firearm {box.index}
+            </span>
+            {box.summary ? (
+              <span className="mt-0.5 block truncate text-[12px] leading-4 text-[var(--text-tertiary)]">
+                {box.summary}
+              </span>
+            ) : null}
+          </span>
+          <span className="shrink-0 text-[11px] text-[var(--text-tertiary)]">
+            {box.missing.length
+              ? `${box.missing.length} to fill`
+              : 'complete'}
+          </span>
+        </summary>
+        <div
+          className="border-t px-3"
+          style={{ borderColor: 'var(--border-divider)' }}
+        >
+          {essentials.map(row)}
+          {extras.length ? (
+            <details
+              className="my-2 rounded-lg border"
+              style={{ borderColor: 'var(--border-divider)' }}
+            >
+              <summary className="cursor-pointer list-none px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+                More details (type, licence expiry, section, serials)
+              </summary>
+              <div
+                className="border-t px-2"
+                style={{ borderColor: 'var(--border-divider)' }}
+              >
+                {extras.map(row)}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </details>
     </section>
   );
 }

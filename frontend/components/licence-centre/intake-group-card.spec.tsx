@@ -706,11 +706,17 @@ describe('the grouped interview card — owned firearm boxes', () => {
    * complaint in its worst form; the prefixed keys carry the index, so the boxes
    * come from the answer keys rather than from an assumption about the card.
    */
-  const owned = (index: number, field: string, label: string) =>
+  const owned = (
+    index: number,
+    field: string,
+    label: string,
+    over: Partial<IntakeQuestion> = {},
+  ) =>
     question({
       fieldKey: `existing_firearm_${index}_${field}`,
       id: `existing_firearm_${index}_${field}`,
       label,
+      ...over,
     });
 
   it('groups each firearm’s fields into its own box, leaving the count outside', () => {
@@ -727,7 +733,9 @@ describe('the grouped interview card — owned firearm boxes', () => {
               { value: '2', label: 'Two' },
             ],
           }),
-          owned(1, 'make', 'Make of firearm 1'),
+          owned(1, 'make', 'Make of firearm 1', {
+            why: 'The make is printed on the licence card.',
+          }),
           owned(1, 'model', 'Model of firearm 1'),
           owned(1, 'calibre', 'Calibre of firearm 1'),
           owned(1, 'serial', 'Serial of firearm 1'),
@@ -740,16 +748,67 @@ describe('the grouped interview card — owned firearm boxes', () => {
 
     const first = screen.getByRole('region', { name: 'Firearm 1' });
     const second = screen.getByRole('region', { name: 'Firearm 2' });
-    expect(within(first).getByRole('heading', { name: 'Firearm 1' })).toBeDefined();
+    expect(within(first).getByText('Firearm 1')).toBeDefined();
     // The four labels, not the backend's per-firearm sentence.
     expect(within(first).getByText('Make')).toBeDefined();
     expect(within(first).getByText('Model')).toBeDefined();
     expect(within(first).getByText('Calibre')).toBeDefined();
     expect(within(first).getByText('Serial')).toBeDefined();
     expect(within(second).getByText('Make')).toBeDefined();
+    // One helper line at box level instead of a why-line per field.
+    expect(
+      within(first).getByText(
+        /Make, model, calibre and serial as they appear on the licence card/,
+      ),
+    ).toBeDefined();
+    expect(
+      within(first).queryByText('The make is printed on the licence card.'),
+    ).toBeNull();
     // The count question is a normal row outside the boxes.
     expect(within(first).queryByText('How many firearms do you own?')).toBeNull();
     expect(screen.getByText('How many firearms do you own?')).toBeDefined();
+  });
+
+  /**
+   * ⚠️ THE ONE-FIELD BOX IS THE COMMON CASE. A vault read usually leaves just
+   * the Model; a full fieldset around one input made six near-empty boxes on a
+   * phone. It now reads as two tight lines: the firearm, then field + control.
+   */
+  it('compacts a one-question firearm box to a tight row', () => {
+    const model = question({
+      fieldKey: 'existing_firearm_1_model',
+      id: 'existing_firearm_1_model',
+      label: 'Model of firearm 1',
+      kind: 'choice',
+      choices: [
+        { value: 'NONE', label: 'None — the licence prints NONE' },
+        { value: '19', label: '19' },
+      ],
+      why: 'The model is printed on the licence card.',
+      optional: true,
+    });
+    render(
+      <IntakeGroupCard
+        group={group([model])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    const box = screen.getByRole('region', { name: 'Firearm 1' });
+    expect(within(box).getByText('Firearm 1')).toBeDefined();
+    expect(within(box).getByText('Model')).toBeDefined();
+    expect(
+      within(box).getByRole('button', {
+        name: 'None — the licence prints NONE',
+      }),
+    ).toBeDefined();
+    // Compact: no why/help sentence, no legend fieldset furniture.
+    expect(
+      within(box).queryByText('The model is printed on the licence card.'),
+    ).toBeNull();
+    expect(within(box).queryByRole('group')).toBeNull();
+    expect(within(box).getByRole('button', { name: 'Skip this one' })).toBeDefined();
   });
 
   it('draws two firearms on one card as two boxes, not one', () => {
@@ -767,6 +826,39 @@ describe('the grouped interview card — owned firearm boxes', () => {
     expect(screen.getByRole('region', { name: 'Firearm 1' })).toBeDefined();
     expect(screen.getByRole('region', { name: 'Firearm 2' })).toBeDefined();
     expect(screen.getByRole('region', { name: 'Firearm 3' })).toBeDefined();
+  });
+
+  /**
+   * ⚠️ "None — the licence prints NONE" IS A REAL ANSWER, NOT A SKIP. The
+   * operator's own firearms print NONE where a model would be; the server offers
+   * it as a chip and it must submit like any other choice.
+   */
+  it('submits the server’s None chip value', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          owned(1, 'model', 'Model of firearm 1', {
+            kind: 'choice',
+            choices: [
+              { value: 'NONE', label: 'None — the licence prints NONE' },
+              { value: '19', label: '19' },
+            ],
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'None — the licence prints NONE' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'existing_firearm_1_model', value: 'NONE' },
+    ]);
   });
 
   /**

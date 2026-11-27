@@ -1755,10 +1755,19 @@ interview; only the old single-question path could ever have served them.
     questions and a decrease drops them.
   - `missingRequired` never lists the gate or count when rows exist, so a vault
     application is never blocked on a question the system can answer.
-- **One firearm per card.** `planGroup` restricts the `existing` topic to the
-  lowest incomplete row, titles it "Firearm n of N" and serves
-  `ownedIndex`/`ownedTotal` (`PlannedGroup`/`IntakeGroup`); the count/gate card
-  comes first and asks only those.
+- **The owned table is asked on ONE card.** `planGroup` serves the pending
+  owned-row questions together, ordered by firearm index then column, capped by
+  `GROUP_CAP` (six missing Models fit on a single card). A card that happens to
+  carry exactly one firearm's rows is titled "Firearm n of N" and serves
+  `ownedIndex`/`ownedTotal`; a combined card keeps the normal topic title and
+  serves `ownedTotal` only. The gate/count card comes first and asks only those
+  two. The owned Model question offers a leading **None — the licence prints
+  NONE** chip (the free-text box stays), stored as the word `None`; the sheet
+  renders it as a filled answer, the planner stops asking it, and the writer's
+  battery still treats it as no model (`ownedGate`/`answerValue`). Owned-row
+  questions use the registry help where present and "Exactly as it appears on
+  your licence card." otherwise — they DO reach the writer as the battery, so the
+  generic sensitive-field warning is not shown there.
 - **`IntakeState`** now serves `ownedFirearms: { index, make, model, calibre,
   serial }[]` and `completed: boolean` (`intakeCompletedAt != null`). REVIEW +
   `completed: false` means the cards are finished but the member never pressed

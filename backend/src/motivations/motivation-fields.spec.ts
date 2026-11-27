@@ -1586,3 +1586,14 @@ describe('ownedGate', () => {
     );
   });
 });
+
+describe('the owned-firearm Model "None" answer', () => {
+  it('is accepted and stored exactly as the chip sends it', () => {
+    // ⚠️ A SAPS licence prints NONE in a model row that does not apply. The chip
+    // sends the word; `sanitiseAnswers` must not blank it on the way in.
+    const { answers } = sanitiseAnswers(T, {
+      existing_firearm_1_model: 'None',
+    });
+    expect(answers.existing_firearm_1_model).toBe('None');
+  });
+});

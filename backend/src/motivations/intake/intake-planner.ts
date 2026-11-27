@@ -89,7 +89,23 @@ function choicesFor(
   if (field.kind === 'short' && item?.choices?.length) {
     return item.choices.map((v) => ({ value: v, label: v }));
   }
-  return suggestions.map((s) => ({ value: s, label: s }));
+  /**
+   * ⚠️ "NONE" IS A REAL ANSWER FOR A MODEL, AND THE LICENCE CARD PRINTS IT.
+   *
+   * Operator, 2026-11-27 (MO000160): six vault-read firearms had every fact but
+   * the model, and the only way past each Model question was Skip — "there is no
+   * … None option for firearms I already own". A SAPS card prints NONE in a row
+   * that does not apply, so the card offers it as a chip and keeps the free-text
+   * box for the firearms that do have a model. It is stored exactly like any
+   * typed answer; see shownValue() on the sheet for the display half of the rule.
+   */
+  const suggestionsWithNone = /^existing_firearm_\d+_model$/.test(field.key)
+    ? [
+        { value: 'None', label: 'None — the licence prints NONE' },
+        ...suggestions.map((s) => ({ value: s, label: s })),
+      ]
+    : suggestions.map((s) => ({ value: s, label: s }));
+  return suggestionsWithNone;
 }
 
 /**
@@ -440,11 +456,22 @@ function buildQuestion(args: {
     answers: merged,
     brief: input.brief,
   };
+  /**
+   * ⚠️ AN OWNED-ROW QUESTION IS SENSITIVE FOR MASKING, NOT FOR WRITING.
+   * The registry marks every owned-firearm column `sensitive` so logs and admin
+   * views mask it; the facts DO reach the writer as the battery. Two pieces of
+   * copy followed the flag and were wrong on this card: the "never sent to the
+   * writing assistant" help, and the suppression of chips — which would have
+   * hidden the new None answer on the model question.
+   */
+  const isOwnedRow = /^existing_firearm_\d+_/.test(key);
+  const isOwnedModel = /^existing_firearm_\d+_model$/.test(key);
   const baseChoices =
     sensitive &&
     field.kind !== 'choice' &&
     field.kind !== 'yesno' &&
-    field.kind !== 'cards'
+    field.kind !== 'cards' &&
+    !isOwnedModel
       ? []
       : choicesFor(field, items.get(key), suggestions, merged, chipContext);
   /**
@@ -550,16 +577,25 @@ function buildQuestion(args: {
     help:
       key === 'existing_firearm_count'
         ? countHelp
-        : (huntClasses
-            ? `Tap every class that is true of this ${calibre}.`
-            : isPrimaryThreat
-              ? 'Select any options that fit your situation, or type your own.'
-              : isPrimaryQuarry
-                ? 'Select the game you intend to hunt, or type your own.'
-                : field.help) ??
-          (sensitive
-            ? 'This is typed here and never sent to the writing assistant.'
-            : ''),
+        : isOwnedRow
+          ? /**
+             * ⚠️ THESE FACTS DO REACH THE WRITER. The generic sensitive-fields
+             * copy ("never sent to the writing assistant") was false here: the
+             * owned rows are the battery the comparison section argues from.
+             * Use the field's own guidance where the registry has it (serial,
+             * calibre) and one honest line otherwise.
+             */
+            field.help ?? 'Exactly as it appears on your licence card.'
+          : (huntClasses
+              ? `Tap every class that is true of this ${calibre}.`
+              : isPrimaryThreat
+                ? 'Select any options that fit your situation, or type your own.'
+                : isPrimaryQuarry
+                  ? 'Select the game you intend to hunt, or type your own.'
+                  : field.help) ??
+            (sensitive
+              ? 'This is typed here and never sent to the writing assistant.'
+              : ''),
     kind: field.kind,
     choices,
     ...(details.length ? { details } : {}),
@@ -1019,11 +1055,17 @@ export function planGroup(
   const groupPending = byTopic.get(id) ?? [];
   const inTopic = countedInTopic(input, merged, fields, id, briefKeys);
   /**
-   * ⚠️ ONE FIREARM PER CARD. In the `existing` topic the owned rows are asked
-   * one firearm at a time: the gate/count first (that is the card that opens the
-   * table), then the lowest incomplete firearm's four facts. The title names it
-   * — "Firearm 2 of 6" — and `ownedIndex`/`ownedTotal` are served so the screen
-   * can render the same progress the card knows.
+   * ⚠️ ONE CARD FOR THE WHOLE OWNED TABLE (operator, 2026-11-27, MO000160).
+   *
+   * This briefly served ONE firearm per card and titled it "Firearm n of N".
+   * On a vault application with six firearms whose single missing fact was the
+   * model, that became six nearly identical Model cards — "the repetitive
+   * asking the model for each firearm is annoying". The pending row questions
+   * are now served together, ordered by firearm index then column, and the
+   * ordinary cap decides how many fit. A card that happens to contain exactly
+   * one firearm's rows still names it ("Firearm 3 of 6"); a card spanning
+   * several keeps the plain topic title and serves `ownedTotal` so the screen
+   * can count boxes.
    */
   let title = TOPIC_TITLES[id];
   let questions = groupPending;
@@ -1037,7 +1079,7 @@ export function planGroup(
         entry.key === 'existing_firearm_count',
     );
     const rowCard = groupPending.filter((entry) =>
-      /^existing_firearm_\d+_/.test(entry.key),
+      /^existing_firearm_\d+_(make|model|calibre|serial)$/.test(entry.key),
     );
     if (gateCard.length) {
       // The gate/count card asks only those. Rows come once the count is
@@ -1045,17 +1087,26 @@ export function planGroup(
       // saying how many firearms there are.
       questions = gateCard;
     } else if (rowCard.length) {
-      const indices = rowCard.map((entry) =>
-        Number(/^existing_firearm_(\d+)_/.exec(entry.key)![1]),
+      const columnOf = (key: string): number =>
+        OWNED_ASKED_COLUMNS.indexOf(
+          /_(make|model|calibre|serial)$/.exec(key)![1] as never,
+        );
+      const indexOf = (key: string): number =>
+        Number(/^existing_firearm_(\d+)_/.exec(key)![1]);
+      questions = [...rowCard].sort(
+        (a, b) =>
+          indexOf(a.key) - indexOf(b.key) || columnOf(a.key) - columnOf(b.key),
       );
-      const first = Math.min(...indices);
-      questions = rowCard.filter(
-        (entry) =>
-          Number(/^existing_firearm_(\d+)_/.exec(entry.key)![1]) === first,
-      );
-      ownedIndex = first;
-      ownedTotal = Math.max(owned.count, first);
-      title = `Firearm ${first} of ${ownedTotal}`;
+      // Only a card that actually carries ONE firearm's rows gets a per-firearm
+      // title — and the check is on the CAPPED card, because that is what the
+      // member sees.
+      const capped = questions.slice(0, Math.max(1, cap));
+      const indices = [...new Set(capped.map((entry) => indexOf(entry.key)))];
+      ownedTotal = Math.max(owned.count, ...indices);
+      if (indices.length === 1) {
+        ownedIndex = indices[0];
+        title = `Firearm ${ownedIndex} of ${ownedTotal}`;
+      }
     }
   }
   return {
@@ -1066,7 +1117,12 @@ export function planGroup(
     answered: Math.max(0, inTopic.length - groupPending.length),
     totalInGroup: inTopic.length,
     questions: questions.slice(0, Math.max(1, cap)),
-    ...(ownedIndex !== undefined ? { ownedIndex, ownedTotal } : {}),
+    ...(ownedTotal !== undefined
+      ? {
+          ownedTotal,
+          ...(ownedIndex !== undefined ? { ownedIndex } : {}),
+        }
+      : {}),
   };
 }
 
