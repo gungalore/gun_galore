@@ -567,8 +567,18 @@ export default function IntakeStartPage() {
             </p>
 
             <div className="mt-5 space-y-4">
+              {/*
+                ⚠️ THE ACCENT BELONGS TO THE CARD UNDER THE POINTER. "Print and
+                Deliver" used to carry a permanent `var(--red)` border, so the
+                second option always looked selected and the first looked disabled
+                regardless of where the cursor was (operator, 2026-11-27: "Blue box
+                is static, needs to jump to the option the cursor is on"). Both
+                cards are neutral at rest and take the accent on hover or keyboard
+                focus — the accent is `--red`, which is the blue action colour in
+                the licence-centre theme.
+              */}
               <section
-                className="rounded-xl border p-4"
+                className="rounded-xl border p-4 transition-colors duration-150 hover:border-[color:var(--red)] focus-within:border-[color:var(--red)] hover:bg-[color:var(--red-wash)]"
                 style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
               >
                 <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
@@ -593,8 +603,8 @@ export default function IntakeStartPage() {
               </section>
 
               <section
-                className="rounded-xl border p-4"
-                style={{ borderColor: 'var(--red)', background: 'var(--bg-card)' }}
+                className="rounded-xl border p-4 transition-colors duration-150 hover:border-[color:var(--red)] focus-within:border-[color:var(--red)] hover:bg-[color:var(--red-wash)]"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
               >
                 <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.25] text-[var(--text-primary)]">
                   Print and Deliver (R75)
