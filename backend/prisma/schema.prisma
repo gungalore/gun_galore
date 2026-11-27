@@ -4081,6 +4081,27 @@ model Order {
   orderReference    String? @unique
   gatewayCheckoutId String?
   gatewayPaymentId  String? @unique
+  /**
+   * ── ORDER-LEVEL CARD PAYMENT (multi-item checkout, 2026-11-27) ──────
+   *
+   * The cart is paid in ONE capture, so the gateway identity lives on the
+   * Order, not on the child transactions (children keep their own
+   * gatewayPaymentId, written only after the order payment is verified, so
+   * refunds/payouts on a child still bind to the captured payment).
+   *
+   * ⚠️ paymentAttemptExpiresAt IS THE AWAITING_PAYMENT DEADLINE. The expiry
+   * sweep cancels/restocks an order that never paid; the checkout create call
+   * sets it 15 minutes out, and a resume can re-checkout before it lapses.
+   */
+  paymentProvider           PaymentProvider?
+  gatewayMerchantRef        String?
+  gatewayRedirectUrl        String?
+  gatewayResultCode         String?
+  paymentAttemptExpiresAt   DateTime?
+  cancelledAt               DateTime?
+  /** Zoho Books buyer invoice for the whole order (one invoice, emailed once). */
+  zohoBuyerInvoiceId        String?
+  zohoBuyerInvoiceEmailedAt DateTime?
 
   // Money snapshot (ZAR cents) = sums across child transactions.
   itemsSubtotal    Int
@@ -4119,6 +4140,14 @@ model Order {
   @@index([buyerId, status])
   @@index([status, createdAt])
   @@index([status, manualPayByAt])
+  // Order-level card payment: the expiry sweep scans
+  // (AWAITING_PAYMENT, paymentAttemptExpiresAt), the webhook/verify fallback
+  // matches gatewayMerchantRef, and a buyer's order list reads
+  // (buyerId, createdAt).
+  @@index([status, paymentAttemptExpiresAt])
+  @@index([gatewayCheckoutId])
+  @@index([gatewayMerchantRef])
+  @@index([buyerId, createdAt])
 }
 
 model OrderLineItem {

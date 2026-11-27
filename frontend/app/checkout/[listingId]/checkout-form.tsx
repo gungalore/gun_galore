@@ -35,6 +35,7 @@ import {
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
 import { getCollectionMode } from '@/lib/delivery-estimate';
+import { getSavedDeliveryChoice } from '@/lib/delivery-choice';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -303,6 +304,26 @@ export function CheckoutForm({
       ? 'COLLECTION'
       : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'COURIER'),
   );
+  /**
+   * ⚠️ THE PDP PICK WINS ON FIRST LOAD. The listing's two-option toggle is where
+   * most buyers choose the route; this form must open on that choice instead of
+   * silently resetting them to the courier. Session-scoped and re-validated
+   * against the listing's legal pair — a stale pick can never select a rail the
+   * listing does not offer.
+   */
+  useEffect(() => {
+    if (isCollection) return;
+    const saved = getSavedDeliveryChoice(listing.id);
+    if (
+      saved &&
+      (allowedMethods as string[]).includes(saved) &&
+      saved !== method
+    ) {
+      setMethod(saved as ShippingMethod);
+    }
+    // First load only; the buyer's later clicks are authoritative.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listing.id]);
   // The delivery picker only applies to the COURIER rail; a PRIVATE_ARRANGE
   // choice skips it entirely.
   const usesDeliveryPicker = !isCollection && method === 'COURIER';
@@ -1206,7 +1227,7 @@ export function CheckoutForm({
             Delivery method
           </p>
           <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-            Collect
+            Private
           </p>
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
             Collect in person from the seller
@@ -1219,7 +1240,7 @@ export function CheckoutForm({
               fontWeight: 600,
             }}
           >
-            Collection only &mdash; {vicinityLabel(listing)}
+            Private &mdash; collect in person, {vicinityLabel(listing)}
           </p>
           {/* Bulky-goods copy interim (audit Big-4). "You'll collect this in
               person" reads as "same city only", which is what caps trailers

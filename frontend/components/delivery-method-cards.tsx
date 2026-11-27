@@ -3,12 +3,16 @@
 // UX-8 — transfer method as option cards (icon + title + one-liner) instead of
 // button pills. Presentation only: the card's onClick still calls the SAME
 // setMethod(m) the pills did, so every downstream effect (address reveal,
-// consent gate) and the checkout payload are unchanged. This now renders only
-// the firearm hand-over routes — door courier is the single non-firearm rail
-// and has no choice to present.
+// consent gate) and the checkout payload are unchanged.
+//
+// ⚠️ THE TWO LABELS ARE THE SHARED ONES. Courier / Private / Dealer Stock, from
+// lib/delivery-methods.ts — the same words the listing toggle and the sell form
+// use. The old copy said "Dealer stock", "Arrange privately" and "Meet in
+// person" in different places; those were three names for two choices.
 
 import type { ReactNode } from 'react';
 import type { ShippingMethod } from '@/lib/types';
+import { deliveryLabel, type DeliveryLabel } from '@/lib/delivery-methods';
 
 function DealerIcon() {
   return (
@@ -35,14 +39,10 @@ function CourierIcon() {
   );
 }
 
-const META: Record<string, { title: string; subtitle: string; icon: ReactNode }> = {
-  // Firearms have TWO hand-over options and both go through a licensed dealer.
-  // Never describe either as a "private collection" - a firearm is never simply
-  // handed over, and copy that implies otherwise misdescribes what the platform
-  // does. Goods can pair the courier with a private in-person handover.
-  DEALER_TRANSFER: { title: 'Dealer stock', subtitle: 'Seller books it in at their dealer, you collect from yours', icon: <DealerIcon /> },
-  PRIVATE_ARRANGE: { title: 'Arrange privately', subtitle: 'Meet at a dealer to do the licence transfer', icon: <HandshakeIcon /> },
-  COURIER: { title: 'Courier delivery', subtitle: 'Door-to-door, tracked, with a delivery estimate at payment', icon: <CourierIcon /> },
+const ICONS: Record<DeliveryLabel, ReactNode> = {
+  Courier: <CourierIcon />,
+  Private: <HandshakeIcon />,
+  'Dealer Stock': <DealerIcon />,
 };
 
 export function DeliveryMethodCards({
@@ -67,11 +67,9 @@ export function DeliveryMethodCards({
       </p>
       <div style={{ display: 'grid', gap: 8 }}>
         {methods.map((m) => {
-          const meta = META[m] ?? { title: m, subtitle: '', icon: null };
-          const title =
-            m === 'PRIVATE_ARRANGE' && !isFirearm ? 'Meet in person' : meta.title;
+          const label = deliveryLabel(m) as DeliveryLabel;
           const dealerLine = (() => {
-            if (m !== 'DEALER_TRANSFER') return null;
+            if (label !== 'Dealer Stock') return null;
             const name = dealerName?.trim();
             const location = dealerLocation?.trim();
             if (name && location) {
@@ -83,9 +81,14 @@ export function DeliveryMethodCards({
             return name || location || null;
           })();
           const subtitle =
-            m === 'PRIVATE_ARRANGE' && !isFirearm
-              ? 'Meet the seller in person. Payment is held until you confirm; the Platform Fee is non-refundable.'
-              : (dealerLine ?? meta.subtitle);
+            label === 'Courier'
+              ? 'Door-to-door, tracked, with a delivery estimate at payment'
+              : label === 'Dealer Stock'
+                ? (dealerLine ??
+                  'Seller books it in at their dealer, you collect from yours')
+                : isFirearm
+                  ? 'Meet at a dealer to do the licence transfer'
+                  : 'Meet the seller in person. Payment is held until you confirm; the Platform Fee is non-refundable.';
           const active = selected === m;
           return (
             <button
@@ -101,11 +104,11 @@ export function DeliveryMethodCards({
               }}
             >
               <span style={{ flexShrink: 0, color: active ? 'var(--red)' : 'var(--text-tertiary)' }}>
-                {meta.icon}
+                {ICONS[label]}
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {title}
+                  {label}
                 </span>
                 <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
                   {subtitle}

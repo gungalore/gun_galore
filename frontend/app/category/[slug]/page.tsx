@@ -1,4 +1,4 @@
-﻿import Link from 'next/link';
+import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -6,6 +6,7 @@ import { viewerFetch } from '@/lib/api-viewer';
 import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, Category, SoldComps } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
+import { DistanceProvider } from '@/lib/distance-context';
 import { Pagination } from '@/components/pagination';
 import { SoldCompsStrip } from '@/components/sold-comps';
 import { BrowseUnavailable } from '@/components/browse-unavailable';
@@ -185,11 +186,13 @@ export default async function CategoryPage({
             : 'No listings in this category yet. Check back soon.'}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-6">
-          {browse.listings.map((l) => (
-            <ListingCard key={l.id} listing={l} />
-          ))}
-        </div>
+        <DistanceProvider ids={browse.listings.map((listing) => listing.id)}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-6">
+            {browse.listings.map((l) => (
+              <ListingCard key={l.id} listing={l} />
+            ))}
+          </div>
+        </DistanceProvider>
       )}
 
       {/* Pagination */}

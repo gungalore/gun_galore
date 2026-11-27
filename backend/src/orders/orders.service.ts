@@ -24,6 +24,49 @@ export class OrdersService {
     return this.transactions.createOrderCheckout(userId, dto, frontendUrl);
   }
 
+  /** Public return-from-gateway: re-query the stored order checkout. */
+  verifyResult(orderId: string) {
+    return this.transactions.verifyOrderResult(orderId);
+  }
+
+  /** Buyer: mint a fresh gateway session for an unpaid order. */
+  resume(orderId: string, userId: string, frontendUrl: string) {
+    return this.transactions.resumeOrderCheckout(orderId, userId, frontendUrl);
+  }
+
+  /** Buyer: cancel an unpaid order (never a paid one). */
+  cancel(orderId: string, userId: string) {
+    return this.transactions.cancelUnpaidOrder(orderId, userId);
+  }
+
+  /**
+   * Buyer: remove ONE unpaid line. The service releases it immediately, then
+   * re-quotes and re-issues the single order payment; this wrapper adds the
+   * refreshed order payload so the page can update without a second round trip.
+   */
+  async removeLine(
+    orderId: string,
+    transactionId: string,
+    userId: string,
+    frontendUrl: string,
+  ) {
+    const result = await this.transactions.removeOrderLine(
+      orderId,
+      transactionId,
+      userId,
+      frontendUrl,
+    );
+    const order = await this.getOrder(orderId, userId);
+    if (result.cancelled) {
+      return { cancelled: true, order };
+    }
+    return {
+      cancelled: false,
+      order,
+      payment: result.payment,
+    };
+  }
+
   async myOrders(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -69,15 +112,20 @@ export class OrdersService {
                 id: true,
                 title: true,
                 images: { take: 1, select: { url: true } },
+                isFirearm: true,
               },
             },
             transaction: {
               select: {
                 id: true,
+                sellerId: true,
                 paymentStatus: true,
                 shippingStatus: true,
                 shippingMethod: true,
                 buyerTotal: true,
+                processingFee: true,
+                shippingCost: true,
+                shipsWithId: true,
               },
             },
           },
@@ -163,6 +211,63 @@ export class OrdersService {
       };
     });
 
+    // ── Multi-item checkout read contract (2026-11-27) ────────────────
+    // `deliveryClass` lets the page colour firearms differently from goods;
+    // `shippingGroups` is ONE row per parcel the buyer is charged for (a
+    // consolidated courier group appears once on its carrier line, and a
+    // private/firearm group appears as a method summary), and `canRemove` is
+    // the only authority on whether the unpaid order can still be edited.
+    const classOf = (line: (typeof order.lineItems)[number]): 'GOODS' | 'FIREARM' =>
+      line.listing.isFirearm ? 'FIREARM' : 'GOODS';
+    const lineItems = order.lineItems.map((line) => ({
+      ...line,
+      seller: {
+        id: line.sellerId,
+        username: usernameById.get(line.sellerId) ?? 'A member',
+      },
+      deliveryClass: classOf(line),
+    }));
+
+    type ShippingGroupRow = {
+      key: string;
+      sellerId: string;
+      sellerUsername: string;
+      class: 'GOODS' | 'FIREARM';
+      method: string;
+      transactionId: string | null;
+      shippingCents: number;
+    };
+    const shippingGroupRows = new Map<string, ShippingGroupRow>();
+    for (const line of order.lineItems) {
+      const tx = line.transaction;
+      if (!tx) continue;
+      const cls = classOf(line);
+      const method = tx.shippingMethod ?? 'COURIER';
+      if (cls === 'GOODS' && method === 'COURIER' && tx.shipsWithId) {
+        // A consolidated sibling rides the carrier's one parcel; the carrier
+        // row below owns the group and the charge.
+        continue;
+      }
+      const key =
+        cls === 'GOODS' && method === 'COURIER'
+          ? `${line.sellerId}|GOODS|COURIER|${tx.id}`
+          : `${line.sellerId}|${cls}|${method}`;
+      const existing = shippingGroupRows.get(key);
+      if (existing) {
+        existing.shippingCents += tx.shippingCost;
+        continue;
+      }
+      shippingGroupRows.set(key, {
+        key,
+        sellerId: line.sellerId,
+        sellerUsername: usernameById.get(line.sellerId) ?? 'A member',
+        class: cls,
+        method,
+        transactionId: tx.id,
+        shippingCents: tx.shippingCost,
+      });
+    }
+
     // FLOW-F3 — re-viewable EFT instructions. The banking details used to be
     // shown exactly once on the post-checkout screen; if the buyer navigated
     // away, an UNPAID order was unrecoverable from the UI. While the order is
@@ -173,7 +278,10 @@ export class OrdersService {
     return {
       ...order,
       bankDetails: null,
+      lineItems,
       sellers,
+      shippingGroups: [...shippingGroupRows.values()],
+      canRemove: order.paidAt === null && order.status === 'AWAITING_PAYMENT',
     };
   }
 }

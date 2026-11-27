@@ -2829,6 +2829,7 @@ export class AdminService {
     // Idempotent + never throws; fire-and-forget at every release point.
     void this.zohoBooks.createCommissionInvoice(txId);
     void this.zohoBooks.createBuyerInvoice(txId);
+    if (tx.orderId) void this.transactions.syncOrderStatus(tx.orderId);
     return { id: txId, paymentStatus: 'RELEASED' };
   }
 
@@ -3278,6 +3279,9 @@ export class AdminService {
       // order_dispatched all become moot).
       void this.notifications.resolveByEntity('transaction', txId);
     }
+    // Order rollup runs inline after a child refund (the 30-minute sweep is the
+    // fallback). Never throws.
+    if (tx.orderId) void this.transactions.syncOrderStatus(tx.orderId);
 
     const refundedTotalForBooks = updated?.refundedAmount ?? tx.refundedAmount;
 
@@ -3363,6 +3367,7 @@ export class AdminService {
 
     // P0.6 — commission invoice at every release point (idempotent).
     void this.zohoBooks.createCommissionInvoice(txId);
+    if (tx.orderId) void this.transactions.syncOrderStatus(tx.orderId);
     void this.zohoBooks.createBuyerInvoice(txId);
 
     await this.audit.record({

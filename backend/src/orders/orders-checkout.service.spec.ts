@@ -1,94 +1,157 @@
 // TransactionsService transitively imports ESM-only meilisearch; stub it.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+/**
+ * The order checkout now creates ONE gateway capture for the whole cart
+ * (multi-item checkout, 2026-11-27). The payment-mode module is evaluated at
+ * import time, so it is stubbed here to put the cart behind a live rail without
+ * touching process-wide env in a unit spec.
+ */
+jest.mock('../payments/payment-mode', () => ({
+  PAYMENT_MODE: 'paygate',
+  PAYMENTS_LIVE: true,
+  assertPaymentsLive: () => undefined,
+  assertCartCheckoutLive: () => undefined,
+}));
 
 import { BadRequestException } from '@nestjs/common';
 import { TransactionsService } from '../payments/transactions.service';
 
-// Build a TransactionsService with the minimal mocks the order-checkout /
-// order-confirm paths touch. Positional ctor args mirror the existing
-// cancel-by-buyer spec: prisma, fees, notifications, ozow, kyc, shipping,
-// tracking, tokens, referenceNumbers, fraudRisk, cloudinary.
-function makeService(over: {
-  $transaction?: jest.Mock;
-  orderFindUnique?: jest.Mock;
-  firearmIds?: string[];
-  collectionOnlyIds?: string[];
-  combinedQuote?: { priceCents: number; serviceCode: string } | null;
-} = {}) {
+// Build a TransactionsService with the minimal mocks the order-checkout path
+// touches. Positional ctor args mirror the existing cancel-by-buyer spec.
+function makeService(
+  over: {
+    combinedQuote?: {
+      priceCents: number;
+      serviceCode: string;
+      providerSlug?: string;
+      serviceLevelCode?: string;
+      deliveryOption?: string;
+      pickupPointLocationId?: number;
+    } | null;
+    firearmIds?: string[];
+    sellerFor?: (id: string) => string;
+    gatewayFails?: boolean;
+    deleteCount?: number;
+    persistFails?: boolean;
+    orderPaidState?: { paidAt: Date | null; status: string } | null;
+  } = {},
+) {
   const txcMock = {
-    order: { create: jest.fn().mockResolvedValue({ id: 'O1' }) },
+    order: {
+      create: jest.fn().mockResolvedValue({ id: 'O1' }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    orderLineItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     transaction: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       update: jest.fn().mockResolvedValue({}),
     },
   };
-  // P6.2 — the consolidation pass calls shipping.quoteCombined. Default null =
-  // no consolidation (existing tests keep summing per-line shipping).
+  // A consolidated cart needs a combined quote; tests that exercise the
+  // "cannot re-price the group" refusal pass `combinedQuote: null`.
+  const combinedQuote =
+    over.combinedQuote === undefined
+      ? { priceCents: 9_000, serviceCode: 'bobgo_door' }
+      : over.combinedQuote;
   const shipping = {
-    quoteCombined: jest
-      .fn()
-      .mockResolvedValue(over.combinedQuote ?? null),
+    quoteCombined: jest.fn().mockResolvedValue(combinedQuote),
   };
+  const sellerFor = over.sellerFor ?? (() => 'S1');
   const prisma = {
-    $transaction:
-      over.$transaction ??
-      jest.fn(async (fn: (txc: typeof txcMock) => unknown) => fn(txcMock)),
+    $transaction: jest.fn(async (fn: (txc: typeof txcMock) => unknown) => {
+      if (Array.isArray(fn)) return [];
+      return fn(txcMock);
+    }),
     listing: {
       update: jest.fn().mockResolvedValue({}),
-      // P0.2 review fix — createOrderCheckout pre-validates line TYPES
-      // before any reservation. Default: plain BUY_NOW non-firearms.
-      findMany: jest.fn().mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
-        Promise.resolve(
-          where.id.in.map((id: string) => ({
-            id,
-            listingType: 'BUY_NOW',
-            isFirearm: over.firearmIds?.includes(id) ?? false,
-            sellerId: 'S1', // P6.2 grouping key; combinedQuote null → no-op
-            // FLOW-F6 M8 — P0.2 select now carries these for the up-front
-            // collection-only rejection. Default: courier-capable non-collection.
-            collectionOnly: over.collectionOnlyIds?.includes(id) ?? false,
-            title: `Item ${id}`,
-            shippingMethods: over.collectionOnlyIds?.includes(id)
-              ? ['COLLECTION']
-              : ['COURIER'],
-          })),
-        ),
+      findMany: jest.fn().mockImplementation(
+        ({ where }: { where: { id: { in: string[] } } }) =>
+          Promise.resolve(
+            where.id.in.map((id: string) => ({
+              id,
+              listingType: 'BUY_NOW',
+              isFirearm: over.firearmIds?.includes(id) ?? false,
+              sellerId: sellerFor(id),
+              collectionOnly: false,
+              title: `Item ${id}`,
+              shippingMethods: ['COURIER'],
+            })),
+          ),
       ),
     },
     transaction: {
       delete: jest.fn().mockResolvedValue({}),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-    },
-    order: {
-      findUnique: over.orderFindUnique ?? jest.fn(),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    order: {
+      findUnique:
+        over.orderPaidState !== undefined
+          ? jest.fn().mockResolvedValue(over.orderPaidState)
+          : jest.fn(),
+      findFirst: jest.fn(),
+      update: over.persistFails
+        ? jest.fn().mockRejectedValue(new Error('db write failed'))
+        : jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      deleteMany: jest
+        .fn()
+        .mockResolvedValue({ count: over.deleteCount ?? 1 }),
     },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
   };
   const notifications = {
     orderConfirmedBuyerMulti: jest.fn().mockResolvedValue(undefined),
-  };
-  const referenceNumbers = {
-    allocateOrderReference: jest.fn().mockResolvedValue('GG-ORD-0001'),
+    ratingReceived: jest.fn(),
   };
   const service = new TransactionsService(
     prisma as never,
-    {} as never,
+    {
+      calculatePlatformFee: (base: number) => {
+        // Mirrors the real bands closely enough for the totals assertions:
+        // 10% of the first R25,000, 9% of the next R25,000, R10 floor.
+        if (base === 0) return 0;
+        const first = Math.min(base, 2_500_000);
+        const second = Math.min(Math.max(0, base - 2_500_000), 2_500_000);
+        return Math.max(1_000, Math.round(first * 0.1 + second * 0.09));
+      },
+    } as never,
     notifications as never,
     {} as never,
     {} as never, // kyc
-    shipping as never, // shipping (P6.2 quoteCombined)
+    shipping as never, // shipping
     {} as never, // tracking
     {} as never, // tokens
-    referenceNumbers as never,
+    {} as never, // referenceNumbers
     {} as never,
     {} as never,
-    { createCommissionInvoice: jest.fn().mockResolvedValue(undefined), createBuyerInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.6)
-    { notifyItemSold: jest.fn().mockResolvedValue(undefined) } as never, // wishlistAlerts (P5.2)
-    { build: jest.fn().mockResolvedValue(Buffer.from('')) } as never, // saps534 (FLOW-F4 M21)
+    {
+      createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
+      createBuyerInvoice: jest.fn().mockResolvedValue(undefined),
+      createOrderBuyerInvoice: jest.fn().mockResolvedValue(undefined),
+    } as never, // zohoBooks
+    { notifyItemSold: jest.fn().mockResolvedValue(undefined) } as never,
+    { build: jest.fn().mockResolvedValue(Buffer.from('')) } as never,
   );
-  return { service, prisma, notifications, referenceNumbers, txcMock, shipping };
+  const gateway = jest
+    .spyOn(
+      service as unknown as {
+        createGatewayCheckout: (...args: unknown[]) => unknown;
+      },
+      'createGatewayCheckout',
+    )
+    .mockImplementation(async () => {
+      if (over.gatewayFails) throw new Error('gateway down');
+      return {
+        provider: 'OZOW',
+        checkoutId: 'CHK1',
+        redirectUrl: 'https://gateway.example/pay/CHK1',
+        merchantReference: 'ORD-O1',
+      } as never;
+    });
+  return { service, prisma, notifications, txcMock, shipping, gateway };
 }
 
 // A fake shared-core result for one line.
@@ -108,7 +171,7 @@ function core(over: Record<string, unknown> = {}) {
     quantity: 1,
     listingPrice: 10_000,
     shippingCost: 5_000,
-    shippingHandlingCents: 0, // P6.4 — set per-test; a courier waybill line = 1_500
+    shippingHandlingCents: 0,
     commissionZar: 1_000,
     processingFee: 150,
     buyerTotal: 15_000,
@@ -117,24 +180,14 @@ function core(over: Record<string, unknown> = {}) {
   };
 }
 
-const lineDto = (id: string) => ({ listingId: id, shippingMethod: 'COURIER' as const });
-// P6-A — a firearm cart line: dealer transfer, attestation supplied, no courier target.
-const firearmLineDto = (id: string) => ({
+const lineDto = (id: string) => ({
   listingId: id,
-  shippingMethod: 'DEALER_TRANSFER' as const,
-  firearmAttestation18Plus: true,
+  shippingMethod: 'COURIER' as const,
 });
 
-// Phase 1 (manual-EFT retirement): createOrderCheckout() now calls
-// assertPaymentsLive() first, so with PAYMENTS_LIVE unset it throws the
-// "card payments launching soon" 503 before any cart validation/pricing
-// runs. Every case here lives behind that closed gate — skipped, not
-// deleted, so they can be re-enabled once the card paygate goes live
-// (PAYMENTS_LIVE=true). The confirmManualOrder suite below is unaffected
-// (money-state path, doesn't call createOrderCheckout).
-describe.skip('TransactionsService.createOrderCheckout', () => {
-  it('creates an order from a single-seller cart and sums the totals', async () => {
-    const { service, referenceNumbers, txcMock } = makeService();
+describe('TransactionsService.createOrderCheckout', () => {
+  it('creates one order, allocates ONE platform fee, and mints one gateway capture', async () => {
+    const { service, txcMock, gateway } = makeService();
     jest
       .spyOn(service as never, 'reserveAndCreateLine')
       .mockResolvedValueOnce(core({ n: 1 }) as never)
@@ -146,18 +199,44 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       'https://x',
     );
 
+    // bases 15,000 + 15,000 = 30,000; ONE fee 10% = 3,000.
     expect(res.itemCount).toBe(2);
-    // 2 lines × buyerTotal 15 000 = 30 000 cents
-    expect(res.amountCents).toBe(30_000);
-    expect(res.breakdown.buyerTotal).toBe(30_000);
-    expect(res.breakdown.listingPrice).toBe(20_000);
-    expect(res.breakdown.shippingCost).toBe(10_000);
-    // children linked to the order
-    expect(txcMock.transaction.updateMany).toHaveBeenCalled();
+    expect(res.amountCents).toBe(33_000);
+    expect(res.breakdown).toMatchObject({
+      listingPrice: 20_000,
+      shippingCost: 10_000,
+      processingFee: 3_000,
+      buyerTotal: 33_000,
+    });
+    // ONE capture for the ORDER, with a unique per-attempt ORD- reference.
+    expect(gateway).toHaveBeenCalledTimes(1);
+    expect(gateway).toHaveBeenCalledWith(
+      'OZOW',
+      expect.objectContaining({
+        amountZarCents: 33_000,
+        merchantTransactionId: expect.stringMatching(/^ORD-O1-/),
+        returnUrl: 'https://x/checkout/complete?orderId=O1',
+      }),
+    );
+    expect(res).toMatchObject({
+      orderId: 'O1',
+      paymentId: 'CHK1',
+      redirectUrl: 'https://gateway.example/pay/CHK1',
+      provider: 'ozow',
+    });
+    // children linked to the order; gateway fields persisted on it.
+    expect(txcMock.transaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['TX1', 'TX2'] } },
+        data: { orderId: 'O1' },
+      }),
+    );
   });
 
-  it('accepts a MULTI-seller cart (Phase 8d): one order fans out per seller, no unwind', async () => {
-    const { service, prisma, referenceNumbers } = makeService();
+  it('accepts a MULTI-seller cart: one order fans out per seller, no unwind', async () => {
+    const { service, prisma } = makeService({
+      sellerFor: (id) => (id === 'L2' ? 'S2' : 'S1'),
+    });
     jest
       .spyOn(service as never, 'reserveAndCreateLine')
       .mockResolvedValueOnce(core({ n: 1, sellerId: 'S1' }) as never)
@@ -170,8 +249,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     );
 
     expect(res.itemCount).toBe(2);
-    expect(res.amountCents).toBe(30_000); // 2 lines × 15 000
-    // happy path → no compensation
+    expect(res.amountCents).toBe(33_000);
     expect(prisma.listing.update).not.toHaveBeenCalled();
     expect(prisma.transaction.delete).not.toHaveBeenCalled();
   });
@@ -187,16 +265,17 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     await service.createOrderCheckout(
       'user_B',
-      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] }, // same seller, courier
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
 
     // ONE combined quote for the 2-line group.
     expect(shipping.quoteCombined).toHaveBeenCalledTimes(1);
     // Carrier (first line, TX1) charged the combined cost; sibling (TX2) = 0.
-    const overrides = spy.mock.calls.map((c) => (c as unknown[])[2]);
-    expect(overrides).toContainEqual({ costCents: 6_000, serviceCode: 'bobgo_door' });
-    expect(overrides).toContainEqual({ costCents: 0, serviceCode: null });
+    const overrides = spy.mock.calls.map(
+      (call) => (call as unknown[])[2] as { costCents: number },
+    );
+    expect(overrides.map((o) => o.costCents)).toEqual([6_000, 0]);
     // The sibling tx is linked to the carrier's shipment.
     expect(txcMock.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -204,6 +283,36 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
         data: { shipsWithId: 'TX1' },
       }),
     );
+  });
+
+  it('refuses with "buy separately" when the combined quote cannot be priced', async () => {
+    const { service } = makeService({ combinedQuote: null });
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValue(core({ n: 1, sellerId: 'S1' }) as never);
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/buy them separately/i);
+  });
+
+  it('rejects an auction/offer line before reserving anything (cart = BUY_NOW only)', async () => {
+    const { service, prisma } = makeService();
+    prisma.listing.findMany.mockResolvedValueOnce([
+      { id: 'L1', listingType: 'AUCTION' },
+    ]);
+    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/auctions, swaps and offer items/i);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('rejects a duplicate listing before reserving anything', async () => {
@@ -222,56 +331,60 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
   it('rejects an empty cart', async () => {
     const { service } = makeService();
     await expect(
-      service.createOrderCheckout('user_B', { buyerTermsAccepted: true, lines: [] }, 'https://x'),
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [] },
+        'https://x',
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('FLOW-F6 M8 — rejects a collection-only line up front and NAMES it, before reserving', async () => {
-    const { service } = makeService({ collectionOnlyIds: ['L2'] });
-    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
-    await expect(
-      service.createOrderCheckout(
-        'user_B',
-        { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
-        'https://x',
-      ),
-    ).rejects.toThrow(/Item L2.*collection-only/);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
   it('P6-A — ACCEPTS a firearm line in the cart and NEVER consolidates it', async () => {
-    // A firearm (dealer transfer) + a same-seller courier item. The firearm
-    // must not be pulled into a courier parcel, so quoteCombined is never even
-    // called for a group containing it (here the only other courier line is
-    // solo, so no consolidation happens at all), and the order is created.
-    const { service, shipping, referenceNumbers } = makeService({
-      firearmIds: ['L1'],
-    });
+    const { service, shipping } = makeService({ firearmIds: ['L1'] });
     const spy = jest
       .spyOn(service as never, 'reserveAndCreateLine')
       .mockResolvedValueOnce(
-        core({ n: 1, isFirearm: true, shippingCost: 0, shippingHandlingCents: 0, buyerTotal: 10_000 }) as never,
+        core({
+          n: 1,
+          isFirearm: true,
+          shippingCost: 0,
+          shippingHandlingCents: 0,
+          buyerTotal: 10_000,
+        }) as never,
       )
-      .mockResolvedValueOnce(core({ n: 2, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never);
+      .mockResolvedValueOnce(
+        core({ n: 2, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never,
+      );
 
     const res = await service.createOrderCheckout(
       'user_B',
-      { buyerTermsAccepted: true, lines: [firearmLineDto('L1'), lineDto('L2')] },
+      {
+        buyerTermsAccepted: true,
+        lines: [
+          {
+            listingId: 'L1',
+            shippingMethod: 'DEALER_TRANSFER',
+            firearmAttestation18Plus: true,
+          },
+          lineDto('L2'),
+        ],
+      },
       'https://x',
     );
 
-    // Firearm line WAS reserved (no rejection), and the order was created.
-    expect(spy).toHaveBeenCalledTimes(2);
-    // The firearm was excluded from grouping: with only one courier line left,
-    // there is no 2+ group → quoteCombined never runs.
+    expect(res.itemCount).toBe(2);
+    // Firearm excluded from grouping: the one courier line is a solo group.
     expect(shipping.quoteCombined).not.toHaveBeenCalled();
-    // Firearm carries no handling; the courier line carries its margin.
-    expect(res.breakdown.shippingHandlingCents).toBe(1_500);
-    // items 10 000 + 10 000, shipping 0 + 5 000, handling 0 + 1 500 → buyerTotal 26 500
-    expect(res.breakdown.buyerTotal).toBe(26_500);
+    // bases 10,000 + 16,500 = 26,500; fee 2,650 → total 29,150.
+    expect(res.breakdown).toMatchObject({
+      shippingHandlingCents: 1_500,
+      processingFee: 2_650,
+      buyerTotal: 29_150,
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it('P6.4 — carries the line handling margin into the order handling subtotal', async () => {
+  it('one fee on the aggregate, not one per line (the P6.4 two-line cart)', async () => {
     const { service } = makeService();
     jest
       .spyOn(service as never, 'reserveAndCreateLine')
@@ -288,12 +401,212 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       'https://x',
     );
 
-    expect(res.breakdown.shippingHandlingCents).toBe(3_000); // 1_500 × 2 lines
-    expect(res.breakdown.shippingCost).toBe(10_000); // carrier cost, handling apart
-    expect(res.breakdown.buyerTotal).toBe(33_000);
+    // base = 2 × (10,000 + 5,000 + 1,500) = 33,000; fee = 3,300.
+    expect(res.breakdown.shippingHandlingCents).toBe(3_000);
+    expect(res.breakdown.shippingCost).toBe(10_000);
+    expect(res.breakdown.processingFee).toBe(3_300);
+    expect(res.breakdown.buyerTotal).toBe(36_300);
+  });
+
+  it('unwinds every reservation when the gateway checkout cannot be created (unpaid order)', async () => {
+    const { service, prisma } = makeService({ gatewayFails: true });
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValue(core({ n: 1 }) as never);
+
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/payment processing failed/i);
+    // The unpaid order row is deleted and the line released.
+    expect(prisma.order.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'O1', paidAt: null },
+    });
+    expect(prisma.listing.update).toHaveBeenCalled();
+    expect(prisma.transaction.delete).toHaveBeenCalled();
+    // The branch already unwound — the outer catch must not touch anything else.
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ NEVER unwinds children when the order was captured before the gateway threw', async () => {
+    const { service, prisma } = makeService({
+      gatewayFails: true,
+      deleteCount: 0, // the conditional order delete lost the race: paid
+      orderPaidState: { paidAt: new Date(), status: 'PAID' },
+    });
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValue(core({ n: 1 }) as never);
+
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/could not finish setting up payment/i);
+
+    // The paid order keeps its children and the listings keep their stock —
+    // deleting either would destroy a paid sale.
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'ORDER_CREATE_FAILED_AFTER_PAYMENT',
+          urgent: true,
+        }),
+      }),
+    );
+  });
+
+  it('releases the order line items + cancels the order before unwinding an unpaid post-create failure', async () => {
+    // Gateway call succeeds but persisting its fields fails: the outer catch is
+    // the only cleanup. The order must be unlinked/cancelled BEFORE the child
+    // deletes, or the OrderLineItem FK blocks the unwind.
+    const { service, prisma, txcMock } = makeService({
+      persistFails: true,
+      orderPaidState: { paidAt: null, status: 'AWAITING_PAYMENT' },
+    });
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValue(core({ n: 1 }) as never);
+
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/could not finish setting up payment/i);
+
+    expect(txcMock.orderLineItem.deleteMany).toHaveBeenCalledWith({
+      where: { orderId: 'O1' },
+    });
+    expect(txcMock.order.updateMany).toHaveBeenCalledWith({
+      where: { id: 'O1', paidAt: null },
+      data: { status: 'CANCELLED', cancelledAt: expect.any(Date) },
+    });
+    // Then the reservations are released — no orphan left for the sweep. The
+    // paid-order alert must NOT fire (the existing gateway-persist alert is
+    // expected for this failure).
+    expect(prisma.listing.update).toHaveBeenCalled();
+    expect(prisma.transaction.delete).toHaveBeenCalled();
+    expect(prisma.adminAlert.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'ORDER_CREATE_FAILED_AFTER_PAYMENT',
+        }),
+      }),
+    );
+  });
+
+  it('⚠️ alerts instead of unwinding when a post-create failure finds the order already paid', async () => {
+    const { service, prisma, txcMock } = makeService({
+      persistFails: true,
+      orderPaidState: { paidAt: new Date(), status: 'PAID' },
+    });
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValue(core({ n: 1 }) as never);
+
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        { buyerTermsAccepted: true, lines: [lineDto('L1')] },
+        'https://x',
+      ),
+    ).rejects.toThrow();
+
+    expect(txcMock.orderLineItem.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.transaction.delete).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'ORDER_CREATE_FAILED_AFTER_PAYMENT',
+          urgent: true,
+        }),
+      }),
+    );
+  });
+
+  it('rejects YOCO (the motivation paygate rail) before reserving', async () => {
+    const { service } = makeService();
+    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        {
+          buyerTermsAccepted: true,
+          paymentProvider: 'YOCO' as never,
+          lines: [lineDto('L1')],
+        },
+        'https://x',
+      ),
+    ).rejects.toThrow(/not available/i);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('gives a mixed goods+firearm seller TWO independent delivery choices', async () => {
+    // Same seller: the accessories are collected in person, the firearm goes to
+    // a dealer. Different delivery CLASSES, so the two methods are independent
+    // — they must not be conflated into one "seller method".
+    const { service, shipping } = makeService({ firearmIds: ['L1'] });
+    const spy = jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValueOnce(
+        core({
+          n: 1,
+          isFirearm: true,
+          shippingCost: 0,
+          buyerTotal: 10_000,
+        }) as never,
+      )
+      .mockResolvedValueOnce(
+        core({ n: 2, shippingCost: 0, buyerTotal: 10_000 }) as never,
+      );
+
+    const res = await service.createOrderCheckout(
+      'user_B',
+      {
+        buyerTermsAccepted: true,
+        lines: [
+          {
+            listingId: 'L1',
+            shippingMethod: 'DEALER_TRANSFER',
+            firearmAttestation18Plus: true,
+          },
+          { listingId: 'L2', shippingMethod: 'COLLECTION' },
+        ],
+      },
+      'https://x',
+    );
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(shipping.quoteCombined).not.toHaveBeenCalled();
+    expect(res.itemCount).toBe(2);
+  });
+
+  it('refuses a GOODS group that mixes COLLECTION and COURIER with an actionable error', async () => {
+    const { service } = makeService();
+    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
+    await expect(
+      service.createOrderCheckout(
+        'user_B',
+        {
+          buyerTermsAccepted: true,
+          lines: [
+            { listingId: 'L1', shippingMethod: 'COURIER' },
+            { listingId: 'L2', shippingMethod: 'COLLECTION' },
+          ],
+        },
+        'https://x',
+      ),
+    ).rejects.toThrow(/same delivery method/i);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
-
-// The TransactionsService.confirmManualOrder suite was removed with the
-// manual-EFT rail (the method no longer exists). A future card paygate will
-// roll a paid Order up to PAID via the rail-agnostic money-state (markPaid).

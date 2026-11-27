@@ -689,21 +689,24 @@ export class TasksService {
     }
   }
 
-  // ─── FLOW-F3 — Order.status rollup ───────────────────────────────
-  // Order.status previously froze at PAID forever. This sweep advances a
-  // PAID order to its terminal state once EVERY line (child transaction,
-  // excluding synthetic refund children) is itself terminal:
+  // ─── FLOW-F3 / multi-item — Order.status rollup ─────────────────
+  // Order.status previously froze at PAID forever. This sweep advances a paid
+  // order to its terminal state once EVERY line (child transaction, excluding
+  // synthetic refund children) is itself terminal:
   //   all RELEASED → COMPLETED · all REFUNDED → REFUNDED · mixed →
-  //   PARTIALLY_FULFILLED. Decoupled catch-all: covers every release/refund
-  //   path (confirm-delivery, dealer-verify, reject, cancel, admin, SLA)
-  //   without threading a call through each money site. Runs every 15 min.
+  //   PARTIALLY_FULFILLED. A PARTIALLY_FULFILLED order keeps being scanned until
+  //   its last in-flight line settles. Decoupled catch-all: covers every
+  //   release/refund path (confirm-delivery, dealer-verify, reject, cancel,
+  //   admin, SLA) without threading a call through each money site. Runs every
+  //   15 min. AWAITING_PAYMENT is handled by the order expiry sweep, not here.
   @Cron(CronExpression.EVERY_30_MINUTES)
   async orderStatusRollupSweep() {
     try {
       const paidOrders = await this.prisma.order.findMany({
-        where: { status: 'PAID' },
+        where: { status: { in: ['PAID', 'PARTIALLY_FULFILLED'] } },
         select: {
           id: true,
+          status: true,
           transactions: {
             where: { refundOfId: null }, // exclude synthetic refund children
             select: { paymentStatus: true },
@@ -716,9 +719,9 @@ export class TasksService {
         const rollup = computeOrderRollupStatus(
           order.transactions.map((t) => t.paymentStatus),
         );
-        if (!rollup) continue; // still in flight
+        if (!rollup || rollup === order.status) continue; // still in flight
         const claim = await this.prisma.order.updateMany({
-          where: { id: order.id, status: 'PAID' },
+          where: { id: order.id, status: order.status },
           data: { status: rollup },
         });
         if (claim.count > 0) advanced++;

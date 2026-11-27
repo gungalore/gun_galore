@@ -11,6 +11,7 @@ import { PAYMENT_MODE } from './transactions.service';
 import { reversalListingData } from './inventory';
 import { isShipmentCommitted } from './cancellation';
 import { raiseSellerCharge } from '../common/seller-charges';
+import { computeOrderRollupStatus } from '../orders/order-math';
 
 // Two thresholds for courier-shipped orders (COURIER only —
 // PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
@@ -251,6 +252,9 @@ export class DispatchSlaService {
         // admin instead once it's COLLECTED+, and never throws — so a
         // carrier hiccup can't break the refund that already claimed above.
         await this.shipping.cancelForTransaction(tx.id).catch(() => undefined);
+        // Child is now REFUNDED: roll its order up inline (the 30-minute sweep
+        // is the fallback). Never throws.
+        if (tx.orderId) void this.syncOrderStatusQuietly(tx.orderId);
 
         // Status already flipped to REFUNDED by the claim above. Now
         // reactivate the listing + strike the seller atomically. Phase 8a:
@@ -1011,5 +1015,44 @@ export class DispatchSlaService {
       );
     }
     return { scanned: stalled.length, nudged, alerted };
+  }
+
+  /**
+   * Inline order rollup for a child this service just released/refunded.
+   * Local because this service deliberately does not keep a
+   * TransactionsService dependency; same CAS rule as
+   * TransactionsService.syncOrderStatus and the 30-minute sweep, which remains
+   * the fallback.
+   */
+  private async syncOrderStatusQuietly(orderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          status: true,
+          transactions: {
+            where: { refundOfId: null },
+            select: { paymentStatus: true },
+          },
+        },
+      });
+      if (!order) return;
+      if (order.status !== 'PAID' && order.status !== 'PARTIALLY_FULFILLED') {
+        return;
+      }
+      const rollup = computeOrderRollupStatus(
+        order.transactions.map((t) => t.paymentStatus),
+      );
+      if (!rollup || rollup === order.status) return;
+      await this.prisma.order.updateMany({
+        where: { id: order.id, status: order.status },
+        data: { status: rollup },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `syncOrderStatusQuietly(${orderId}) failed: ${(err as Error).message}`,
+      );
+    }
   }
 }

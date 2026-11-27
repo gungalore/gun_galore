@@ -14,6 +14,7 @@ import {
   type DealerStampVerification,
 } from './dealer-stamp-verification.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
+import { computeOrderRollupStatus } from '../orders/order-math';
 
 /**
  * Dealer stock-in verification — when a firearm DEALER_TRANSFER
@@ -690,6 +691,9 @@ export class DealerVerificationService {
         );
         return;
       }
+      // Child is now RELEASED: roll its order up inline (the 30-minute sweep is
+      // the fallback). Never throws.
+      if (tx.orderId) void this.syncOrderStatusQuietly(tx.orderId);
       await this.prisma.user.update({
         where: { id: tx.sellerId },
         data: { totalSales: { increment: 1 } },
@@ -1251,5 +1255,42 @@ Rules:
       select: { listing: { select: { serialNumber: true } } },
     });
     return tx?.listing?.serialNumber?.trim() || null;
+  }
+
+  /**
+   * Inline order rollup for a firearm child just released by verification.
+   * Local so this service does not depend on TransactionsService; same CAS
+   * rule as the transactions sync and the 30-minute sweep (the fallback).
+   */
+  private async syncOrderStatusQuietly(orderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          status: true,
+          transactions: {
+            where: { refundOfId: null },
+            select: { paymentStatus: true },
+          },
+        },
+      });
+      if (!order) return;
+      if (order.status !== 'PAID' && order.status !== 'PARTIALLY_FULFILLED') {
+        return;
+      }
+      const rollup = computeOrderRollupStatus(
+        order.transactions.map((t) => t.paymentStatus),
+      );
+      if (!rollup || rollup === order.status) return;
+      await this.prisma.order.updateMany({
+        where: { id: order.id, status: order.status },
+        data: { status: rollup },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `syncOrderStatusQuietly(${orderId}) failed: ${(err as Error).message}`,
+      );
+    }
   }
 }

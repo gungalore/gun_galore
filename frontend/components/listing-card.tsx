@@ -13,6 +13,7 @@ import { VerificationBadges } from './verification-badges';
 import { UrgencyChip } from './urgency-chip';
 import { SellerRating } from './seller-rating';
 import { SavedCount } from './saved-count';
+import ItemDistance from './item-distance';
 
 /**
  * The height of a card's photograph, as a percentage of its width.
@@ -366,6 +367,10 @@ export function ListingCard({ listing }: { listing: Listing }) {
               <circle cx="12" cy="11" r="2.2" />
             </svg>
             <span className="truncate">{vicinityLabel(listing)}</span>
+            {/* Distance is provided by a page-level DistanceProvider (one
+                location read + one batch request). No provider → renders
+                nothing, so a grid outside it is unchanged. */}
+            <ItemDistance listingId={listing.id} />
           </p>
           <SavedCount count={savedCount} />
         </div>

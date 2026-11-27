@@ -45,11 +45,14 @@ import { DealerPortalService } from './dealer-portal.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
+  computeOrderRollupStatus,
   computeOrderTotals,
   assertNoDuplicateListings,
   OrderLineBreakdown,
 } from '../orders/order-math';
 import { DeliveryOption, ListingStatus, PaymentProvider, Prisma, Province, ShippingMethod } from '@prisma/client';
+import { planShippingGroups } from '../shipping/consolidation';
+import { allocateOrderFee } from './order-fee';
 import { KycService } from '../kyc/kyc.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
@@ -67,7 +70,6 @@ import {
   PAYMENT_MODE,
   PAYMENTS_LIVE,
   assertPaymentsLive,
-  assertCartCheckoutLive,
 } from './payment-mode';
 import { REFUND_TERMS_VERSION } from './refund-terms-version';
 import { vicinityLabel } from '../common/province-labels';
@@ -1797,14 +1799,28 @@ export class TransactionsService {
   async createOrderCheckout(
     buyerId: string,
     dto: CreateOrderDto,
-    _frontendUrl: string,
+    frontendUrl: string,
   ) {
-    // Phase 1 — manual EFT retired. The cart paygate is NOT wired: this path
-    // reserves every line + creates an AWAITING_PAYMENT Order but never creates
-    // an Ozow payment, and the frontend does nothing on success. Gated off so
-    // production (PAYMENTS_LIVE=true) can't leak reserved listings. Flip
-    // CART_CHECKOUT_LIVE when the order payment + frontend hand-off land.
-    assertCartCheckoutLive();
+    // The multi-item checkout pays in ONE card capture. The rail gate is the
+    // same one the single-item flow uses; YOCO is the motivation paygate's and
+    // must never stamp a marketplace order (the refund/payout rail is locked to
+    // whatever captured the money).
+    assertPaymentsLive();
+    const provider: PaymentProvider =
+      dto.paymentProvider ?? PaymentProvider.OZOW;
+    if (provider === PaymentProvider.YOCO) {
+      throw new BadRequestException(
+        'That payment method is not available for marketplace checkout.',
+      );
+    }
+    if (
+      provider === PaymentProvider.PEACH &&
+      !this.peach?.isCheckoutConfigured()
+    ) {
+      throw new BadRequestException(
+        'That payment method is not available right now.',
+      );
+    }
     const lines = dto.lines ?? [];
     if (lines.length === 0) throw new BadRequestException('Your cart is empty');
     assertNoDuplicateListings(lines.map((l) => l.listingId));
@@ -1836,36 +1852,32 @@ export class TransactionsService {
         'Auctions, swaps and offer items must be bought individually, not in a cart.',
       );
     }
-    // Collection-only lines can't ride the cart rail — the cart only carries
-    // courier + firearm routes, so a COLLECTION line would fail deep in the
-    // shared shipping validator with an anonymous error after reservations had
-    // to be unwound. Reject up front and NAME the item so the buyer knows
-    // exactly which line to remove and buy on its own. Covers both the
-    // collectionOnly flag and the >100Wh-lithium case (shippingMethods carries
-    // only COLLECTION while collectionOnly stays false).
-    const collectionLine = lineListings.find(
-      (l) =>
-        l.collectionOnly ||
-        (l.shippingMethods.length > 0 &&
-          l.shippingMethods.every((m) => m === 'COLLECTION')),
-    );
-    if (collectionLine) {
-      throw new BadRequestException(
-        `"${collectionLine.title}" is collection-only — it can't be bought in a cart. Remove it and buy it on its own to arrange collection with the seller.`,
-      );
-    }
+    /**
+     * ⚠️ COLLECTION-ONLY AND PRIVATE-ARRANGE LINES ARE ALLOWED IN THE CART
+     * (operator, 2026-11-27). The old up-front rejection here assumed the cart
+     * rail was courier-only; a collection papers-acknowledged trailer, a
+     * private-arrange firearm and a mixed firearm+accessories order are all
+     * approved cart contents now. The shared core's own shipping validator
+     * still enforces each method's gates (collection papers, PA consent,
+     * firearm attestation, dealer), so nothing is weakened by removing this
+     * block — it only stopped lawful carts before they began.
+     */
     const firearmByListing = new Map(
       lineListings.map((l) => [l.id, l.isFirearm]),
     );
 
-    // P6.2 — per-seller shipping consolidation plan. Group the courier lines by
-    // (seller, method, destination); for each group of 2+, get ONE combined
-    // quote (combined weight + stacked box). If it succeeds, the FIRST line
-    // becomes the "carrier" (charged the whole combined cost) and the rest ship
-    // FREE with it (shipsWith the carrier) — the buyer pays one shipping fee,
-    // GG books one parcel. Too-big-to-combine groups (e.g. exceed the
-    // courier's size limits) get null and silently fall back to per-line quoting. Computed
-    // BEFORE reservation so each line's fee breakdown uses the final shipping.
+    /**
+     * ── ONE SHIPPING PLAN (seller + courier group + destination) ────────
+     *
+     * This used to be an inline copy keyed by
+     * seller|method|deliveryOption|pickup|destination. It is now the SAME
+     * `planShippingGroups` the delivery menu uses, so the price shown and the
+     * price charged cannot be grouped differently. One courier goods group gets
+     * ONE combined quote (`quoteCombined` with quantities); the first line is
+     * the carrier (charged the whole rate, books the parcel), the rest ship
+     * free with it via `shipsWithId`. Firearms and private/collection lines
+     * never consolidate and never courier.
+     */
     const sellerByListing = new Map(
       lineListings.map((l) => [l.id, l.sellerId]),
     );
@@ -1884,36 +1896,74 @@ export class TransactionsService {
     // sibling listingId -> carrier listingId (resolved to tx ids after create)
     const carrierOfSibling = new Map<string, string>();
     {
-      const groups = new Map<string, typeof lines>();
+      /**
+       * ⚠️ ONE TOGGLE PER SELLER + DELIVERY CLASS. Group the CART lines by
+       * seller and goods/firearm first, and require every line in a group to
+       * carry the same chosen method (and, for courier, the same delivery
+       * option + pickup point). Two different choices inside one group would be
+       * two parcels billed as one — the buyer picked one toggle, so a mismatch
+       * means the cart changed under them.
+       */
+      const byClass = new Map<
+        string,
+        { sellerId: string; isFirearm: boolean; lines: typeof lines }
+      >();
       for (const line of lines) {
-        // P6-A — a firearm NEVER consolidates: it ships via dealer / in-person,
-        // not a courier waybill, even alongside same-seller accessories. The
-        // method check below already excludes DEALER_TRANSFER / PRIVATE_ARRANGE,
-        // but skip explicitly on isFirearm too so a mis-routed firearm line can
-        // never be pulled into a parcel.
-        if (firearmByListing.get(line.listingId)) continue;
-        if (line.shippingMethod !== 'COURIER') continue;
         const sellerId = sellerByListing.get(line.listingId);
         if (!sellerId) continue;
-        const a = line.deliveryAddress;
-        const destKey = `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
-        const deliveryOption = line.deliveryOption ?? 'DOOR_CHEAPEST';
-        const pickupPointId = line.pickupPointLocationId ?? '';
-        const key = `${sellerId}|${line.shippingMethod}|${deliveryOption}|${pickupPointId}|${destKey}`;
-        const arr = groups.get(key) ?? [];
-        arr.push(line);
-        groups.set(key, arr);
+        const isFirearm = firearmByListing.get(line.listingId) ?? false;
+        const key = `${sellerId}|${isFirearm ? 'FIREARM' : 'GOODS'}`;
+        const group = byClass.get(key) ?? { sellerId, isFirearm, lines: [] };
+        group.lines.push(line);
+        byClass.set(key, group);
       }
-      for (const group of groups.values()) {
-        if (group.length < 2) continue;
-        const method = 'COURIER' as const;
-        const a = group[0].deliveryAddress;
+      for (const group of byClass.values()) {
+        const methods = new Set(group.lines.map((l) => l.shippingMethod));
+        if (methods.size > 1) {
+          throw new BadRequestException(
+            'All items from the same seller and delivery type must use the same delivery method — remove one of them, or choose the same method for every item.',
+          );
+        }
+        if (group.lines[0].shippingMethod !== 'COURIER') continue;
+        const options = new Set(
+          group.lines.map(
+            (l) => `${l.deliveryOption ?? 'DOOR_CHEAPEST'}|${l.pickupPointLocationId ?? ''}`,
+          ),
+        );
+        if (options.size > 1) {
+          throw new BadRequestException(
+            'Delivery options for one of these sellers changed while you were checking out — please choose delivery again.',
+          );
+        }
+      }
+
+      const groups = planShippingGroups(
+        lines.map((line) => ({
+          listingId: line.listingId,
+          shippingMethod: line.shippingMethod,
+          quantity: line.quantity ?? 1,
+          deliveryAddress: line.deliveryAddress,
+        })),
+        new Map(
+          lineListings.map((l) => [
+            l.id,
+            { sellerId: l.sellerId, isFirearm: l.isFirearm },
+          ]),
+        ),
+      );
+      for (const group of groups) {
+        // A group of one prices exactly like a single-item buy; only 2+ lines
+        // need the combined-parcel quote (and the carrier/sibling wiring).
+        if (group.listingIds.length < 2) continue;
+        const grouped = lines.filter((l) => group.listingIds.includes(l.listingId));
+        const first = grouped[0];
+        const a = first.deliveryAddress;
         const combined = await this.shipping.quoteCombined(
-          group.map((g) => ({
+          grouped.map((g) => ({
             listingId: g.listingId,
-            quantity: (g as { quantity?: number }).quantity ?? 1,
+            quantity: g.quantity ?? 1,
           })),
-          method,
+          'COURIER',
           {
             deliveryAddress: a
               ? {
@@ -1928,45 +1978,44 @@ export class TransactionsService {
               : undefined,
           },
           {
-            deliveryOption: (group[0].deliveryOption ?? 'DOOR_CHEAPEST') as DeliveryOption,
-            pickupPointLocationId: group[0].pickupPointLocationId,
+            deliveryOption: (first.deliveryOption ??
+              'DOOR_CHEAPEST') as DeliveryOption,
+            pickupPointLocationId: first.pickupPointLocationId,
           },
         );
         if (!combined) {
-          // Was `continue`, which fell through to per-line quoting — a
-          // DIFFERENT price from the one the buyer was shown for the group,
-          // and for a courier group a guaranteed 400 further down. If we cannot
-          // re-price the group the buyer chose, say so instead of quietly
-          // charging something else.
+          /**
+           * ⚠️ NEVER SPLIT THE BOOKING SILENTLY. If the group the buyer chose
+           * cannot be re-priced as ONE parcel, checkout refuses with an
+           * actionable "buy separately" message. Falling back to per-line
+           * quoting would charge a different delivery figure than the menu
+           * showed, and booking it as one waybill would under-collect.
+           */
           throw new BadRequestException(
-            'Delivery options for one of these sellers changed while you were checking out — please choose delivery again.',
+            'These items cannot be shipped together from one seller — please buy them separately.',
           );
         }
-        const carrier = group[0];
+        const carrier = grouped[0];
         shipOverride.set(carrier.listingId, {
           costCents: combined.priceCents,
           serviceCode: combined.serviceCode,
-          // The carrier line is the one that actually books, so it needs the
-          // WHOLE rate key, not just the code.
           providerSlug: combined.providerSlug ?? null,
           serviceLevelCode: combined.serviceLevelCode ?? null,
           deliveryOption: combined.deliveryOption as DeliveryOption | null,
           pickupPointLocationId: combined.pickupPointLocationId ?? null,
           pickupPointSnapshot: combined.pickupPointSnapshot ?? null,
         });
-        for (let i = 1; i < group.length; i++) {
-          shipOverride.set(group[i].listingId, {
+        for (let i = 1; i < grouped.length; i++) {
+          shipOverride.set(grouped[i].listingId, {
             costCents: 0,
             serviceCode: null,
-            // Siblings ride the carrier line's waybill and never book their
-            // own, so they carry no rate key at all.
             providerSlug: null,
             serviceLevelCode: null,
-            deliveryOption: group[0].deliveryOption as DeliveryOption | null,
-            pickupPointLocationId: group[0].pickupPointLocationId ?? null,
+            deliveryOption: first.deliveryOption as DeliveryOption | null,
+            pickupPointLocationId: first.pickupPointLocationId ?? null,
             pickupPointSnapshot: null,
           });
-          carrierOfSibling.set(group[i].listingId, carrier.listingId);
+          carrierOfSibling.set(grouped[i].listingId, carrier.listingId);
         }
       }
     }
@@ -1979,6 +2028,19 @@ export class TransactionsService {
       commissionZar: number;
       sellerPayout: number;
     }> = [];
+
+    /**
+     * ⚠️ MONEY-SAFETY TRACKING FOR THE OUTER CATCH.
+     *
+     * Once the Order exists, an unconditional unwind in the catch can destroy a
+     * PAID order's children/inventory (a gateway timeout hides a capture whose
+     * webhook already landed). And even on an unpaid order the OrderLineItem
+     * rows still reference the children, so deleting the Transactions without
+     * first releasing the order lines fails the FK cleanup and strands the
+     * reservations until the expiry sweep. Both facts are tracked here.
+     */
+    let createdOrderId: string | null = null;
+    let unwound = false;
 
     try {
       for (const line of lines) {
@@ -2063,31 +2125,80 @@ export class TransactionsService {
         }
       }
 
-      // Phase 8d — a cart may span MULTIPLE sellers. One Order + one EFT from
-      // the buyer fans out to N per-listing transactions; each seller is paid
-      // independently on their own delivery confirmation (standard
-      // marketplace split). The single-seller guard is intentionally gone.
+      // Phase 8d — a cart may span MULTIPLE sellers. One Order + ONE capture
+      // fans out to N per-listing transactions; each seller is paid
+      // independently on their own delivery confirmation. The single-seller
+      // guard is intentionally gone.
       const sellerCount = new Set(created.map((c) => c.listing.sellerId)).size;
-      const totals = computeOrderTotals(created.map((c) => c.breakdown));
-      // (The buyer id is the method parameter — the transactions we just
-      // created all carry it, so re-reading it off the first one said the
-      // same thing twice back when the two were different types.)
 
-      // The Order-building + reservation scaffold below is rail-agnostic and
-      // kept for the future card paygate. The manual-EFT reference allocation +
-      // pay-by window have been removed with the manual rail; the paygate owns
-      // reference/capture (Order.gatewayCheckoutId/gatewayPaymentId seam).
+      /**
+       * ⚠️ ONE PLATFORM FEE FOR THE WHOLE CART (operator, 2026-11-27).
+       *
+       * The FeeCalculator bands + R10 floor run ONCE on the aggregate base
+       * Σ(line item + shipping + handling), then the total is allocated back to
+       * the lines (largest remainder, deterministic, exact sum). Each child
+       * Transaction is rewritten to base_i + fee_i so a single-line refund
+       * returns the correct share; seller payout/commission are untouched (the
+       * fee is buyer-paid on BUY_NOW). The Order snapshot is B + F.
+       */
+      const allocation = allocateOrderFee(
+        created.map((c) => ({
+          listingPrice: c.breakdown.listingPrice,
+          shippingCost: c.breakdown.shippingCost,
+          shippingHandlingCents: c.breakdown.shippingHandlingCents,
+        })),
+        (base) => this.fees.calculatePlatformFee(base),
+      );
+      const itemsSubtotal = created.reduce(
+        (sum, c) => sum + c.breakdown.listingPrice,
+        0,
+      );
+      const shippingSubtotal = created.reduce(
+        (sum, c) => sum + c.breakdown.shippingCost,
+        0,
+      );
+      const handlingSubtotal = created.reduce(
+        (sum, c) => sum + c.breakdown.shippingHandlingCents,
+        0,
+      );
+
+      if (
+        itemsSubtotal + shippingSubtotal + handlingSubtotal !==
+          allocation.base ||
+        allocation.buyerTotal !== allocation.base + allocation.processingFee
+      ) {
+        throw new Error('order fee allocation does not reconcile to the cart');
+      }
+
       const order = await this.prisma.$transaction(async (txc) => {
-        const o = await txc.order.create({
+        // Rewrite every child to its allocated share — ONE fee for the cart,
+        // fairly split back onto the rows refunds/presentation read.
+        for (let i = 0; i < created.length; i++) {
+          await txc.transaction.update({
+            where: { id: created[i].tx.id },
+            data: {
+              processingFee: allocation.lines[i].fee,
+              buyerTotal: allocation.lines[i].buyerTotal,
+              // The rail is LOCKED at checkout: every child refunds/pays out
+              // on the provider that captured the one order payment.
+              paymentProvider: provider,
+            },
+          });
+        }
+        const createdOrder = await txc.order.create({
           data: {
             buyerId,
             status: 'AWAITING_PAYMENT',
             paymentMethod: 'GATEWAY',
-            itemsSubtotal: totals.itemsSubtotal,
-            shippingSubtotal: totals.shippingSubtotal,
-            handlingSubtotal: totals.handlingSubtotal, // P6.4 — GG margin (sum of line handling)
-            processingFee: totals.processingFee,
-            buyerTotal: totals.buyerTotal,
+            paymentProvider: provider,
+            itemsSubtotal,
+            shippingSubtotal,
+            handlingSubtotal,
+            processingFee: allocation.processingFee,
+            buyerTotal: allocation.buyerTotal,
+            // 15 minutes to complete the hosted payment. The every-5-minute
+            // sweep cancels + restocks anything still unpaid after this.
+            paymentAttemptExpiresAt: new Date(Date.now() + CHECKOUT_HOLD_MS),
             lineItems: {
               create: created.map((c) => ({
                 transactionId: c.tx.id,
@@ -2100,16 +2211,14 @@ export class TransactionsService {
             },
           },
         });
-        // Link every child transaction to the order (children carry NO
-        // per-tx orderReference / manualPayByAt, so the per-tx freeze sweep
-        // ignores them — the order-level sweep releases them together).
+        // Link every child transaction to the order.
         await txc.transaction.updateMany({
           where: { id: { in: created.map((c) => c.tx.id) } },
-          data: { orderId: o.id },
+          data: { orderId: createdOrder.id },
         });
         // P6.2 — link each consolidated sibling line to its carrier line's
-        // transaction, so booking/tracking/delivery/release treat the group
-        // as one shipment. Resolved from the listingId→txId map just built.
+        // transaction, so booking/tracking/delivery/release treat the group as
+        // one shipment. Resolved from the listingId→txId map just built.
         if (carrierOfSibling.size > 0) {
           const txByListing = new Map(
             created.map((c) => [c.listing.id, c.tx.id]),
@@ -2125,31 +2234,171 @@ export class TransactionsService {
             }
           }
         }
-        return o;
+        return createdOrder;
       });
 
       this.logger.log(
-        `Order ${order.id} created — ${created.length} lines across ${sellerCount} seller(s), total ${totals.buyerTotal}c`,
+        `Order ${order.id} created — ${created.length} lines across ${sellerCount} seller(s), total ${allocation.buyerTotal}c (fee ${allocation.processingFee}c)`,
       );
+      createdOrderId = order.id;
+
+      // ── ONE gateway capture for the whole order ──────────────────────
+      // merchantReference = ORD-<orderId>-<nonce>. The nonce makes every
+      // ATTEMPT unique: after a resume or a line removal, a success carrying an
+      // older reference can be detected as superseded instead of being mistaken
+      // for the current session.
+      const resultUrl = `${frontendUrl}/checkout/complete?orderId=${order.id}`;
+      let gatewayCheckout;
+      try {
+        gatewayCheckout = await this.createGatewayCheckout(provider, {
+          amountZarCents: allocation.buyerTotal,
+          merchantTransactionId: this.orderMerchantRef(order.id),
+          returnUrl: resultUrl,
+          expirySeconds: Math.floor(CHECKOUT_HOLD_MS / 1000),
+        });
+      } catch (err) {
+        /**
+         * ⚠️ UNWIND, BUT NEVER OVER A PAID ORDER. A gateway timeout can hide a
+         * create that actually succeeded; a webhook may already have captured
+         * the order. The conditional delete loses that race and leaves the
+         * paid order intact for reconciliation.
+         */
+        const deleted = await this.prisma.order
+          .deleteMany({ where: { id: order.id, paidAt: null } })
+          .catch(() => ({ count: 0 }));
+        if (deleted.count === 0) {
+          this.logger.error(
+            `${provider} createPayment failed for order ${order.id}, but the row is no longer unpaid — leaving it intact for reconciliation`,
+          );
+          throw new BadRequestException(
+            'We could not finish setting up payment. Check My Orders before trying again.',
+          );
+        }
+        await this.unwindOrderLines(created);
+        unwound = true;
+        this.logger.error(
+          `${provider} createPayment failed for order ${order.id} (amount R${(
+            allocation.buyerTotal / 100
+          ).toFixed(2)}): ${ozowErrorDetail((err as Error).message)}`,
+        );
+        throw new BadRequestException(
+          'Payment processing failed — please try again.',
+        );
+      }
+
+      try {
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: {
+            gatewayCheckoutId: gatewayCheckout.checkoutId,
+            gatewayMerchantRef: gatewayCheckout.merchantReference,
+            gatewayRedirectUrl: gatewayCheckout.redirectUrl || null,
+          },
+        });
+      } catch (err) {
+        // The buyer may already have paid. Never delete; alert and let the
+        // webhook/verify reconciliation find it by merchant ref (it is only in
+        // this process's memory if the write failed, hence an urgent alert).
+        this.logger.error(
+          `Order ${order.id}: gateway checkout ${gatewayCheckout.checkoutId} created but could not be persisted: ${(err as Error).message}`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'ORDER_GATEWAY_PERSIST_FAILED',
+              referenceId: order.id,
+              urgent: true,
+              context: `Gateway checkout ${gatewayCheckout.checkoutId} (ref ${gatewayCheckout.merchantReference}) was created for order ${order.id} but could not be saved on the order. If the buyer paid, reconcile manually — money may have been captured.`,
+            },
+          })
+          .catch(() => undefined);
+        throw new BadRequestException(
+          'We could not finish setting up payment. Check My Orders before trying again.',
+        );
+      }
 
       return {
         orderId: order.id,
-        // The order-checkout UI maps this to /orders/[id].
+        // Back-compat for callers that already read transactionId off the
+        // order-checkout response: an order has no single transaction.
         transactionId: order.id,
-        amountCents: totals.buyerTotal,
+        paymentId: gatewayCheckout.checkoutId,
+        redirectUrl: gatewayCheckout.redirectUrl,
+        provider: provider.toLowerCase(),
+        amountCents: allocation.buyerTotal,
         itemCount: created.length,
         breakdown: {
-          listingPrice: totals.itemsSubtotal,
-          shippingCost: totals.shippingSubtotal,
-          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — delivery margin, retired 2026-10-23 (always 0)
+          listingPrice: itemsSubtotal,
+          shippingCost: shippingSubtotal,
+          shippingHandlingCents: handlingSubtotal,
           commissionZar: created.reduce((s, c) => s + c.commissionZar, 0),
-          processingFee: totals.processingFee,
-          buyerTotal: totals.buyerTotal,
+          processingFee: allocation.processingFee,
+          buyerTotal: allocation.buyerTotal,
           sellerPayout: created.reduce((s, c) => s + c.sellerPayout, 0),
         },
       };
     } catch (err) {
+      if (unwound) throw err;
+      if (!createdOrderId) {
+        // Nothing has been linked to an Order yet (failure during line
+        // reservation): the plain reservation unwind is safe.
+        await this.unwindOrderLines(created);
+        throw err;
+      }
+      /**
+       * ⚠️ AN ORDER EXISTS. NEVER UNWIND A PAID ONE.
+       *
+       * A gateway timeout can hide a create that actually succeeded, and its
+       * webhook can capture the order between the failure and this catch.
+       * Deleting children/restoring listings then would destroy a paid order's
+       * inventory and orphan the buyer's money. If the order is absent or
+       * paid/terminal, keep every child and alert for manual reconciliation.
+       * If it is still unpaid, release the OrderLineItem rows and cancel the
+       * order FIRST so the FK cleanup succeeds, then unwind the reservations.
+       */
+      const state = await this.prisma.order
+        .findUnique({
+          where: { id: createdOrderId },
+          select: { paidAt: true, status: true },
+        })
+        .catch(() => null);
+      const paid = !state || state.paidAt !== null;
+      if (paid) {
+        this.logger.error(
+          `Order ${createdOrderId}: checkout failed after the order was created, but the order is ${state ? `paid (status ${state.status})` : 'missing'} — NOT unwinding children/reservations`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'ORDER_CREATE_FAILED_AFTER_PAYMENT',
+              referenceId: createdOrderId,
+              urgent: true,
+              context: `Order ${createdOrderId} checkout reported a gateway failure AFTER the order row existed, and the order is ${state ? `paidAt=${state.paidAt?.toISOString()} status=${state.status}` : 'missing'}. The children and listing reservations were LEFT INTACT (a paid order must keep them). Reconcile: the buyer may have been charged — check the gateway and refund or fulfil manually.`,
+            },
+          })
+          .catch(() => undefined);
+        throw err;
+      }
+      try {
+        // Unpaid: drop the order's line-item links and cancel the order before
+        // deleting the children (OrderLineItem.transactionId is the FK that
+        // would otherwise block the delete).
+        await this.prisma.$transaction(async (txc) => {
+          await txc.orderLineItem.deleteMany({
+            where: { orderId: createdOrderId as string },
+          });
+          await txc.order.updateMany({
+            where: { id: createdOrderId as string, paidAt: null },
+            data: { status: 'CANCELLED', cancelledAt: new Date() },
+          });
+        });
+      } catch (cleanupErr) {
+        this.logger.error(
+          `Order ${createdOrderId}: cleanup before unwind failed: ${(cleanupErr as Error).message} — the expiry sweep will cancel/restock`,
+        );
+      }
       await this.unwindOrderLines(created);
+      unwound = true;
       throw err;
     }
   }
@@ -2292,6 +2541,992 @@ export class TransactionsService {
     } catch (err) {
       this.logger.error(`${tx.paymentProvider} verify failed`, err);
       throw new BadRequestException('Payment verification failed');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ORDER-LEVEL CARD PAYMENT (multi-item checkout, 2026-11-27)
+  //
+  // The cart is paid in ONE capture. The gateway identity lives on the Order
+  // (gatewayCheckoutId / gatewayMerchantRef / paymentAttemptExpiresAt); the
+  // child Transactions only receive their share of that ONE payment after it is
+  // verified. Every entry point re-queries authoritative status — the webhook
+  // body is never trusted — and the amount check is against the ORDER total.
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /orders/:id/verify-result — the buyer's return from the hosted page.
+   *
+   * UNAUTHENTICATED by design (a buyer can return on another device); safety
+   * comes from reading the STORED checkout id off the order and re-querying the
+   * provider, plus the amount/reference binding in markOrderPaid.
+   */
+  async verifyOrderResult(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        paidAt: true,
+        gatewayCheckoutId: true,
+        gatewayMerchantRef: true,
+        paymentProvider: true,
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paidAt) return { success: true, alreadyProcessed: true };
+    if (order.status === 'CANCELLED')
+      throw new BadRequestException(
+        'This order was cancelled. If you were charged, support will refund you.',
+      );
+    if (!order.gatewayCheckoutId)
+      throw new BadRequestException('No payment reference on this order');
+    let status: Awaited<ReturnType<TransactionsService['getGatewayStatus']>>;
+    try {
+      status = await this.getGatewayStatus(
+        order.paymentProvider ?? PaymentProvider.OZOW,
+        order.gatewayCheckoutId,
+      );
+    } catch (err) {
+      this.logger.error(
+        `order verify: status fetch failed for ${order.id}: ${(err as Error).message}`,
+      );
+      throw new BadRequestException('Payment verification failed');
+    }
+    if (!status?.isSuccess) {
+      return {
+        success: false,
+        resultCode: status?.resultCode ?? 'Incomplete',
+      };
+    }
+    const result = this.orderResultFromStatus(status);
+    // Some rails do not echo a reference on the status read; bind to the
+    // CURRENT stored attempt so the superseded-session guard can still fire.
+    if (!result.merchantTransactionId) {
+      result.merchantTransactionId = order.gatewayMerchantRef ?? '';
+    }
+    return this.markOrderPaid(order.id, result);
+  }
+
+  /** A unique merchant reference for ONE order-payment attempt. */
+  private orderMerchantRef(orderId: string): string {
+    return `ORD-${orderId}-${Date.now().toString(36)}${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+  }
+
+  /**
+   * Recover the order id from any attempt's merchant reference. The nonce means
+   * an OLD attempt's reference is still recognisable as belonging to this
+   * order — which is what lets the webhook alert on a superseded session
+   * instead of silently missing the money.
+   */
+  private orderIdFromMerchantRef(reference: string | null | undefined): string | null {
+    if (!reference || !reference.startsWith('ORD-')) return null;
+    const id = reference.slice(4).split('-')[0];
+    return id || null;
+  }
+
+  /** Shared mapping from a re-queried provider status to the order result. */
+  private orderResultFromStatus(
+    status: import('./payment-rails.service').NormalizedPaymentStatus,
+  ): GatewayPaymentResult {
+    return {
+      paymentId: status.paymentId,
+      resultCode: status.resultCode,
+      amount: status.amountCents,
+      currency: 'ZAR',
+      merchantTransactionId: status.merchantReference ?? '',
+      isSuccess: true,
+    };
+  }
+
+  /**
+   * Apply ONE verified order payment to every child transaction, exactly once.
+   *
+   * ⚠️ THE CHILD FAN-OUT REUSES markPaid. Rather than a second implementation
+   * of the paid claim/listing flip/accept deadline/notifications, each child is
+   * marked with its OWN line amount and the SAME captured payment id. The
+   * amount was already verified against the order total here, and the sum of
+   * the children equals it by construction (the fee allocation guarantees it),
+   * so the per-child guard stays true and every downstream money site sees a
+   * normal paid Transaction. Idempotent: a second webhook skips paid children.
+   */
+  private async markOrderPaid(
+    orderId: string,
+    result: GatewayPaymentResult,
+  ): Promise<{ success: boolean; orderId: string; failedLines: number }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        transactions: {
+          where: { refundOfId: null },
+          include: { listing: { select: { id: true, sellerId: true } } },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (result.amount !== order.buyerTotal) {
+      this.logger.error(
+        `markOrderPaid REJECTED: gateway amount=${result.amount}c != order total ${order.buyerTotal}c for ${order.id}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PAYMENT_AMOUNT_MISMATCH',
+            referenceId: order.id,
+            urgent: true,
+            context: `Gateway reported ${result.amount}c for order ${order.id}, expected ${order.buyerTotal}c. Payment NOT applied; reconcile/refund manually.`,
+          },
+        })
+        .catch(() => undefined);
+      throw new BadRequestException('Payment amount does not match the order total.');
+    }
+    /**
+     * ⚠️ BIND THE RESULT TO THE CURRENT ATTEMPT. A successful payment whose
+     * merchant reference is not the one stored on the order belongs to a
+     * SUPERSEDED checkout (resume/removal minted a newer session). Never apply
+     * it: alert urgently and let the refund/manual path handle the money.
+     */
+    if (
+      order.gatewayMerchantRef &&
+      result.merchantTransactionId &&
+      result.merchantTransactionId !== order.gatewayMerchantRef
+    ) {
+      this.logger.error(
+        `markOrderPaid REJECTED: order ${order.id} expects reference ${order.gatewayMerchantRef}, got ${result.merchantTransactionId} — superseded session`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PAYMENT_SUPERSEDED',
+            referenceId: order.id,
+            urgent: true,
+            context: `A successful payment ${result.paymentId} (${result.amount}c) for order ${order.id} carries merchant reference ${result.merchantTransactionId}, but the current session is ${order.gatewayMerchantRef}. The order was NOT marked paid. Refund the superseded payment on the same rail (${order.paymentProvider ?? 'OZOW'}).`,
+          },
+        })
+        .catch(() => undefined);
+      throw new ConflictException(
+        'A previous payment session for this order was paid. Support will refund it — do not pay again.',
+      );
+    }
+
+    /**
+     * ⚠️ A SUPERSEDED/EXPIRED CHECKOUT MUST NOT PAY A CANCELLED ORDER. The
+     * money was captured after the order was cancelled (expiry sweep or
+     * last-line removal): never fulfil, alert, and let the refund/manual path
+     * handle the money.
+     */
+    if (order.status === 'CANCELLED' || order.cancelledAt) {
+      this.logger.error(
+        `markOrderPaid REJECTED: order ${order.id} was cancelled but a payment succeeded (payment ${result.paymentId})`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PAID_AFTER_CANCEL',
+            referenceId: order.id,
+            urgent: true,
+            context: `Gateway payment ${result.paymentId} (${result.amount}c) captured for CANCELLED order ${order.id}. The buyer must be refunded manually on the same rail (${order.paymentProvider ?? 'OZOW'}).`,
+          },
+        })
+        .catch(() => undefined);
+      throw new ConflictException(
+        'This order was cancelled. If you were charged, support will refund you.',
+      );
+    }
+
+    // CAS claim: only the first verified result owns the order's payment id.
+    // A different payment id on the same order is a real mismatch (double pay) —
+    // alert, never silently overwrite.
+    const claim = await this.prisma.order.updateMany({
+      where: { id: order.id, gatewayPaymentId: null },
+      data: {
+        gatewayPaymentId: result.paymentId,
+        gatewayResultCode: result.resultCode,
+      },
+    });
+    if (claim.count === 0) {
+      const now = await this.prisma.order.findUnique({
+        where: { id: order.id },
+        select: { gatewayPaymentId: true },
+      });
+      if (
+        now?.gatewayPaymentId &&
+        now.gatewayPaymentId !== result.paymentId
+      ) {
+        this.logger.error(
+          `markOrderPaid REJECTED: order ${order.id} already has payment ${now.gatewayPaymentId}, got ${result.paymentId}`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'ORDER_SECOND_PAYMENT',
+              referenceId: order.id,
+              urgent: true,
+              context: `Order ${order.id} already captured payment ${now.gatewayPaymentId}; a second successful payment ${result.paymentId} (${result.amount}c) was reported. Refund the duplicate on the same rail.`,
+            },
+          })
+          .catch(() => undefined);
+        throw new ConflictException(
+          'This order has already been paid with a different payment.',
+        );
+      }
+      // Same payment: idempotent retry — fall through and apply any still-unpaid
+      // child (a previous fan-out may have died mid-way).
+    }
+
+    let failedLines = 0;
+    for (const child of order.transactions) {
+      if (child.paidAt) continue;
+      try {
+        await this.markPaid(
+          child.id,
+          {
+            paymentId: result.paymentId,
+            resultCode: result.resultCode,
+            amount: child.buyerTotal,
+            currency: 'ZAR',
+            merchantTransactionId: child.id,
+            isSuccess: true,
+          },
+          child.listing,
+          child.buyerTotal,
+        );
+      } catch (err) {
+        failedLines += 1;
+        this.logger.error(
+          `markOrderPaid: child ${child.id} of order ${order.id} failed: ${(err as Error).message}`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'ORDER_CHILD_PAYMENT_FAILED',
+              referenceId: child.id,
+              urgent: true,
+              context: `Order ${order.id} payment ${result.paymentId} verified, but child ${child.id} could not be marked paid: ${(err as Error).message}. It is retryable — the next webhook/verify/sweep will try again.`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    // One order confirmation even if the last child's notification path was
+    // lost; no-ops when the order is not fully paid yet.
+    await this.maybeConfirmWholeOrder(order.id);
+    void this.syncOrderStatus(order.id);
+    // One invoice for the whole cart, emailed once (children are guarded in
+    // ZohoBooksService.createBuyerInvoice so they never raise their own).
+    void this.zohoBooks.createOrderBuyerInvoice(order.id);
+    return { success: failedLines === 0, orderId: order.id, failedLines };
+  }
+
+  /**
+   * Webhook fallback: no Transaction matched the checkout id / merchant ref —
+   * try the ORDER. Returns true when it handled the delivery.
+   */
+  private async handleWebhookForOrder(
+    provider: PaymentProvider,
+    match: { checkoutId?: string | null; merchantReference?: string | null },
+    statusOverride?: import('./payment-rails.service').NormalizedPaymentStatus | null,
+  ): Promise<boolean> {
+    const or = [] as Record<string, string>[];
+    if (match.checkoutId) or.push({ gatewayCheckoutId: match.checkoutId });
+    if (match.merchantReference)
+      or.push({ gatewayMerchantRef: match.merchantReference });
+    if (or.length === 0) return false;
+    const order = await this.prisma.order.findFirst({
+      where: { paymentProvider: provider, OR: or },
+      select: {
+        id: true,
+        gatewayCheckoutId: true,
+        gatewayMerchantRef: true,
+        status: true,
+        paidAt: true,
+      },
+    });
+    if (!order) {
+      /**
+       * ⚠️ A SUCCESS FOR AN OLD ATTEMPT IS NOT A MISS. The order no longer
+       * stores the superseded checkout id/reference, so the direct match finds
+       * nothing — but the reference still names the order. Alert urgently and
+       * never mark it paid; the buyer's old-session money needs a refund on the
+       * same rail.
+       */
+      const staleOrderId = this.orderIdFromMerchantRef(
+        match.merchantReference,
+      );
+      if (staleOrderId) {
+        const stale = await this.prisma.order.findUnique({
+          where: { id: staleOrderId },
+          select: {
+            id: true,
+            gatewayCheckoutId: true,
+            gatewayMerchantRef: true,
+            status: true,
+          },
+        });
+        if (stale) {
+          this.logger.error(
+            `Order webhook: superseded checkout for order ${stale.id} (ref ${match.merchantReference ?? match.checkoutId}, current ${stale.gatewayMerchantRef ?? 'none'}) — payment NOT applied`,
+          );
+          if (stale.status !== 'CANCELLED') {
+            await this.prisma.adminAlert
+              .create({
+                data: {
+                  type: 'ORDER_PAYMENT_SUPERSEDED',
+                  referenceId: stale.id,
+                  urgent: true,
+                  context: `A successful payment arrived for order ${stale.id} on a SUPERSEDED session (ref ${match.merchantReference ?? '-'} / checkout ${match.checkoutId ?? '-'}); the current session is ref ${stale.gatewayMerchantRef ?? '-'} / checkout ${stale.gatewayCheckoutId ?? '-'}. The order was NOT marked paid. Refund the superseded payment on the same rail.`,
+                },
+              })
+              .catch(() => undefined);
+          }
+          return true;
+        }
+      }
+      return false;
+    }
+    if (order.paidAt) {
+      this.logger.log(`Order webhook: ${order.id} already paid`);
+      return true;
+    }
+    if (!order.gatewayCheckoutId) {
+      this.logger.warn(`Order webhook: ${order.id} has no checkout id`);
+      return true;
+    }
+    let status = statusOverride;
+    if (!status) {
+      try {
+        status = await this.getGatewayStatus(
+          provider,
+          order.gatewayCheckoutId,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Order webhook: status fetch failed for ${order.id}: ${(err as Error).message}`,
+        );
+        throw err; // controller returns 500 → provider retries
+      }
+    }
+    if (!status?.isSuccess) {
+      this.logger.warn(
+        `Order webhook: ${order.id} not successful on re-fetch (${status?.resultCode ?? 'none'})`,
+      );
+      throw new Error('Order payment success not confirmed by status re-fetch');
+    }
+    // Bind the reference/checkout to the CURRENT stored attempt before any
+    // money-state change. A delivery naming another attempt of the same order
+    // is superseded, not current.
+    const staleReference =
+      (match.merchantReference &&
+        order.gatewayMerchantRef &&
+        match.merchantReference !== order.gatewayMerchantRef) ||
+      (match.checkoutId &&
+        order.gatewayCheckoutId &&
+        match.checkoutId !== order.gatewayCheckoutId);
+    if (staleReference) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PAYMENT_SUPERSEDED',
+            referenceId: order.id,
+            urgent: true,
+            context: `${provider} webhook named a superseded checkout for order ${order.id} (got ref ${match.merchantReference ?? '-'} / checkout ${match.checkoutId ?? '-'}, current ${order.gatewayMerchantRef ?? '-'} / ${order.gatewayCheckoutId ?? '-'}). Payment NOT applied; refund the superseded session on the same rail.`,
+          },
+        })
+        .catch(() => undefined);
+      return true;
+    }
+    if (
+      status.merchantReference &&
+      order.gatewayMerchantRef &&
+      status.merchantReference !== order.gatewayMerchantRef
+    ) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PAYMENT_SUPERSEDED',
+            referenceId: order.id,
+            urgent: true,
+            context: `Order ${order.id} expected merchant reference ${order.gatewayMerchantRef}, provider reported ${status.merchantReference}. Payment NOT applied.`,
+          },
+        })
+        .catch(() => undefined);
+      return true;
+    }
+    try {
+      await this.markOrderPaid(order.id, this.orderResultFromStatus(status));
+    } catch (err) {
+      this.logger.error(
+        `Order webhook: markOrderPaid rejected for ${order.id}: ${(err as Error).message}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: `${provider}_ORDER_MARKPAID_REJECTED`,
+            referenceId: order.id,
+            urgent: true,
+            context: `Order ${order.id} webhook success but markOrderPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c.`,
+          },
+        })
+        .catch(() => undefined);
+    }
+    return true;
+  }
+
+  /** Buyer: open a fresh gateway session for an unpaid order (same total). */
+  async resumeOrderCheckout(
+    orderId: string,
+    buyerId: string,
+    frontendUrl: string,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, buyerId },
+      select: {
+        id: true,
+        status: true,
+        paidAt: true,
+        buyerTotal: true,
+        paymentProvider: true,
+        gatewayCheckoutId: true,
+        paymentAttemptExpiresAt: true,
+        transactions: { select: { id: true, paidAt: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paidAt || order.transactions.every((t) => t.paidAt !== null)) {
+      return { paid: true as const, orderId: order.id };
+    }
+    if (order.status !== 'AWAITING_PAYMENT') {
+      throw new BadRequestException(
+        'This order is no longer awaiting payment.',
+      );
+    }
+    if (
+      order.paymentAttemptExpiresAt &&
+      order.paymentAttemptExpiresAt.getTime() <= Date.now()
+    ) {
+      // Let the expiry sweep do the restock; keep the buyer out of a dead link.
+      throw new BadRequestException(
+        'The payment window for this order has lapsed — add the items to your cart again.',
+      );
+    }
+    const provider = order.paymentProvider ?? PaymentProvider.OZOW;
+    const checkout = await this.createGatewayCheckout(provider, {
+      amountZarCents: order.buyerTotal,
+      merchantTransactionId: this.orderMerchantRef(order.id),
+      returnUrl: `${frontendUrl}/checkout/complete?orderId=${order.id}`,
+      expirySeconds: Math.max(
+        60,
+        Math.floor(
+          ((order.paymentAttemptExpiresAt?.getTime() ?? Date.now()) -
+            Date.now()) /
+            1000,
+        ),
+      ),
+    });
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        gatewayCheckoutId: checkout.checkoutId,
+        gatewayMerchantRef: checkout.merchantReference,
+        gatewayRedirectUrl: checkout.redirectUrl || null,
+        gatewayResultCode: null,
+      },
+    });
+    return {
+      paid: false as const,
+      orderId: order.id,
+      paymentId: checkout.checkoutId,
+      redirectUrl: checkout.redirectUrl,
+      provider: provider.toLowerCase(),
+    };
+  }
+
+  /**
+   * Buyer: cancel an UNPAID order (the close button on the checkout screen).
+   * Paid orders are refused — their refund path is the normal order lifecycle.
+   */
+  async cancelUnpaidOrder(orderId: string, buyerId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, buyerId },
+      include: {
+        transactions: {
+          where: { refundOfId: null },
+          include: {
+            listing: {
+              select: { id: true, trackInventory: true },
+            },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paidAt || order.transactions.some((t) => t.paidAt)) {
+      throw new ConflictException(
+        'This order has already been paid and cannot be cancelled here.',
+      );
+    }
+    if (order.status !== 'AWAITING_PAYMENT') {
+      throw new ConflictException('This order cannot be cancelled from here.');
+    }
+    const claimed = await this.prisma.order.updateMany({
+      where: { id: order.id, paidAt: null, status: 'AWAITING_PAYMENT' },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException(
+        'This order was just paid or cancelled. Refresh the page.',
+      );
+    }
+    await this.unwindOrderLines(
+      order.transactions.map((t) => ({
+        tx: { id: t.id },
+        listing: t.listing,
+        quantity: t.quantity,
+      })),
+    );
+    void this.syncOrderStatus(order.id);
+    return { cancelled: true, orderId: order.id };
+  }
+
+  /**
+   * Every-5-minute expiry sweep: an AWAITING_PAYMENT order past its deadline
+   * that never paid is cancelled and every reservation released. NEVER touches
+   * a paid order (the claim predicate is paidAt null + status AWAITING_PAYMENT).
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async expireUnpaidOrders(): Promise<{ cancelled: number }> {
+    const now = new Date();
+    const stale = await this.prisma.order.findMany({
+      where: {
+        status: 'AWAITING_PAYMENT',
+        paidAt: null,
+        paymentAttemptExpiresAt: { not: null, lt: now },
+      },
+      select: {
+        id: true,
+        buyerId: true,
+        transactions: {
+          where: { refundOfId: null },
+          select: {
+            id: true,
+            quantity: true,
+            paymentStatus: true,
+            listing: { select: { id: true, trackInventory: true, title: true } },
+          },
+        },
+      },
+      take: 100,
+    });
+    let cancelled = 0;
+    for (const order of stale) {
+      try {
+        const claimed = await this.prisma.order.updateMany({
+          where: {
+            id: order.id,
+            paidAt: null,
+            status: 'AWAITING_PAYMENT',
+          },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        if (claimed.count === 0) continue;
+        await this.unwindOrderLines(
+          order.transactions.map((t) => ({
+            tx: { id: t.id },
+            listing: t.listing,
+            quantity: t.quantity,
+          })),
+        );
+        void this.syncOrderStatus(order.id);
+        cancelled += 1;
+        this.logger.log(
+          `Order ${order.id} expired unpaid — cancelled and restocked`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `expireUnpaidOrders failed for ${order.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { cancelled };
+  }
+
+  /**
+   * Remove ONE line from an unpaid order, restock it immediately, re-price and
+   * re-issue the single order payment. Returns the same order shape GET uses.
+   */
+  async removeOrderLine(
+    orderId: string,
+    transactionId: string,
+    buyerId: string,
+    frontendUrl: string,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, buyerId },
+      include: {
+        lineItems: {
+          include: {
+            listing: {
+              select: {
+                id: true,
+                sellerId: true,
+                isFirearm: true,
+                trackInventory: true,
+                title: true,
+                weightGrams: true,
+                lengthCm: true,
+                widthCm: true,
+                heightCm: true,
+                shippingMethods: true,
+                pickupStreet: true,
+                pickupSuburb: true,
+                pickupCity: true,
+                pickupPostalCode: true,
+                province: true,
+                price: true,
+                collectionOnly: true,
+              },
+            },
+            transaction: true,
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paidAt || order.status !== 'AWAITING_PAYMENT') {
+      throw new ConflictException(
+        'This order has already been paid — lines can no longer be removed.',
+      );
+    }
+    const line = order.lineItems.find(
+      (l) => l.transactionId === transactionId,
+    );
+    if (!line || !line.transaction) {
+      throw new NotFoundException('That item is not part of this order');
+    }
+    const remaining = order.lineItems.filter(
+      (l) => l.transactionId !== transactionId,
+    );
+    /**
+     * ⚠️ RE-QUOTE BEFORE ANY WRITE. Removing a line ALWAYS changes the parcel
+     * the seller's remaining goods ship as: a two-line consolidated parcel can
+     * become a solo parcel (or the carrier line itself can be the one removed,
+     * leaving its siblings pointing at a deleted waybill). The whole seller
+     * goods group is therefore re-priced — including a group that is now a
+     * single parcel — and if any re-quote fails the removal aborts with the
+     * order and reservations completely untouched (no relist, no orphan).
+     */
+    const removedTx = line.transaction;
+    const affectedSeller =
+      !line.listing.isFirearm && removedTx.shippingMethod === 'COURIER'
+        ? line.listing.sellerId
+        : null;
+    const goodsGroups = new Map<string, typeof remaining>();
+    for (const l of remaining) {
+      if (!l.transaction || l.listing.isFirearm) continue;
+      if (l.transaction.shippingMethod !== 'COURIER') continue;
+      const group = goodsGroups.get(l.listing.sellerId) ?? [];
+      group.push(l);
+      goodsGroups.set(l.listing.sellerId, group);
+    }
+    const requotes = new Map<
+      string,
+      {
+        carrier: string;
+        transactionIds: string[];
+        priceCents: number;
+        serviceCode: string | null;
+        providerSlug: string | null;
+        serviceLevelCode: string | null;
+      }
+    >();
+    for (const [sellerId, group] of goodsGroups) {
+      // Only groups that lost a line are re-priced; untouched sellers keep the
+      // exact figure the buyer was already shown.
+      if (sellerId !== affectedSeller) continue;
+      /**
+       * ⚠️ THE CARRIER MAY BE THE REMOVED LINE. Pick the surviving line that
+       * does not ride a sibling, else the first survivor (it is promoted to
+       * carrier below). A group of ONE is still re-quoted: the survivor must
+       * pay the SOLO rate, not the old combined rate.
+       */
+      const carrier =
+        group.find((l) => !l.transaction!.shipsWithId) ?? group[0];
+      const tx = carrier.transaction ?? group[0].transaction!;
+      const address = (tx as { deliveryAddress?: unknown }).deliveryAddress as
+        | {
+            streetAddress?: string;
+            suburb?: string;
+            city?: string;
+            postalCode?: string;
+            province?: string;
+            lat?: number;
+            lng?: number;
+          }
+        | null;
+      if (!address?.streetAddress || !address.city) {
+        throw new BadRequestException(
+          'We could not re-price this order after removing that item — nothing has been removed. Please try again.',
+        );
+      }
+      const quote = await this.shipping.quoteCombined(
+        group.map((l) => ({
+          listingId: l.listing.id,
+          quantity: l.quantity,
+        })),
+        'COURIER',
+        {
+          deliveryAddress: {
+            streetAddress: address.streetAddress,
+            suburb: address.suburb ?? '',
+            city: address.city,
+            postalCode: address.postalCode ?? '',
+            province: address.province as Province,
+            lat: address.lat ?? 0,
+            lng: address.lng ?? 0,
+          },
+        },
+        {
+          deliveryOption: (tx.deliveryOption ?? 'DOOR_CHEAPEST') as DeliveryOption,
+          pickupPointLocationId: tx.pickupPointLocationId ?? undefined,
+        },
+      );
+      if (!quote) {
+        throw new BadRequestException(
+          'The remaining items cannot be shipped together after removing that item — nothing has been removed. Buy them separately instead.',
+        );
+      }
+      requotes.set(sellerId, {
+        carrier: carrier.transactionId!,
+        transactionIds: group.map((l) => l.transactionId!),
+        priceCents: quote.priceCents,
+        serviceCode: quote.serviceCode,
+        providerSlug: quote.providerSlug ?? null,
+        serviceLevelCode: quote.serviceLevelCode ?? null,
+      });
+    }
+
+    // Atomic-ish: claim the line while it is still UNPAID and restore it. The
+    // conditional delete loses any race with a payment webhook (a paid child is
+    // never deleted); when it loses, the removal aborts with 409 and nothing has
+    // changed.
+    await this.prisma.$transaction(async (txc) => {
+      // Clear any sibling still riding the removed line BEFORE deleting it —
+      // the self-FK would otherwise block the delete, and the re-quote below
+      // re-establishes the group links (with a promoted carrier if needed).
+      await txc.transaction.updateMany({
+        where: { orderId: order.id, shipsWithId: transactionId },
+        data: { shipsWithId: null },
+      });
+      const deleted = await txc.transaction.deleteMany({
+        where: { id: transactionId, orderId: order.id, paidAt: null },
+      });
+      if (deleted.count === 0) {
+        throw new ConflictException(
+          'This order has just been paid — it can no longer be changed.',
+        );
+      }
+      await txc.orderLineItem.delete({ where: { id: line.id } });
+      await txc.listing.update({
+        where: { id: line.listing.id },
+        data: line.listing.trackInventory
+          ? {
+              status: 'ACTIVE',
+              quantityAvailable: { increment: line.quantity },
+              quantityReserved: { decrement: line.quantity },
+            }
+          : { status: 'ACTIVE' },
+      });
+    });
+
+    // ⚠️ A CAPTURE CAN LAND between the release above and the re-price. Never
+    // rewrite a paid order's totals / mint a second payment: alert and stop.
+    const afterRelease = await this.prisma.order.findUnique({
+      where: { id: order.id },
+      select: { paidAt: true, status: true },
+    });
+    if (
+      !afterRelease ||
+      afterRelease.paidAt !== null ||
+      afterRelease.status !== 'AWAITING_PAYMENT'
+    ) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_LINE_REMOVED_AFTER_PAYMENT',
+            referenceId: order.id,
+            urgent: true,
+            context: `Line ${transactionId} of order ${order.id} was released while unpaid, but the order was paid before it could be re-priced. The buyer may have paid for a released item — reconcile/refund manually.`,
+          },
+        })
+        .catch(() => undefined);
+      throw new ConflictException(
+        'This order has just been paid — support has been notified.',
+      );
+    }
+
+    if (remaining.length === 0) {
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: order.id, paidAt: null, status: 'AWAITING_PAYMENT' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      if (claimed.count > 0) {
+        this.logger.log(`Order ${order.id} cancelled — last line removed`);
+      }
+      return {
+        cancelled: true,
+        orderId: order.id,
+      };
+    }
+
+    // Recompute shipping for the re-priced seller group(s), then the ONE fee.
+    for (const quote of requotes.values()) {
+      for (const l of remaining) {
+        if (!l.transaction) continue;
+        if (!quote.transactionIds.includes(l.transactionId!)) continue;
+        const isCarrier = l.transactionId === quote.carrier;
+        await this.prisma.transaction.update({
+          where: { id: l.transaction.id },
+          data: {
+            shippingCost: isCarrier ? quote.priceCents : 0,
+            // The carrier line owns the WHOLE rate key; a promoted survivor
+            // (the old carrier was the removed line) gets it too.
+            shippingServiceCode: isCarrier ? quote.serviceCode : null,
+            shippingProviderSlug: isCarrier ? quote.providerSlug : null,
+            shippingServiceLevelCode: isCarrier
+              ? quote.serviceLevelCode
+              : null,
+            shipsWithId: isCarrier ? null : quote.carrier,
+          },
+        });
+      }
+    }
+    // Fresh base + allocation over the remaining children.
+    const fresh = await this.prisma.transaction.findMany({
+      where: { orderId: order.id, refundOfId: null },
+      select: {
+        id: true,
+        listingPrice: true,
+        shippingCost: true,
+        shippingHandlingCents: true,
+      },
+    });
+    const allocation = allocateOrderFee(
+      fresh.map((t) => ({
+        listingPrice: t.listingPrice,
+        shippingCost: t.shippingCost,
+        shippingHandlingCents: t.shippingHandlingCents,
+      })),
+      (base) => this.fees.calculatePlatformFee(base),
+    );
+    await this.prisma.$transaction(async (txc) => {
+      for (let i = 0; i < fresh.length; i++) {
+        await txc.transaction.update({
+          where: { id: fresh[i].id },
+          data: {
+            processingFee: allocation.lines[i].fee,
+            buyerTotal: allocation.lines[i].buyerTotal,
+          },
+        });
+      }
+      await txc.order.update({
+        where: { id: order.id },
+        data: {
+          itemsSubtotal: fresh.reduce((s, t) => s + t.listingPrice, 0),
+          shippingSubtotal: fresh.reduce((s, t) => s + t.shippingCost, 0),
+          handlingSubtotal: fresh.reduce(
+            (s, t) => s + t.shippingHandlingCents,
+            0,
+          ),
+          processingFee: allocation.processingFee,
+          buyerTotal: allocation.buyerTotal,
+          paymentAttemptExpiresAt: new Date(Date.now() + CHECKOUT_HOLD_MS),
+        },
+      });
+    });
+
+    // Supersede the old checkout and mint a new one for the new total. The old
+    // session is never cancelled at the provider; if it is paid anyway the
+    // merchant-ref mismatch on the order's NEW checkout plus the CANCELLED/
+    // amount guard in markOrderPaid turns it into an alert + refund.
+    const provider = order.paymentProvider ?? PaymentProvider.OZOW;
+    const checkout = await this.createGatewayCheckout(provider, {
+      amountZarCents: allocation.buyerTotal,
+      merchantTransactionId: this.orderMerchantRef(order.id),
+      returnUrl: `${frontendUrl}/checkout/complete?orderId=${order.id}`,
+      expirySeconds: Math.floor(CHECKOUT_HOLD_MS / 1000),
+    });
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        gatewayCheckoutId: checkout.checkoutId,
+        gatewayMerchantRef: checkout.merchantReference,
+        gatewayRedirectUrl: checkout.redirectUrl || null,
+        gatewayResultCode: null,
+      },
+    });
+    return {
+      cancelled: false,
+      orderId: order.id,
+      payment: {
+        redirectUrl: checkout.redirectUrl,
+        paymentId: checkout.checkoutId,
+      },
+      amountCents: allocation.buyerTotal,
+    };
+  }
+
+  /**
+   * Roll a paid order's status up from its children, synchronously.
+   *
+   * The same definition as the 15-minute catch-all sweep, exposed so child
+   * release/refund paths can call it immediately. Never downgrades a terminal
+   * order and never touches an unpaid one.
+   */
+  async syncOrderStatus(orderId: string): Promise<string | null> {
+    /**
+     * ⚠️ NEVER THROWS. It runs inline from release/refund/cancel paths whose
+     * money has already moved; a status rollup failure must cost the order's
+     * badge, never the buyer's refund or the seller's payout. The 30-minute
+     * sweep retries it.
+     */
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          status: true,
+          transactions: {
+            where: { refundOfId: null },
+            select: { paymentStatus: true },
+          },
+        },
+      });
+      if (!order) return null;
+      if (
+        order.status !== 'PAID' &&
+        order.status !== 'PARTIALLY_FULFILLED'
+      ) {
+        return order.status;
+      }
+      const rollup = computeOrderRollupStatus(
+        order.transactions.map((t) => t.paymentStatus),
+      );
+      if (!rollup || rollup === order.status) return rollup ?? order.status;
+      // CAS on the status read above: a concurrent path that already advanced
+      // the order wins, and this becomes a no-op rather than a downgrade.
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: order.id, status: order.status },
+        data: { status: rollup },
+      });
+      return claimed.count > 0 ? rollup : order.status;
+    } catch (err) {
+      this.logger.warn(
+        `syncOrderStatus(${orderId}) failed — the 30-minute sweep will retry: ${(err as Error).message}`,
+      );
+      return null;
     }
   }
 
@@ -3022,6 +4257,11 @@ export class TransactionsService {
       include: { listing: true },
     });
     if (!tx) {
+      // Multi-item checkout: the capture belongs to the ORDER, not a line.
+      const handled = await this.handleWebhookForOrder(PaymentProvider.OZOW, {
+        merchantReference: evt.merchantReference,
+      });
+      if (handled) return;
       this.logger.warn(
         `Ozow webhook: no Ozow transaction for merchantReference ${evt.merchantReference}`,
       );
@@ -3118,6 +4358,12 @@ export class TransactionsService {
       include: { listing: true },
     });
     if (!tx) {
+      // Multi-item checkout: the capture belongs to the ORDER, not a line.
+      const handled = await this.handleWebhookForOrder(PaymentProvider.PEACH, {
+        checkoutId: evt.checkoutId,
+        merchantReference: evt.merchantReference,
+      });
+      if (handled) return;
       this.logger.warn(
         `Peach webhook: no transaction for ${evt.checkoutId ?? evt.merchantReference}`,
       );
@@ -5013,6 +6259,9 @@ export class TransactionsService {
     // cancel any live carrier shipment so a rejected sale doesn't leave a
     // billed waybill. No-op when nothing was booked.
     void this.shipping.cancelForTransaction(transactionId);
+    // The child is now REFUNDED — roll a multi-item order's status up NOW, not
+    // on the next 30-minute sweep. Never throws.
+    if (tx.orderId) void this.syncOrderStatus(tx.orderId);
 
     // Seller-standing policy (operator 2026-07-23). The picker sends
     // "CODE: label" (or free text for legacy/OTHER); the CODE decides the
@@ -5456,6 +6705,7 @@ export class TransactionsService {
     this.logger.log(
       `Transaction ${transactionId} CANCELLED by buyer ${buyer.id} (reason: ${trimmedReason.slice(0, 80)})`,
     );
+    if (tx.orderId) void this.syncOrderStatus(tx.orderId);
     return this.prisma.transaction.findUnique({
       where: { id: transactionId },
     });
@@ -6312,6 +7562,10 @@ export class TransactionsService {
     }
 
     this.logger.log(`Transaction ${transactionId} delivery confirmed — payment released`);
+    // Release is a child state change: advance the order synchronously (the
+    // 30-minute sweep is the fallback, not the only path). Covers the
+    // consolidated sibling release above too. Never throws.
+    if (tx.orderId) void this.syncOrderStatus(tx.orderId);
     // P0.6 — commission invoice into Books at release. Previously only the
     // FIREARM dealer-verification hook invoiced, so the commission on every
     // ordinary courier sale never reached the books and the payout batch's
@@ -7220,6 +8474,8 @@ export class TransactionsService {
         data: { totalSales: { increment: 1 } },
       })
       .catch(() => undefined);
+
+    if (tx.orderId) void this.syncOrderStatus(tx.orderId);
 
     this.logger.log(
       `Transaction ${txId} PRIVATE_ARRANGE released (${reason}) — payout to seller`,

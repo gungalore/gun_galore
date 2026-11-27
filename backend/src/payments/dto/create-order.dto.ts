@@ -14,7 +14,7 @@ import {
   IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DeliveryOption, ShippingMethod } from '@prisma/client';
+import { DeliveryOption, PaymentProvider, ShippingMethod } from '@prisma/client';
 import { DeliveryAddressDto } from './create-transaction.dto';
 
 // One line of a multi-item cart. A subset of CreateTransactionDto. BUY_NOW
@@ -103,4 +103,14 @@ export class CreateOrderDto {
   @IsOptional()
   @IsBoolean()
   buyerTermsAccepted?: boolean;
+
+  /**
+   * The rail that captures the ONE order payment. LOCKED at checkout: the same
+   * provider must refund and pay out every child transaction (no cross-rail
+   * failover). YOCO belongs to the motivation paygate and is refused by the
+   * service; the DTO accepts the enum only so the service can name the refusal.
+   */
+  @IsOptional()
+  @IsEnum(PaymentProvider)
+  paymentProvider?: PaymentProvider;
 }

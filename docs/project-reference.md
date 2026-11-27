@@ -823,6 +823,102 @@ as `Transaction.deliveryInstructions` and forwarded to Bob Go on booking.
   webhook URLs on the production domain (the pay-in one registered as a `full`
   subscription, or the webhook cannot match a transaction). `OZOW_PAYOUT_MOCK=false`.
 
+### Multi-item checkout — ONE capture, ONE platform fee
+
+Multi-item cart (2026-11-27). Migration
+`20261127150000_order_payment_multi_item` adds the order-level gateway fields
+(`paymentProvider`, `gatewayMerchantRef`, `gatewayRedirectUrl`,
+`gatewayResultCode`, `paymentAttemptExpiresAt`, `cancelledAt`,
+`zohoBuyerInvoiceId`, `zohoBuyerInvoiceEmailedAt`) plus the
+`(status, paymentAttemptExpiresAt)`, `gatewayCheckoutId`,
+`gatewayMerchantRef` and `(buyerId, createdAt)` indexes. No `db push`; no enum
+change.
+
+- **One fee, allocated back.** `payments/order-fee.ts` applies the FeeCalculator
+  bands + R10 floor ONCE to `Σ(line item + shipping + handling)` and allocates
+  the total across lines (largest remainder, deterministic tiebreak, exact sum).
+  Each child Transaction is rewritten to `base_i + fee_i`, so its refund/payout
+  paths see the correct share; the Order snapshot is `B + F`; seller
+  payout/commission are untouched. `Σ child buyerTotal === Order.buyerTotal`.
+- **One payment.** `POST /orders/checkout` takes `paymentProvider` (YOCO
+  refused; Peach only when configured), reserves every line, creates the
+  AWAITING_PAYMENT order with a 15-minute `paymentAttemptExpiresAt`, mints ONE
+  gateway checkout for `order.buyerTotal` with a UNIQUE per-attempt merchant
+  reference `ORD-<orderId>-<nonce>` and return URL
+  `/checkout/complete?orderId=<id>`, and returns
+  `{ orderId, transactionId (=orderId), paymentId, redirectUrl, provider,
+  amountCents, itemCount, breakdown }`. A gateway-create failure deletes the
+  unpaid order and unwinds every reservation (never over a paid row).
+  ⚠️ **The outer checkout catch never unwinds a paid/terminal order.** Once the
+  Order exists, a failure re-reads it: if it is absent or `paidAt` is set the
+  children and listing reservations are LEFT INTACT and an urgent
+  `ORDER_CREATE_FAILED_AFTER_PAYMENT` alert is raised (a gateway timeout can hide
+  a capture whose webhook already landed); only an unpaid order has its
+  OrderLineItem rows released and the order cancelled BEFORE the reservation
+  unwind, so the FK cleanup succeeds and nothing is orphaned.
+- **Confirmation.** `POST /orders/:id/verify-result` (public, throttled) and the
+  Ozow/Peach webhooks fall back to the ORDER when no Transaction matches the
+  checkout id / merchant ref, re-query authoritative status, bind provider +
+  merchant ref + amount to the order, then `markOrderPaid` claims the order's
+  `gatewayPaymentId` (idempotent; a second distinct payment alerts) and fans the
+  captured payment out to each child via the normal `markPaid` money-state (HELD,
+  accept deadline, listing SOLD/stock, tracking, KYC, seller notifications). The
+  buyer gets ONE order confirmation (`orderConfirmedBuyerMulti`); per-child buyer
+  confirmations are suppressed. ⚠️ **Superseded sessions:** resume/removal mint
+  a NEW per-attempt reference; a success carrying any other reference/checkout
+  id for the same order raises urgent `ORDER_PAYMENT_SUPERSEDED` (and an
+  amount mismatch raises `ORDER_PAYMENT_AMOUNT_MISMATCH`) and never marks the
+  order paid. A cancelled order that captures money alerts
+  `ORDER_PAID_AFTER_CANCEL`; all three need a same-rail manual refund.
+- **Expiry/resume/cancel.** `POST /orders/:id/resume` mints a fresh
+  per-attempt session for the same total while the window is live;
+  `POST /orders/:id/cancel` cancels an unpaid order and releases every line; the
+  every-5-minute sweep `expireUnpaidOrders` cancels AWAITING_PAYMENT orders past
+  `paymentAttemptExpiresAt` and restocks them. It never touches a paid order.
+- **Remove/relist while unpaid.** `DELETE /orders/:id/lines/:transactionId`
+  (buyer, no body) releases that line immediately (listing/stock restored), then
+  **re-quotes the seller's whole remaining goods group — including a group that
+  is now a single parcel, or whose carrier was the removed line (the survivor is
+  promoted and gets the rate key)**; if a re-quote fails the removal aborts with
+  the order untouched (no relist). It recomputes the ONE fee allocation,
+  rewrites the remaining children + Order totals, supersedes the old checkout
+  and mints a new per-attempt session. Last line → order CANCELLED +
+  `cancelledAt`. A paid order is 409. Response:
+  `{ cancelled, order, payment?: { redirectUrl, paymentId } }`.
+- **Order read contract.** `GET /orders/:id` keeps its keys and adds
+  `lineItems[].seller { id, username }`, `lineItems[].deliveryClass
+  ('GOODS'|'FIREARM')`, the transaction money fields, `shippingGroups` (one row
+  per parcel/booking: `{ key, sellerId, sellerUsername, class, method,
+  transactionId, shippingCents }`) and `canRemove` (unpaid AWAITING_PAYMENT
+  buyer only). The transaction-detail response exposes `orderId` so a multi-line
+  buyer is pointed at the order page.
+- **Status.** AWAITING_PAYMENT → PAID → PARTIALLY_FULFILLED → COMPLETED /
+  REFUNDED (`computeOrderRollupStatus`). `syncOrderStatus()` is called INLINE
+  (never throws, CAS on the status read) from every child state change:
+  confirm-delivery (including the consolidated sibling release), private-arrange
+  release, seller reject, buyer cancel, admin refund, admin release, dispute
+  release, dealer-verification release, SLA auto-refund, order confirmation and
+  unpaid cancellation/expiry. The 30-minute `orderStatusRollupSweep` remains the
+  catch-all for PAID/PARTIALLY_FULFILLED. CANCELLED is unpaid-only.
+- **Zoho.** `createOrderBuyerInvoice(orderId)` raises ONE buyer invoice: a line
+  per item, one delivery line per seller courier booking, one Platform Fee line;
+  it fails closed if the lines do not equal `order.buyerTotal`, stores
+  `zohoBuyerInvoiceId`, and emails once (`zohoBuyerInvoiceEmailedAt`). Child
+  transactions never raise their own buyer invoice (`createBuyerInvoice` returns
+  early when `tx.orderId` is set).
+- **Shipping toggles.** The checkout uses the same `planShippingGroups` as the
+  cart delivery menu (seller + courier parcel + destination); one combined
+  `quoteCombined` per same-seller courier goods group, carrier charged the rate
+  and siblings `shippingCost=0` + `shipsWithId`. Firearms never courier and
+  never consolidate; collection-only and private-arrange lines are now legal
+  cart lines (the old up-front collection-only rejection is gone; the shared
+  shipping validator still enforces papers/consent). If a group cannot be
+  combined, checkout refuses with "buy them separately" — bookings are never
+  silently split.
+- **Batch distance.** `POST /listings/distances` (`{ ids: string[ ≤50 ], lat,
+  lng }`) returns `{ distances: Record<id, number|null> }` — one query, same
+  5 km snap as `:id/distance`, never coordinates.
+
 ### KYC — seller-only
 
 - Buyers, bidders and offer-makers **never** need KYC, in any module.

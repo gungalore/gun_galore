@@ -5007,6 +5007,55 @@ export class ListingsService {
     };
   }
 
+  /**
+   * BATCH coarse distance for a page of listings (cart / search results).
+   *
+   * ⚠️ ONE QUERY, NOT N. The card grid used to call `:id/distance` per card —
+   * twenty round trips for one screen. This reads every listing in a single
+   * `findMany` and returns the same 5 km-snapped value per id; ids we cannot
+   * place (missing, or no coordinates) map to null. Coordinates are NEVER
+   * returned — only the snapped distance.
+   */
+  async distancesToBuyer(
+    ids: string[],
+    lat: number,
+    lng: number,
+  ): Promise<{ distances: Record<string, number | null> }> {
+    const unique = [...new Set((ids ?? []).filter((id) => typeof id === 'string'))];
+    if (unique.length > 50) {
+      throw new BadRequestException(
+        'At most 50 listings can be measured in one request.',
+      );
+    }
+    const distances: Record<string, number | null> = {};
+    for (const id of unique) distances[id] = null;
+    if (unique.length === 0) return { distances };
+    const rows = await this.prisma.listing.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        isFirearm: true,
+        pickupLat: true,
+        pickupLng: true,
+        plannedDealerLat: true,
+        plannedDealerLng: true,
+      },
+    });
+    for (const row of rows) {
+      const useDealer =
+        row.isFirearm &&
+        row.plannedDealerLat != null &&
+        row.plannedDealerLng != null;
+      const tLat = useDealer ? row.plannedDealerLat : row.pickupLat;
+      const tLng = useDealer ? row.plannedDealerLng : row.pickupLng;
+      if (tLat == null || tLng == null) continue;
+      distances[row.id] = roundKm(
+        haversineKm({ lat, lng }, { lat: tLat, lng: tLng }),
+      );
+    }
+    return { distances };
+  }
+
   private async assertOwner(listingId: string, userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ForbiddenException('User not found');

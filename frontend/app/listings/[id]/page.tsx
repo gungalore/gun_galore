@@ -9,7 +9,7 @@ import {
   CategoryAttributeDef,
   CheckoutHold,
   Me,
-  ShippingMethod,
+  type BrowseResponse,
 } from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import { BuyNowCta } from '@/components/buy-now-cta';
@@ -21,7 +21,14 @@ import {
   discountPercent,
 } from '@/lib/utils';
 import { vicinityLabel } from '@/lib/vicinity';
-import ListingDistance from '@/components/listing-distance';
+import ItemDistance from '@/components/item-distance';
+import { DistanceProvider } from '@/lib/distance-context';
+import { showsStickyBuyBar } from '@/lib/catalog-guards';
+import {
+  moreFromSeller,
+  showsMoreFromSeller,
+} from '@/lib/more-from-seller';
+import { ListingCard } from '@/components/listing-card';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
@@ -50,10 +57,6 @@ import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
 import { ListingDescription } from '@/components/listing-description';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
-import {
-  getListingDeliveryEstimate,
-  getCollectionMode,
-} from '@/lib/delivery-estimate';
 
 function straightLineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (degrees: number) => (degrees * Math.PI) / 180;
@@ -170,12 +173,18 @@ export default async function ListingDetailPage({
   // may include it so owner-only controls work with both response shapes.
   const sellerUserId = listing.seller.userId ?? listing.seller.id;
   // The local cart line Buy Now remembers while the buyer is in checkout, so
-  // abandoning it leaves a trace in /cart instead of losing the item. The cart
-  // cannot carry collection-only lines, so those are never remembered.
-  const buyNowCartItem =
-    listing.listingType === 'BUY_NOW' &&
-    !listing.collectionOnly &&
-    !listing.shippingMethods?.includes('COLLECTION')
+  // abandoning it leaves a trace in /cart instead of losing the item.
+  //
+  // ⚠️ COLLECTION-ONLY LINES ARE VALID CART LINES NOW (task-8/ui-checkout). The
+  // route fields are optional extras on CartItem; they let /cart show the
+  // Private route and the collection-papers acknowledgement the backend wants.
+  type CartLine = Parameters<typeof AddToCartButton>[0]['item'] & {
+    listingType?: string;
+    collectionOnly?: boolean;
+    requiresPapers?: boolean;
+  };
+  const buyNowCartItem: CartLine | null =
+    listing.listingType === 'BUY_NOW'
       ? {
           listingId: listing.id,
           title: listing.title,
@@ -187,6 +196,11 @@ export default async function ListingDetailPage({
           sellerUsername: listing.seller.username ?? 'Seller',
           isFirearm: listing.isFirearm,
           shippingMethods: listing.shippingMethods,
+          listingType: listing.listingType,
+          collectionOnly:
+            listing.collectionOnly ??
+            (listing.shippingMethods ?? []).includes('COLLECTION'),
+          requiresPapers: listing.requiresPapers ?? false,
         }
       : null;
   const isOwnListing = !!userId && userId === sellerUserId;
@@ -275,35 +289,31 @@ export default async function ListingDetailPage({
   const showUrgencyChip =
     trackedSellable !== null && trackedSellable >= 1 && trackedSellable <= 5;
 
-  // UX-1c — pre-purchase delivery estimate line (computed from the listing's
-  // shipping shape; no extra fetch).
-  const deliveryEstimate = getListingDeliveryEstimate(listing);
-
-  // What the seller actually offered. Firearms always retain the dealer route
-  // (server-enforced); goods always retain the courier. An in-person handover
-  // is always shown too on any non-collection listing — it books no courier and
-  // the buyer may prefer it (its terms live in the Terms of Service and are
-  // accepted at sign-up).
+  // UX-1c — pre-purchase delivery estimate line: the compact toggle below is
+  // the buyer-facing decision; the estimate/rates stay in checkout.
+  // What the seller actually offered. A collection-only item shows Private only;
+  // otherwise the legal pair comes from lib/delivery-methods.ts.
   const offeredShipping = listing.shippingMethods ?? [];
   const isCollectionOnly =
     listing.collectionOnly || offeredShipping.includes('COLLECTION');
-  const handoverMethods: ShippingMethod[] = isCollectionOnly
-    ? []
-    : listing.isFirearm
-      ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
-      : ['COURIER', 'PRIVATE_ARRANGE'];
 
   // Board review — reference-row "Listed…" line (see listedAgoLabel above).
   const listedLabel = listedAgoLabel(listing.createdAt);
 
-  // Bulky-goods copy interim (audit Big-4). "Collection only" reads to buyers
-  // as "same city only", which is what caps trailers / off-road caravans at
-  // whoever will drive to fetch them. It isn't true: the buyer may send their
-  // own transporter and the payment still stays held until THEY confirm they
-  // have the item. FREIGHT_OK licenses that extra sentence; IN_PERSON_ONLY is
-  // the dangerous-goods battery case where no carrier may take it at all.
-  // No new shipping method, no booked/insured freight — copy only.
-  const collectionMode = getCollectionMode(listing);
+  // Other ACTIVE BUY_NOW listings from the same seller, for "More listings from
+  // this seller". One browse read scoped to the seller; the section self-hides
+  // when there is nothing else (or the read fails).
+  const sellerOtherListings = sellerUserId
+    ? await viewerFetch<BrowseResponse>(
+        `/listings?sellerId=${encodeURIComponent(sellerUserId)}&limit=6`,
+      ).catch(() => null)
+    : null;
+  const moreFromSellerListings = moreFromSeller(
+    (sellerOtherListings?.listings ?? []).filter(
+      (candidate) => candidate.listingType === 'BUY_NOW',
+    ),
+    listing.id,
+  );
 
   // UX-28 — sticky mobile buy bar. On a phone the price + CTA live in the
   // right-hand column, which stacks BELOW the gallery, badges, title, rating
@@ -316,9 +326,13 @@ export default async function ListingDetailPage({
   // The seller's own active listing keeps a muted, disabled bar so the mobile
   // affordance matches the inline self-purchase state without offering a link.
   const soldOut = trackedSellable !== null && trackedSellable <= 0;
-  const showBuyBar =
-    listing.status === 'ACTIVE' &&
-    !soldOut;
+  /**
+   * ⚠️ THE STICKY BAR IS A BUY BAR. lib/catalog-guards.ts owns the rule: only an
+   * ACTIVE BUY_NOW listing (or the owner's Edit affordance) may show it. An
+   * AUCTION stays single-item — the AuctionPanel owns bidding and there is no
+   * cart trace of any kind.
+   */
+  const showBuyBar = showsStickyBuyBar(listing, { soldOut, isOwnListing });
   // The bar stays DUMB for auctions: the live figure comes from the polled
   // auction state, not listing.price (which is only the starting bid), so it
   // shows a label and scrolls to the panel rather than quoting a stale number.
@@ -456,6 +470,13 @@ export default async function ListingDetailPage({
     <main
       className="gg-listing-main relative max-w-[var(--page-max)] mx-auto px-4 py-6 lg:h-[calc(100vh-var(--nav-h))] lg:flex lg:flex-col lg:overflow-hidden"
     >
+      {/* ⚠️ ONE DISTANCE READ FOR THE WHOLE PAGE. This listing and the
+          "more from this seller" cards share one location resolution and one
+          batch request; a card never fires its own. Cards outside a provider
+          simply show no distance. */}
+      <DistanceProvider
+        ids={[listing.id, ...moreFromSellerListings.map((item) => item.id)]}
+      >
       {/* Product/Offer structured data for search engines (not visible).
           Suppressed for members-only stock: the schema publishes name,
           description, up to six photos and the CATEGORY ("Pistols",
@@ -690,7 +711,7 @@ export default async function ListingDetailPage({
                   <path d="M12 21c-4-1.5-8-5-8-11V5l8-3 8 3v5c0 6-4 9.5-8 11z" />
                   <path d="M9 12l2 2 4-4" />
                 </svg>
-                Dealer transfer
+                Dealer Stock
               </span>
             )}
             {/* Category chip — links to the category landing page so the
@@ -727,8 +748,8 @@ export default async function ListingDetailPage({
               {CONDITION_LABELS[listing.condition]}
               <span aria-hidden> ⓘ</span>
             </Link>
-            {/* Collection-only badge — trailers / caravans are collected
-                in person, no courier. Sits alongside category/condition. */}
+            {/* Private-only badge — trailers / caravans are collected in
+                person, no courier. Sits alongside category/condition. */}
             {listing.collectionOnly && (
               <span
                 className="text-xs px-2 py-0.5 rounded-[3px]"
@@ -738,7 +759,7 @@ export default async function ListingDetailPage({
                   border: '0.5px solid var(--warning-wash)',
                 }}
               >
-                Collection only
+                Private
               </span>
             )}
             {/* P5.4 — the SELLER'S own "tested & working" claim, never a Gun
@@ -974,39 +995,21 @@ export default async function ListingDetailPage({
                 >
                   Buy on Marketplace — {formatPrice(listing.price!)}
                 </BuyNowCta>
-                {/* Add to cart — firearm BUY_NOW listings are now
-                    allowed too; they branch to a dealer-transfer /
-                    in-person route + 18+ attestation in the cart.
-                    Collection-only items are the exception: the cart
-                    rail only carries courier + firearm lines, so a
-                    collection line can never check out from the cart
-                    (M5/M8). Suppress Add-to-cart for them and point the
-                    buyer at Marketplace (checkout-form handles COLLECTION). */}
-                {listing.collectionOnly ||
-                listing.shippingMethods?.includes('COLLECTION') ? (
+                {/* Add to cart — firearms, goods AND collection-only/Private
+                    BUY_NOW lines are all valid cart lines now; the cart groups
+                    them and shows the Private/collection-papers handling. The
+                    auction/offer guards live above: this button is only reached
+                    for an ACTIVE BUY_NOW listing. */}
+                <AddToCartButton item={buyNowCartItem!} />
+                {isCollectionOnly ? (
                   <p
                     className="text-xs mb-3"
                     style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                   >
-                    Collection only — arrange collection with the seller at
+                    Private — you&apos;ll collect in person from the seller at
                     checkout.
                   </p>
-                ) : (
-                  <AddToCartButton
-                    item={{
-                      listingId: listing.id,
-                      title: listing.title,
-                      price: listing.price ?? 0,
-                      imageUrl:
-                        listing.images?.find((i) => i.isPrimary)?.url ??
-                        listing.images?.[0]?.url,
-                      sellerId: sellerUserId,
-                      sellerUsername: listing.seller.username ?? 'Seller',
-                      isFirearm: listing.isFirearm,
-                      shippingMethods: listing.shippingMethods,
-                    }}
-                  />
-                )}
+                ) : null}
                 <p
                   className="text-[11px] mb-3"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
@@ -1091,15 +1094,17 @@ export default async function ListingDetailPage({
 
           </div>
 
-          {handoverMethods.length > 0 && (
-            <ListingDeliverySummary
-              methods={handoverMethods}
-              isFirearm={listing.isFirearm}
-              vicinity={vicinityLabel(listing)}
-              estimate={deliveryEstimate}
-              collectionMode={collectionMode}
-            />
-          )}
+          {/*
+            The two legal routes as ONE toggle (Courier/Private or Dealer
+            Stock/Private; Private only when collection-only). The pick is
+            remembered for the single-item checkout by the component itself.
+          */}
+          <ListingDeliverySummary
+            listingId={listing.id}
+            shippingMethods={listing.shippingMethods ?? []}
+            isFirearm={listing.isFirearm}
+            collectionOnly={isCollectionOnly}
+          />
           {/* Take a Shot — on EVERY active listing, unconditionally.
               Operator, 2026-08-28: "Take a shot is always on by default and
               visible on the listing. The seller only has the option to
@@ -1149,7 +1154,7 @@ export default async function ListingDetailPage({
             >
               ·
             </span>
-            <ListingDistance listingId={listing.id} />
+            <ItemDistance listingId={listing.id} className="text-xs" />
           </div>
           {/* Seller-nominated stock-in gunshop. Distance is viewer-specific,
               calculated server-side from the signed-in buyer's saved address;
@@ -1175,7 +1180,7 @@ export default async function ListingDetailPage({
                   marginRight: 6,
                 }}
               >
-                Planned dealer-stock
+                Dealer Stock
               </span>
               <span style={{ color: 'var(--text-primary)' }}>
                 {listing.plannedDealerLocation}
@@ -1316,6 +1321,43 @@ export default async function ListingDetailPage({
       </div>
       </PageReveal>
 
+      {/*
+        ⚠️ MORE FROM THIS SELLER. Other ACTIVE BUY_NOW listings, up to four,
+        below the seller card and above "Complete your kit". Self-hides when
+        there is nothing else — a section with one card that is the page you are
+        on is worse than no section.
+      */}
+      {showsMoreFromSeller(moreFromSellerListings, listing.id) ? (
+        <section aria-label="More listings from this seller" className="mt-8">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2
+              className="m-0 font-[family-name:var(--font-head)] text-[17px] font-medium"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              More listings from this seller
+            </h2>
+            <Link
+              href={`/sellers/${sellerUserId}`}
+              className="text-xs"
+              style={{ color: 'var(--red)' }}
+            >
+              View all
+            </Link>
+          </div>
+          <p
+            className="mt-1 mb-3 text-xs"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Save on shipping when you buy more from this seller.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {moreFromSellerListings.map((item) => (
+              <ListingCard key={item.id} listing={item} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {/* Cross-sell — "Complete your kit". Complements for THIS listing's
           category, calibre-matched where relevant (uses the listing's
           structured calibre). Self-hides when nothing eligible to show. */}
@@ -1452,6 +1494,7 @@ export default async function ListingDetailPage({
           </div>
         </>
       )}
+      </DistanceProvider>
     </main>
   );
 }

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { ListingCard } from '@/components/listing-card';
+import { DistanceProvider } from '@/lib/distance-context';
 import { PageReveal } from '@/components/page-reveal';
 import { Listing } from '@/lib/types';
 import { WishlistRemoveButton } from './wishlist-remove-button';
@@ -134,14 +135,18 @@ export default async function WishlistPage() {
       ) : (
         <>
           {live.length > 0 && (
-            <div
-              data-reveal
-              className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-8"
+            <DistanceProvider
+              ids={live.map((row) => row.listing.id)}
             >
-              {live.map((r) => (
-                <ListingCard key={r.listing.id} listing={r.listing} />
-              ))}
-            </div>
+              <div
+                data-reveal
+                className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-8"
+              >
+                {live.map((r) => (
+                  <ListingCard key={r.listing.id} listing={r.listing} />
+                ))}
+              </div>
+            </DistanceProvider>
           )}
 
           {tombstones.length > 0 && (

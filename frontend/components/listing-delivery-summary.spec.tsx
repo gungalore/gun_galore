@@ -1,77 +1,72 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ListingDeliverySummary } from './listing-delivery-summary';
 
+// ⚠️ THE TWO-OPTION TOGGLE, WITH THE SHARED LABELS. The old block listed four
+// enum-flavoured labels ("Courier delivery", "Dealer transfer", "Meet in
+// person", "Collection") as rows; the member now sees the legal pair and only
+// the pair, named Courier / Private / Dealer Stock.
 describe('ListingDeliverySummary', () => {
-  it('renders courier + in-person as compact rows with no prose', () => {
+  it('offers goods Courier and Private as a two-option toggle', async () => {
+    const user = userEvent.setup();
     render(
       <ListingDeliverySummary
-        methods={['COURIER', 'PRIVATE_ARRANGE']}
+        listingId="listing-1"
+        shippingMethods={['COURIER', 'PRIVATE_ARRANGE']}
         isFirearm={false}
-        vicinity="Kraaifontein, Western Cape"
-        estimate={{ kind: 'COURIER', minDays: 2, maxDays: 10 }}
-        collectionMode={null}
       />,
     );
 
-    expect(screen.getByText('Delivery & handover')).toBeTruthy();
-    expect(screen.getByText('Courier delivery')).toBeTruthy();
-    expect(screen.getByText(/2–10 business days/)).toBeTruthy();
-    expect(screen.getByText('Meet in person')).toBeTruthy();
-    expect(screen.getByText('Arrange with the seller')).toBeTruthy();
-    expect(screen.getByText('Chosen at checkout.')).toBeTruthy();
-    // The old block carried a sentence per method; the audit removed them.
-    expect(screen.queryByText(/tracked\. The live courier rate/i)).toBeNull();
-    expect(screen.queryByText(/payment is held until you confirm/i)).toBeNull();
+    expect(screen.getByText('Delivery')).toBeTruthy();
+    EXPECT_RADIO('Courier', true);
+    EXPECT_RADIO('Private', false);
+    expect(screen.queryByText('Dealer Stock')).toBeNull();
+    expect(screen.queryByText('Meet in person')).toBeNull();
+    expect(screen.queryByText('Arrange privately')).toBeNull();
+
+    await user.click(screen.getByRole('radio', { name: 'Private' }));
+    EXPECT_RADIO('Private', true);
+    expect(screen.getByText("We'll use this at checkout.")).toBeTruthy();
   });
 
-  it('renders firearm handover as dealer transfer + arrange privately, with the guide link', () => {
+  it('offers firearms Dealer Stock and Private, never a courier', () => {
     render(
       <ListingDeliverySummary
-        methods={['DEALER_TRANSFER', 'PRIVATE_ARRANGE']}
+        listingId="listing-2"
+        shippingMethods={['DEALER_TRANSFER', 'PRIVATE_ARRANGE']}
         isFirearm
-        vicinity="Gauteng"
-        estimate={{ kind: 'FIREARM' }}
-        collectionMode={null}
       />,
     );
 
-    expect(screen.getByText('Dealer transfer')).toBeTruthy();
-    expect(screen.getByText('Licensed dealer to dealer')).toBeTruthy();
-    expect(screen.getByText('Arrange privately')).toBeTruthy();
-    expect(screen.getByText('At a licensed dealer')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Dealer Stock' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Private' })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Courier' })).toBeNull();
     expect(screen.getByText('How it works')).toBeTruthy();
-    // Firearms never get a courier row.
-    expect(screen.queryByText('Courier delivery')).toBeNull();
   });
 
-  it('only invites a transporter when the collection mode allows it', () => {
-    const base = {
-      methods: ['COLLECTION'],
-      isFirearm: false,
-      vicinity: 'Durban, KwaZulu-Natal',
-      estimate: { kind: 'COLLECTION' } as const,
-    };
-    const { rerender } = render(
-      <ListingDeliverySummary {...base} collectionMode="IN_PERSON_ONLY" />,
-    );
-    expect(screen.queryByText(/send your own transporter/i)).toBeNull();
-
-    rerender(<ListingDeliverySummary {...base} collectionMode="FREIGHT_OK" />);
-    expect(screen.getByText(/send your own transporter/i)).toBeTruthy();
-  });
-
-  it('renders nothing when no route is offered', () => {
-    const { container } = render(
+  it('offers a collection-only item Private only', () => {
+    render(
       <ListingDeliverySummary
-        methods={[]}
+        listingId="listing-3"
+        shippingMethods={['COLLECTION']}
         isFirearm={false}
-        vicinity="Cape Town"
-        estimate={null}
-        collectionMode={null}
+        collectionOnly
       />,
     );
-    expect(container.innerHTML).not.toContain('Delivery & handover');
+    expect(screen.getAllByRole('radio')).toHaveLength(1);
+    expect(
+      screen.getByRole('radio', { name: 'Private' }).getAttribute('aria-checked'),
+    ).toBe('true');
   });
 });
+
+/** Small helper: aria-checked on the two-option toggle. */
+function EXPECT_RADIO(label: string, checked: boolean) {
+  expect(
+    screen
+      .getByRole('radio', { name: label })
+      .getAttribute('aria-checked'),
+  ).toBe(String(checked));
+}

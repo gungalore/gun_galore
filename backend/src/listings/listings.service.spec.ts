@@ -423,6 +423,100 @@ describe('ListingsService — distanceToBuyer (W3)', () => {
       distanceKm: null,
     });
   });
+
+  it('batch: one query, snapped distances keyed by id, unknown ids null', async () => {
+    const prisma = {
+      listing: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'L1',
+            isFirearm: false,
+            pickupLat: -33.8,
+            pickupLng: 18.4,
+            plannedDealerLat: null,
+            plannedDealerLng: null,
+          },
+          {
+            id: 'L2',
+            isFirearm: true,
+            pickupLat: -33.9,
+            pickupLng: 18.4,
+            plannedDealerLat: -26.2041,
+            plannedDealerLng: 28.0473,
+          },
+          {
+            id: 'L3',
+            isFirearm: false,
+            pickupLat: null,
+            pickupLng: null,
+            plannedDealerLat: null,
+            plannedDealerLng: null,
+          },
+        ]),
+      },
+    };
+    const service = new ListingsService(
+      prisma as never,
+      { isConnected: false } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { record: jest.fn() } as never,
+      new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never,
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+
+    const result = await service.distancesToBuyer(
+      ['L1', 'L2', 'L3', 'MISSING'],
+      -33.9,
+      18.4,
+    );
+
+    // ONE query for the whole page.
+    expect(prisma.listing.findMany).toHaveBeenCalledTimes(1);
+    expect(result.distances.L1).toBe(10);
+    // Dealer location for the firearm, snapped like the single endpoint.
+    expect(result.distances.L2).toBeGreaterThan(1200);
+    expect(result.distances.L3).toBeNull();
+    expect(result.distances.MISSING).toBeNull();
+    // No coordinates ever come back.
+    expect(JSON.stringify(result)).not.toContain('pickupLat');
+    expect(JSON.stringify(result)).not.toContain('plannedDealer');
+  });
+
+  it('batch: caps the request at 50 ids', async () => {
+    const prisma = {
+      listing: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new ListingsService(
+      prisma as never,
+      { isConnected: false } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { record: jest.fn() } as never,
+      new FeeCalculator(),
+      { resolveByEntity: jest.fn() } as never,
+      { offerAtListingLive: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+    await expect(
+      service.distancesToBuyer(
+        Array.from({ length: 51 }, (_, i) => `L${i}`),
+        -33.9,
+        18.4,
+      ),
+    ).rejects.toThrow(/50/i);
+    expect(prisma.listing.findMany).not.toHaveBeenCalled();
+  });
 });
 
 describe('ListingsService — cancel status guard', () => {

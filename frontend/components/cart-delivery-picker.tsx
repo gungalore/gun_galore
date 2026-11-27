@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pargoDistanceLabel, pargoOptionLabel } from '@/lib/pargo-pickup';
+import type {
+  CartClassGroup,
+} from '@/lib/cart-delivery';
 
 /**
  * The cart's delivery line — one door rate per parcel the cart will ship as.
@@ -13,6 +16,12 @@ import { pargoDistanceLabel, pargoOptionLabel } from '@/lib/pargo-pickup';
  * checkout uses to decide what to charge — the client must not attempt it,
  * because every Daily Deal shares the house seller id and a client-side guess
  * would show one parcel where two suppliers each ship one.
+ *
+ * Multi-item checkout (2026-11-27): the cart groups its lines by SELLER and
+ * delivery class, with ONE toggle per class group, and this picker is only fed
+ * the lines whose seller group chose Courier. The server still returns one
+ * quote group per seller, so there is exactly ONE shipping row/price per
+ * seller accessories group — never one per item.
  *
  * Each consolidated parcel group offers cheapest door, fastest door, and the
  * nearest Pargo counters. The server computes both groupings and rates; the
@@ -66,6 +75,15 @@ interface ApiGroup {
   fastestDoor?: ApiRate | null;
   storePickup?: ApiRate[];
   unavailableReason?: string;
+  // New in the one-group-per-seller/class payload (backend lands in parallel).
+  // Optional so an older server still renders — the component falls back to
+  // mapping listingIds through the `sellerNames` prop.
+  sellerId?: string;
+  sellerUsername?: string | null;
+  deliveryClass?: 'GOODS' | 'FIREARM';
+  class?: 'GOODS' | 'FIREARM';
+  shippingCents?: number;
+  transactionId?: string;
 }
 
 export interface CartDeliveryGroupView {
@@ -74,6 +92,10 @@ export interface CartDeliveryGroupView {
   consolidated: boolean;
   options: CartDeliveryOption[];
   unavailableReason?: string;
+  /** Which seller this parcel ships from (display only; key is groupKey). */
+  sellerId?: string;
+  sellerName?: string;
+  deliveryClass?: 'GOODS' | 'FIREARM';
 }
 
 function toOptions(g: ApiGroup): CartDeliveryOption[] {
@@ -116,6 +138,7 @@ export function CartDeliveryPicker({
   onChoose,
   onGroups,
   getToken,
+  sellerNames,
 }: {
   lines: { listingId: string; quantity?: number }[];
   deliveryAddress: CartDeliveryAddress | null;
@@ -124,16 +147,21 @@ export function CartDeliveryPicker({
   /** Lets the cart know the group shape, so it can gate Continue on it. */
   onGroups: (groups: CartDeliveryGroupView[]) => void;
   getToken?: () => Promise<string | null>;
+  /** listingId → seller display name, so each parcel can be named. */
+  sellerNames?: Record<string, string>;
 }) {
   const [groups, setGroups] = useState<CartDeliveryGroupView[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Latest callbacks, so the fetch (which must not depend on the cart's
-  // per-render handlers) still reports into the current ones.
+  // Latest callbacks + the buyer's current picks, so the fetch (which must not
+  // depend on the cart's per-render handlers) still reports into the current
+  // ones and never resets a still-valid choice on a re-quote.
   const onChooseRef = useRef(onChoose);
   const onGroupsRef = useRef(onGroups);
+  const chosenRef = useRef(chosen);
   onChooseRef.current = onChoose;
   onGroupsRef.current = onGroups;
+  chosenRef.current = chosen;
 
   const addressComplete =
     !!deliveryAddress &&
@@ -177,19 +205,46 @@ export function CartDeliveryPicker({
             'Could not load delivery options.',
         );
       }
-      const view: CartDeliveryGroupView[] = (data as ApiGroup[]).map((g) => ({
-        groupKey: g.groupKey,
-        listingIds: g.listingIds,
-        consolidated: g.consolidated,
-        options: toOptions(g),
-        unavailableReason: g.unavailableReason,
-      }));
+      const view: CartDeliveryGroupView[] = (data as ApiGroup[]).map((g) => {
+        // Seller name: prefer the server's own label, else map the group's
+        // listings through the cart (the cart already knows each line's
+        // seller). Display only — the server key stays authoritative.
+        const sellerName =
+          g.sellerUsername ??
+          g.listingIds
+            .map((id) => sellerNames?.[id])
+            .find((name): name is string => Boolean(name)) ??
+          undefined;
+        return {
+          groupKey: g.groupKey,
+          listingIds: g.listingIds,
+          consolidated: g.consolidated,
+          options: toOptions(g),
+          unavailableReason: g.unavailableReason,
+          sellerId: g.sellerId,
+          sellerName,
+          deliveryClass: g.deliveryClass ?? g.class,
+        };
+      });
       setGroups(view);
       onGroupsRef.current(view);
-      // Default each parcel group to its cheapest door option; buyer can then
-      // switch to fastest or one of the Store Pickup counters.
+      // Default each parcel group to its cheapest door option; the buyer can
+      // then switch to fastest or one of the Store Pickup counters. A choice
+      // that is STILL LEGAL for this re-quote is kept — a re-fetch caused by a
+      // different seller's toggle must not quietly undo this seller's pick.
       for (const g of view) {
-        if (!g.unavailableReason && g.options[0]) {
+        if (g.unavailableReason || !g.options[0]) continue;
+        const existing = chosenRef.current[g.groupKey];
+        const stillValid =
+          !!existing &&
+          g.options.some(
+            (option) =>
+              option.kind === existing.kind &&
+              (option.kind !== 'STORE_PICKUP' ||
+                option.pickupPointLocationId ===
+                  existing.pickupPointLocationId),
+          );
+        if (!stillValid) {
           onChooseRef.current(g.groupKey, g.options[0]);
         }
       }
@@ -259,12 +314,20 @@ export function CartDeliveryPicker({
     <div className="space-y-5">
       {groups.map((g) => (
         <div key={g.groupKey}>
-          {g.consolidated && (
-            <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-              These {g.listingIds.length} items ship together as one parcel —
-              one delivery charge.
-            </p>
-          )}
+          {/* ONE parcel per seller accessories group. Naming the seller here
+              is what makes "one delivery charge per seller" legible in a
+              multi-seller cart — the buyer sees whose parcel this price is. */}
+          <p
+            className="text-xs mb-2"
+            style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+          >
+            {g.sellerName ? `${g.sellerName} — ` : ''}
+            {g.unavailableReason
+              ? 'Delivery unavailable'
+              : g.consolidated
+                ? `these ${g.listingIds.length} items ship together as one parcel — one delivery charge.`
+                : 'delivery for this item.'}
+          </p>
 
           {g.unavailableReason ? (
             <div
@@ -334,6 +397,90 @@ export function CartDeliveryPicker({
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * ONE TOGGLE PER SELLER + DELIVERY CLASS.
+ *
+ * The approved cart shape (operator 2026-11-27): the buyer never sees a
+ * per-item delivery choice. An accessories group toggles Courier / Private; a
+ * firearm group toggles Dealer Stock / Private; a seller with both gets two
+ * independent toggles because the two classes have different legal rails.
+ *
+ * It renders a plain labelled state when the group has only one legal method
+ * (a collection-only line is Private only) — a two-sided toggle that cannot
+ * move is a lie, and disabled buttons invite the buyer to try.
+ */
+export function CartDeliveryToggle({
+  group,
+  onChange,
+}: {
+  group: Pick<
+    CartClassGroup,
+    'key' | 'sellerName' | 'deliveryClass' | 'options' | 'method'
+  >;
+  onChange: (groupKey: string, method: string) => void;
+}) {
+  const label =
+    group.deliveryClass === 'FIREARM'
+      ? `Transfer method for ${group.sellerName}'s firearms`
+      : `Delivery method for ${group.sellerName}'s accessories`;
+  const selected =
+    group.options.find((option) => option.method === group.method) ??
+    group.options[0];
+  if (!selected) return null;
+
+  if (group.options.length <= 1) {
+    return (
+      <span
+        role="group"
+        aria-label={label}
+        className="text-[11px] px-2 py-1 rounded-[6px]"
+        style={{
+          background: 'var(--action-option-selected-bg)',
+          color: 'var(--action-option-selected-ink)',
+          border: '1.5px solid var(--action-option-selected-edge)',
+          fontWeight: 500,
+        }}
+      >
+        {selected.label}
+      </span>
+    );
+  }
+
+  return (
+    <div role="group" aria-label={label} className="flex gap-1.5">
+      {group.options.map((option) => {
+        const active = option.method === group.method;
+        return (
+          <button
+            key={option.method}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(group.key, option.method)}
+            className="px-2.5 py-1 rounded-[6px] text-xs"
+            style={{
+              background: active
+                ? 'var(--action-option-selected-bg)'
+                : 'transparent',
+              color: active
+                ? 'var(--action-option-selected-ink)'
+                : 'var(--text-primary)',
+              border: `1.5px solid ${
+                active
+                  ? 'var(--action-option-selected-edge)'
+                  : 'var(--action-option-edge)'
+              }`,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

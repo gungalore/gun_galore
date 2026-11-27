@@ -1,4 +1,4 @@
-﻿// Shared firearm checkout consents — copied from checkout-form.tsx so the cart reuses the exact SA-firearms-law wording. Keep the two in sync.
+// Shared firearm checkout consents — copied from checkout-form.tsx so the cart reuses the exact SA-firearms-law wording. Keep the two in sync.
 'use client';
 
 // After payout, both parties arrange the rest themselves —
@@ -34,7 +34,7 @@ export function DealerTransferConsent({
           fontWeight: 600,
         }}
       >
-        Dealer transfer
+        Dealer Stock
       </p>
 
       <p style={{ color: 'var(--text-secondary)' }}>

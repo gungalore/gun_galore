@@ -1,93 +1,61 @@
-// Compact delivery & handover summary for the listing detail buy column.
-//
-// 2026-11-24 operator audit ("Bulk, clutter and order of importance"):
-// the old block rendered one full card per handover method with a sentence of
-// prose under each — roughly 180px of scrolling between the price and the buy
-// button on a phone, and the buy button itself came AFTER it. Amazon/eBay/
-// Takealot all put the buy box first and keep delivery to a compact, scannable
-// block next to the CTA (see docs/history/UI-SALES-LAYOUT-AUDIT-2026-11.md).
-//
-// So: one bordered box, one row per offered route, no descriptions. The
-// detail (rates, addresses, dealer paperwork) belongs at checkout or behind
-// the one explanatory link; it does not belong between the buyer and Buy.
+'use client';
 
-import type {
-  ListingDeliveryEstimate,
-  CollectionMode,
-} from '@/lib/delivery-estimate';
+// Compact delivery & handover picker for the listing detail buy column.
+//
+// ⚠️ THE ITEM'S LEGAL PAIR, AS A TWO-OPTION TOGGLE. Goods are Courier/Private;
+// firearms are Dealer Stock/Private; a collection-only item is Private only. The
+// old block listed enum-flavoured labels ("Dealer transfer", "Meet in person",
+// "Collection") side by side, which read as four different things and not as
+// two choices. The labels come from lib/delivery-methods.ts, the same module
+// checkout and the sell form use.
+//
+// The pick is remembered for this visit (lib/delivery-choice.ts) so the
+// single-item checkout opens on it; the cart keeps its own per-group routing.
+
+import { useEffect, useMemo, useState } from 'react';
+import { methodsForItem } from '@/lib/delivery-methods';
+import {
+  getSavedDeliveryChoice,
+  saveDeliveryChoice,
+} from '@/lib/delivery-choice';
 
 export interface ListingDeliverySummaryProps {
-  /** Raw `listing.shippingMethods` — order is normalised here, not by caller. */
-  methods: string[];
+  listingId: string;
+  /** Raw `listing.shippingMethods`. */
+  shippingMethods: string[];
   isFirearm: boolean;
-  vicinity: string;
-  estimate: ListingDeliveryEstimate;
-  collectionMode: CollectionMode;
+  collectionOnly?: boolean;
 }
 
-// Row model: label + the shortest honest hint that answers "how does it get
-// to me / how do we meet". No sentences.
-type Row = { label: string; hint: string };
-
-function rowsFor({
-  methods,
+export function ListingDeliverySummary({
+  listingId,
+  shippingMethods,
   isFirearm,
-  vicinity,
-  estimate,
-  collectionMode,
-}: ListingDeliverySummaryProps): Row[] {
-  const rows: Row[] = [];
-  const has = (m: string) => methods.includes(m);
+  collectionOnly,
+}: ListingDeliverySummaryProps) {
+  const options = useMemo(
+    () => methodsForItem({ isFirearm, shippingMethods, collectionOnly }),
+    // Keying on the joined array keeps the memo stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isFirearm, collectionOnly, (shippingMethods ?? []).join(',')],
+  );
+  const [selected, setSelected] = useState<string | null>(null);
 
-  if (!isFirearm && (has('COURIER') || estimate?.kind === 'COURIER')) {
-    rows.push({
-      label: 'Courier delivery',
-      hint:
-        estimate?.kind === 'COURIER'
-          ? `Est. ${estimate.minDays}–${estimate.maxDays} business days · rate at checkout`
-          : 'Tracked door-to-door · rate at checkout',
-    });
-  }
+  useEffect(() => {
+    const saved = getSavedDeliveryChoice(listingId);
+    const pick =
+      saved && options.some((option) => option.method === saved)
+        ? saved
+        : options[0]?.method ?? null;
+    setSelected(pick);
+  }, [listingId, options]);
 
-  if (has('DEALER_TRANSFER')) {
-    rows.push({
-      label: 'Dealer transfer',
-      hint: 'Licensed dealer to dealer',
-    });
-  }
+  if (!options.length) return null;
 
-  if (has('PRIVATE_ARRANGE')) {
-    rows.push({
-      label: isFirearm ? 'Arrange privately' : 'Meet in person',
-      hint: isFirearm ? 'At a licensed dealer' : 'Arrange with the seller',
-    });
-  }
-
-  if (has('COLLECTION') || estimate?.kind === 'COLLECTION') {
-    // Honesty guard (see lib/delivery-estimate.ts): only the FREIGHT_OK case
-    // may suggest the buyer is not the person who collects. IN_PERSON_ONLY is
-    // the dangerous-goods case where nobody else may transport it.
-    rows.push({
-      label: 'Collection',
-      hint:
-        collectionMode === 'FREIGHT_OK'
-          ? `${vicinity} · collect or send your own transporter`
-          : vicinity,
-    });
-  }
-
-  // De-duplicate (a legacy payload can carry both COLLECTION and the flag).
-  const seen = new Set<string>();
-  return rows.filter((r) => {
-    if (seen.has(r.label)) return false;
-    seen.add(r.label);
-    return true;
-  });
-}
-
-export function ListingDeliverySummary(props: ListingDeliverySummaryProps) {
-  const rows = rowsFor(props);
-  if (rows.length === 0) return null;
+  const choose = (method: string) => {
+    setSelected(method);
+    saveDeliveryChoice(listingId, method);
+  };
 
   return (
     <section
@@ -107,42 +75,56 @@ export function ListingDeliverySummary(props: ListingDeliverySummaryProps) {
             fontWeight: 600,
           }}
         >
-          Delivery &amp; handover
+          Delivery
         </p>
-        {props.isFirearm && (
+        {isFirearm && (
           <a
             href="/members/regulated-items"
             className="text-[11px]"
-            style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}
+            style={{
+              color: 'var(--text-secondary)',
+              textDecoration: 'underline',
+            }}
           >
             How it works
           </a>
         )}
       </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {rows.map((row) => (
-          <li
-            key={row.label}
-            className="flex items-baseline justify-between gap-3 px-3 py-2 text-sm"
-            style={{ borderTop: '0.5px solid var(--border-divider)' }}
-          >
-            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-              {row.label}
-            </span>
-            <span
-              className="text-[11px] text-right"
-              style={{ color: 'var(--text-tertiary)', lineHeight: 1.35 }}
+
+      <div
+        role="radiogroup"
+        aria-label="Delivery method"
+        className="grid grid-cols-2 gap-2 px-3 pb-2"
+      >
+        {options.map((option) => {
+          const active = selected === option.method;
+          return (
+            <button
+              key={option.method}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => choose(option.method)}
+              title={option.description}
+              className="rounded-[6px] px-2.5 py-2 text-center text-[12.5px]"
+              style={{
+                background: active ? 'var(--red-wash)' : 'var(--bg-inset)',
+                border: `1px solid ${active ? 'var(--red)' : 'var(--border)'}`,
+                color: 'var(--text-primary)',
+                fontWeight: active ? 600 : 500,
+              }}
             >
-              {row.hint}
-            </span>
-          </li>
-        ))}
-      </ul>
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
       <p
         className="px-3 pb-2.5 text-[11px]"
         style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
       >
-        Chosen at checkout.
+        We&apos;ll use this at checkout.
       </p>
     </section>
   );

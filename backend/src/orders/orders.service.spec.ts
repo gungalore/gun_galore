@@ -24,8 +24,16 @@ function line(
     id: `line-${id}`,
     sellerId,
     transactionId: paymentStatus ? id : null,
+    listing: { isFirearm: false },
     transaction: paymentStatus
-      ? { id, paymentStatus, shippingStatus: null }
+      ? {
+          id,
+          paymentStatus,
+          shippingStatus: null,
+          shippingMethod: 'COURIER',
+          shippingCost: 0,
+          shipsWithId: null,
+        }
       : null,
   };
 }

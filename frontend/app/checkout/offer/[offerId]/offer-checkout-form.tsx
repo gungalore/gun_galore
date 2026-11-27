@@ -12,6 +12,7 @@ import { DeliveryOptionsPicker, type DeliveryOption } from '@/components/deliver
 import { DeliveryAddressSummary } from '@/components/delivery-address-summary';
 import { DeliveryAddressDialog } from '@/components/delivery-address-dialog';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
+import { getSavedDeliveryChoice } from '@/lib/delivery-choice';
 import type { ManualAddressValue } from '@/components/manual-address-fields';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -142,6 +143,23 @@ export function OfferCheckoutForm({
   const allowedMethods: ShippingMethod[] = isFirearm
     ? ['DEALER_TRANSFER', 'PRIVATE_ARRANGE']
     : ['COURIER', 'PRIVATE_ARRANGE'];
+  /**
+   * ⚠️ THE PDP PICK WINS ON FIRST LOAD. The listing's two-option toggle is where
+   * most buyers choose the route; re-validated against the legal pair so a stale
+   * session pick cannot select a rail this listing does not offer.
+   */
+  useEffect(() => {
+    const saved = getSavedDeliveryChoice(listingId);
+    if (
+      saved &&
+      (allowedMethods as string[]).includes(saved) &&
+      saved !== method
+    ) {
+      setMethod(saved as ShippingMethod);
+    }
+    // First load only; the buyer's later clicks are authoritative.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingId]);
   // The door rate priced for this parcel + address.
   const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(null);
   const [deliveryAddress, setDeliveryAddress] = useState({

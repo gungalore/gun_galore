@@ -3763,7 +3763,7 @@ export default function NewListingPage() {
           <FormSection
             id={stepAnchor(4)}
             title={
-              effectiveCollectionOnly ? 'Collection & address' : 'Delivery & address'
+              effectiveCollectionOnly ? 'Private handover & address' : 'Delivery & address'
             }
             description={
               effectiveCollectionOnly
@@ -3826,10 +3826,10 @@ export default function NewListingPage() {
                 tipTitle="Delivery options"
                 tip={
                   <>
-                    <strong>Courier delivery:</strong> we collect from you and
-                    deliver to the buyer's door, tracked. <br />
-                    <strong>Arrange privately:</strong> you and the buyer
-                    coordinate an in-person handover. No courier.
+                    <strong>Courier:</strong> we collect from you and deliver to
+                    the buyer&apos;s door, tracked. <br />
+                    <strong>Private:</strong> you and the buyer coordinate an
+                    in-person handover. No courier.
                     <br />
                     <br />
                     After it sells: accept within 48 hours, then hand over
@@ -3853,16 +3853,16 @@ export default function NewListingPage() {
                   options={[
                     {
                       value: 'COURIER',
-                      label: 'Courier delivery — required',
+                      label: 'Courier — required',
                       description:
                         'Door-to-door, tracked. The buyer pays the live courier rate at checkout.',
                       disabled: true,
                     },
                     {
                       value: 'PRIVATE_ARRANGE',
-                      label: 'Also offer: Arrange privately',
+                      label: 'Also offer: Private',
                       description:
-                        'Optional. You and the buyer agree a handover in person; no courier.',
+                        'Optional. An in-person handover arranged with the buyer; no courier.',
                     },
                   ]}
                 />
@@ -3929,11 +3929,11 @@ export default function NewListingPage() {
                     fontWeight: 600,
                   }}
                 >
-                  Collection only
+                  Private only
                 </p>
                 <p style={{ color: 'var(--text-secondary)' }}>
                   {dgLithiumRestricted && !collectionOnly
-                    ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person, and you’re only paid once they confirm collection.`
+                    ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is Private only — the buyer collects in person, and you’re only paid once they confirm collection.`
                     : // Big-4 copy interim: buyers are told they may send their
                       // own transporter, so the seller must be told too — a
                       // seller who reads "in person" and then meets a hired
@@ -4046,12 +4046,11 @@ export default function NewListingPage() {
               tipTitle="Delivery options"
               tip={
                 <>
-                  <strong>Dealer-stocked transfer:</strong> you drop the
-                  firearm at your registered dealer, the buyer collects
-                  from theirs. Both must be SAPS-licensed. <br />
-                  <strong>Arrange privately:</strong> you and the buyer
-                  meet at a dealer to do the licence transfer in person.
-                  Use this for local sales.
+                  <strong>Dealer Stock:</strong> you drop the firearm at your
+                  registered dealer, the buyer collects from theirs. Both must be
+                  SAPS-licensed. <br />
+                  <strong>Private:</strong> you and the buyer meet at a dealer to
+                  do the licence transfer in person. Use this for local sales.
                   <br />
                   <br />
                   After it sells: accept within 48 hours, then hand the
@@ -4082,14 +4081,14 @@ export default function NewListingPage() {
                 options={[
                   {
                     value: 'DEALER_TRANSFER',
-                    label: 'Dealer-stocked transfer · required',
+                    label: 'Dealer Stock — required',
                     description:
                       'You drop with your dealer; buyer collects from theirs. Required for all firearm listings.',
                     disabled: true,
                   },
                   {
                     value: 'PRIVATE_ARRANGE',
-                    label: 'Also offer: Arrange privately',
+                    label: 'Also offer: Private',
                     description:
                       'Optional. Buyer + seller meet at a dealer to do the transfer in person.',
                   },

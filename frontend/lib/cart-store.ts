@@ -60,6 +60,27 @@ export interface CartItem {
   // (resolvePurchaseQuantity + the conditional reserve), so a stale cart can
   // never over-sell.
   quantity?: number;
+  // ── Multi-item checkout (2026-11-27) ────────────────────────────────
+  //
+  // OPTIONAL ON THE WAY IN, like quantity — the catalog writer is the only
+  // producer and it is updated in the same change. Nothing may DEPEND on these
+  // being present: a cart row written before this shipped simply omits them,
+  // and /cart falls back to the legacy inferences (shippingMethods contains
+  // COLLECTION ⇒ private-only; shippingMethods absent ⇒ the class's legal
+  // pair). Present-but-wrong data is worse than absent data here.
+  //
+  // `listingType` lets the cart name a stale auction/offer line the backend
+  // will reject, instead of only learning at Pay. BUY_NOW is the only cartable
+  // type; the writer refuses anything else, so this is defence in depth.
+  listingType?: string;
+  // Private handover in person, no courier — a collection-only trailer or a
+  // category with the COLLECTION route. The cart still offers it as a valid
+  // line (operator 2026-11-27); it just never enters the courier quote.
+  collectionOnly?: boolean;
+  // Vehicle papers acknowledged at the handover (trailers / caravans). The
+  // backend refuses a requiresPapers line without the buyer's explicit
+  // acknowledgement, so the cart carries it into the checkout payload.
+  requiresPapers?: boolean;
 }
 
 const KEY = 'gg:cart';
@@ -131,6 +152,24 @@ export function addToCart(item: CartItem): AddResult {
 /** Discard the current cart and start a fresh one with this single item. */
 export function replaceCart(item: CartItem) {
   write([item]);
+}
+
+/**
+ * Replace the whole cart with an authoritative list of lines.
+ *
+ * Multi-item checkout uses this to SYNC the cart to the order the backend just
+ * returned after a line removal — the server owns what is still in the paid
+ * attempt, and a local-only edit could leave the cart disagreeing with the live
+ * order. Quantities are normalised here the same way read() does, because the
+ * caller may map straight from an API payload.
+ */
+export function replaceCartItems(items: CartItem[]) {
+  write(
+    items.map((item) => ({
+      ...item,
+      quantity: normaliseQuantity(item.quantity),
+    })),
+  );
 }
 
 /**

@@ -1038,6 +1038,13 @@ export class ZohoBooksService {
     });
     if (!tx) return;
     if (tx.zohoBuyerInvoiceId) return; // already raised
+    /**
+     * ⚠️ ORDER CHILDREN NEVER GET THEIR OWN BUYER INVOICE (multi-item checkout,
+     * 2026-11-27). The cart is ONE payment and ONE invoice: the order invoice
+     * is raised in markOrderPaid and covers every item, each seller's delivery
+     * and the single Platform Fee. A child invoice would double-bill the buyer.
+     */
+    if (tx.orderId) return;
     // Same per-document UNCERTAIN guard as the commission invoice.
     const buyerUncertain = (tx.zohoUncertainDocs ?? []).includes('buyer');
     if (buyerUncertain && !opts.force) {
@@ -1190,6 +1197,162 @@ export class ZohoBooksService {
       await this.emailBuyerInvoiceIfNeeded(transactionId);
     } catch (err) {
       await this.markFailed(transactionId, err as Error, 'buyer');
+    }
+  }
+
+  /**
+   * ONE invoice for a whole multi-item order.
+   *
+   * Operator-approved shape (2026-11-27): one line per item, one delivery line
+   * per seller courier booking (the ACTUAL shipping charged), one Platform Fee
+   * line — and the invoice total must equal what the buyer paid. The order's
+   * `zohoBuyerInvoiceId` is the idempotency anchor; the buyer is emailed exactly
+   * once (`zohoBuyerInvoiceEmailedAt`). Child transactions never raise their own
+   * buyer invoice (guarded in createBuyerInvoice).
+   */
+  async createOrderBuyerInvoice(
+    orderId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        transactions: {
+          where: { refundOfId: null },
+          include: { listing: { select: { title: true } } },
+        },
+      },
+    });
+    if (!order) return;
+    if (order.zohoBuyerInvoiceId && !opts.force) return;
+
+    try {
+      const contactId = await this.ensureContact(
+        order.buyer.id,
+        order.buyer.email,
+      );
+      if (!contactId) throw new Error('Could not resolve Books contact for buyer');
+      const cfpAccountId = await this.resolveAccountId(
+        CLIENT_FUNDS_ACCOUNT_NAMES,
+      );
+      if (!cfpAccountId)
+        throw new Error(
+          'Client Funds Payable account not found in Books chart-of-accounts',
+        );
+      const feeAccountId = await this.resolveAccountId(BUYER_FEE_ACCOUNT_NAMES);
+      if (!feeAccountId)
+        throw new Error(
+          'No revenue account found in Books chart-of-accounts for buyer invoice',
+        );
+
+      const lineItems: Array<{
+        name: string;
+        description: string;
+        rate: number;
+        quantity: number;
+        account_id: string;
+      }> = [];
+      const deliveryLines: typeof lineItems = [];
+      let statedTotalCents = 0;
+      for (const tx of order.transactions) {
+        const title = tx.listing?.title ?? 'Marketplace item';
+        const itemCents = tx.listingPrice;
+        lineItems.push({
+          name:
+            (title.length > 98 ? title.slice(0, 95) + '…' : title) +
+            ` ${AGENT_MARK}`,
+          description: '',
+          rate: itemCents / 100,
+          quantity: 1,
+          account_id: cfpAccountId,
+        });
+        statedTotalCents += itemCents;
+        // One delivery line per seller courier booking: only the carrier line
+        // carries the group's shippingCost; consolidated siblings are 0.
+        const deliveryCents = tx.shippingCost + tx.shippingHandlingCents;
+        if (deliveryCents > 0) {
+          deliveryLines.push({
+            name: `Delivery ${AGENT_MARK}`,
+            description: '',
+            rate: deliveryCents / 100,
+            quantity: 1,
+            account_id: cfpAccountId,
+          });
+          statedTotalCents += deliveryCents;
+        }
+      }
+      lineItems.push(...deliveryLines);
+      if (order.processingFee > 0) {
+        lineItems.push({
+          name: `Platform Fee ${PRINCIPAL_MARK}`,
+          description: '',
+          rate: order.processingFee / 100,
+          quantity: 1,
+          account_id: feeAccountId,
+        });
+        statedTotalCents += order.processingFee;
+      }
+      // FAIL CLOSED on a document that disagrees with what was charged.
+      if (statedTotalCents !== order.buyerTotal) {
+        throw new Error(
+          `Order invoice lines (${statedTotalCents}c) do not equal order buyerTotal (${order.buyerTotal}c) for ${orderId}`,
+        );
+      }
+
+      type CreateInvoiceResp = {
+        invoice?: { invoice_id?: string; invoice_number?: string };
+        code?: number;
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        date: new Date().toISOString().slice(0, 10),
+        line_items: lineItems,
+        notes: `${AGENT_LEGEND}\n${PRINCIPAL_LEGEND}\nRef: ${order.orderReference ?? order.id.slice(-8).toUpperCase()}`,
+      };
+      const resp = await this.request<CreateInvoiceResp>(
+        'POST',
+        '/invoices',
+        payload,
+      );
+      const invoiceId = resp.invoice?.invoice_id;
+      if (!invoiceId) {
+        throw new Error(
+          `Books order-invoice create returned no invoice_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { zohoBuyerInvoiceId: invoiceId },
+      });
+      // A draft never posts to the ledger — mark it sent (without emailing yet),
+      // then email the buyer ONCE and stamp that delivery.
+      await this.request('POST', `/invoices/${invoiceId}/status/sent`, {}).catch(
+        (err: Error) =>
+          this.logger.warn(
+            `Order invoice ${invoiceId} created but not marked sent: ${err.message}`,
+          ),
+      );
+      try {
+        await this.request('POST', `/invoices/${invoiceId}/email`, {});
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { zohoBuyerInvoiceEmailedAt: new Date() },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Order invoice ${invoiceId} created but not emailed: ${(err as Error).message}`,
+        );
+      }
+      this.logger.log(
+        `Created order buyer invoice ${resp.invoice?.invoice_number ?? invoiceId} for ${orderId} (R${(order.buyerTotal / 100).toFixed(2)})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Order buyer invoice for ${orderId} failed: ${(err as Error).message}`,
+      );
     }
   }
 

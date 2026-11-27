@@ -3,6 +3,7 @@ import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
+import { DistanceProvider } from '@/lib/distance-context';
 import { FilterBar } from '@/components/filter-bar';
 import { LiveSearch } from '@/components/live-search';
 import { SaveSearchButton } from '@/components/save-search-button';
@@ -359,11 +360,13 @@ export default async function HomePage({
                   was giving 1 col at 390px and 5 at 1440px instead. Gaps
                   are the nearest Tailwind steps to the boards' 11px
                   mobile / 13px desktop. */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 lg:gap-3.5">
-                {browse.listings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
-                ))}
-              </div>
+              <DistanceProvider ids={browse.listings.map((listing) => listing.id)}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 lg:gap-3.5">
+                  {browse.listings.map((l) => (
+                    <ListingCard key={l.id} listing={l} />
+                  ))}
+                </div>
+              </DistanceProvider>
             </div>
           )}
           {hasMoreLatest ? (
@@ -668,14 +671,16 @@ export default async function HomePage({
           </div>
         ) : (
           <>
-            <div
-              data-reveal
-              className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4"
-            >
-              {browse.listings.map((listing) => (
-                <ListingCard key={listing.id} listing={listing} />
-              ))}
-            </div>
+            <DistanceProvider ids={browse.listings.map((listing) => listing.id)}>
+              <div
+                data-reveal
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4"
+              >
+                {browse.listings.map((listing) => (
+                  <ListingCard key={listing.id} listing={listing} />
+                ))}
+              </div>
+            </DistanceProvider>
 
             <div data-reveal>
               <Pagination

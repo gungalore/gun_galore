@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { ListingCard } from '@/components/listing-card';
+import { DistanceProvider } from '@/lib/distance-context';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
 import { VerificationBadges } from '@/components/verification-badges';
@@ -247,11 +248,15 @@ export default async function SellerProfilePage({
             </p>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {browse.listings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
-                ))}
-              </div>
+              <DistanceProvider
+                ids={browse.listings.map((listing) => listing.id)}
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {browse.listings.map((l) => (
+                    <ListingCard key={l.id} listing={l} />
+                  ))}
+                </div>
+              </DistanceProvider>
               <div className="mt-6">
                 <Pagination
                   currentPage={currentPage}

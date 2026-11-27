@@ -212,6 +212,32 @@ export class ListingsController {
     return this.listingsService.distanceToBuyer(id, la, ln);
   }
 
+  // Batch snapped distances (POST body { ids, lat, lng }) — one query for a
+  // whole card page instead of one request per listing. Same privacy posture as
+  // `:id/distance`: never returns coordinates, snaps to 5 km.
+  @Post('distances')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UseGuards(OptionalAuthGuard, ContentAccessGuard)
+  batchDistances(
+    @Body()
+    body: { ids?: string[]; lat?: number; lng?: number },
+  ) {
+    const ids = Array.isArray(body?.ids) ? body.ids : [];
+    const lat = Number(body?.lat);
+    const lng = Number(body?.lng);
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return { distances: {} };
+    }
+    return this.listingsService.distancesToBuyer(ids, lat, lng);
+  }
+
   // Address autocomplete for the sell form and every other address field.
   //
   // ⚠️ THE BROWSER KEY CANNOT USE PLACES AUTOCOMPLETE. Its API restrictions
