@@ -1853,6 +1853,34 @@ export class TransactionsService {
       );
     }
     /**
+     * ONE UNPAID ORDER PER OVERLAPPING CART (operator, 2026-11-27).
+     *
+     * The reservations on these listings already belong to an unfinished
+     * order. Starting a second checkout would fail deep in the shared core
+     * (or worse, double-reserve if that protection ever slips), so return the
+     * SAME order id and let the cart offer Resume / Cancel. The buyer may have
+     * another tab or another device open; the marker in localStorage is only a
+     * client hint, this is the server fact.
+     */
+    const overlappingUnpaid = await this.prisma.order.findFirst({
+      where: {
+        buyerId,
+        status: 'AWAITING_PAYMENT',
+        lineItems: {
+          some: { listingId: { in: lines.map((l) => l.listingId) } },
+        },
+      },
+      select: { id: true },
+    });
+    if (overlappingUnpaid) {
+      throw new ConflictException({
+        code: 'UNPAID_ORDER_EXISTS',
+        orderId: overlappingUnpaid.id,
+        message:
+          'You already have an unpaid order for these items — resume or cancel it before starting a new checkout.',
+      });
+    }
+    /**
      * ⚠️ COLLECTION-ONLY AND PRIVATE-ARRANGE LINES ARE ALLOWED IN THE CART
      * (operator, 2026-11-27). The old up-front rejection here assumed the cart
      * rail was courier-only; a collection papers-acknowledged trailer, a
