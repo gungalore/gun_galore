@@ -5,7 +5,59 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-26**.
+Last updated: **2026-11-27**.
+
+## 2026-11-27 — MOTIVATION WRITER MODE: NARRATIVE IS DRAFTED, NEVER ASKED; BACK + EDITABLE REVIEW (FULL DEPLOY)
+
+Operator screenshot: "it asked me this twice in a row… it kept asking dumb questions… this should be
+automatically filled in for the user… that's why we are designing a proper writer." Also: "I said it's a
+6.5 and it did not clarify which variant." Four product decisions confirmed and implemented:
+
+1. **Intake asks only facts no document can supply.** The shooting history, training history, threat
+   circumstances, routine/movements, hunting and sport record, and a renewal's continued use are composed by
+   a new `MotivationNarrativeDraftService` from the documents and application, stamped `DRAFTED` + inferred,
+   shown as "Drafted for you — check it" with **Confirm / Edit**, and never asked for any of the six licence
+   types (`DRAFTED_KEYS` excluded in `visibleFields`, single and grouped paths).
+2. **Believable, document-consistent narrative — no checkable specifics.** Deterministic validator
+   (`validateDraft`): no digits (dates/years/counts/distances/scores), no measurements, no month/day names,
+   no invented proper nouns, no incident/serial/licence numbers, no record or outcome claims, first person,
+   SA English, 60–190 words (`continued_use` 40–190), cards from the field's own keys. One retry with the
+   rejections; the two gated fields fall back to a deterministic, checkable-fact-free paragraph so
+   `finish()` can never dead-end. Live sample on `gemini-3.1-flash-lite` produced ~150-word, specific,
+   believable paragraphs for an S16 hunter and an S13 defender, all passing the validator.
+3. **Back on every card + editable review.** `IntakeState.navigation.back` is server-computed;
+   `GET :id/intake/card?topic=` re-serves the previous topic's card with saved answers prefilled;
+   `PATCH :id/intake/answers` saves (stamped MEMBER) and lets later cards and the drafts re-derive. The
+   review screen (`/licence-centre/[id]`, was "Finish what is missing") now lists **every** answer, edits
+   text/choice/date/cards/multi in place, flags drafted rows, and its primary action goes to the pack.
+4. **Ambiguous calibres.** A typed family ("6.5", "9mm", ".38", "308", "223", "357", "44", "300") is never
+   resolved by `findCartridge` and never "upgraded" by the extractor. `firearm_cartridge` is now a
+   `CASE_KEYS` entry: the grouped interview asks it once when the sheet says the calibre is unresolved, with
+   the Bench's own names plus a curated `CALIBRE_FAMILY_VARIANTS` backstop (6.5 → Creedmoor / x55 / PRC /
+   Grendel).
+
+**Root causes from production data (`MO000158`, the operator's own app — the only Motivation row).** The
+"asked twice" was the `shooting_history` card: a one-chip answer is 5 words, the 12-word floor kept it
+pending, the card stays and it is served again. The 6.5 variant question was never asked because
+`firearm_cartridge` is optional and `planGroup().asked()` only serves required/detail-gated/CASE_KEYS fields
+— the sheet had the question, the grouped interview filtered it out. The stored calibre was the typed "6.5"
+(not extractor corruption). The draft trigger also had to be fixed during review: drafting the moment
+documents are confirmed wrote a generic paragraph from a file with no firearm, and a non-forced run never
+rewrites its own DRAFTED values — so it now waits until every factual gap is filled, and a review-screen
+save that fills the last fact starts it.
+
+**Deployed `55678f29` (full, 2026-11-27 02:15 SAST); rollback `alloutdoor-20261127-021452.dump` (39,472,944
+bytes).** Backend/frontend/warden online; health OK both checks; gate 307 → `/gate` and `/gate` 200; all new
+routes answer 401 unauthenticated (mapped and guarded). Checks: backend tsc clean + **465 suites / 6,831
+passed / 8 skipped / 0 failed** (known Jest teardown nonzero exit); frontend typecheck clean + **208 files /
+2,341 passed / 1 skipped** + production build clean.
+
+Watch next: the operator's `MO000158` is still DRAFT and `safe_present` is missing; opening
+`/licence-centre/MO000158` shows every answer, and once safe is saved the draft pass starts (their own
+20-word MEMBER history is kept and never overwritten; other narrative fields are drafted). Smoke a fresh
+application end-to-end and read the `motivation.draft` log line. Back on a card edits at most `GROUP_CAP`
+fields; the review screen is the complete editor. The deterministic fallback paragraph is deliberately
+generic — it is the outage path, not the normal one.
 
 ## 2026-11-26 — LISTING INTEREST FIXED; REPLY-TIME BADGE COUNTS EVERY REPLY (BACKEND DEPLOY)
 
