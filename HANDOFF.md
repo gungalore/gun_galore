@@ -7,6 +7,53 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — ROUND 3: OWNED FIREARMS ASKED ONE AT A TIME, REVIEW BOXES, PRINT-READY LICENCES, RESUME (FULL DEPLOY `1b691852`)
+
+Operator, 06:54: "the applicant must be asked how many firearms they currently own. Then asked for Make, Model
+calibre and serial for each. Also in the review… group each firearm in a nice box… give just the number of
+firearms to fill out according to their answer. Also check the document vault. Tell them what firearms you see…
+ask if they possess additional firearms and how many… if it's motivation only just the information is fine but
+if it's a print ready pack they must be scanned in or uploaded in the vault. Also when an applicant leaves a
+motivation mid interview… bring them back where they left off."
+
+- **The owned-firearms table was never actually asked.** None of `has_existing_firearms`,
+  `existing_firearm_count` or the row facts is required/detail-gated/CASE, so the grouped interview filtered
+  every one of them out. `askablePlan().asked()` now serves the gate, the count and each row's Make / Model /
+  Calibre / Serial. `ownedGate()` in `motivation-fields.ts` is the one reader of has/count/rows for the
+  planner, the state, the sheet and the document checklist.
+- **Vault first, then ask for the rest.** A vault/upload read fills rows without the gate, so the interview
+  lists what it can see (`IntakeState.ownedFirearms`, one line per firearm: make · model · calibre · serial),
+  skips "do you own any?" and asks the count as a one-tap confirmation prefilled with the number of rows.
+  Increasing the count creates the extra rows' four questions; decreasing removes them. One firearm per card,
+  titled "Firearm 3 of 6" (`ownedIndex`/`ownedTotal`). Type and section-held stay on the review sheet.
+- **Review boxes.** `answers-review.tsx` pulls the `existing_firearm_N_*` rows out of the flat run and renders
+  one bordered box per firearm (Make/Model/Calibre/Serial first, then the rest), only for indices up to the
+  count answer. The gate/count rows remain ordinary rows.
+- **Print-ready needs one licence per owned firearm.** `DocumentNeed` now carries `haveFiles`, and
+  `CURRENT_LICENCE` gets `minFiles = owned count` with the note "One licence photo for each of the N firearms
+  you own."; the review screen shows "3 of 6 licence cards added" and the generation gate reports the
+  shortfall. MOTIVATION_ONLY remains exempt — documents never gate it. (The operator's MO000159 already has
+  six CURRENT_LICENCE files attached, so its print-ready pack is satisfied.)
+- **Resume mid-interview.** `IntakeState.completed` says whether the member actually pressed finish. A
+  REVIEW-stage state without it is unfinished: the interview page keeps the completion card, and the start
+  page sends it back to the interview instead of the pack. The Document Centre's "Start the renewal" now goes
+  to `/start`. `ApplicationRow` already routed unfinished DRAFT+INTERVIEW rows to the interview.
+- The sheet synthesises a DISPLAY-ONLY `has_existing_firearms: 'Yes'` + derived count (DERIVED + inferred
+  provenance, never written) when rows exist, so the owned rows and the count are visible/checkable instead
+  of rendering as unanswered work.
+
+**Deployed `1b691852` (full, 2026-11-27 08:13 SAST); rollback `alloutdoor-20261127-081321.dump`.**
+Backend/frontend/warden online; health OK both checks; gate 307 → `/gate` and `/gate` 200; intake route 401
+unauthenticated. Checks: backend tsc clean + **465 suites / 6,877 passed / 8 skipped / 0 failed**; frontend
+typecheck clean + **211 files / 2,370 passed / 1 skipped** + production build clean.
+
+Watch next: hard-refresh and start a fresh application — the owned step should list the vault licences, ask
+"how many in total" prefilled, then one firearm per card for any it could not read, and the review should show
+one box per firearm. Resume an unfinished application and confirm it returns to the interview/completion card.
+Known edge: if the member lowers the count below the number of vault rows, the extra rows stay in `answers`
+(and the writer's battery) even though the review hides boxes above the count — say the word and readers can
+clamp to the count too.
+
 ## 2026-11-27 — ROUND 2: SAPS 271 QUESTIONS OUT, CARTRIDGE PROPAGATED, REVIEW FOLDED (FULL DEPLOY `bed35363`)
 
 Operator tested live app **MO000159** (`/licence-centre/cmwycge1m00fn1zvngq6xaegm`, S16 dedicated hunter) at 04:20: "These
