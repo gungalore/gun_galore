@@ -7,6 +7,51 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — SELLER RATING SYSTEM AUDIT (FULL DEPLOY `c5661088`)
+
+Operator: "For the seller rating system, is everything in order? Audit it." It was not. Fixed:
+
+- **CRITICAL — the seller storefront showed the wrong person.** `/sellers/[id]` fetched `/sellers/${userId}` and
+  `/ratings/seller/${userId}` (userId = the VIEWER) and built pagination/filter links from it. A signed-in viewer
+  saw their own header and reviews at somebody else's URL; a signed-out visitor requested `/sellers/undefined`
+  and got a 404. Every seller value now derives from the route `sellerId`; `userId` is only for `isOwnProfile`.
+  URL builders extracted to `lib/seller-storefront.ts` with tests.
+- **The trust dashboard was partly fabricated.** Four of six bars were `trustScore × weight` on the client because
+  the real component points were never served. The score now lives in one pure `trust-score.ts` calculator used by
+  both the cache writer (`recalcSeller`) and the dashboard; `GET /ratings/dashboard` serves
+  `components { sales, rating, delivery, dispatch, quality, age }` and `completedSales`; the dashboard renders them.
+  "average from N ratings" uses `totalRatings`, not the 10-row recent slice; tier shown with a human label.
+- **Delivery success penalised honest sellers.** It divided by every non-refunded transaction (HELD/in-flight
+  included) and counted only `shippingStatus = DELIVERED` — collections are `COLLECTED`, so a collection-only
+  seller scored zero. It now measures DELIVERED/COLLECTED over completed (RELEASED) sales, is 0 when there are
+  none, and excludes swap accounting rows everywhere (they inflated denominators and can never be rated).
+- **Nightly refresh barely covered anyone.** It only touched sellers active in the last 48 h, so quiet sellers'
+  account-age points and refund/return effects never refreshed. The daily sweep now covers every seller with any
+  listing or transaction (recent pass first, deduped, bounded 500) and logs the count.
+- **Public reviews leaked and were unbounded.** `GET /ratings/seller/:id` returned every review ever and exposed
+  `raterId`/`ratedId`/`transactionId`. Now capped at the 50 most recent with those ids stripped; the public seller
+  profile serves `totalRatings` so the storefront shows the cached `averageRating` with the real count (the list
+  says "showing the most recent reviews" when capped).
+- **Duplicate-rating race returned a 500.** The `tx.rating` pre-check is not atomic; the losing concurrent POST hit
+  P2002. Now mapped to the same 409 as the pre-check.
+- **Reviews bypassed the profanity mask.** Comments and seller replies are public free text but only went through
+  the contact-detail filter, while feed posts/comments also run `maskBadLanguage`. Mask now runs first, then the
+  contact filter, on create/edit/reply; comments are trimmed.
+- **Tier copy told two untruths** (after the listing tooltip fix): the profile tooltip still advertised a "Dealer
+  (licensed firearms dealer)" tier and claimed higher tiers earn "visibility". Rewritten to the four real bands and
+  "display of record only"; the profile copy is a tested constant now (`lib/seller-tier-copy.ts`).
+
+**Audit items left open (reported to the operator, not coded):** seller replies to reviews do not notify the
+buyer; review text has no JEV/hate classifier path (only mask + contact filter, unlike feed moderation); there is no
+admin UI for the existing `POST /admin/ratings/:id/remove`; multi-line orders can be rated once per line item (one
+rating per Transaction, not per Order); `totalSales` has no decrement path because no post-release refund route
+exists today (both admin refund flows claim only HELD/DISPUTED) — if one is ever added it must decrement.
+
+**Deployed `c5661088` (full, 2026-11-27 13:00 SAST; rollback `alloutdoor-20261127-130009.dump`).**
+Backend/frontend/warden online; health OK both checks; gate 307 → `/gate` and `/gate` 200. Checks: backend tsc
+clean + **468 suites / 6,917 passed / 8 skipped / 0 failed**; frontend typecheck clean + **214 files / 2,393 passed
+/ 1 skipped** + production build clean.
+
 ## 2026-11-27 — SELLER-TIER TOOLTIP CORRECTED (FRONTEND-ONLY `31d09329`)
 
 Operator, 11:25, screenshot of the listing page's "Seller tier" help tip: "the wording is not true. there are no
