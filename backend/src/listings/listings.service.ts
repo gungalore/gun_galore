@@ -3156,7 +3156,13 @@ export class ListingsService {
     // Seller filter — used by /sellers/[userId] to show only that
     // seller's active listings. Resolved via the User row's userId
     // (relation filter) so we don't need an extra round-trip.
-    if (sellerId) where.seller = { userId: sellerId };
+    // ⚠️ `is`, NOT A BARE FIELD MAP (2026-11-27). Prisma 7 requires the
+    // to-one relation filter to be wrapped: `seller: { userId }` throws
+    // `PrismaClientValidationError` ("is?: UserWhereInput") and every seller
+    // storefront browse returned 500. The scalar `sellerId` would also work,
+    // but this keeps the existing "match the seller's userId" intent rather
+    // than assuming the two columns are interchangeable.
+    if (sellerId) where.seller = { is: { userId: sellerId } };
 
     const orderBy =
       sort === 'price_asc'

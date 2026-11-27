@@ -87,6 +87,21 @@ describe('ListingsService — content no longer varies by sign-in', () => {
     expect(where).not.toHaveProperty('publicVisible');
   });
 
+  it('filters a seller storefront through the relation `is` filter Prisma 7 requires', async () => {
+    // Prisma 7 rejects `seller: { userId }` with PrismaClientValidationError;
+    // every /sellers/[userId] browse returned 500 (production, 2026-11-27).
+    const { service, prisma } = makeListings();
+    await service.browse({
+      page: 1,
+      limit: 20,
+      sellerId: 'seller_user',
+    } as never);
+    const where = (prisma.listing.findMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    }).where;
+    expect(where.seller).toEqual({ is: { userId: 'seller_user' } });
+  });
+
   // ⚠️ The service serves it; the CONTROLLER's ContentAccessGuard is what
   // refuses an un-declared caller. A service-level 404 here would make a
   // declared visitor see an empty catalogue.
