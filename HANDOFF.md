@@ -7,6 +7,22 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — SELLER-TIER TOOLTIP CORRECTED (FRONTEND-ONLY `31d09329`)
+
+Operator, 11:25, screenshot of the listing page's "Seller tier" help tip: "the wording is not true. there are no
+dealer listings on the website."
+
+The tip claimed a tier reflects "whether they're a verified dealer" and that higher tiers "earn buyer-protection
+perks like faster payout disputes". Dealer SELLERS were retired in 2026-09 (the `DEALER` tier is legacy-only;
+production currently has 0 users carrying it and 0 dealer-tier users with active listings), and no tier earns a
+different payout path — buyer protection is the same held-payment flow on every sale. The tip now says what the
+tier actually measures: completed sales, buyer ratings, delivery and dispatch reliability, listing quality and
+account age, with Established/Trusted/Top Seller earned as that record builds, and buyer protection applying to
+every sale whatever the tier. Copy only (no logic, no type changes).
+
+Deployed **`31d09329`** (frontend-only, 2026-11-27 11:38 SAST; rollback `alloutdoor-20261127-113745.dump`);
+frontend/backend/warden online, health OK, gate 307 → `/gate` and `/gate` 200; typecheck + production build clean.
+
 ## 2026-11-27 — ROUND 5: 271 RETIRED, TRAINING COMPLIANCE SHOWN, FREEZE ON SUBMIT, NO MID-INTERVIEW JUMP (+ seller-storefront 500)
 
 Operator, 09:29: "Get rid of the 271 completely, we are never filling in 271 forms. It does not show my
