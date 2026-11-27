@@ -232,11 +232,12 @@ export default async function TransactionPage({
   // at "/" dumped them on the homepage with no route to the rest of their
   // orders. Send each side to the list they came from instead: a cart line
   // (orderId set) back to its parent order, otherwise buyer → My Orders,
-  // seller → My Sales. lib/types.ts doesn't declare orderId yet (that file
-  // belongs to another slice of this batch) but the API returns the full
-  // Transaction row, so read it through a narrow cast.
-  const orderId =
-    (tx as unknown as { orderId?: string | null }).orderId ?? null;
+  // seller → My Sales.
+  //
+  // ⚠️ THE SAME `orderId` DECIDES WHERE RATING HAPPENS. Ratings belong to the
+  // ORDER once a transaction is a line of one (one rating per seller per order),
+  // so the inline widget below is only for single-item checkouts.
+  const orderId = tx.orderId ?? null;
   const backHref = isBuyer
     ? orderId
       ? `/orders/${orderId}`
@@ -963,23 +964,44 @@ export default async function TransactionPage({
           )}
 
           {/* Buyer: rate seller (or correct an existing rating within the
-              30-day window, until the seller replies). */}
+              30-day window, until the seller replies).
+
+              ⚠️ NOT ON AN ORDER LINE. A multi-line order is rated ONCE, per
+              seller, on the order page — the backend now refuses a second rating
+              through the line transaction. Link there instead of drawing a
+              widget whose submit would be rejected. */}
           {(canRate || canEditRating) && (
             <div
               className="rounded-[8px] p-4"
               style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
             >
               <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-                {canEditRating ? 'Your rating' : 'Rate this seller'}
+                {orderId ? 'Rate your sellers' : canEditRating ? 'Your rating' : 'Rate this seller'}
               </p>
-              <RatingWidget
-                transactionId={tx.id}
-                existing={
-                  canEditRating && txRating
-                    ? { stars: txRating.stars, comment: txRating.comment }
-                    : undefined
-                }
-              />
+              {orderId ? (
+                <>
+                  <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                    This item is part of a multi-seller order. Rate every seller
+                    once, from your order page.
+                  </p>
+                  <Link
+                    href={`/orders/${orderId}`}
+                    className="text-sm inline-block"
+                    style={{ color: 'var(--red)', fontWeight: 500 }}
+                  >
+                    Rate the sellers on your order page →
+                  </Link>
+                </>
+              ) : (
+                <RatingWidget
+                  transactionId={tx.id}
+                  existing={
+                    canEditRating && txRating
+                      ? { stars: txRating.stars, comment: txRating.comment }
+                      : undefined
+                  }
+                />
+              )}
             </div>
           )}
 

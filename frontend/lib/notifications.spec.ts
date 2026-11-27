@@ -98,6 +98,9 @@ describe('notificationActionLabel', () => {
     expect(notificationActionLabel('private_arrange_delivered')).toBe(
       'Confirm receipt',
     );
+    // A seller's reply to a rating: url and iconKey pass through from the
+    // server, the inbox only needs a verb.
+    expect(notificationActionLabel('rating_reply')).toBe('View rating');
   });
 
   it('falls back to Open for informational types', () => {

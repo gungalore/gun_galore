@@ -216,6 +216,10 @@ export function notificationActionLabel(type: string): string {
     case 'dispatch_nudge':
     case 'order_dispatched':
       return 'View dispatch';
+    // The seller replied to a buyer's rating. url/iconKey come from the server;
+    // this only gives the inbox row a verb better than "Open".
+    case 'rating_reply':
+      return 'View rating';
     default:
       return 'Open';
   }

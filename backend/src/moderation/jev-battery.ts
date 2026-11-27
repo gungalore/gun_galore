@@ -54,7 +54,20 @@ export type JevCategory =
   /** Abusive/threatening/harassing/hateful/sexual language directed at a
    *  person. Not a contact vector, but asked in the same battery because
    *  every user-to-user surface polices it too. */
-  | 'abuse';
+  | 'abuse'
+  /**
+   * Slurs, hate speech or derogatory references to a PERSON OR GROUP because of
+   * race, ethnicity, religion, gender, sexuality, disability or nationality.
+   *
+   * ⚠️ A SEPARATE QUESTION FROM `abuse`, ON PURPOSE. Operator, 2026-11-27:
+   * "Let JEV also do abuse filter, negative feedback is allowed but derogatory
+   * language and references are forbidden." Abuse asks whether a specific
+   * person is insulted or threatened; this asks whether the text uses a
+   * protected-class slur or a hateful reference at all — the two can fire
+   * independently, and a review that is blunt about a seller's conduct must not
+   * be caught by either.
+   */
+  | 'derogatory_reference';
 
 /** User-facing copy for a block on each category. The conversations path
  *  returns these verbatim; listings/feed pass their own reasons in. */
@@ -73,6 +86,8 @@ export const JEV_CATEGORY_REASONS: Record<JevCategory, string> = {
     'No advertising other businesses or services on ALL Outdoor — promotions are not permitted in messages.',
   abuse:
     'Please keep this respectful — abusive, threatening, harassing or sexual language is not allowed on ALL Outdoor.',
+  derogatory_reference:
+    'Please keep this respectful — slurs, hate speech and derogatory references to a person or group are not allowed on ALL Outdoor.',
 };
 
 /**
@@ -163,6 +178,15 @@ export function conductQuestions(): Record<string, JevQuestion> {
       criteria: {
         true: 'A person is insulted, threatened, slurred or sexually propositioned',
         false: 'Civil text, even if blunt or negative about an item or a deal',
+      },
+    },
+    derogatory_reference: {
+      type: 'noul',
+      instructions:
+        'Does this text contain slurs, hate speech or derogatory references to a GROUP or a PERSON because of race, ethnicity, religion, gender, sexuality, disability or nationality — in ANY language (including Afrikaans)? The reference can be a word, a stereotype or a comparison. Civil criticism of an item, a transaction, a bad experience or a seller\u2019s conduct is NOT this, even when blunt or negative ("this seller was dishonest, avoid"). A mild oath or mechanical/technical wording is NOT this.',
+      criteria: {
+        true: 'A slur, hate speech or a derogatory reference to a person or group',
+        false: 'Civil criticism — even blunt or negative — of an item, deal or conduct',
       },
     },
   };

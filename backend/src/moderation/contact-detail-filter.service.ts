@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import {
@@ -23,6 +23,12 @@ import {
  *   - OffersService.submit()    — buyerNote on a new offer
  *   - OffersService.counter()   — sellerNote on a counter
  *   - RatingsService.create()   — comment on a post-transaction review
+ *   - RatingsService.update()   — the buyer's corrected review
+ *   - RatingsService.respond()  — the seller's public reply
+ *
+ * ⚠️ THE THREE RATING CALLS PASS `{ blockOnReview: true }`. Public reviews have
+ * no admin review screen, so the Jev REVIEW band (60–80 %) must be a rejection
+ * there rather than a silent pass-and-park; every other surface keeps the pass.
  *
  * Where contact info IS allowed (don't run this filter):
  *   - The seller's own profile (email/phone on /profile) — those are
@@ -190,6 +196,20 @@ export class ContactDetailFilterService {
     text: string | null | undefined,
     origin: string,
     userId?: string,
+    opts?: {
+      /**
+       * ⚠️ SURFACES WITH NO HUMAN-REVIEW SCREEN PASS THIS.
+       *
+       * The ladder's 60–80 % REVIEW band normally parks the text in the T&S
+       * queue and lets it through, because a conversation has no hold state.
+       * Reviews and seller replies are PUBLIC and have no admin screen to
+       * review them later (the operator: "Let JEV also do abuse filter …
+       * no admin screen, just let JEV do it"), so on those surfaces the band is
+       * a BLOCK: the item is persisted as a rejection and the member is told to
+       * rephrase it.
+       */
+      blockOnReview?: boolean;
+    },
   ): Promise<FilterResult> {
     if (!text || !text.trim()) return { allowed: true };
 
@@ -231,6 +251,25 @@ export class ContactDetailFilterService {
     }
 
     if (verdict.decision === 'REVIEW') {
+      /**
+       * ⚠️ NO REVIEW SCREEN ON THIS SURFACE — THE BAND IS A BLOCK.
+       * Persisted exactly like a block so the T&S queue still sees it; the
+       * reason is the category's respectful/contact wording plus "please
+       * rephrase it", because the member has to submit different text, not wait
+       * for an admin.
+       */
+      if (opts?.blockOnReview) {
+        const category = asRejectCategory(verdict.category);
+        this.logger.log(
+          `Contact-detail filter blocked ${origin} at the review band (${category}, ${verdict.source}) — surface has no review screen`,
+        );
+        void this.persistRejection(text, origin, category, userId);
+        return {
+          allowed: false,
+          category,
+          reason: `${PUBLIC_REASONS[category]} Please rephrase it.`,
+        };
+      }
       // A conversation has no hold state, so the message passes (regex was
       // the hard guarantee) but the uncertainty is parked in the T&S queue
       // for a human, exactly as the operator's "send it to admin" asks.
@@ -401,6 +440,7 @@ function asRejectCategory(category: string | null): RejectCategory {
     'offplatform_coordination',
     'third_party_advertising',
     'abuse',
+    'derogatory_reference',
   ];
   if (category && (known as string[]).includes(category)) {
     return category as JevCategory;

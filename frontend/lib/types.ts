@@ -545,6 +545,16 @@ export interface TransactionFeeBreakdown {
 export interface Transaction {
   id: string;
   listingId: string;
+  /**
+   * The multi-line order this transaction is a line of, or null/absent for a
+   * single-item checkout.
+   *
+   * ⚠️ RATINGS BELONG TO THE ORDER ONCE THIS IS SET. A buyer rates a seller once
+   * per order; the transaction page must send them to `/orders/{orderId}` rather
+   * than offering a second, per-line rating the backend refuses. Defensive: an
+   * older transaction response omits the field.
+   */
+  orderId?: string | null;
   buyerId: string;
   sellerId: string;
   /** Present on the single-transaction detail response. */

@@ -6,6 +6,15 @@ import Link from 'next/link';
 import { useAuth } from '../../../lib/auth';
 import { formatPrice } from '@/lib/utils';
 import { SHIPPING_STATUS, resolveStatus } from '@/lib/status-labels';
+import {
+  orderItemsForSeller,
+  orderSellerRowMode,
+  showsSellerRatingSection,
+  visibleOrderSellers,
+  type OrderSellerEntry,
+  type OrderSellerRating,
+} from '@/lib/order-seller-ratings';
+import { RatingWidget } from '../../transactions/[id]/rating-widget';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -41,6 +50,51 @@ interface OrderDetail {
   manualPayByAt: string | null;
   createdAt: string;
   lineItems: OrderLine[];
+  /**
+   * One entry per seller in this order, with the rating that belongs to them.
+   *
+   * ⚠️ ABSENT UNTIL THE BACKEND IS LIVE, and absent on single-seller checkouts
+   * that predate the field — the section simply does not render.
+   */
+  sellers?: OrderSellerEntry[];
+}
+
+/** A saved rating, read-only: stars, comment and the seller's reply. */
+function SellerRatingSummary({ rating }: { rating: OrderSellerRating }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span style={{ color: 'var(--warning)', fontSize: 14 }}>
+          {'★'.repeat(rating.stars)}
+          {'☆'.repeat(5 - rating.stars)}
+        </span>
+        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Rating saved
+        </span>
+      </div>
+      {rating.comment ? (
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          {rating.comment}
+        </p>
+      ) : null}
+      {rating.sellerResponse ? (
+        <div
+          className="mt-2 pl-3 py-1.5"
+          style={{ borderLeft: '2px solid var(--border)' }}
+        >
+          <p
+            className="text-[11px] mb-0.5"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Seller&apos;s reply
+          </p>
+          <p className="text-xs m-0" style={{ color: 'var(--text-secondary)' }}>
+            {rating.sellerResponse}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 const ORDER_STATUS_LABEL: Record<string, { label: string; tone: string }> = {
@@ -160,6 +214,77 @@ export default function OrderDetailPage() {
           </Link>
         ))}
       </div>
+
+      {/*
+        ⚠️ ONE RATING PER SELLER PER ORDER. A cart can hold items from several
+        sellers; the backend accepts one rating per seller per order, so this is
+        the only place it is offered. The transaction page links back here instead
+        of showing a second, per-line widget.
+      */}
+      {showsSellerRatingSection(order.sellers) ? (
+        <div
+          className="rounded-[8px] p-4 mb-5"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p
+            className="text-sm font-medium mb-3"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Rate your sellers
+          </p>
+          <div className="space-y-4">
+            {visibleOrderSellers(order.sellers).map((seller) => {
+              const mode = orderSellerRowMode(seller);
+              const items = orderItemsForSeller(order.lineItems, seller);
+              return (
+                <div
+                  key={seller.sellerId}
+                  style={{ borderTop: '0.5px solid var(--border-divider)' }}
+                  className="pt-4 first:border-t-0 first:pt-0"
+                >
+                  <p
+                    className="text-sm m-0"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {seller.username ?? 'Anonymous seller'}
+                  </p>
+                  {items.length ? (
+                    <p
+                      className="text-xs mt-0.5 mb-2"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      {items.map((line) => line.listing.title).join(' · ')}
+                    </p>
+                  ) : (
+                    <div className="mb-2" />
+                  )}
+
+                  {mode === 'rate' && seller.transactionId ? (
+                    <RatingWidget transactionId={seller.transactionId} />
+                  ) : null}
+
+                  {mode === 'saved' && seller.rating ? (
+                    <SellerRatingSummary rating={seller.rating} />
+                  ) : null}
+
+                  {mode === 'waiting' ? (
+                    <p
+                      className="text-xs m-0"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      You can rate this seller once every item from them is
+                      delivered.
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Totals */}
       <div className="rounded-[8px] p-4" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>

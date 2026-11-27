@@ -562,12 +562,40 @@ handle + verification booleans and the listing title).
 `ratingsReceived` count so the storefront can pair the cached `averageRating`
 with the true number instead of the capped list.
 
+**One rating per seller per order.** A rating hangs off one Transaction (one
+cart line), so for a multi-line checkout `POST /transactions/:id/rating` refuses
+a second rating for the same order + seller (`transaction.orderId` set; the
+lookup is `transaction: { is: { orderId } }` + `ratedId`) and `PATCH` edits the
+existing rating even when the request arrives through a different line's id.
+`GET /orders/:id` serves a `sellers` array so the order page has one rateable
+entry per seller: `{ sellerId, username, transactionId, canRate, rating }`,
+where `transactionId` is a RELEASED line of theirs (else null), `canRate` is
+true only when every line of that seller in the order is RELEASED and no rating
+exists, and `rating` (on whichever line it was left) carries
+`{ id, stars, comment, sellerResponse, sellerRespondedAt, createdAt,
+transactionId }`. Single-item checkouts keep the per-transaction flow; the
+transaction detail response exposes `orderId` so the UI can point multi-line
+buyers at the order page.
+
 **Moderation.** Review comments and seller replies are public free text: both are
 trimmed, run through `maskBadLanguage` (the same mask the community feed uses)
 and then the contact-detail filter; a masked word never hides a phone number
-because the filter sees the masked text. The buyer-correct window is 30 days and
-closes when the seller replies. Duplicate ratings on one transaction are a 409
-(the unique constraint is mapped from P2002, so two concurrent POSTs cannot 500).
+because the filter sees the masked text. The Jev battery now also asks
+`derogatory_reference` (slurs, hate speech or derogatory references to a person
+or group — explicitly NOT civil criticism of an item, deal or a seller's
+conduct), so "negative feedback is allowed but derogatory language and
+references are forbidden" is enforced by Jev itself. ⚠️ Reviews have **no admin
+review screen**, so `ContactDetailFilterService.check(..., { blockOnReview:
+true })` — used only by the rating comment and seller-reply paths — turns the
+ladder's 60–80 % REVIEW band into a rejection persisted in the T&S queue with
+the category's respectful-language reason plus "Please rephrase it."; every
+other surface keeps the pass-and-park behaviour. The buyer-correct window is 30
+days and closes when the seller replies; **the buyer is notified when the seller
+replies** (`NotificationsService.ratingReplied`: a BUYER inbox row of type
+`rating_reply` linking to `/sellers/:sellerId`, plus an email; fire-and-forget so
+a notification failure never breaks the stored reply). Duplicate ratings on one
+transaction are a 409 (the unique constraint is mapped from P2002, so two
+concurrent POSTs cannot 500).
 
 `totalSales` is incremented on release and never decremented: the refund flows
 claim only `HELD`/`DISPUTED` transactions (seller reject requires HELD; the admin

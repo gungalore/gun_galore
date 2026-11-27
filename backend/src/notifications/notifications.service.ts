@@ -5220,6 +5220,50 @@ export class NotificationsService {
     await this.send(d.email, `New ${starsLabel} review from ${d.buyerUsername}`, html);
   }
 
+  // Buyer: the seller replied to the review they left.
+  //
+  // ⚠️ THE BUYER HAD NO WAY TO KNOW. The reply is public on the seller's page,
+  // but the person who wrote the review was never told it had been answered, so
+  // a thoughtful response could sit unseen forever. Fire-and-forget like every
+  // other rail; the reply is already saved before this runs.
+  async ratingReplied(d: {
+    email: string;
+    name: string;
+    sellerUsername: string;
+    stars: number;
+    response: string;
+    sellerId: string;
+  }) {
+    const starsLabel = `${d.stars}★`;
+    const profileUrl = `/sellers/${d.sellerId}`;
+    /**
+     * ⚠️ persistByEmail, NOT persist. The reply path knows the buyer's address
+     * (it is on the rating's rater row) but not their inbox user id; the helper
+     * exists for exactly this and no-ops for an address with no account.
+     */
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'rating_reply',
+      title: 'Seller replied to your review',
+      body: `${d.sellerUsername} replied to your ${starsLabel} review — “${truncate(d.response, 80)}”`,
+      url: profileUrl,
+      iconKey: 'offer',
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Seller replied' },
+      headline: `${d.sellerUsername} replied to your review`,
+      body: `Hi ${b(d.name)}, ${b(d.sellerUsername)} replied to the ${b(starsLabel)} review you left: “${b(truncate(d.response, 200))}” The reply is public under your review on their seller page.`,
+      cta: { label: 'View the reply', url: `${this.appUrl}${profileUrl}` },
+      preheader: `${d.sellerUsername} replied to your ${starsLabel} review`,
+    });
+    await this.send(
+      d.email,
+      `${d.sellerUsername} replied to your review`,
+      html,
+    );
+  }
+
   // ---------------------------------------------------------------
   // Operator: a member reported a bug / issue from the site.
   //

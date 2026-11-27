@@ -88,6 +88,81 @@ export class OrdersService {
     if (!order || order.buyerId !== user.id) {
       throw new NotFoundException('Order not found');
     }
+
+    /**
+     * ⚠️ ONE RATING PER SELLER PER ORDER (operator, 2026-11-27).
+     *
+     * A multi-seller cart has one Order and many line Transactions, and ratings
+     * hang off a Transaction. The old page could only rate "a line", so a seller
+     * with two lines could be rated twice and the buyer had no single surface to
+     * rate the other sellers from. This grouping gives the order page one entry
+     * per seller: where to rate them, whether they can be rated yet, and the
+     * rating if it exists — on whichever line it was left.
+     */
+    const sellerIds = [
+      ...new Set(order.lineItems.map((line) => line.sellerId)),
+    ];
+    const [sellerRows, ratingRows] = await Promise.all([
+      sellerIds.length
+        ? this.prisma.user.findMany({
+            where: { id: { in: sellerIds } },
+            select: { id: true, username: true },
+          })
+        : Promise.resolve([] as { id: string; username: string | null }[]),
+      this.prisma.rating.findMany({
+        where: { transaction: { is: { orderId: order.id } } },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          stars: true,
+          comment: true,
+          sellerResponse: true,
+          sellerRespondedAt: true,
+          createdAt: true,
+          transactionId: true,
+          ratedId: true,
+        },
+      }),
+    ]);
+    const usernameById = new Map(
+      sellerRows.map((row) => [row.id, row.username]),
+    );
+    // One rating per seller is enforced by `create`; newest wins here if legacy
+    // data ever carries two.
+    const ratingBySeller = new Map<string, (typeof ratingRows)[number]>();
+    for (const row of ratingRows) {
+      if (!ratingBySeller.has(row.ratedId)) {
+        ratingBySeller.set(row.ratedId, row);
+      }
+    }
+    const sellers = sellerIds.map((sellerId) => {
+      const lines = order.lineItems.filter((line) => line.sellerId === sellerId);
+      const rating = ratingBySeller.get(sellerId) ?? null;
+      const releasedLine = lines.find(
+        (line) => line.transaction?.paymentStatus === 'RELEASED',
+      );
+      const allReleased =
+        lines.length > 0 &&
+        lines.every((line) => line.transaction?.paymentStatus === 'RELEASED');
+      return {
+        sellerId,
+        username: usernameById.get(sellerId) ?? 'A member',
+        transactionId: releasedLine?.transaction?.id ?? null,
+        canRate: !rating && allReleased,
+        rating: rating
+          ? {
+              id: rating.id,
+              stars: rating.stars,
+              comment: rating.comment,
+              sellerResponse: rating.sellerResponse,
+              sellerRespondedAt: rating.sellerRespondedAt,
+              createdAt: rating.createdAt,
+              transactionId: rating.transactionId,
+            }
+          : null,
+      };
+    });
+
     // FLOW-F3 — re-viewable EFT instructions. The banking details used to be
     // shown exactly once on the post-checkout screen; if the buyer navigated
     // away, an UNPAID order was unrecoverable from the UI. While the order is
@@ -98,6 +173,7 @@ export class OrdersService {
     return {
       ...order,
       bankDetails: null,
+      sellers,
     };
   }
 }

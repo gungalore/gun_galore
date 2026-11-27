@@ -1,5 +1,6 @@
 import {
   blockThreshold,
+  conductQuestions,
   contactQuestions,
   faqQuestions,
   JEV_CATEGORY_REASONS,
@@ -125,5 +126,33 @@ describe('faqQuestions', () => {
     expect(Object.keys(q)).toEqual(['faq_duplicate']);
     expect(q.faq_duplicate.type).toBe('noul');
     expect(q.faq_duplicate.instructions).toMatch(/FULLY answer/i);
+  });
+});
+
+describe('conductQuestions — abuse AND derogatory references', () => {
+  it('asks both the directed-abuse and the protected-class question', () => {
+    expect(Object.keys(conductQuestions()).sort()).toEqual([
+      'abuse',
+      'derogatory_reference',
+    ]);
+  });
+
+  it('asks for slurs/hate speech but explicitly not civil criticism', () => {
+    const q = conductQuestions().derogatory_reference;
+    expect(q.type).toBe('noul');
+    expect(q.instructions).toMatch(/slur/i);
+    expect(q.instructions).toMatch(/hate speech/i);
+    expect(q.instructions).toMatch(/race, ethnicity, religion, gender/i);
+    // ⚠️ A blunt negative review is ALLOWED. Without this boundary the
+    // protected-class question would start refusing "seller was dishonest".
+    expect(q.instructions).toMatch(/civil criticism/i);
+    expect(q.instructions).toMatch(/NOT this/i);
+    expect(q.instructions).toContain('this seller was dishonest, avoid');
+  });
+
+  it('has respectful-language reasons for both categories', () => {
+    expect(JEV_CATEGORY_REASONS.abuse).toMatch(/respectful/i);
+    expect(JEV_CATEGORY_REASONS.derogatory_reference).toMatch(/respectful/i);
+    expect(JEV_CATEGORY_REASONS.derogatory_reference).toMatch(/slurs/i);
   });
 });

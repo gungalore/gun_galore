@@ -88,6 +88,7 @@ function build(overrides: {
       create: jest.fn(async () => ({ id: 'rating-1' })),
       update: jest.fn(async () => ({ id: 'rating-1' })),
       findMany: jest.fn(async () => []),
+      findFirst: jest.fn(async () => null),
       count: jest.fn(async () => 3),
       findUnique: jest.fn(async () => null),
       delete: jest.fn(async () => ({})),
@@ -97,7 +98,10 @@ function build(overrides: {
   const contactFilter = {
     check: jest.fn(async () => ({ allowed: true })),
   };
-  const notifications = { ratingReceived: jest.fn() };
+  const notifications = {
+    ratingReceived: jest.fn(),
+    ratingReplied: jest.fn(async () => undefined),
+  };
   const audit = { record: jest.fn(async () => undefined) };
   const svc = new RatingsService(
     prisma as never,
@@ -211,6 +215,126 @@ describe('rating create — the duplicate race', () => {
   });
 });
 
+describe('one rating per seller per order', () => {
+  it('rejects a second rating for the same order+seller, even on another line', async () => {
+    const { svc, prisma } = build({
+      transaction: {
+        findUnique: jest.fn(async () =>
+          rateableTransaction({ orderId: 'order-1' }),
+        ),
+      },
+      rating: {
+        findFirst: jest.fn(async () => ({ id: 'rating-existing' })),
+      },
+    });
+
+    await expect(
+      svc.create('tx-other-line', 'buyer', { stars: 5 }),
+    ).rejects.toThrow(/already rated this seller for this order/i);
+    expect(prisma.rating.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ratedId: 'seller',
+          transaction: { is: { orderId: 'order-1' } },
+        },
+      }),
+    );
+    expect(prisma.rating.create).not.toHaveBeenCalled();
+  });
+
+  it('allows the first rating on an order line', async () => {
+    const { svc, prisma } = build({
+      transaction: {
+        findUnique: jest.fn(async () =>
+          rateableTransaction({ orderId: 'order-1' }),
+        ),
+      },
+      rating: { findFirst: jest.fn(async () => null) },
+    });
+
+    await svc.create('tx-1', 'buyer', { stars: 5, comment: 'Great' });
+    expect(prisma.rating.create).toHaveBeenCalled();
+  });
+
+  it('edits the existing order rating when the request arrives on a different line', async () => {
+    const createdAt = new Date(Date.now() - 2 * 86_400_000);
+    const { svc, prisma } = build({
+      transaction: {
+        findUnique: jest.fn(async () =>
+          rateableTransaction({ orderId: 'order-1', rating: null }),
+        ),
+      },
+      rating: {
+        findFirst: jest.fn(async () => ({
+          id: 'rating-on-line-1',
+          createdAt,
+          sellerRespondedAt: null,
+          raterId: 'buyer',
+        })),
+        update: jest.fn(async () => ({ id: 'rating-on-line-1' })),
+      },
+    });
+
+    await svc.update('tx-line-2', 'buyer', {
+      stars: 3,
+      comment: 'Changed my mind about the condition.',
+    });
+
+    expect(prisma.rating.update).toHaveBeenCalledWith({
+      where: { id: 'rating-on-line-1' },
+      data: {
+        stars: 3,
+        comment: 'Changed my mind about the condition.',
+      },
+    });
+  });
+
+  it('still refuses an order rating edit from another buyer', async () => {
+    const { svc, prisma } = build({
+      transaction: {
+        findUnique: jest.fn(async () =>
+          rateableTransaction({ orderId: 'order-1', buyerId: 'buyer' }),
+        ),
+      },
+      rating: {
+        findFirst: jest.fn(async () => ({
+          id: 'rating-real',
+          createdAt: new Date(),
+          sellerRespondedAt: null,
+          raterId: 'someone-else',
+        })),
+      },
+    });
+    await expect(
+      svc.update('tx-line-2', 'buyer', { stars: 1 }),
+    ).rejects.toThrow(/only the buyer/i);
+    expect(prisma.rating.update).not.toHaveBeenCalled();
+  });
+
+  it('a single-item (no order) edit still edits the line’s own rating', async () => {
+    const createdAt = new Date(Date.now() - 86_400_000);
+    const { svc, prisma } = build({
+      transaction: {
+        findUnique: jest.fn(async () =>
+          rateableTransaction({
+            // No orderId: the transaction is the whole purchase.
+            rating: { id: 'rating-line', createdAt },
+          }),
+        ),
+      },
+    });
+
+    await svc.update('tx-1', 'buyer', { stars: 2, comment: 'Fair' });
+
+    // The order lookup never runs without an order.
+    expect(prisma.rating.findFirst).not.toHaveBeenCalled();
+    expect(prisma.rating.update).toHaveBeenCalledWith({
+      where: { id: 'rating-line' },
+      data: { stars: 2, comment: 'Fair' },
+    });
+  });
+});
+
 describe('public free text is masked before it is published', () => {
   it('masks profanity in a rating comment, then runs the contact filter', async () => {
     const { svc, prisma, contactFilter } = build({
@@ -228,10 +352,13 @@ describe('public free text is masked before it is published', () => {
     const created = prisma.rating.create.mock.calls[0][0] as {
       data: { comment: string | null };
     };
-    expect(created.data.comment).toBe('This is f****** brilliant');    expect(contactFilter.check).toHaveBeenCalledWith(
+    expect(created.data.comment).toBe('This is f****** brilliant');
+    expect(contactFilter.check).toHaveBeenCalledWith(
       'This is f****** brilliant',
       'rating-comment',
       'buyer',
+      // Reviews have no admin screen: the Jev REVIEW band blocks.
+      { blockOnReview: true },
     );
   });
 
@@ -249,12 +376,19 @@ describe('public free text is masked before it is published', () => {
     expect(contactFilter.check).not.toHaveBeenCalled();
   });
 
-  it('masks a seller reply the same way', async () => {
-    const { svc, prisma, contactFilter } = build({
+  it('masks a seller reply the same way, and tells the buyer', async () => {
+    const { svc, prisma, contactFilter, notifications } = build({
       rating: {
         findUnique: jest.fn(async () => ({
           id: 'rating-1',
-          rated: { id: 'seller' },
+          stars: 5,
+          rated: { id: 'seller', username: 'karoo_kudu' },
+          rater: {
+            id: 'buyer',
+            email: 'buyer@example.co.za',
+            firstName: 'Buyer',
+            username: 'buyer-handle',
+          },
           sellerRespondedAt: null,
         })),
         update: jest.fn(async () => ({ id: 'rating-1' })),
@@ -262,6 +396,8 @@ describe('public free text is masked before it is published', () => {
     });
 
     await svc.respond('rating-1', 'seller', 'That is a load of bullshit');
+    // Let the fire-and-forget notification promise run.
+    await Promise.resolve();
 
     const updated = prisma.rating.update.mock.calls[0][0] as {
       data: { sellerResponse: string };
@@ -271,7 +407,44 @@ describe('public free text is masked before it is published', () => {
       'That is a load of b*******',
       'rating-response',
       'seller',
+      { blockOnReview: true },
     );
+    expect(notifications.ratingReplied).toHaveBeenCalledWith({
+      email: 'buyer@example.co.za',
+      name: 'Buyer',
+      sellerUsername: 'karoo_kudu',
+      stars: 5,
+      response: 'That is a load of b*******',
+      sellerId: 'seller',
+    });
+  });
+
+  it('⚠️ a failed buyer notification never breaks the reply', async () => {
+    const { svc, notifications } = build({
+      rating: {
+        findUnique: jest.fn(async () => ({
+          id: 'rating-1',
+          stars: 5,
+          rated: { id: 'seller', username: 'karoo_kudu' },
+          rater: {
+            id: 'buyer',
+            email: 'buyer@example.co.za',
+            firstName: 'Buyer',
+            username: 'buyer-handle',
+          },
+          sellerRespondedAt: null,
+        })),
+        update: jest.fn(async () => ({ id: 'rating-1', sellerResponse: 'Thanks' })),
+      },
+    });
+    notifications.ratingReplied.mockRejectedValueOnce(
+      new Error('email rail down'),
+    );
+
+    await expect(
+      svc.respond('rating-1', 'seller', 'Thanks for the honest review'),
+    ).resolves.toEqual({ id: 'rating-1', sellerResponse: 'Thanks' });
+    await Promise.resolve();
   });
 });
 

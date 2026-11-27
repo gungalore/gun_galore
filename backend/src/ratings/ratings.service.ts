@@ -69,6 +69,28 @@ export class RatingsService {
     if (tx.swapId)
       throw new BadRequestException('Swap ratings are not supported yet.');
     if (tx.buyer.id !== buyerId) throw new ForbiddenException('Only the buyer can rate');
+    /**
+     * ⚠️ ONE RATING PER SELLER PER ORDER (operator, 2026-11-27).
+     *
+     * A rating hangs off one Transaction (one cart line), so without this a
+     * seller with two lines in the same order could be rated twice, and a
+     * multi-seller order had no single place to rate each seller. The order page
+     * rates every seller once; the backend refuses the second attempt even when
+     * it arrives on a different line.
+     */
+    if (tx.orderId) {
+      const alreadyRated = await this.prisma.rating.findFirst({
+        where: {
+          ratedId: tx.sellerId,
+          transaction: { is: { orderId: tx.orderId } },
+        },
+        select: { id: true },
+      });
+      if (alreadyRated)
+        throw new ConflictException(
+          'You have already rated this seller for this order.',
+        );
+    }
     if (tx.rating) throw new ConflictException('Transaction already has a rating');
     if (tx.paymentStatus !== 'RELEASED')
       throw new BadRequestException('Can only rate after payment has been released');
@@ -83,6 +105,10 @@ export class RatingsService {
         comment,
         'rating-comment',
         buyerId,
+        // No admin review screen for reviews: a REVIEW-band Jev verdict is a
+        // block, so hateful/derogatory wording never gets published to wait
+        // for a human who does not exist.
+        { blockOnReview: true },
       );
       if (!check.allowed) {
         throw new BadRequestException(check.reason);
@@ -139,6 +165,12 @@ export class RatingsService {
    * Buyer corrects their rating — allowed for EDIT_WINDOW_DAYS after
    * submission, and only while the seller has not replied. Re-runs the
    * contact filter and the seller recompute.
+   *
+   * ⚠️ ORDER-AWARE (2026-11-27). On a multi-line checkout the rating may hang
+   * off ANY line of the seller's in the order, and the order page can send the
+   * edit through a different line's transaction id. The rating is looked up by
+   * order + seller, not by the URL's line, so the same rating is edited either
+   * way — a per-line lookup would 404 the moment the UI picked another line.
    */
   async update(
     transactionId: string,
@@ -149,15 +181,48 @@ export class RatingsService {
       where: { id: transactionId },
       include: { buyer: true, rating: true },
     });
-    if (!tx?.rating) throw new NotFoundException('Rating not found');
+    if (!tx) throw new NotFoundException('Rating not found');
     if (tx.buyer.id !== buyerId)
       throw new ForbiddenException('Only the buyer can edit their rating');
-    if (tx.rating.sellerRespondedAt)
+
+    let rating: {
+      id: string;
+      createdAt: Date;
+      sellerRespondedAt: Date | null;
+      raterId: string;
+    } | null = tx.rating
+      ? {
+          id: tx.rating.id,
+          createdAt: tx.rating.createdAt,
+          sellerRespondedAt: tx.rating.sellerRespondedAt,
+          raterId: tx.buyerId,
+        }
+      : null;
+    if (tx.orderId) {
+      const byOrder = await this.prisma.rating.findFirst({
+        where: {
+          ratedId: tx.sellerId,
+          transaction: { is: { orderId: tx.orderId } },
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          sellerRespondedAt: true,
+          raterId: true,
+        },
+      });
+      if (!byOrder) throw new NotFoundException('Rating not found');
+      if (byOrder.raterId !== buyerId)
+        throw new ForbiddenException('Only the buyer can edit their rating');
+      rating = byOrder;
+    }
+    if (!rating) throw new NotFoundException('Rating not found');
+    if (rating.sellerRespondedAt)
       throw new BadRequestException(
         'The seller has replied to this review — it can no longer be edited.',
       );
     const ageDays =
-      (Date.now() - new Date(tx.rating.createdAt).getTime()) / 86_400_000;
+      (Date.now() - new Date(rating.createdAt).getTime()) / 86_400_000;
     if (ageDays > EDIT_WINDOW_DAYS)
       throw new BadRequestException(
         `Ratings can only be edited within ${EDIT_WINDOW_DAYS} days.`,
@@ -170,11 +235,12 @@ export class RatingsService {
         comment,
         'rating-comment',
         buyerId,
+        { blockOnReview: true },
       );
       if (!check.allowed) throw new BadRequestException(check.reason);
     }
     const updated = await this.prisma.rating.update({
-      where: { id: tx.rating.id },
+      where: { id: rating.id },
       data: { stars: dto.stars, comment },
     });
     await this.recalcSeller(tx.sellerId);
@@ -183,7 +249,7 @@ export class RatingsService {
 
   /**
    * Seller's single public reply to a review. Once, contact-filtered,
-   * shown under the review on the public profile.
+   * shown under the review on the public profile — and the buyer is told.
    */
   async respond(ratingId: string, sellerId: string, response: string) {
     const trimmed = (response ?? '').trim();
@@ -191,7 +257,9 @@ export class RatingsService {
       throw new BadRequestException('Reply must be 3–500 characters.');
     const rating = await this.prisma.rating.findUnique({
       where: { id: ratingId },
-      include: { rated: true },
+      // The buyer is notified, so their email/name are needed here; the seller's
+      // own row supplies the handle shown in that notification.
+      include: { rated: true, rater: true },
     });
     if (!rating) throw new NotFoundException('Rating not found');
     if (rating.rated.id !== sellerId)
@@ -201,19 +269,36 @@ export class RatingsService {
     /**
      * ⚠️ THE REPLY IS PUBLIC FREE TEXT TOO. Mask profanity first, then the
      * contact filter — the length rule is checked on the trimmed source above,
-     * which masking preserves.
+     * which masking preserves. Reviews have no admin review screen, so the
+     * REVIEW band blocks here (see ContactDetailFilterService.check).
      */
     const masked = maskBadLanguage(trimmed);
     const check = await this.contactFilter.check(
       masked,
       'rating-response',
       sellerId,
+      { blockOnReview: true },
     );
     if (!check.allowed) throw new BadRequestException(check.reason);
-    return this.prisma.rating.update({
+    const updated = await this.prisma.rating.update({
       where: { id: ratingId },
       data: { sellerResponse: masked, sellerRespondedAt: new Date() },
     });
+    /**
+     * ⚠️ FIRE-AND-FORGET. The reply is already stored; an email/inbox failure
+     * must never turn a successful reply into an error for the seller.
+     */
+    void this.notifications
+      .ratingReplied({
+        email: rating.rater.email,
+        name: rating.rater.firstName ?? 'there',
+        sellerUsername: rating.rated.username ?? 'The seller',
+        stars: rating.stars,
+        response: masked,
+        sellerId: rating.rated.id,
+      })
+      .catch(() => undefined);
+    return updated;
   }
 
   /**
