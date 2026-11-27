@@ -7,6 +7,65 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — ROUND 5: 271 RETIRED, TRAINING COMPLIANCE SHOWN, FREEZE ON SUBMIT, NO MID-INTERVIEW JUMP (+ seller-storefront 500)
+
+Operator, 09:29: "Get rid of the 271 completely, we are never filling in 271 forms. It does not show my
+proficiency for the firearm or the knowledge of the firearm act. It does not say I must go to the document centre
+and upload the required documents. And why is the A firearm license I already hold shown here? … it asks
+questions then just jumps away from the question before I can answer it … once next or submit is clicked the
+editing must freeze completely. Also the researcher must do online research about the firearm if a make and
+model is available."
+
+- **The 271 is gone from the product surface.** `sheetFor` no longer serves any `formOnly` registry row
+  (licence-holder, marital/spouse, postal/dialling codes, component barrel/frame/receiver rows, declaration
+  detail boxes), the review's "SAPS 271 details (optional)" block and all its helpers were deleted, the
+  interview declaration copy now says "the particulars the police ask for", and the profile intro no longer
+  claims 271 facts are asked. Registry/`sanitiseAnswers`/`factPackFields` are untouched so an uploaded 271 is
+  still read and old answers still save.
+- **Training compliance is now visible where the documents are.** `SheetResponse.compliance`:
+  `{ required, ready, checks: [{ key: 'PROFICIENCY'|'KNOWLEDGE_OF_ACT', label, state: 'have'|'missing'|'unread', note }] }`.
+  Computed from BOTH the member-wide vault proficiency cover (`MotivationSharedService.proficiencyFor`, via
+  `credentialsFor`) and the application's attached PROFICIENCY_CERTIFICATE pages (`proficiencyPagesFromUploads`
+  — the same reader generation uses). `ready` is exactly generation's `!hasProficiencyPackGap`; `unread` does
+  not block (matching generation) but says "we couldn't read a unit-standard code — upload a clearer
+  statement of results in the Document Centre". Live note: MO000161's three proficiency uploads carry no
+  `unit_standard` in their extraction, so they will read as `unread` unless the vault cover has the code.
+- **The pack-documents ledger is honest.** "Still needed" and "On file" are separate groups with a status word
+  per row, so a satisfied "6 of 6 licence cards added" can never sit under "Documents still needed" (the
+  operator's "why is the licence shown here?"). Missing/unread rows carry a per-row **"Upload in the Document
+  Centre"** action to `/documents`; the block states plainly to upload/scan there and re-attach. Continue is
+  gated on `compliance.required && !compliance.ready` exactly as generation is. MOTIVATION_ONLY shows
+  "needs no documents".
+- **Editing freezes on submit.** While a card is saving, every control (text, date, textarea, chips, detail
+  boxes, Skip, Back) is disabled and no draft update is accepted; the review row freezes the same way while
+  its save is in flight.
+- **No mid-interview jump.** The narrative draft no longer starts while `planGroup` still has a question to
+  serve (it used to start once only narrative gaps remained, while optional questions were still pending, and
+  the frontend's 2-second `drafting` poll then reloaded state under the member). The client now polls drafting
+  only on the completion card and a request-sequence/submitting guard prevents a stale load from replacing the
+  card being answered or discarding typing.
+- **Firearm research was already implemented and is verified** (no code change): `targetsFor()` pushes a
+  grounded `firearm` target whenever make+model are present ("what is this model used for in SA … NOT a
+  specification"), the interview brief awaits `researchFor`, and the writer gets the research block; the live
+  `MotivationResearch` cache already holds the Savage m110 rows.
+- **Bonus live 500 fixed** (found in the backend log at 10:02, unrelated to motivations): `listings.service`
+  filtered a seller storefront with `seller: { userId }`, which Prisma 7 rejects (to-one relation filters need
+  `is`), so every `/sellers/[userId]` browse returned 500. Now `seller: { is: { userId } }` with a regression
+  spec in `content-visibility.spec.ts`.
+
+**Deployed `71791f03` (full, 10:21 SAST; rollback `alloutdoor-20261127-102124.dump`) and `7c75cae3`
+(backend-only, 10:29; rollback `alloutdoor-20261127-102937.dump`).** Backend/frontend/warden online; health OK
+both checks; gate 307 → `/gate` and `/gate` 200. Checks: backend tsc clean + **465 suites / 6,893 passed / 8
+skipped / 0 failed** (plus the listings specs for the seller fix); frontend typecheck clean + **211 files /
+2,379 passed / 1 skipped** + production build clean.
+
+Next: hard-refresh and open MO000161's review — no 271 block anywhere, the pack ledger should show the licence
+cards on file (6 of 6), the safe photographs outstanding with a Document Centre link, and the proficiency /
+117705 rows. If the proficiency rows read "Couldn't read", re-upload a clearer statement of results in the
+Document Centre; that is the honest state of the scans we hold. Editing frozen while submitting is visible on
+the next answer; the mid-interview "jump" is gone because drafting no longer starts until the interview has
+nothing left to ask.
+
 ## 2026-11-27 — FULFILMENT CARD HIGHLIGHT FOLLOWS THE POINTER (FRONTEND-ONLY `f05746bd`)
 
 Operator screenshot of "How would you like it?": the Print and Deliver card carried a permanent accent border, so one
