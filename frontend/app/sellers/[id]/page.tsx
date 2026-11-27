@@ -11,7 +11,17 @@ import { Pagination } from '@/components/pagination';
 import { viewerFetch } from '@/lib/api-viewer';
 import { catalogueDeclarationToken } from '@/lib/catalogue-access';
 import { serverAuth as auth } from '../../../lib/auth-server';
-import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
+import type {
+  BrowseResponse,
+  Category,
+  PublicSellerProfile,
+  SellerRating,
+} from '@/lib/types';
+import {
+  sellerApiPaths,
+  sellerPageHref,
+  type SellerStorefrontFilters,
+} from '@/lib/seller-storefront';
 import { CatalogLiveRefresh } from '@/components/catalog-live-refresh';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -20,16 +30,7 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // homepage, scoped to this seller. Province is intentionally omitted (one
 // seller ≈ one location) and search is hidden (browse runs the Prisma path
 // which doesn't do text search).
-interface SellerSearchParams {
-  categoryId?: string;
-  condition?: string;
-  make?: string;
-  minPrice?: string;
-  maxPrice?: string;
-  sort?: string;
-  page?: string;
-  attrs?: string;
-}
+type SellerSearchParams = SellerStorefrontFilters;
 
 const TIER_COLOR: Record<string, string> = {
   NEW: 'var(--text-tertiary)',
@@ -38,24 +39,6 @@ const TIER_COLOR: Record<string, string> = {
   TOP_SELLER: 'var(--warning)',
   DEALER: 'var(--red)',
 };
-
-interface SellerRating {
-  id: string;
-  stars: number;
-  comment: string | null;
-  sellerResponse: string | null;
-  createdAt: string;
-  // Public-facing reviews — username only per platform policy.
-  rater: {
-    username: string | null;
-    verification?: {
-      phoneVerified: boolean;
-      emailVerified: boolean;
-      idVerified: boolean;
-    };
-  };
-  transaction: { listing: { title: string } };
-}
 
 export default async function SellerProfilePage({
   params,
@@ -94,18 +77,27 @@ export default async function SellerProfilePage({
   const viewerToken = await (await auth()).getToken().catch(() => null);
   const catalogueDeclaration = await catalogueDeclarationToken();
 
+  /**
+   * ⚠️ EVERY SELLER READ USES `sellerId`, NEVER `userId`. `userId` is the person
+   * looking at this page; the profile and the reviews belong to the seller in the
+   * route. Building them from the viewer showed a signed-in member their own
+   * header/reviews under someone else's URL, and sent a signed-out visitor to
+   * `/sellers/undefined`.
+   */
+  const sellerPaths = sellerApiPaths(sellerId);
+
   const [profileRes, ratingsRes, browse, categories, brands, facetData] =
     await Promise.all([
       // Phase E1 — public seller profile with badge fields. 404 here
       // is the canonical "no such seller" so we propagate it to the
       // page's notFound() below.
-      fetch(`${API_URL}/sellers/${userId}`, { cache: 'no-store' }),
+      fetch(`${API_URL}${sellerPaths.profile}`, { cache: 'no-store' }),
       // Reviews embed the listing TITLE. Content no longer varies by sign-in,
       // but the read still sits behind the 18+ gate: forward whichever
       // credential this viewer holds. Raw fetch (not viewerFetch) because the
       // page needs the Response to distinguish a 404 seller from an empty
       // review list.
-      fetch(`${API_URL}/ratings/seller/${userId}`, {
+      fetch(`${API_URL}${sellerPaths.ratings}`, {
         cache: 'no-store',
         headers: {
           ...(viewerToken ? { Authorization: `Bearer ${viewerToken}` } : {}),
@@ -138,22 +130,22 @@ export default async function SellerProfilePage({
   const profile: PublicSellerProfile = await profileRes.json();
   const ratings: SellerRating[] = await ratingsRes.json();
 
-  const avgRating =
-    ratings.length > 0
-      ? ratings.reduce((s, r) => s + r.stars, 0) / ratings.length
-      : null;
+  /**
+   * ⚠️ THE HEADER NUMBERS COME FROM THE PROFILE, NOT THE ARRAY. The reviews
+   * endpoint serves at most the 50 most recent reviews; counting them would
+   * disagree with the cached rating on every card and listing the seller
+   * appears on. `totalRatings` is the seller's whole history.
+   */
+  const averageRating = profile.averageRating;
+  const totalRatings = profile.totalRatings ?? ratings.length;
+  const showingMostRecent = totalRatings > ratings.length;
 
   const currentPage = browse.page;
   const totalPages = Math.max(1, Math.ceil(browse.total / browse.limit));
 
   function pageHref(p: number) {
-    const next = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(sp).filter(([, v]) => v !== undefined),
-      ) as Record<string, string>,
-    );
-    next.set('page', String(p));
-    return `/sellers/${userId}?${next}`;
+    // Built from the SELLER's route id — see lib/seller-storefront.ts.
+    return sellerPageHref(sellerId, sp, p);
   }
 
   return (
@@ -195,13 +187,15 @@ export default async function SellerProfilePage({
                 size="md"
               />
             </p>
-            {avgRating && (
+            {averageRating != null && totalRatings > 0 && (
               <div className="flex items-center gap-2 mt-1">
                 <span style={{ color: 'var(--warning)' }}>
-                  {'★'.repeat(Math.round(avgRating))}{'☆'.repeat(5 - Math.round(avgRating))}
+                  {'★'.repeat(Math.round(averageRating))}
+                  {'☆'.repeat(5 - Math.round(averageRating))}
                 </span>
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {avgRating.toFixed(1)} · {ratings.length} review{ratings.length !== 1 ? 's' : ''}
+                  {averageRating.toFixed(1)} · {totalRatings} review
+                  {totalRatings !== 1 ? 's' : ''}
                 </span>
               </div>
             )}
@@ -242,7 +236,7 @@ export default async function SellerProfilePage({
               }}
               brands={brands}
               facets={facetData.facets}
-              basePath={`/sellers/${userId}`}
+              basePath={`/sellers/${sellerId}`}
               hideProvinceFilter
               hideSearch
             />
@@ -275,8 +269,14 @@ export default async function SellerProfilePage({
           style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         >
           <p className="text-xs uppercase tracking-wider mb-4" style={{ color: 'var(--text-tertiary)' }}>
-            Reviews ({ratings.length})
+            Reviews ({totalRatings})
           </p>
+          {/* The list is capped by the API; say so rather than implying it is all. */}
+          {showingMostRecent ? (
+            <p className="text-[11px] mb-3" style={{ color: 'var(--text-tertiary)' }}>
+              Showing the most recent reviews
+            </p>
+          ) : null}
 
           {ratings.length === 0 ? (
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
@@ -284,8 +284,8 @@ export default async function SellerProfilePage({
             </p>
           ) : (
             <div className="space-y-4">
-              {ratings.slice(0, 10).map((r) => (
-                <div key={r.id}>
+              {ratings.slice(0, 10).map((r, index) => (
+                <div key={r.id ?? `${r.createdAt}-${index}`}>
                   <div className="flex items-center justify-between mb-0.5">
                     <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                       {r.rater.username ?? 'Anonymous'}

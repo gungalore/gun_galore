@@ -1,9 +1,10 @@
-﻿import { redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { Me, TrustDashboard, SellerTier } from '@/lib/types';
 import { SUPPORT_EMAIL } from '@/lib/brand';
+import { SELLER_TIER_TOOLTIP } from '@/lib/seller-tier-copy';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { SellerVerificationProgress } from '@/components/seller-verification-progress';
@@ -12,7 +13,9 @@ import { VerificationBadges } from '@/components/verification-badges';
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Seller-tier brand colours — match the rest of the app (Dashboard,
-// listing cards). Order: New → Established → Trusted → Top Seller → Dealer.
+// listing cards). Ladder: New → Established → Trusted → Top Seller.
+// `DEALER` is a legacy stored value only (mapped so an old row renders a plain
+// label); it is never awarded and never described in copy.
 const TIER_COLOR: Record<SellerTier, string> = {
   NEW: 'var(--text-tertiary)',
   ESTABLISHED: '#6366f1',
@@ -558,15 +561,13 @@ export default async function ProfilePage() {
           // actually land on. Trust-score minimums (50 / 70 / 85) stay
           // implicit as "with good ratings" rather than exposing a private
           // number sellers can't see on this card.
-          tip={
-            <>
-              Tiers reflect your selling record: New (just signed up),
-              Established (3+ clean sales), Trusted (10+ clean sales
-              with good ratings), Top Seller (25+ sales with top
-              ratings), Dealer (licensed firearms dealer). Higher tiers
-              earn buyer confidence and visibility.
-            </>
-          }
+          //
+          // ⚠️ NO DEALER TIER AND NO VISIBILITY CLAIM. Dealer is a legacy stored
+          // value (mapped harmlessly to a label elsewhere); no tier is awarded as
+          // Dealer, and no tier changes ranking or visibility. A tier is a public
+          // display of the selling record, nothing more. The copy lives in
+          // lib/seller-tier-copy.ts so a spec can assert it.
+          tip={<>{SELLER_TIER_TOOLTIP}</>}
         />
       </div>
 

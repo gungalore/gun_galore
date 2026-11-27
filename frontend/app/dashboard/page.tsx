@@ -2,6 +2,12 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { serverAuth as auth } from '../../lib/auth-server';
 import { TrustDashboard, SellerTier } from '@/lib/types';
+import {
+  TRUST_BAR_SPECS,
+  averageRatingCount,
+  sellerTierLabel,
+  trustBarValues,
+} from '@/lib/trust-dashboard';
 import { RatingReply } from './rating-reply';
 import { PageReveal } from '@/components/page-reveal';
 import { DashboardProfileProgress } from '@/components/dashboard-profile-progress';
@@ -14,6 +20,9 @@ const TIER_COLOR: Record<SellerTier, string> = {
   ESTABLISHED: '#6366f1',
   TRUSTED: '#0ea5e9',
   TOP_SELLER: 'var(--warning)',
+  // ⚠️ LEGACY MAPPING ONLY. No tier is awarded as DEALER any more and no copy
+  // describes it; an older row may still carry the value, so it renders a plain
+  // label instead of a raw enum.
   DEALER: 'var(--red)',
 };
 
@@ -64,6 +73,13 @@ export default async function DashboardPage() {
   } catch {
     data = null;
   }
+
+  /**
+   * The six real score components and the whole-history rating count, mapped
+   * once by lib/trust-dashboard.ts. `null` when there is no dashboard at all.
+   */
+  const bars = data ? trustBarValues(data) : null;
+  const ratingCount = data ? averageRatingCount(data) : 0;
 
   return (
     <main
@@ -133,7 +149,7 @@ export default async function DashboardPage() {
                     border: `0.5px solid ${TIER_COLOR[data.sellerTier]}40`,
                   }}
                 >
-                  {data.sellerTier.replace('_', ' ')}
+                  {sellerTierLabel(data.sellerTier)}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
                   {data.totalSales} sale{data.totalSales !== 1 ? 's' : ''}
@@ -142,12 +158,22 @@ export default async function DashboardPage() {
             </div>
 
             <div className="space-y-3">
-              <ScoreBar value={Math.min(25, (data.totalSales / 25) * 25)} max={25} label="Completed sales" />
-              <ScoreBar value={data.averageRating ? (data.averageRating / 5) * 25 : 0} max={25} label="Rating average" />
-              <ScoreBar value={data.trustScore * 0.2} max={20} label="Delivery success" />
-              <ScoreBar value={data.trustScore * 0.15} max={15} label="Dispatch speed" />
-              <ScoreBar value={data.trustScore * 0.10} max={10} label="Listing quality" />
-              <ScoreBar value={data.trustScore * 0.05} max={5} label="Account age" />
+              {/*
+                ⚠️ THE REAL COMPONENTS, NOT PERCENTAGES OF THE TOTAL. The four
+                lower bars used to be `trustScore * 0.2/0.15/0.10/0.05` — invented
+                numbers drawn at the right maxima, so a seller with a good score
+                saw a perfect dispatch bar whatever their dispatch record. The
+                backend serves the six measured components; lib/trust-dashboard.ts
+                maps them and keeps the old approximation as a fallback only.
+              */}
+              {TRUST_BAR_SPECS.map((spec) => (
+                <ScoreBar
+                  key={spec.key}
+                  value={bars?.[spec.key] ?? 0}
+                  max={spec.max}
+                  label={spec.label}
+                />
+              ))}
             </div>
 
             {TIER_NEXT[data.sellerTier] && (
@@ -209,7 +235,9 @@ export default async function DashboardPage() {
                 </span>
                 <span style={{ color: 'var(--warning)' }}>★</span>
                 <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  average from {data.recentRatings.length} rating{data.recentRatings.length !== 1 ? 's' : ''}
+                  {/* ⚠️ TOTAL RATINGS, NOT THE RECENT PAGE. The card lists a recent
+                      slice; the average is over the seller's whole history. */}
+                  average from {ratingCount} rating{ratingCount !== 1 ? 's' : ''}
                 </span>
               </div>
             )}

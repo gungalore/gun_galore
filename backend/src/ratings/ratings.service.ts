@@ -1,30 +1,61 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { SellerTier } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import { maskBadLanguage } from '../moderation/bad-language';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
+import { computeTrust } from './trust-score';
 
 // Buyers may correct a rating for this long after submitting (fat-finger
 // insurance) — the window closes EARLY if the seller has already replied,
 // so an exchange can never be rewritten out from under a response.
 const EDIT_WINDOW_DAYS = 30;
 
+/**
+ * How many reviews the public profile endpoint serves.
+ *
+ * ⚠️ CAPPED, NOT UNBOUNDED. The seller page renders a scrollable list and the
+ * storefront shows the cached `averageRating` beside `totalRatings`; returning
+ * every row a long-lived seller ever received was an unbounded payload and a
+ * scrape target.
+ */
+const PUBLIC_REVIEW_LIMIT = 50;
+
 @Injectable()
 export class RatingsService {
+  private readonly logger = new Logger(RatingsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly contactFilter: ContactDetailFilterService,
     private readonly notifications: NotificationsService,
     private readonly audit: AdminAuditService,
   ) {}
+
+  /**
+   * Mask profanity and keep the contact-detail filter honest.
+   *
+   * ⚠️ REVIEWS ARE PUBLIC FREE TEXT. Until now they only went through the
+   * contact-detail filter, while feed posts and comments also run
+   * `maskBadLanguage` — so a review could publish raw profanity the community
+   * feed never would. The mask runs FIRST and the contact filter second, so a
+   * handle-allowed word cannot be hidden behind masking and a masked reply is
+   * still checked for phone numbers.
+   */
+  private cleanPublicText(raw: string | null | undefined): string | null {
+    const trimmed = (raw ?? '').trim();
+    if (!trimmed) return null;
+    return maskBadLanguage(trimmed);
+  }
 
   async create(transactionId: string, buyerId: string, dto: CreateRatingDto) {
     const tx = await this.prisma.transaction.findUnique({
@@ -44,10 +75,12 @@ export class RatingsService {
 
     // Rating comments are public on the seller's profile, so a contact
     // detail in a comment routes around platform fees identically to a
-    // note-to-seller. Block before the DB write.
-    if (dto.comment) {
+    // note-to-seller, and profanity bypasses the same community standard.
+    // Mask, then block contact details, before the DB write.
+    const comment = this.cleanPublicText(dto.comment);
+    if (comment) {
       const check = await this.contactFilter.check(
-        dto.comment,
+        comment,
         'rating-comment',
         buyerId,
       );
@@ -56,15 +89,33 @@ export class RatingsService {
       }
     }
 
-    const rating = await this.prisma.rating.create({
-      data: {
-        transactionId,
-        raterId: tx.buyerId,
-        ratedId: tx.sellerId,
-        stars: dto.stars,
-        comment: dto.comment ?? null,
-      },
-    });
+    let rating;
+    try {
+      rating = await this.prisma.rating.create({
+        data: {
+          transactionId,
+          raterId: tx.buyerId,
+          ratedId: tx.sellerId,
+          stars: dto.stars,
+          comment,
+        },
+      });
+    } catch (err) {
+      /**
+       * ⚠️ THE `tx.rating` CHECK IS NOT ATOMIC. Two concurrent POSTs for the
+       * same transaction both read `rating: null`, both attempt the insert, and
+       * the loser hits `Rating.transactionId @unique` — a raw P2002, which Nest
+       * turned into a 500. The constraint is the real guard; map it to the same
+       * 409 the pre-check throws.
+       */
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException('Transaction already has a rating');
+      }
+      throw err;
+    }
 
     // Recalculate seller trust score and tier
     await this.recalcSeller(tx.sellerId);
@@ -77,7 +128,7 @@ export class RatingsService {
       name: tx.seller.firstName ?? 'there',
       buyerUsername: tx.buyer.username ?? 'A member',
       stars: dto.stars,
-      comment: dto.comment ?? null,
+      comment,
       sellerUserId: tx.sellerId,
     });
 
@@ -111,9 +162,12 @@ export class RatingsService {
       throw new BadRequestException(
         `Ratings can only be edited within ${EDIT_WINDOW_DAYS} days.`,
       );
-    if (dto.comment) {
+    // Mask first, block contact details second — the same rule as create(), so
+    // editing cannot reintroduce profanity the create path removed.
+    const comment = this.cleanPublicText(dto.comment);
+    if (comment) {
       const check = await this.contactFilter.check(
-        dto.comment,
+        comment,
         'rating-comment',
         buyerId,
       );
@@ -121,7 +175,7 @@ export class RatingsService {
     }
     const updated = await this.prisma.rating.update({
       where: { id: tx.rating.id },
-      data: { stars: dto.stars, comment: dto.comment ?? null },
+      data: { stars: dto.stars, comment },
     });
     await this.recalcSeller(tx.sellerId);
     return updated;
@@ -144,15 +198,21 @@ export class RatingsService {
       throw new ForbiddenException('Only the rated seller can reply');
     if (rating.sellerRespondedAt)
       throw new ConflictException('You have already replied to this review');
+    /**
+     * ⚠️ THE REPLY IS PUBLIC FREE TEXT TOO. Mask profanity first, then the
+     * contact filter — the length rule is checked on the trimmed source above,
+     * which masking preserves.
+     */
+    const masked = maskBadLanguage(trimmed);
     const check = await this.contactFilter.check(
-      trimmed,
+      masked,
       'rating-response',
       sellerId,
     );
     if (!check.allowed) throw new BadRequestException(check.reason);
     return this.prisma.rating.update({
       where: { id: ratingId },
-      data: { sellerResponse: trimmed, sellerRespondedAt: new Date() },
+      data: { sellerResponse: masked, sellerRespondedAt: new Date() },
     });
   }
 
@@ -183,29 +243,57 @@ export class RatingsService {
   }
 
   /**
-   * Daily cron — refresh trust scores for sellers with recent activity
-   * (a released sale, delivery or rating in the last 48h). Keeps the
-   * time-based score components fresh now that viewing the dashboard no
-   * longer triggers a recompute-write.
+   * Daily cron — refresh trust scores.
+   *
+   * ⚠️ IT USED TO REFRESH ONLY SELLERS WITH ACTIVITY IN THE LAST 48 HOURS. A
+   * quiet seller's ACCOUNT-AGE points therefore never moved again, and any
+   * refund/return effect on a completed sale never reached their score until
+   * they sold something new. The sweep now covers every seller who has any
+   * listing or any transaction (the recent-activity pass is kept first, since
+   * those are the scores most likely to have moved), deduped and bounded at
+   * 500 sellers per run. The count is logged as today's sweep size.
    */
   async recalcRecentSellers(): Promise<number> {
     const floor = new Date(Date.now() - 48 * 3_600_000);
-    const recent = await this.prisma.transaction.findMany({
-      where: {
-        OR: [
-          { releasedAt: { gte: floor } },
-          { deliveredAt: { gte: floor } },
-          { rating: { is: { updatedAt: { gte: floor } } } },
-        ],
-      },
-      select: { sellerId: true },
-      distinct: ['sellerId'],
-      take: 200,
-    });
-    for (const r of recent) {
-      await this.recalcSeller(r.sellerId).catch(() => undefined);
+
+    const [recent, listingSellers, transactionSellers] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: {
+          OR: [
+            { releasedAt: { gte: floor } },
+            { deliveredAt: { gte: floor } },
+            { rating: { is: { updatedAt: { gte: floor } } } },
+          ],
+        },
+        select: { sellerId: true },
+        distinct: ['sellerId'],
+        take: 200,
+      }),
+      this.prisma.listing.findMany({
+        select: { sellerId: true },
+        distinct: ['sellerId'],
+        take: 500,
+      }),
+      this.prisma.transaction.findMany({
+        select: { sellerId: true },
+        distinct: ['sellerId'],
+        take: 500,
+      }),
+    ]);
+
+    const sellerIds = [
+      ...new Set(
+        [...recent, ...listingSellers, ...transactionSellers]
+          .map((row) => row.sellerId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ].slice(0, 500);
+
+    for (const sellerId of sellerIds) {
+      await this.recalcSeller(sellerId).catch(() => undefined);
     }
-    return recent.length;
+    this.logger.log(`Seller trust scores refreshed: ${sellerIds.length}`);
+    return sellerIds.length;
   }
 
   async findForSeller(sellerId: string, userId?: string) {
@@ -232,6 +320,11 @@ export class RatingsService {
         // is what made a seller profile a back door onto hidden stock.
       },
       orderBy: { createdAt: 'desc' },
+      // ⚠️ CAPPED. The storefront shows `averageRating` with the real
+      // `totalRatings` count from the seller profile, so the public list only
+      // needs the most recent page — not every review a long-lived seller has
+      // ever received.
+      take: PUBLIC_REVIEW_LIMIT,
       include: {
         // Username only �?" reviews are publicly visible on the seller
         // profile, so we must not expose the rater's real name. Verification
@@ -247,31 +340,38 @@ export class RatingsService {
         transaction: { select: { listing: { select: { title: true } } } },
       },
     });
-    return rows.map(({ rater, ...row }) => {
-      const { phoneVerified, emailVerifiedAt, kycIdVerifiedAt, ...publicRater } =
-        rater;
-      return {
-        ...row,
-        rater: {
-          ...publicRater,
-          verification: {
-            phoneVerified,
-            emailVerified: emailVerifiedAt != null,
-            idVerified: kycIdVerifiedAt != null,
+    return rows.map(
+      ({ rater, raterId: _raterId, ratedId: _ratedId, transactionId: _txId, ...row }) => {
+        const { phoneVerified, emailVerifiedAt, kycIdVerifiedAt, ...publicRater } =
+          rater;
+        return {
+          ...row,
+          rater: {
+            ...publicRater,
+            verification: {
+              phoneVerified,
+              emailVerified: emailVerifiedAt != null,
+              idVerified: kycIdVerifiedAt != null,
+            },
           },
-        },
-      };
-    });
+        };
+      },
+    );
   }
 
   async getTrustDashboard(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // Same loader as recalcSeller, so the bars and the cached score can never
+    // be computed from different rules. READ-ONLY: viewing a page must never
+    // write (the old recompute-on-view could flap a seller's tier mid-anything).
+    const user = await this.loadTrustInput(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    // Read-only — the cached score is refreshed on rating create/edit/
-    // removal + the daily recalc cron. Viewing a page must never write
-    // (the old recompute-on-view could flap a seller's tier mid-anything).
-    const score = user.trustScore;
+    const trust = computeTrust({
+      transactions: user.sellerTransactions,
+      listings: user.listings,
+      createdAt: user.createdAt,
+    });
+
     const recentRatings = await this.prisma.rating.findMany({
       where: { ratedId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -318,25 +418,47 @@ export class RatingsService {
       where: { ratedId: user.id },
     });
 
+    /**
+     * ⚠️ THE COMPONENTS ARE SERVED, NOT DERIVED ON THE CLIENT. The dashboard
+     * used to paint four of its six bars from `trustScore × weight` because the
+     * real per-component points never left the server — the bars could not agree
+     * with the score, let alone explain it. `components` are the exact points
+     * each rule awarded (out of the 25/25/20/15/10/5 maxima); their sum, rounded,
+     * is `trustScore`.
+     */
     return {
-      trustScore: score,
-      sellerTier: user.sellerTier,
+      trustScore: trust.trustScore,
+      sellerTier: trust.tier,
       totalSales: user.totalSales,
-      averageRating: user.averageRating,
+      averageRating: trust.averageRating,
+      components: trust.components,
+      completedSales: trust.completedSales,
       recentRatings: shapedRatings,
       totalRatings,
     };
   }
 
   // ---------------------------------------------------------------
-  // Private: recalculate trust score + tier and persist
+  // Trust score
   // ---------------------------------------------------------------
-  async recalcSeller(sellerId: string): Promise<number> {
-    const user = await this.prisma.user.findUnique({
+
+  /**
+   * The seller row the trust calculator needs.
+   *
+   * ⚠️ ONE LOADER FOR RECALC AND DASHBOARD. The audit found the dashboard
+   * showing a cached total beside fabricated bars; a second query path is how
+   * the two drift apart again.
+   *
+   * ⚠️ SWAP LEGS ARE FILTERED OUT AT THE QUERY TOO. The calculator excludes them
+   * from every count (they are accounting rows, not sales), but there is no
+   * reason to read them for a score.
+   */
+  private async loadTrustInput(sellerId: string) {
+    return this.prisma.user.findUnique({
       where: { id: sellerId },
       include: {
         sellerTransactions: {
-          where: { paymentStatus: 'RELEASED' },
+          where: { swapId: null },
           include: { rating: true },
         },
         listings: {
@@ -345,85 +467,28 @@ export class RatingsService {
         },
       },
     });
+  }
+
+  /** Recompute and persist the publicly cached trust fields. */
+  async recalcSeller(sellerId: string): Promise<number> {
+    const user = await this.loadTrustInput(sellerId);
     if (!user) return 0;
 
-    const completedSales = user.sellerTransactions.length;
-
-    const totalTx = await this.prisma.transaction.count({
-      where: { sellerId, paymentStatus: { not: 'REFUNDED' } },
+    const trust = computeTrust({
+      transactions: user.sellerTransactions,
+      listings: user.listings,
+      createdAt: user.createdAt,
     });
-
-    const deliveredCount = await this.prisma.transaction.count({
-      where: { sellerId, shippingStatus: 'DELIVERED' },
-    });
-
-    // Component 1 — Completed sales (max 25)
-    const salesScore = Math.min(25, (completedSales / 25) * 25);
-
-    // Component 2 — Rating average (max 25)
-    const starsList = user.sellerTransactions
-      .filter((t) => t.rating)
-      .map((t) => t.rating!.stars);
-    const avgRating =
-      starsList.length > 0 ? starsList.reduce((a, b) => a + b, 0) / starsList.length : 0;
-    const ratingScore = (avgRating / 5) * 25;
-
-    // Component 3 — Delivery success rate (max 20)
-    const deliveryScore = totalTx > 0 ? (deliveredCount / totalTx) * 20 : 0;
-
-    // Component 4 — Dispatch speed (max 15): avg hours paid→dispatched
-    const dispatchedTx = user.sellerTransactions.filter((t) => t.paidAt && t.dispatchedAt);
-    let speedScore = 7.5; // default if no data
-    if (dispatchedTx.length > 0) {
-      const avgHours =
-        dispatchedTx.reduce((sum, t) => {
-          const hours =
-            (new Date(t.dispatchedAt!).getTime() - new Date(t.paidAt!).getTime()) / 3_600_000;
-          return sum + hours;
-        }, 0) / dispatchedTx.length;
-      speedScore = avgHours < 24 ? 15 : avgHours < 48 ? 10 : avgHours < 72 ? 5 : 0;
-    }
-
-    // Component 5 — Listing quality (max 10): avg Claude confidence
-    const avgConfidence =
-      user.listings.length > 0
-        ? user.listings.reduce((sum, l) => sum + (l.claudeConfidence ?? 0.5), 0) /
-          user.listings.length
-        : 0.5;
-    const qualityScore = avgConfidence * 10;
-
-    // Component 6 — Account age (max 5, full at 2 years)
-    const ageYears =
-      (Date.now() - new Date(user.createdAt).getTime()) / (1_000 * 60 * 60 * 24 * 365);
-    const ageScore = Math.min(5, (ageYears / 2) * 5);
-
-    const trustScore = Math.round(salesScore + ratingScore + deliveryScore + speedScore + qualityScore + ageScore);
-
-    // Tier. DEALER is retired (operator 2026-09 — the platform no longer has
-    // dealer SELLERS; dealers survive only as the DEALER_TRANSFER handover
-    // registry). The tier is no longer sticky: a legacy DEALER row is
-    // recalculated like anyone else on the next rating recompute.
-    const newTier = this.calcTier(completedSales, trustScore);
-
-    // Cached average rating
-    const newAvg = starsList.length > 0 ? Math.round((avgRating * 10)) / 10 : null;
 
     await this.prisma.user.update({
       where: { id: sellerId },
       data: {
-        trustScore,
-        sellerTier: newTier,
-        averageRating: newAvg,
+        trustScore: trust.trustScore,
+        sellerTier: trust.tier,
+        averageRating: trust.averageRating,
       },
     });
 
-    return trustScore;
-  }
-
-  private calcTier(sales: number, score: number): SellerTier {
-    if (sales >= 25 && score >= 85) return 'TOP_SELLER';
-    if (sales >= 10 && score >= 70) return 'TRUSTED';
-    if (sales >= 3 && score >= 50) return 'ESTABLISHED';
-    return 'NEW';
+    return trust.trustScore;
   }
 }

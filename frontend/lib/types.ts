@@ -1,6 +1,14 @@
 export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
+/**
+ * The public seller ladder: New → Established → Trusted → Top Seller.
+ *
+ * ⚠️ `DEALER` IS LEGACY AND MUST STAY HARMLESS. No code awards it any more and
+ * no copy describes it — an old row may still carry the value, so the label
+ * maps keep a plain "Dealer" entry rather than rendering a raw enum. Tiers are a
+ * display of a seller's record only; they do not affect ranking or visibility.
+ */
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';
 // Subscription tier — orthogonal to SellerTier. Drives the GG+ pill
 // (MEMBER/PRO) rendered next to usernames site-wide per Phase E1
@@ -159,6 +167,15 @@ export interface PublicSellerProfile {
   sellerTier: SellerTier;
   totalSales: number;
   averageRating: number | null;
+  /**
+   * The seller's review count across every rating they have received.
+   *
+   * ⚠️ THE STOREFRONT MUST RENDER THIS, NOT `ratings.length`. The reviews
+   * endpoint is capped (50 most recent), so the array's length is a page size,
+   * not a review count — the stars and "N reviews" line come from the cached
+   * card-consistent fields here.
+   */
+  totalRatings: number;
   createdAt: string;
   subscriptionTier: SubscriptionTier;
   isVerifiedExpert: boolean;
@@ -171,6 +188,32 @@ export interface PublicSellerProfile {
     emailVerified: boolean;
     idVerified: boolean;
   };
+}
+
+/**
+ * One public review on a seller's storefront.
+ *
+ * ⚠️ NO INTERNAL IDS ON THE PUBLIC RESPONSE. `GET /ratings/seller/:id` returns at
+ * most the 50 most recent reviews without internal ids; the storefront uses the
+ * array only to render, so `id` is optional and the list keys on a review's
+ * stable content instead.
+ */
+export interface SellerRating {
+  id?: string;
+  stars: number;
+  comment: string | null;
+  sellerResponse: string | null;
+  createdAt: string;
+  // Public-facing reviews — username only per platform policy.
+  rater: {
+    username: string | null;
+    verification?: {
+      phoneVerified: boolean;
+      emailVerified: boolean;
+      idVerified: boolean;
+    };
+  };
+  transaction: { listing: { title: string } };
 }
 
 export interface Address {
@@ -689,11 +732,36 @@ export interface Rating {
   transaction: { listing: { title: string } };
 }
 
+/**
+ * The six real components of the trust score, each already capped at its own
+ * maximum (sales 25, rating 25, delivery 20, dispatch 15, quality 10, age 5).
+ *
+ * ⚠️ SERVED, NOT DERIVED FROM THE TOTAL. The dashboard used to draw four of the
+ * six bars as fixed percentages of `trustScore` (0.2/0.15/0.10/0.05), which
+ * looked like real measurements and were not — a seller with a high score saw a
+ * perfect dispatch bar whatever their dispatch record. Optional so an older
+ * backend renders with the old approximate bars rather than crashing.
+ */
+export interface TrustComponents {
+  sales: number;
+  rating: number;
+  delivery: number;
+  dispatch: number;
+  quality: number;
+  age: number;
+}
+
 export interface TrustDashboard {
   trustScore: number;
   sellerTier: SellerTier;
   totalSales: number;
+  /** Sales that actually completed — the honest figure for the sales bar. */
+  completedSales?: number;
   averageRating: number | null;
+  /** Ratings received, across the seller's whole history. */
+  totalRatings?: number;
+  /** The real per-component breakdown, when the backend serves it. */
+  components?: TrustComponents;
   recentRatings: Rating[];
 }
 

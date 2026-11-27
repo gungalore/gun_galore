@@ -526,6 +526,56 @@ route and a controller before believing in a feature.
 
 ---
 
+## Seller ratings and trust
+
+One pure calculator, `backend/src/ratings/trust-score.ts#computeTrust`, owns the
+score. `recalcSeller` persists its result; `GET /ratings/dashboard` runs the same
+function read-only and serves the per-component points — the dashboard once
+painted four of its six bars from `trustScore × weight` because the real points
+never left the server.
+
+**The rule.** A **completed sale** is `paymentStatus = RELEASED` and not a swap
+leg (`swapId: null`); swap settlement/refund rows are accounting entries, not
+sales, and are excluded from every count. Components (maxima 25/25/20/15/10/5):
+sales (1 point each), rating (stars/5 × 25 over completed sales), delivery
+(success over completed sales — `DELIVERED` **or** `COLLECTED`, i.e. a firearm
+collection counts; 0 when nothing has been released), dispatch (avg
+paid→dispatched hours: <24 → 15, <48 → 10, <72 → 5, else 0; **7.5 when there is
+no dispatch data**), listing quality (avg moderation confidence × 10) and
+account age (full 5 at two years). `trustScore = Math.round(Σ components)`;
+tier bands stay 3/50 ESTABLISHED, 10/70 TRUSTED, 25/85 TOP_SELLER.
+
+⚠️ **The delivery component used to divide by every non-refunded transaction**
+(HELD/in-flight included) and count only `DELIVERED`, so an honest seller with
+in-flight orders — or any collection — was penalised, and a swap leg could
+change the denominator. It now counts only completed sales.
+
+**Daily sweep** (`recalcRecentSellers`) keeps the 48-hour activity pass first,
+then refreshes every seller who has any listing or any transaction, deduped and
+bounded at 500 per run (the count is logged). A quiet seller's account-age points
+no longer freeze and a refund/return reaches their score without a new sale.
+
+**Public surfaces.** `GET /ratings/seller/:userId` serves the 50 most recent
+reviews and strips `raterId`/`ratedId`/`transactionId` (it keeps the rater
+handle + verification booleans and the listing title).
+`GET /sellers/:userId` now serves `totalRatings` from the real
+`ratingsReceived` count so the storefront can pair the cached `averageRating`
+with the true number instead of the capped list.
+
+**Moderation.** Review comments and seller replies are public free text: both are
+trimmed, run through `maskBadLanguage` (the same mask the community feed uses)
+and then the contact-detail filter; a masked word never hides a phone number
+because the filter sees the masked text. The buyer-correct window is 30 days and
+closes when the seller replies. Duplicate ratings on one transaction are a 409
+(the unique constraint is mapped from P2002, so two concurrent POSTs cannot 500).
+
+`totalSales` is incremented on release and never decremented: the refund flows
+claim only `HELD`/`DISPUTED` transactions (seller reject requires HELD; the admin
+refund claim is `paymentStatus IN ['HELD','DISPUTED']`), so a released sale
+cannot be refunded through them and no decrement path is needed.
+
+---
+
 ## Money
 
 ### Commission

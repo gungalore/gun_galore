@@ -1,4 +1,4 @@
-﻿import {
+import {
   Controller,
   Get,
   NotFoundException,
@@ -88,6 +88,14 @@ export class SellersPublicController {
         kycIdVerifiedAt: true,
         phoneVerified: true,
         emailVerifiedAt: true,
+        /**
+         * ⚠️ THE REAL REVIEW COUNT, NOT `recentRatings.length`. The storefront
+         * renders the cached `averageRating` beside this number; the public
+         * ratings endpoint is capped at the 50 most recent rows, so counting the
+         * list would under-report a long-lived seller and make "4.8 from 11
+         * buyers" wrong the moment they pass the cap.
+         */
+        _count: { select: { ratingsReceived: true } },
       },
     });
     if (!user) throw new NotFoundException('Seller not found');
@@ -96,6 +104,7 @@ export class SellersPublicController {
       kycIdVerifiedAt,
       phoneVerified,
       emailVerifiedAt,
+      _count,
       ...rest
     } = user;
     return {
@@ -106,6 +115,7 @@ export class SellersPublicController {
         emailVerified: emailVerifiedAt != null,
         idVerified: kycIdVerifiedAt != null,
       },
+      totalRatings: _count?.ratingsReceived ?? 0,
     };
   }
 }
