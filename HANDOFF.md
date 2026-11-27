@@ -7,6 +7,44 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — ROUND 2: SAPS 271 QUESTIONS OUT, CARTRIDGE PROPAGATED, REVIEW FOLDED (FULL DEPLOY `bed35363`)
+
+Operator tested live app **MO000159** (`/licence-centre/cmwycge1m00fn1zvngq6xaegm`, S16 dedicated hunter) at 04:20: "These
+seem to be 271 form questions? And why do I have to scroll and fill in this endless page? … I also said the calibre is
+6.5 … I chose creedmoor but it still did not add the creedmoor to the rest of the information when asking which species
+I wish to hunt."
+
+- **271 form boxes no longer asked.** We confirmed from `motivation-output.ts` that the product does not fill a SAPS
+  271 (PRINT_READY is a document pack, not the form). `licence_holder_type`, `marital_status` and `spouse_name` are now
+  `formOnly`: never asked, never gate generation, never reach the writer. They remain in the registry/answers so an
+  uploaded 271 is still read, and `SheetItem.formOnly` lets the review screen put them in a collapsed, optional
+  "SAPS 271 details" block. The live interview had opened with those three questions.
+- **Questions that belong to another section.** The security paragraph (`premises_*`, `alarm_present`,
+  `armed_response`, `burglar_bars`, `security_gates`, `travelled_areas_text`) is askable only on S13/S14; the live S16
+  interview had asked about burglar bars and gates. Safe storage stays on every type. "What else did you consider" is
+  now drafted from the battery instead of asked.
+- **The chosen cartridge now propagates everywhere.** MO000159 stored `firearm_calibre: "6.5"` + `firearm_cartridge:
+  "6,5 Creedmoor"`. The answer boundary now writes the cartridge into `firearm_calibre` when (and only when) the typed
+  calibre was a bare family; species research, hunt-class menus, question labels, the brief, the fact pack, the
+  suitability argument, the rendered cover/footer and `packConsistency` all resolve `cartridgeSource()` first. Rows
+  stored before this need no migration — every reader prefers the cartridge, so that application's motivation will name
+  the Creedmoor without a data edit.
+- **Review screen folded.** Attention counts at the top; one collapsed `<details>` per sheet section (auto-opens only
+  where a missing answer or a drafted answer to check lives); optional empty rows stay collapsed until tapped; the 271
+  block at the bottom. The interview's "Have a document for this?" drawer is folded behind "Add a document for this
+  step" and the "already in your file" strip is one line, so the card is the focus instead of an endless scroll.
+
+**Deployed `bed35363` (full, 2026-11-27 05:52 SAST); rollback `alloutdoor-20261127-055233.dump`.** Backend/frontend/
+warden online; health OK both checks; gate 307 → `/gate` and `/gate` 200; new routes still 401 unauthenticated.
+Checks: backend tsc clean + **465 suites / 6,847 passed / 8 skipped / 0 failed** (known Jest teardown nonzero exit);
+frontend typecheck clean + **209 files / 2,353 passed / 1 skipped** + production build clean.
+
+Next: operator should hard-refresh (PWA update) and look at MO000159's review screen — the 271 block is folded away,
+sections are folded, and the drafted answers are in their sections with "Drafted for you — check it". Writing that
+application should now name 6,5 Creedmoor throughout and no longer ask 271 questions in a fresh application. Known
+edge: correcting the cartridge from the review screen's 271 block does not rewrite `firearm_calibre` (that propagation
+lives on the interview's answer boundary); every reader still prefers the cartridge, so the document is right.
+
 ## 2026-11-27 — MOTIVATION WRITER MODE: NARRATIVE IS DRAFTED, NEVER ASKED; BACK + EDITABLE REVIEW (FULL DEPLOY)
 
 Operator screenshot: "it asked me this twice in a row… it kept asking dumb questions… this should be
