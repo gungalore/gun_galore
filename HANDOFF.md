@@ -7,6 +7,55 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — RATING FOLLOW-UPS (BUYER NOTIFY, JEV ABUSE, PER-SELLER ORDER RATINGS) + MULTI-SELLER CART AUDIT
+
+Operator: "notify the buyer as well. Let JEV also do abuse filter, negative feedback is allowed but derogatory
+language and references are forbidden. No admin screen, just let JEV do it. let each seller be rated in a
+multi-order. When done, check multi-seller cart shipping and processing if that is solid."
+
+**Deployed `29cdb83c` (full, 14:23 SAST; rollback `alloutdoor-20261127-142358.dump`).** Backend/frontend/warden
+online, health OK, gate 307 → `/gate` + 200. Checks: backend tsc + **471 suites / 6,937 passed / 8 skipped / 0
+failed**; frontend typecheck + **215 files / 2,400 passed / 1 skipped** + production build clean.
+
+- **Buyer notified on a seller reply.** `NotificationsService.ratingReplied` writes an in-app BUYER /
+  `rating_reply` row ("Seller replied to your review", quote, url `/sellers/:sellerId`) and sends the matching
+  email; called fire-and-forget from `RatingsService.respond` so a mail failure never fails the reply.
+- **JEV abuse + derogatory references.** `conductQuestions()` gains `derogatory_reference` (slurs, hate speech,
+  discriminatory references to a person or group, any language; civil criticism and blunt negative feedback are
+  explicitly excluded). `ContactDetailFilterService.check` takes `{ blockOnReview?: boolean }`; rating comments
+  and seller replies pass it, so the ladder's 60–80 % REVIEW band is a BLOCK with a "please rephrase" reason —
+  no admin review screen, JEV decides. Every other surface keeps the existing park-for-review behaviour.
+- **Each seller rated once per order.** `GET /orders/:id` now serves `sellers[]`
+  (`{ sellerId, username, transactionId (a RELEASED line or null), canRate (no rating yet AND all that
+  seller's lines RELEASED), rating {…} }`); `create` refuses a second rating for the same order+seller (409) and
+  `update` is order-aware so editing through a different line edits the same rating. The order page shows a
+  "Rate your sellers" section (rate / saved / waiting per seller); multi-line orders on the transaction page
+  now link to the order page instead of offering a second per-line widget. Limitation flagged: per-order-seller
+  uniqueness is application-level (no DB constraint), so two concurrent POSTs on different lines can
+  theoretically both insert; closing it needs a denormalised orderId on Rating + a unique index.
+- **Multi-seller cart audit verdict: NOT SOLID as a checkout path — and it is not live.** `POST /orders/checkout`
+  is hard-gated by `CART_CHECKOUT_LIVE` (unset in production) and `createOrderCheckout` itself says the cart
+  paygate was never wired: it reserves every line and creates an `AWAITING_PAYMENT` order but no payment. The
+  live purchase flow remains per-listing `/checkout/[listingId]`.
+  - Shipping/consolidation is the strongest part: per-seller/per-destination grouping, one waybill per courier
+    parcel (siblings `shipsWithId`, never their own), collection-only rejected up front, firearms excluded from
+    consolidation and routed to dealer/private handover, per-parcel prices shown in the cart.
+  - Blockers before enabling: (B1) no order-level capture exists — `Order.gatewayCheckoutId/gatewayPaymentId`
+    have no writer and the cart page has no success branch; (B2) flipping the gate would strand reserved
+    inventory and dead `AWAITING_PAYMENT` orders because the orphan/reconcile sweeps exclude `orderId` and no
+    order expiry/cancel exists; (B3) the cart total omits the buyer Platform Fee, so the displayed total
+    (items + delivery) is not `order.buyerTotal`.
+  - Important: (I1) the Platform Fee is charged per line (R10 floor and bands re-apply per line), not once on
+    the order total — a policy decision is needed before enabling; (I2) `Order.status` cannot show partial
+    delivery and `CANCELLED` has no writer; (I3) `markPaid` binds amount+merchant ref per transaction, so a
+    single order capture cannot mark children paid without a fan-out; (I4) “My Orders” lists transactions, not
+    orders; (I5) consolidated-parcel reversal/SLA paths are not parcel-ordered.
+  - Tests: the multi-line `createOrderCheckout` suite is `describe.skip`; no tests exist for one-capture→N-paid,
+    order rollup sweep, CANCELLED/partial delivery, cart display-vs-charge, or order grouping.
+  - Recommendation: keep `CART_CHECKOUT_LIVE` off. The next piece of work is an order-level Peach capture +
+    webhook fan-out + order expiry/cancel + status rollup + cart fee display + the missing tests; that is a
+    feature, not a fix, so it waits for the operator's go-ahead.
+
 ## 2026-11-27 — SELLER RATING SYSTEM AUDIT (FULL DEPLOY `c5661088`)
 
 Operator: "For the seller rating system, is everything in order? Audit it." It was not. Fixed:
