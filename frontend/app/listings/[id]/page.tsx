@@ -1250,10 +1250,12 @@ export default async function ListingDetailPage({
                 </span>
                 <HelpTip title="Seller tier" side="left">
                   Tiers reflect the seller&apos;s track record on All
-                  Outdoor: how many sales they&apos;ve completed, how
-                  long they&apos;ve been active, and whether they&apos;re
-                  a verified dealer. Higher tiers earn buyer-protection
-                  perks like faster payout disputes.
+                  Outdoor: completed sales, buyer ratings, delivery and
+                  dispatch reliability, listing quality, and how long
+                  they&apos;ve been a member. New sellers start at New
+                  Seller; Established, Trusted and Top Seller are earned as
+                  that record builds. Buyer protection applies to every
+                  sale, whatever the tier.
                 </HelpTip>
               </span>
             </div>
