@@ -7,6 +7,20 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — FULFILMENT CARD HIGHLIGHT FOLLOWS THE POINTER (FRONTEND-ONLY `f05746bd`)
+
+Operator screenshot of "How would you like it?": the Print and Deliver card carried a permanent accent border, so one
+option always looked pre-selected and the other looked disabled wherever the cursor was — "Blue box is static, needs
+to jump to the option the cursor is on."
+
+`frontend/app/licence-centre/[id]/start/page.tsx`: both fulfilment cards are neutral at rest and take
+`hover:border-[color:var(--red)]` + `focus-within:border-[color:var(--red)]` (and the red wash on hover), with a
+150 ms colour transition. `--red` is the blue action colour in the licence-centre dark theme, which is the accent the
+operator was describing. The step-1 output cards were already neutral and unchanged.
+
+Deployed **`f05746bd`** (frontend-only, 2026-11-27 09:16 SAST; rollback `alloutdoor-20261127-091641.dump`);
+frontend/backend/warden online, health OK, gate 307 → `/gate` and `/gate` 200; typecheck + production build clean.
+
 ## 2026-11-27 — ROUND 4: ONE CARD FOR THE OWNED FIREARMS, A NONE MODEL, COMPACT REVIEW (FULL DEPLOY `fd50abd1`)
 
 Operator on the new S16 app **MO000160** (08:29): "there is no … None option for firearms I already own. And the
