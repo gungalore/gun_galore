@@ -69,6 +69,24 @@ export type ProvenanceSource =
    */
   | 'DERIVED'
   /**
+   * A NARRATIVE PARAGRAPH WE WROTE FOR THE MEMBER, from their documents and
+   * their application, for them to check and change.
+   *
+   * ⚠️ IT EXISTS BECAUSE SOME THINGS MUST NOT BE ASKED. A motivation's shooting
+   * history, its threat circumstances and its hunting record are paragraphs an
+   * applicant is not equipped to compose in a box, and asking for them is what
+   * left the interview circling the same card. The writer drafts them from the
+   * facts the applicant already supplied, and the member reviews and edits the
+   * result — see MOTIVATION-GUIDE-BOOK.md Part 1 rule 1.
+   *
+   * ⚠️ ALWAYS STAMPED WITH `inferred: true`, so the sheet renders it as
+   * `suggested` — gold wash, "Drafted for you — check it", a Confirm button.
+   * The applicant approves every drafted sentence before the pack is written.
+   * `stamp()` still refuses to overwrite a MEMBER entry: a paragraph the
+   * applicant has edited is theirs and is never re-drafted.
+   */
+  | 'DRAFTED'
+  /**
    * The member was shown the question and chose not to answer it.
    *
    * ⚠️ A SKIP IS A DECISION, NOT A MISSING VALUE. The interview offers a few
@@ -97,6 +115,7 @@ export const PROVENANCE_SOURCES: readonly ProvenanceSource[] = [
   'SELLER',
   'ASSOCIATION',
   'DERIVED',
+  'DRAFTED',
   'SKIPPED',
   'MEMBER',
 ] as const;
@@ -115,6 +134,7 @@ export const SOURCE_LABELS: Record<ProvenanceSource, string> = {
   SELLER: 'From the seller',
   ASSOCIATION: 'Synced from your association',
   DERIVED: 'Worked out from your other answers',
+  DRAFTED: 'Drafted for you from your file — check it',
   SKIPPED: 'You skipped this',
   MEMBER: 'You entered this',
 };

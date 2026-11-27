@@ -75,6 +75,20 @@ export interface IntakeQuestion {
   /** True where the applicant may skip without blocking generation. */
   optional: boolean;
   /**
+   * The saved answer, when this card is being served to EDIT an earlier topic.
+   *
+   * ⚠️ PREFILL, NOT A DEFAULT. A forward card carries neither field — the
+   * question is empty and the member answers it. Back navigation re-opens a
+   * topic and the controls are seeded from here, so an edit starts from what
+   * was saved rather than from a blank form that looks like lost data.
+   * For a multi/cards question the comma list of chosen option keys arrives as
+   * `values`, and any stored value the current choices no longer offer stays in
+   * `value` as free text rather than being silently dropped.
+   */
+  value?: string;
+  /** The chosen option values for a multi/cards question being edited. */
+  values?: string[];
+  /**
    * The minimum the answer must say, where the gate enforces one.
    *
    * ⚠️ THE CARD NEEDS IT TO AVOID A DEAD END. The shooting history has a
@@ -217,6 +231,25 @@ export interface IntakeState {
   question: IntakeQuestion | null;
   /** One-sentence acknowledgement of the answer just given. */
   acknowledgement?: string;
+  /**
+   * True while the narrative answers are being drafted from the file.
+   *
+   * ⚠️ THE REVIEW SCREEN WAITS ON THIS, NOT ON THE MODEL. The shooting history,
+   * the threat circumstances and the hunting record are composed from the
+   * documents and the application rather than asked (see intake-draft.service);
+   * while that runs the screen says so and polls, and the review sheet's rows
+   * fill in as the draft lands. Nothing about it may block the interview.
+   */
+  drafting?: boolean;
+  /**
+   * Where Back goes, when there is a previous topic with questions.
+   *
+   * ⚠️ STATELESS AND SERVER-COMPUTED. The previous topic's card is fetched from
+   * GET :id/intake/card?topic=…, which returns the same askable fields with the
+   * saved answers prefilled. Null on the first topic with work left, and null
+   * outside the interview.
+   */
+  navigation?: { back: { id: IntakeTopicId; title: string } | null } | null;
   /**
    * THE RESEARCH STRIP: what we already hold, in the member's own words.
    *

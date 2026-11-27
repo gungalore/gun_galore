@@ -644,8 +644,21 @@ export default function IntakeStartPage() {
         Ready to start
       </h1>
       <p className="mt-2 text-[13.5px] leading-6 text-[var(--text-secondary)]">
-        We will take what you already have from your Document Library as each
-        topic comes up, then ask only the gaps.
+        {/*
+          ⚠️ THE PROMISE THE INTERVIEW ACTUALLY KEEPS. The narrative answers
+          (shooting history, routine, threat circumstances) are drafted from the
+          applicant's own documents and application — they are never asked as an
+          empty essay, and they are not silently assumed either: the review
+          screen flags every drafted answer so it can be checked and changed
+          before the motivation is written.
+        */}
+        We ask only what your documents do not cover — the facts a certificate,
+        licence card or invoice can answer, we take from the document.
+      </p>
+      <p className="mt-2 text-[13.5px] leading-6 text-[var(--text-secondary)]">
+        Your personal history — how you came to shooting, your routine, the
+        circumstances you describe — we write for you from your file. You check
+        and change every word before we write the motivation.
       </p>
       <button
         type="button"

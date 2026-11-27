@@ -656,6 +656,17 @@ export interface IntakeDetailField {
   customPlaceholder: string;
 }
 
+/**
+ * Where Back on the current interview card would go.
+ *
+ * Mirrors IntakeState.navigation in backend/src/motivations/intake/intake.types.ts:
+ * the topic just before the first topic with work left, or null when the member
+ * is already on the first one. Absent outside a card.
+ */
+export interface IntakeNavigation {
+  back: { id: IntakeTopicId; title: string } | null;
+}
+
 export interface IntakeQuestion {
   id: string;
   fieldKey: string;
@@ -684,6 +695,18 @@ export interface IntakeQuestion {
    * used to look answered, enable Continue and then be refused by the server.
    */
   minWords?: number;
+  /**
+   * What is already saved for this question, when the card is re-opened to edit
+   * an earlier topic.
+   *
+   * ⚠️ A SAVED VALUE, NOT A SUGGESTION. The server computes it from the stored
+   * answers when it builds a card for an answered topic (Back on the interview),
+   * so the editor opens on what the member actually said. It is absent on a
+   * normal card.
+   */
+  value?: string;
+  /** The saved multi/cards answers, matched to this question's choices. */
+  values?: string[];
 }
 
 export interface IntakeDocumentItem {
@@ -751,6 +774,19 @@ export interface IntakeState {
   stage: IntakeStage;
   blocked: IntakeBlocked | null;
   summary: string;
+  /**
+   * The writer is drafting the narrative answers right now.
+   *
+   * ⚠️ A BACKGROUND JOB, NEVER A BLOCKING WAIT. It becomes true when the
+   * server has scheduled the drafting pass, and the screen shows one calm line
+   * while it polls. Nothing on the page may wait on it.
+   */
+  drafting?: boolean;
+  /**
+   * Where Back on the current card goes. Null outside a card, and `back: null`
+   * means the member is already on the first topic with work.
+   */
+  navigation?: IntakeNavigation | null;
   /**
    * What the DOCUMENT still needs, not what the form still needs. Computed by
    * the same rule the generation gate refuses on, so the interview can say it
@@ -1112,6 +1148,19 @@ export type ProvenanceSource =
   | 'READ'
   | 'SELLER'
   | 'ASSOCIATION'
+  /**
+   * Worked out from the applicant's other answers, never read off a document.
+   * Mirrors backend/src/common/answer-provenance.ts — it was missing here.
+   */
+  | 'DERIVED'
+  /**
+   * Written by the assistant from the documents and the application, for the
+   * applicant to check. Mirrors backend/src/common/answer-provenance.ts — the
+   * narrative answers the interview never asks.
+   */
+  | 'DRAFTED'
+  /** The member was asked and chose not to answer. */
+  | 'SKIPPED'
   | 'MEMBER';
 
 /**
@@ -1423,6 +1472,20 @@ export const motivationsApi = {
       { missingRequired: [] },
     ),
 
+  /**
+   * Accept a drafted or suggested value without changing it.
+   *
+   * ⚠️ SAVING AN UNCHANGED VALUE WRITES NOTHING. Only a value that MOVED is
+   * stamped MEMBER, so a drafted answer the applicant is happy with would stay
+   * "Drafted for you — check it" for ever without this explicit confirmation.
+   * The server keeps that rule; this is the door that answers it.
+   */
+  confirmAnswer: (t: TokenGetter, id: string, key: string) =>
+    request<{ ok: true }>(t, `/${id}/answers/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ key }),
+    }),
+
   // ?? FOUR CALLS STOOD HERE — profileOffer, licenceCentreOffer,
   // useLicenceCentre and useProfile — and their four endpoints were deleted on
   // 2026-09-08 (Phase 4). They showed a member what we COULD fill from their
@@ -1453,6 +1516,58 @@ export const motivationsApi = {
    */
   intake: (t: TokenGetter, id: string) =>
     request<IntakeState>(t, `/${id}/intake`, { cache: 'no-store' }),
+
+  /**
+   * One earlier topic's card, with what is already saved filled in.
+   *
+   * ⚠️ THE EDIT DOOR. "Back" on a card re-opens the previous topic through
+   * this call; the card saves with `patchIntakeAnswers` rather than posting new
+   * answers, so the plan is re-derived from the corrected facts and the
+   * follow-up questions and the writer's drafts follow the change.
+   */
+  intakeCard: (t: TokenGetter, id: string, topic: IntakeTopicId) =>
+    request<{ group: IntakeGroup | null; navigation: IntakeNavigation }>(
+      t,
+      /**
+       * ⚠️ THE QUERY IS OUTSIDE THE TEMPLATE, AND NOT FOR STYLE. backend/src/
+       * common/api-route-contract.spec.ts reads the first template literal as
+       * the route shape so a client and a controller cannot drift; a `?topic=`
+       * inside it reads as part of the PATH and the contract fails on a route
+       * that exists.
+       */
+      `/${id}/intake/card` + `?topic=${encodeURIComponent(topic)}`,
+      { cache: 'no-store' },
+    ),
+
+  /**
+   * Save edited answers and let the server re-derive the plan.
+   *
+   * ⚠️ NOT `saveAnswers`. Answers written here go through the interview's own
+   * path, which stamps MEMBER, drops formOnly/unknown keys and schedules the
+   * writer to re-draft anything it had drafted from the old facts.
+   */
+  patchIntakeAnswers: (
+    t: TokenGetter,
+    id: string,
+    answers: Record<string, string>,
+  ) =>
+    request<IntakeState>(t, `/${id}/intake/answers`, {
+      method: 'PATCH',
+      body: JSON.stringify({ answers }),
+    }),
+
+  /**
+   * Ask the writer to draft the narrative answers now.
+   *
+   * The interview schedules this by itself; this is the explicit "write it for
+   * me" door, kept for the screen that wants to retry a failed pass.
+   */
+  draftIntake: (t: TokenGetter, id: string) =>
+    request<{ state: IntakeState; drafted: number; failed: number }>(
+      t,
+      `/${id}/intake/draft`,
+      { method: 'POST' },
+    ),
 
   startIntake: (t: TokenGetter, id: string, mode: IntakeMode) =>
     request<IntakeState>(t, `/${id}/intake/start`, {

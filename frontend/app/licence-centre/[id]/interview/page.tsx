@@ -8,6 +8,8 @@ import {
   type DocumentEngineStatus,
   type IntakeChoice,
   type IntakeDocumentItem,
+  type IntakeGroup,
+  type IntakeNavigation,
   type IntakeQuestion,
   type IntakeState,
 } from '@/lib/motivations-api';
@@ -26,6 +28,16 @@ interface Turn {
   question: string;
   answer: string;
 }
+
+/**
+ * How long the screen keeps asking whether the writer has finished drafting.
+ *
+ * ⚠️ A DEADLINE, NOT AN ETERNAL POLL, and it never blocks the page. The drafts
+ * land on the sheet and the review screen shows them there; if the writer is
+ * slow or down, the interview is still fully usable.
+ */
+const DRAFT_POLL_MS = 90_000;
+const DRAFT_TICK_MS = 2_000;
 
 const keyOf = (i: IntakeDocumentItem) => `${i.source}:${i.sourceId}`;
 
@@ -82,6 +94,21 @@ export default function IntakeInterviewPage() {
   );
   const [manualSaving, setManualSaving] = useState(false);
   const [consentSigned, setConsentSigned] = useState(false);
+  /**
+   * An earlier topic re-opened from Back, with its saved answers prefilled.
+   *
+   * ⚠️ ITS OWN STATE, NOT THE LIVE GROUP. The live group is where the interview
+   * currently is; this card does not move it. Saving goes through
+   * `patchIntakeAnswers`, which lets the server re-derive the plan — and the
+   * writer's drafts — from the corrected facts, then this clears back to the
+   * live card.
+   */
+  const [editCard, setEditCard] = useState<{
+    group: IntakeGroup;
+    navigation: IntakeNavigation;
+  } | null>(null);
+  /** The writer's drafting pass finished; the sheet is refreshed exactly once. */
+  const wasDrafting = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -177,6 +204,46 @@ export default function IntakeInterviewPage() {
     if (id) void refreshSheet();
   }, [id, refreshSheet]);
 
+  const drafting = data?.drafting === true;
+
+  /**
+   * While the writer is drafting, keep asking — quietly.
+   *
+   * ⚠️ NOT A BLOCKING FETCH AND NOT A SPINNER. The drafts land on the sheet the
+   * review screen reads; this page only needs to know when the pass is over so
+   * it can stop saying "writing…" and refresh the sheet it uses to count what
+   * was drafted. It gives up after ninety seconds and leaves the screen exactly
+   * as usable as it was.
+   */
+  useEffect(() => {
+    if (!drafting) return;
+    const deadline = Date.now() + DRAFT_POLL_MS;
+    const timer = window.setInterval(() => {
+      if (Date.now() > deadline) {
+        window.clearInterval(timer);
+        return;
+      }
+      void load();
+    }, DRAFT_TICK_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [drafting, load]);
+
+  /**
+   * The drafting pass just finished: the sheet now holds the drafted answers,
+   * which is where the completion card counts them from.
+   */
+  useEffect(() => {
+    if (drafting) {
+      wasDrafting.current = true;
+      return;
+    }
+    if (!wasDrafting.current) return;
+    wasDrafting.current = false;
+    void refreshSheet();
+  }, [drafting, refreshSheet]);
+
   const applicantName =
     sheet?.items.find((i) => i.key === 'full_name')?.value ?? '';
   const consentFirearm = {
@@ -266,6 +333,67 @@ export default function IntakeInterviewPage() {
       (i.kind === 'FIREARM_SOURCE_PROOF' || i.kind === 'SELLER_LICENCE'),
   );
 
+  /**
+   * How many narrative answers the writer drafted, for the completion card.
+   *
+   * ⚠️ COUNTED FROM THE SHEET'S PROVENANCE, never estimated here. The server
+   * stamps every drafted value DRAFTED; the sheet is refreshed when the
+   * drafting pass finishes, which is what makes this figure true at the moment
+   * the member is told it.
+   */
+  const draftedAnswers = useMemo(
+    () =>
+      (sheet?.items ?? []).filter(
+        (item) => item.provenance?.source === 'DRAFTED',
+      ).length,
+    [sheet],
+  );
+
+  /**
+   * The two detail gaps the writer fills, split out of the rest.
+   *
+   * ⚠️ THEY ARE NOT THINGS THE APPLICANT OWES US. The completion card used to
+   * list "your shooting history — how you came to shooting…" in the red
+   * "a few more details" box, which is the same interrogation the interview
+   * just stopped asking. While the draft runs the card says so; if the pass
+   * failed the member gets one button to try it again, not a question.
+   */
+  const NARRATIVE_GAPS = useMemo(
+    () =>
+      new Set(['history:shooting_history', 'renewal:continued_use']),
+    [],
+  );
+  const narrativeGaps = useMemo(
+    () => (data?.needsDetail ?? []).filter((gap) => NARRATIVE_GAPS.has(gap.code)),
+    [data?.needsDetail, NARRATIVE_GAPS],
+  );
+  const blockingGaps = useMemo(
+    () => (data?.needsDetail ?? []).filter((gap) => !NARRATIVE_GAPS.has(gap.code)),
+    [data?.needsDetail, NARRATIVE_GAPS],
+  );
+
+  /**
+   * "Write it again" for a draft that did not land, e.g. a model outage.
+   *
+   * ⚠️ THE FAIL-SAFE IS THE SERVER'S, THIS IS THE DOOR. finish() would fall
+   * back to the deterministic paragraph anyway, but a member who wants the
+   * specific version deserves one obvious retry before they accept it.
+   */
+  async function writeDraft() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await motivationsApi.draftIntake(getToken, id);
+      setData(result.state);
+      void refreshSheet();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send(body: {
     value?: string;
     values?: string[];
@@ -329,6 +457,72 @@ export default function IntakeInterviewPage() {
       setSelected([]);
       setDetailFor(null);
       setDetailValues({});
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Back: open the previous topic's card with what is already saved.
+   *
+   * ⚠️ THE SERVER BUILDS THE CARD, NOT THIS PAGE. Only `planCard` knows which
+   * fields are askable for this licence type and where the saved answers sit in
+   * them; a client-side form built from the current group would be a second plan
+   * and would drift from the one the writer is given.
+   */
+  async function openBackCard() {
+    const back = data?.navigation?.back;
+    if (!back || busy || editCard) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const card = await motivationsApi.intakeCard(getToken, id, back.id);
+      if (!card.group?.questions?.length) {
+        setError('There is nothing to change on that step.');
+        return;
+      }
+      setEditCard({ group: card.group, navigation: card.navigation });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Save the edited card.
+   *
+   * ⚠️ A PATCH, NOT NEW ANSWERS. The server marks the changed fields MEMBER,
+   * rebuilds the plan from them and re-drafts what it had drafted from the old
+   * facts — so the questions that come next, and the writer's narrative, follow
+   * the correction rather than sitting beside it.
+   */
+  async function saveEditCard(answers: GroupAnswer[]) {
+    if (!editCard || !answers.length || submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const patch: Record<string, string> = {};
+      for (const answer of answers) {
+        if (answer.skip) continue;
+        if (answer.values?.length) {
+          // multi/cards are stored as one comma list, in the offered order.
+          patch[answer.fieldKey] = answer.values.join(', ');
+        } else if (typeof answer.value === 'string') {
+          patch[answer.fieldKey] = answer.value;
+        } else if (typeof answer.message === 'string') {
+          patch[answer.fieldKey] = answer.message;
+        }
+        if (answer.fields) Object.assign(patch, answer.fields);
+      }
+      const next = await motivationsApi.patchIntakeAnswers(getToken, id, patch);
+      setData(next);
+      setEditCard(null);
+      void refreshSheet();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -575,7 +769,13 @@ export default function IntakeInterviewPage() {
     setError(null);
     try {
       await motivationsApi.finishIntake(getToken, id);
-      router.push(`/licence-centre/${id}/pack`);
+      /**
+       * ⚠️ THE REVIEW SCREEN, NOT THE PACK. Finishing the interview no longer
+       * writes anything: it opens the editable sheet where every answer —
+       * including what the writer drafted — is checked before the document is
+       * written. The pack is one decision further on.
+       */
+      router.push(`/licence-centre/${id}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -678,6 +878,21 @@ export default function IntakeInterviewPage() {
       </p>
 
       {/*
+        ⚠️ A STATUS LINE, NOT A BLOCKING PANEL. The writer is composing the
+        narrative answers from the applicant's own documents and application;
+        it runs in the background so the interview stays usable. It goes without
+        a word when the pass ends.
+      */}
+      {drafting ? (
+        <p
+          role="status"
+          className="mt-2 text-[12.5px] leading-5 text-[var(--text-tertiary)]"
+        >
+          Writing your draft from your documents… you can keep going.
+        </p>
+      ) : null}
+
+      {/*
         ⚠️ WHAT THE FILE ALREADY HOLDS. The interview is not starting from
         nothing: the firearm, the association and the province are already on
         the application, and the researched questions are built around them.
@@ -701,13 +916,51 @@ export default function IntakeInterviewPage() {
 
 
 
-      {group && group.questions.length ? (
+      {editCard ? (
         <>
           <IntakeGroupCard
+            key="edit-card"
+            group={editCard.group}
+            mode="edit"
+            busy={busy}
+            onSubmit={saveEditCard}
+            onStuck={(message) => setError(message)}
+          />
+          {/*
+            ⚠️ THE WAY BACK TO THE CARD THEY WERE ON. Not "Back" — that word
+            belongs to the action that opened this editor, and two backs on one
+            screen is how somebody loses the topic they were answering.
+          */}
+          <div className="mt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setEditCard(null);
+                setError(null);
+              }}
+              className="text-[13px] text-[var(--text-secondary)] underline disabled:opacity-50"
+            >
+              Back to current question
+            </button>
+          </div>
+          {error ? (
+            <p className="mt-2 text-[13px] leading-5 text-[var(--red)]">
+              {error}
+            </p>
+          ) : null}
+        </>
+      ) : group && group.questions.length ? (
+        <>
+          <IntakeGroupCard
+            key="current-card"
             group={group}
             busy={busy}
             onSubmit={sendBatch}
             onStuck={(message) => setError(message)}
+            onBack={
+              data.navigation?.back ? () => void openBackCard() : undefined
+            }
           />
           {/* The reason belongs under the question it is about, not at the foot of the page. */}
           {error ? (
@@ -960,22 +1213,63 @@ export default function IntakeInterviewPage() {
         ) : (
           <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
             <p className="m-0 text-[15px] font-medium text-[var(--text-primary)]">
-              {data.needsDetail?.length
+              {blockingGaps.length
                 ? 'A few more details before I can write it.'
                 : 'That’s everything I need.'}
             </p>
             <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
-              {data.needsDetail?.length
+              {blockingGaps.length
                 ? 'The motivation cannot be written until these are in, so the interview stays open.'
-                : 'Review the answers on the sheet before you write. Anything the documents already answered is marked with its source.'}
+                : 'Review every answer on the next screen before we write it. Anything the documents already answered is marked with its source.'}
             </p>
-            {data.needsDetail?.length ? (
+            {!blockingGaps.length && draftedAnswers > 0 ? (
+              <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+                We drafted {draftedAnswers} answer
+                {draftedAnswers === 1 ? '' : 's'} from your file — check{' '}
+                {draftedAnswers === 1 ? 'it' : 'them'} before we write.
+              </p>
+            ) : null}
+            {!blockingGaps.length && narrativeGaps.length && drafting ? (
+              <p
+                role="status"
+                className="mt-1 text-[12.5px] leading-5 text-[var(--text-tertiary)]"
+              >
+                Writing the personal paragraphs we write for you… this takes a
+                few seconds.
+              </p>
+            ) : null}
+            {narrativeGaps.length && !drafting ? (
+              <div
+                className="mt-2 rounded-lg border px-3 py-2"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-inset)' }}
+              >
+                <p className="m-0 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                  We write these for you from your documents and application.
+                  You will check every word on the next screen.
+                </p>
+                <ul className="m-0 mt-1 list-disc pl-5 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+                  {narrativeGaps.map((gap) => (
+                    <li key={gap.code}>{gap.label}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void writeDraft()}
+                  className="mt-2 rounded-lg border px-3 py-2 text-[12.5px] font-medium disabled:opacity-50"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                >
+                  Write my draft
+                </button>
+              </div>
+            ) : null}
+            {blockingGaps.length ? (
               <div
                 className="mt-2 rounded-lg border px-3 py-2"
                 style={{ borderColor: 'var(--red)', background: 'var(--red-wash)' }}
               >
                 <ul className="m-0 list-disc pl-5 text-[12.5px] leading-5 text-[var(--text-primary)]">
-                  {data.needsDetail.map((gap) => (
+                  {blockingGaps.map((gap) => (
                     <li key={gap.code}>
                       <span className="font-medium">{gap.label}</span> — {gap.hint}
                     </li>
@@ -1002,7 +1296,9 @@ export default function IntakeInterviewPage() {
             ) : null}
             <button
               type="button"
-              disabled={busy || Boolean(data.needsDetail?.length)}
+              disabled={
+                busy || Boolean(blockingGaps.length)
+              }
               onClick={() => void finish()}
               className="mt-3 rounded-lg px-4 py-2.5 text-[13.5px] font-medium text-white disabled:opacity-60"
               style={{ background: 'var(--action-primary-bg)' }}
@@ -1400,7 +1696,7 @@ export default function IntakeInterviewPage() {
               onClick={() => void finish()}
               className="text-[13px] text-[var(--text-secondary)] underline"
             >
-              Finish and write
+              Finish and check my answers
             </button>
           ) : null}
           <span className="text-[11.5px] text-[var(--text-tertiary)]">

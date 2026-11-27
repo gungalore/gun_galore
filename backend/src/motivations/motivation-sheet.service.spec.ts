@@ -686,4 +686,50 @@ describe('an ambiguous calibre', () => {
     expect(item.value).toBe('9mm Wildex');
     expect(item.choices).toContain('9 mm Luger');
   });
+
+  /**
+   * ⚠️ THE OPERATOR'S OWN MO000158. The calibre was typed as "6.5", the Bench
+   * held rows for the family, and the review sheet asked "Which cartridge is
+   * it?" — but the chips came only from the catalogue, so a family the Bench
+   * had imported thinly arrived with no real variant buttons. The curated
+   * family backstop is chips only: nothing is ever chosen for the member.
+   */
+  it('offers the real 6.5 variants even when the Bench holds no rows', async () => {
+    const { svc } = build({ firearm_calibre: '6.5' }, { cartridges: [] });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const item = itemFor(sheet.items, 'firearm_cartridge');
+    expect(item).toBeDefined();
+    expect(item.choices).toEqual(
+      expect.arrayContaining([
+        '6,5 Creedmoor',
+        '6.5x55 Swedish',
+        '6.5 PRC',
+        '6.5 Grendel',
+      ]),
+    );
+  });
+
+  it('puts the Bench names first, de-duplicated, capped at eight', async () => {
+    const { svc } = build(
+      { firearm_calibre: '6.5' },
+      {
+        cartridges: [
+          { name: '6,5 Creedmoor', slug: '65-cm', aliases: [] },
+          { name: '6.5 PRC', slug: '65-prc', aliases: [] },
+        ],
+      },
+    );
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const choices = itemFor(sheet.items, 'firearm_cartridge').choices ?? [];
+    // The Bench's own names lead (the catalogue orders them shortest-first),
+    // then the curated variants fill the gaps.
+    expect(choices.slice(0, 2).sort()).toEqual(
+      ['6,5 Creedmoor', '6.5 PRC'].sort(),
+    );
+    expect(choices.slice(2)).toEqual(
+      expect.arrayContaining(['6.5x55 Swedish', '6.5 Grendel']),
+    );
+    expect(choices.length).toBeLessThanOrEqual(8);
+    expect(new Set(choices).size).toBe(choices.length);
+  });
 });

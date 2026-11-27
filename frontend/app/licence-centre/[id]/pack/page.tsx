@@ -769,6 +769,23 @@ export default function PackPage() {
           </p>
 
           {/*
+            ⚠️ THE WAY BACK TO THE ANSWERS, FROM THE SCREEN THAT WRITES THEM.
+            The interview is finished by the time somebody gets here, so the
+            review screen is the only place an answer can still be corrected
+            before the document exists. It is a SECOND door, deliberately: the
+            primary action on this page is to write, and a member who has read
+            their pack and found a wrong calibre must not have to walk the
+            interview again to fix it.
+          */}
+          <Link
+            href={`/licence-centre/${id}`}
+            className="mt-2 inline-flex min-h-[36px] items-center text-[13px] font-medium"
+            style={{ color: 'var(--red)' }}
+          >
+            Check or change your answers
+          </Link>
+
+          {/*
             ⚠️ THE PRICE IS ON THE PAGE BEFORE THE BUTTON, not only on it. The
             member is one press from a bank redirect; R295 appearing for the
             first time on the hosted payment page is the wrong place to learn it.

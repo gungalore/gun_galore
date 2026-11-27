@@ -1204,6 +1204,18 @@ export class MotivationsService {
       refused,
       missingRequired: missingRequired(row.licenceType, merged),
       /**
+       * WHICH ANSWERS ACTUALLY MOVED — keys only, never values.
+       *
+       * ⚠️ ADDED FOR THE NARRATIVE RE-DRAFT TRIGGER. A drafted paragraph was
+       * written from certain facts (the firearm, the purpose, the premises,
+       * the battery); when one of those changes the paragraph has to follow,
+       * and when the member merely retypes a word of the paragraph itself it
+       * must not. The controller needs the mover list to decide that without a
+       * second read of the blob — the comparison already happened above for
+       * `markMember`, and this is the same list.
+       */
+      changed,
+      /**
        * WHAT WE WROTE THAT THEY DID NOT SEND. Always present, usually empty.
        *
        * âš ï¸ THE CLIENT MUST MERGE THIS INTO ITS OWN ANSWERS BEFORE ITS NEXT

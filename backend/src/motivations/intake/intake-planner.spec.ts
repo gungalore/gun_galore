@@ -1,7 +1,9 @@
 import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import {
+  navigationFor,
   pendingFields,
+  planCard,
   planGroup,
   planQuestion,
   purposeForAnswers,
@@ -9,8 +11,9 @@ import {
 } from './intake-planner';
 import { fieldByKey } from '../motivation-fields';
 import { sportingFields, strategyFor } from './intake-strategies';
-import { topicForField } from './intake-topics';
+import { topicForField, TOPIC_TITLES } from './intake-topics';
 import { missingDetail, MIN_HISTORY_WORDS } from '../motivation-completeness';
+import { DRAFTED_KEYS, fallbackDraft } from './intake-draft';
 import type { InterviewBrief } from './intake-brief';
 import type { MotivationField } from '../motivation-fields';
 
@@ -78,6 +81,16 @@ const COMMON = {
   competency_for: 'Manual rifle',
   competency_issued: '2020-01-01',
 };
+
+/** All six licence types, for the invariants that must hold for every one. */
+const ALL_TYPES = [
+  MotivationLicenceType.S13_SELF_DEFENCE,
+  MotivationLicenceType.S14_RESTRICTED_SELF_DEFENCE,
+  MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+  MotivationLicenceType.S16_DEDICATED_HUNTER,
+  MotivationLicenceType.S16_DEDICATED_SPORT,
+  MotivationLicenceType.S24_RENEWAL,
+] as const;
 
 describe('the intake planner', () => {
   it('⚠️ ASKS THE EXISTING-FIREARMS GATE ON A COLD START', () => {
@@ -347,44 +360,59 @@ describe('planGroup - optional questions', () => {
     expect(group!.totalInGroup).toBe(group!.questions.length);
   });
 });
-describe('shooting history stays pending until it is substantial', () => {
+/**
+ * ⚠️ THE HISTORY IS DRAFTED NOW, SO IT IS NEVER A CARD.
+ *
+ * Operator decision 2026-11-26: intake asks only facts no document can supply.
+ * The history used to keep itself pending below a twelve-word floor, which is
+ * what served the identical card twice when a member tapped one short chip.
+ * The floor still exists — in the generation gate, where it now means "the
+ * drafter has not produced the paragraph yet" — but it can never put a question
+ * in front of the member.
+ */
+describe('the shooting history is drafted, never asked', () => {
   const history = (words: number) =>
     Array.from({ length: words }, (_, i) => `word${i}`).join(' ');
 
-  // ?? Operator, 2026-11-05: "I should not stop the interview until it has all
-  // the required information." A one-line answer satisfied the planner, ended
-  // the interview, and then the write step refused it.
-  // ?? And 2026-11-06: the floor is a sentence or two, not sixty words - the
-  // section is written from the facts, and chips count toward them.
-  it('re-asks a history below the floor', () => {
-    const pending = pendingFields({
-      type: MotivationLicenceType.S16_DEDICATED_SPORT,
-      answers: { shooting_history: history(4) },
-      sheet: EMPTY_SHEET,
-    }).map((p) => p.key);
-    expect(pending).toContain('shooting_history');
+  it('never puts the history on a card, however thin the stored answer', () => {
+    for (const type of ALL_TYPES) {
+      const thin = { shooting_history: history(4) };
+      const pending = pendingFields({
+        type,
+        answers: thin,
+        sheet: EMPTY_SHEET,
+      }).map((entry) => entry.key);
+      expect({ type, asked: pending.includes('shooting_history') }).toEqual({
+        type,
+        asked: false,
+      });
+      expect(
+        planQuestion({ type, answers: thin, sheet: EMPTY_SHEET })?.fieldKey,
+      ).not.toBe('shooting_history');
+      expect(
+        planGroup({ type, answers: thin, sheet: EMPTY_SHEET })?.questions.map(
+          (question) => question.key,
+        ) ?? [],
+      ).not.toContain('shooting_history');
+    }
   });
 
-  it('moves on once it reaches the floor', () => {
-    const group = planGroup({
-      type: MotivationLicenceType.S16_DEDICATED_SPORT,
-      answers: { shooting_history: history(60) },
-      sheet: EMPTY_SHEET,
-    });
-    expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');
-  });
+  it('keeps the generation gate floor, so a stub still cannot write', () => {
+    // ⚠️ KEEP MIN_HISTORY_WORDS. The floor moved from the interview to the
+    // gate: the drafter has to produce a substantial paragraph, and a member's
+    // own short edit still has to be extended on the review screen.
+    const thin = missingDetail(
+      { shooting_history: history(4) },
+      MotivationLicenceType.S13_SELF_DEFENCE,
+    ).map((gap) => gap.code);
+    expect(thin).toContain('history:shooting_history');
+    expect(MIN_HISTORY_WORDS).toBeGreaterThan(4);
 
-  it('accepts a history made of ticked statements', () => {
-    // Two chips are the member's own words, so they settle the question.
-    const group = planGroup({
-      type: MotivationLicenceType.S16_DEDICATED_SPORT,
-      answers: {
-        shooting_history:
-          'I was taught to shoot by a family member, I shoot clay targets at a club',
-      },
-      sheet: EMPTY_SHEET,
-    });
-    expect(group!.questions.map((q) => q.key)).not.toContain('shooting_history');
+    const substantial = missingDetail(
+      { shooting_history: history(60) },
+      MotivationLicenceType.S13_SELF_DEFENCE,
+    ).map((gap) => gap.code);
+    expect(substantial).not.toContain('history:shooting_history');
   });
 });
 
@@ -403,12 +431,15 @@ describe('the document gate decides what the conversation asks', () => {
   }
 
   /**
-   * ⚠️ AN ANSWERED HISTORY CAN STILL BE TOO THIN. A value saved elsewhere (the
-   * review sheet has no word floor) at five words keeps the question pending,
-   * so the interview puts it back — with the floor published, so the card can
-   * ask for a sentence or more ticks instead of a dead "could not save".
+   * ⚠️ A THIN STORED HISTORY IS THE DRAFTER'S PROBLEM NOW, NOT A CARD.
+   *
+   * This used to keep a five-word history pending so the interview re-asked it
+   * with a word floor on the card — the "asked twice" screen the operator
+   * reported. The card is gone; the gate still names the gap, the review sheet
+   * lets the member extend their own words, and the drafter writes the
+   * paragraph when the member has not.
    */
-  it('re-asks a stored history below the floor, with the floor on the question', () => {
+  it('never re-asks a stored history, however thin, but the gate still names it', () => {
     const thin = filled(MotivationLicenceType.S13_SELF_DEFENCE);
     thin.shooting_history = 'At the range most weekends';
 
@@ -417,16 +448,22 @@ describe('the document gate decides what the conversation asks', () => {
       answers: thin,
       sheet: EMPTY_SHEET,
     });
-    expect(group?.questions.map((q) => q.key)).toContain('shooting_history');
-    const question = questionForField(
+    expect(group?.questions.map((q) => q.key) ?? []).not.toContain(
+      'shooting_history',
+    );
+    expect(questionForField(
       {
         type: MotivationLicenceType.S13_SELF_DEFENCE,
         answers: thin,
         sheet: EMPTY_SHEET,
       },
       'shooting_history',
-    );
-    expect(question?.minWords).toBe(MIN_HISTORY_WORDS);
+    )).toBeNull();
+    expect(
+      missingDetail(thin, MotivationLicenceType.S13_SELF_DEFENCE).map(
+        (gap) => gap.code,
+      ),
+    ).toContain('history:shooting_history');
 
     const long = { ...thin, shooting_history: history() };
     const next = planGroup({
@@ -437,6 +474,31 @@ describe('the document gate decides what the conversation asks', () => {
     expect(next?.questions.map((q) => q.key) ?? []).not.toContain(
       'shooting_history',
     );
+  });
+
+  /**
+   * ⚠️ THE "ASKED TWICE" REGRESSION. A card must never come back with the same
+   * first field unless the previous submit stored nothing. The live cause was
+   * the shooting history's word floor (now drafted, never asked), but the
+   * invariant is about ANY short chip answer: answer a one-tap case question
+   * and the walk moves on.
+   */
+  it('moves on after a single short chip answer instead of re-serving the card', () => {
+    const answers = filled(MotivationLicenceType.S13_SELF_DEFENCE);
+    delete answers.alarm_present;
+    const input = {
+      type: MotivationLicenceType.S13_SELF_DEFENCE,
+      answers,
+      sheet: EMPTY_SHEET,
+    };
+    const group = planGroup(input);
+    expect(group?.questions.map((q) => q.key)).toContain('alarm_present');
+
+    const next = planGroup({
+      ...input,
+      answers: { ...answers, alarm_present: 'No' },
+    });
+    expect(next?.questions[0]?.key).not.toBe('alarm_present');
   });
 
   it('offers the comparison as an optional case question', () => {
@@ -607,42 +669,66 @@ describe('the case questions', () => {
     }
   });
 
-  it('asks the premises block and the routine on a self-defence application', () => {
+  it('asks the premises block on a self-defence application', () => {
     const { asked } = walk(MotivationLicenceType.S13_SELF_DEFENCE);
     expect(asked).toEqual(
       expect.arrayContaining([
         'premises_enclosure',
         'premises_access_control',
-        's13_movements',
-        's13_carry_style',
+        'alarm_present',
+        'armed_response',
       ]),
     );
+    // ⚠️ The routine and the carry method are NARRATIVE now — the drafter
+    // writes them from the premises and the case, and the card never asks.
+    expect(asked).not.toContain('s13_movements');
+    expect(asked).not.toContain('s13_carry_style');
+    expect(asked).not.toContain('threat_circumstances');
   });
 
-  it('asks how a renewal has kept using the firearm', () => {
+  it('asks the licence facts a renewal turns on, not its narrative', () => {
     const { asked } = walk(MotivationLicenceType.S24_RENEWAL);
-    expect(asked).toContain('continued_use');
+    expect(asked).toEqual(
+      expect.arrayContaining(['existing_licence_number', 'licence_expiry']),
+    );
+    // The "how have you kept using it" paragraph is drafted and reviewed.
+    expect(asked).not.toContain('continued_use');
   });
 
-  it('asks the hunting ground and the sport formats', () => {
-    expect(walk(MotivationLicenceType.S16_DEDICATED_HUNTER, { firearm_use_kind: 'hunting' }).asked)
-      .toEqual(expect.arrayContaining(['hunt_game_class', 'hunt_terrain']));
-    expect(walk(MotivationLicenceType.S16_DEDICATED_SPORT, { firearm_use_kind: 'sport' }).asked)
-      .toEqual(expect.arrayContaining(['sport_formats', 'discipline_exercise']));
+  it('asks the factual hunting/sport questions, not the narrative cards', () => {
+    const hunting = walk(MotivationLicenceType.S16_DEDICATED_HUNTER, {
+      firearm_use_kind: 'hunting',
+    }).asked;
+    expect(hunting).toContain('intended_quarry');
+    expect(hunting).not.toContain('hunt_game_class');
+    expect(hunting).not.toContain('hunt_terrain');
+    expect(hunting).not.toContain('hunt_reasons');
+    expect(hunting).not.toContain('hunting_history');
+    expect(hunting).not.toContain('hunting_locations');
+
+    const sport = walk(MotivationLicenceType.S16_DEDICATED_SPORT, {
+      firearm_use_kind: 'sport',
+    }).asked;
+    expect(sport).toContain('discipline_exercise');
+    expect(sport).not.toContain('sport_formats');
+    expect(sport).not.toContain('sport_reasons');
+    expect(sport).not.toContain('competition_record');
+    expect(sport).not.toContain('activity_record');
   });
 
   /**
    * ⚠️ THE DEAD-END INVARIANT. `missingDetail()` is the generation gate; every
-   * gap it names must have a question in the walk, or the member is held on the
-   * interview screen with nothing left to answer. This is the test that would
-   * have caught `firearm_use_kind` on a section 13.
+   * gap it names must either have a question in the walk OR be one of the
+   * narrative fields the drafter fills (and `finish()` falls back for), or the
+   * member is held on the interview screen with nothing left to answer. This is
+   * the test that would have caught `firearm_use_kind` on a section 13.
    */
-  it('has a question for every gap the generation gate names', () => {
+  it('has a question for every factual gap the generation gate names', () => {
     for (const type of types) {
       const seed = seedFor(type);
-      const gaps = missingDetail(seed, type).map((gap) =>
-        gap.code.slice(gap.code.indexOf(':') + 1),
-      );
+      const gaps = missingDetail(seed, type)
+        .map((gap) => gap.code.slice(gap.code.indexOf(':') + 1))
+        .filter((key) => !DRAFTED_KEYS.has(key));
       const { asked } = walk(type, seed);
       for (const key of gaps) {
         expect({ type, key, asked: asked.includes(key) }).toEqual({
@@ -654,16 +740,42 @@ describe('the case questions', () => {
     }
   });
 
+  /**
+   * ⚠️ AND THE NARRATIVE GAPS ARE NOT DEAD ENDS EITHER. Every DRAFTED key the
+   * gate can name must have a deterministic fallback (so `finish()` can always
+   * pass) — that pair of facts is what makes "never asked" safe.
+   */
+  it('falls back for every narrative gap the gate can name', () => {
+    for (const type of types) {
+      const gaps = missingDetail(seedFor(type), type)
+        .map((gap) => gap.code.slice(gap.code.indexOf(':') + 1))
+        .filter((key) => DRAFTED_KEYS.has(key));
+      for (const key of gaps) {
+        expect({
+          type,
+          key,
+          fallback: Boolean(fallbackDraft(key, {} as never)),
+        }).toEqual({
+          type,
+          key,
+          fallback: true,
+        });
+      }
+    }
+  });
+
   it('does not re-ask a question the member skipped', () => {
+    // premises_enclosure is a real CASE key that is still asked; the narrative
+    // routine cards that used to hold this test are never asked at all now.
     const base = walk(MotivationLicenceType.S13_SELF_DEFENCE).answers;
-    delete base.s13_movements;
+    delete base.premises_enclosure;
     const withoutSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base);
-    expect(withoutSkip.asked).toContain('s13_movements');
+    expect(withoutSkip.asked).toContain('premises_enclosure');
 
     const afterSkip = walk(MotivationLicenceType.S13_SELF_DEFENCE, base, {
-      s13_movements: { source: 'SKIPPED' },
+      premises_enclosure: { source: 'SKIPPED' },
     });
-    expect(afterSkip.asked).not.toContain('s13_movements');
+    expect(afterSkip.asked).not.toContain('premises_enclosure');
   });
 });
 
@@ -678,18 +790,194 @@ describe('the question placeholder', () => {
     expect(question?.customPlaceholder).not.toContain('â');
   });
 
-  it('publishes the history word floor to the card', () => {
-    const answers = { ...COMMON };
-    delete (answers as Record<string, string | undefined>).shooting_history;
-    const question = questionForField(
+  it('never builds a question for a drafted narrative field', () => {
+    // questionForField is the single builder behind every card; a drafted field
+    // must not resolve through it at all, so no caller can serve one by name.
+    for (const key of DRAFTED_KEYS) {
+      for (const type of ALL_TYPES) {
+        expect(
+          questionForField({ type, answers: {}, sheet: EMPTY_SHEET }, key),
+        ).toBeNull();
+      }
+    }
+  });
+});
+
+/**
+ * ⚠️ THE FLAT INVARIANT FROM THE SPEC. Narrative fields are drafted by
+ * IntakeDraftService, never asked — for EVERY licence type, in the single-question
+ * path and the grouped one. This is the test that stops a future strategy edit
+ * putting `shooting_history` back on a card.
+ */
+describe('the narrative fields are never interview questions', () => {
+  it('excludes every DRAFTED key from every type’s pending list', () => {
+    for (const type of ALL_TYPES) {
+      const pending = pendingFields({
+        type,
+        answers: {},
+        sheet: EMPTY_SHEET,
+      }).map((entry) => entry.key);
+      for (const key of DRAFTED_KEYS) {
+        expect({ type, key, asked: pending.includes(key) }).toEqual({
+          type,
+          key,
+          asked: false,
+        });
+      }
+    }
+  });
+
+  it('excludes every DRAFTED key from every type’s grouped card', () => {
+    for (const type of ALL_TYPES) {
+      const group = planGroup({ type, answers: {}, sheet: EMPTY_SHEET });
+      const asked = (group?.questions ?? []).map((entry) => entry.key);
+      for (const key of DRAFTED_KEYS) {
+        expect({ type, key, asked: asked.includes(key) }).toEqual({
+          type,
+          key,
+          asked: false,
+        });
+      }
+    }
+  });
+});
+
+/**
+ * ────────────────────────────────────────────────────────────────────────────
+ * EDITING AN EARLIER TOPIC. Back is stateless: the page names a topic, the
+ * server rebuilds that card from the saved answers, and the controls are
+ * prefilled from `value`/`values`. Nothing is stored between screens.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+describe('editing an earlier topic (Back)', () => {
+  const base = { ...COMMON };
+
+  it('serves the topic’s card with the saved answers prefilled', () => {
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: base,
+      sheet: EMPTY_SHEET,
+    };
+    const card = planCard(input, 'identity');
+    expect(card?.id).toBe('identity');
+    expect(card?.title).toBe('About you');
+    // A card is a list of fields; the grouped service builds each question
+    // through the one builder, which is where the prefill lives.
+    const byKey = new Map(
+      (card?.questions ?? []).map((entry) => [
+        entry.key,
+        questionForField(input, entry.key),
+      ]),
+    );
+    // Single-value questions carry what was saved, so an edit does not open a
+    // blank form that looks like the answer was lost.
+    expect(byKey.get('full_name')?.value).toBe('A B');
+    expect(byKey.get('id_number')?.value).toBe('8001015009087');
+    expect(byKey.get('marital_status')?.value).toBe('Married');
+  });
+
+  it('splits a saved multi answer into values, matched against the current choices', () => {
+    const field = fieldByKey(
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      'competency_for',
+    );
+    const chosen = (field?.choices ?? []).slice(0, 2) as string[];
+    expect(chosen).toHaveLength(2);
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...base, competency_for: chosen.join(', ') },
+      sheet: EMPTY_SHEET,
+    };
+    const question = questionForField(input, 'competency_for');
+    expect(question?.values).toEqual(chosen);
+    expect(question?.value).toBeUndefined();
+  });
+
+  it('keeps a retired stored option as free text instead of dropping it', () => {
+    // A stored option the current choices no longer offer must not vanish: the
+    // member editing the card sees it in `value` and can decide what to do.
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...base, competency_for: 'Not a listed endorsement' },
+      sheet: EMPTY_SHEET,
+    };
+    const question = questionForField(input, 'competency_for');
+    expect(question?.values).toBeUndefined();
+    expect(question?.value).toBe('Not a listed endorsement');
+  });
+
+  it('returns null for a topic this application has no question for', () => {
+    expect(
+      planCard(
+        {
+          type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+          answers: {},
+          sheet: EMPTY_SHEET,
+        },
+        'declarations',
+      ),
+    ).toBeNull();
+  });
+
+  it('counts topics with askable fields, not only pending ones, in the header', () => {
+    // Editing the first topic of an almost-finished application must not read
+    // "Step 0 of 1" — the index is over topics that have questions at all.
+    const card = planCard(
       {
         type: MotivationLicenceType.S16_DEDICATED_HUNTER,
-        answers,
+        answers: base,
         sheet: EMPTY_SHEET,
       },
-      'shooting_history',
+      'identity',
     );
-    expect(question?.minWords).toBe(MIN_HISTORY_WORDS);
+    expect(card?.index).toBeGreaterThanOrEqual(1);
+    expect(card?.total).toBeGreaterThanOrEqual(card?.index ?? 1);
+  });
+
+  it('sends Back to the topic just before the first topic with pending work', () => {
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: base,
+      sheet: EMPTY_SHEET,
+    };
+    const plan = planGroup(input);
+    expect(plan).not.toBeNull();
+    // A topic is askable iff planCard serves it; recompute that order here so
+    // the assertion is the invariant, not a hard-coded topic list.
+    const askableTopics = (
+      [
+        'identity',
+        'firearm',
+        'credentials',
+        'existing',
+        'address',
+        'association',
+        'activities',
+        'safe',
+        'declarations',
+        'other',
+      ] as const
+    ).filter((topic) => planCard(input, topic) !== null);
+    const at = askableTopics.indexOf(plan!.id);
+    const navigation = navigationFor(input);
+    if (at <= 0) {
+      expect(navigation.back).toBeNull();
+    } else {
+      expect(navigation.back).toEqual({
+        id: askableTopics[at - 1],
+        title: TOPIC_TITLES[askableTopics[at - 1]],
+      });
+    }
+  });
+
+  it('has no Back target on the first topic of a cold application', () => {
+    const input = {
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {},
+      sheet: EMPTY_SHEET,
+    };
+    expect(planGroup(input)?.id).toBe('identity');
+    expect(navigationFor(input)).toEqual({ back: null });
   });
 });
 
@@ -889,6 +1177,82 @@ describe('the cartridge follow-up', () => {
       type: MotivationLicenceType.S16_DEDICATED_HUNTER,
       answers: { ...COMMON, firearm_calibre: '9mm Luger' },
       sheet: EMPTY_SHEET,
+    }).map((entry) => entry.key);
+    expect(pending).not.toContain('firearm_cartridge');
+    expect(
+      planGroup({
+        type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+        answers: { ...COMMON, firearm_calibre: '9mm Luger' },
+        sheet: EMPTY_SHEET,
+      })?.questions.map((q) => q.key) ?? [],
+    ).not.toContain('firearm_cartridge');
+  });
+
+  /**
+   * ⚠️ THE GROUPED INTERVIEW MUST ASK IT. The sheet showed "Which cartridge is
+   * it?" and `planGroup().asked()` filtered it out because it is optional and
+   * not a detail-gate key — the operator's own MO000158 typed "6.5", the Bench
+   * held 12+ 6.5 cartridges, and no card ever asked which one. It is CASE_KEYS
+   * now: offered once, only when the sheet says `needs_you`, skippable.
+   */
+  it('asks it on a grouped card when the calibre is an ambiguous family', () => {
+    const SIX_FIVE_ITEM = {
+      ...CARTRIDGE_ITEM,
+      choices: ['6,5 Creedmoor', '6.5x55 Swedish', '6.5 PRC', '6.5 Grendel'],
+    };
+    const group = planGroup({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      // marital_status opens spouse_name in the identity topic; filling it keeps
+      // the first card from being identity and this assertion about the firearm.
+      answers: { ...COMMON, firearm_calibre: '6.5', spouse_name: 'C D' },
+      sheet: { ...EMPTY_SHEET, items: [SIX_FIVE_ITEM] } as SheetResponse,
+    });
+    const question = (() => {
+      const entry = group?.questions.find((q) => q.key === 'firearm_cartridge');
+      if (!entry) return undefined;
+      return questionForField(
+        {
+          type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+          answers: { ...COMMON, firearm_calibre: '6.5', spouse_name: 'C D' },
+          sheet: { ...EMPTY_SHEET, items: [SIX_FIVE_ITEM] } as SheetResponse,
+        },
+        entry.key,
+      );
+    })();
+    expect(question).toBeDefined();
+    expect(question?.optional).toBe(true);
+    expect(question?.choices.map((choice) => choice.value)).toEqual([
+      '6,5 Creedmoor',
+      '6.5x55 Swedish',
+      '6.5 PRC',
+      '6.5 Grendel',
+    ]);
+  });
+
+  it('stops asking it once the member has chosen a cartridge', () => {
+    const CHOSEN_ITEM = {
+      ...CARTRIDGE_ITEM,
+      state: 'filled' as const,
+      value: '6.5 PRC',
+    };
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: {
+        ...COMMON,
+        firearm_calibre: '6.5',
+        firearm_cartridge: '6.5 PRC',
+      },
+      sheet: { ...EMPTY_SHEET, items: [CHOSEN_ITEM] } as SheetResponse,
+    }).map((entry) => entry.key);
+    expect(pending).not.toContain('firearm_cartridge');
+  });
+
+  it('stops asking it when the member skips it', () => {
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...COMMON, firearm_calibre: '6.5' },
+      sheet: { ...EMPTY_SHEET, items: [CARTRIDGE_ITEM] } as SheetResponse,
+      provenance: { firearm_cartridge: { source: 'SKIPPED' } },
     }).map((entry) => entry.key);
     expect(pending).not.toContain('firearm_cartridge');
   });

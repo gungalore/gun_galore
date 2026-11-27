@@ -37,6 +37,7 @@ import { MotivationSharedService } from './motivation-shared.service';
 import {
   cartridgeOptionsFor,
   cartridgeSource,
+  familyVariantsFor,
   findCartridge,
 } from './motivation-cartridge';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
@@ -509,7 +510,27 @@ export class MotivationSheetService {
     if (findCartridge(rows, cartridgeSource(answers))) return null;
 
     const chosen = (answers.firearm_cartridge ?? '').trim();
-    const choices = cartridgeOptionsFor(rows, calibre).map((r) => r.name);
+    /**
+     * ⚠️ THE BENCH FIRST, THE CURATED FAMILY BACKSTOP SECOND. A family the
+     * catalogue holds rows for gets real names as buttons; a family it holds
+     * one row for — or none — still gets the variants a dealer actually stocks,
+     * so "6.5" is never served as a text box with no chips. The curated list is
+     * chips only: nothing here is ever chosen or stored for the member.
+     *
+     * The cap is eight, which is more than fits a phone row and enough to hold
+     * a six-variant family plus the Bench's own additions; the interview's
+     * question carries the same list.
+     */
+    const benchNames = cartridgeOptionsFor(rows, calibre).map((r) => r.name);
+    const seen = new Set<string>();
+    const choices: string[] = [];
+    for (const name of [...benchNames, ...familyVariantsFor(calibre)]) {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      choices.push(name.trim());
+      if (choices.length >= 8) break;
+    }
     const item: SheetItem = {
       key: 'firearm_cartridge',
       label: 'Which cartridge is it?',

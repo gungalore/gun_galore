@@ -26,6 +26,7 @@ import { MotivationsService } from '../motivations.service';
 import {
   fieldByKey,
   fieldsFor,
+  isVisible,
   LICENCE_TYPE_LABELS,
   type MotivationField,
 } from '../motivation-fields';
@@ -35,13 +36,24 @@ import {
 } from '../motivation-eligibility';
 import { containerById, type EvidenceGroup } from '../evidence-taxonomy';
 import {
+  navigationFor,
   pendingFields,
+  planCard,
   planGroup,
   planQuestion,
   purposeForAnswers,
   questionForField,
 } from './intake-planner';
 import { strategyFor } from './intake-strategies';
+import {
+  affectsDraftFacts,
+  draftedFields,
+  draftTargets,
+  NARRATIVE_GAP_CODES,
+  onlyNarrativeGapsRemain,
+} from './intake-draft';
+import { MotivationNarrativeDraftService } from './intake-draft.service';
+import { familyVariantsFor } from '../motivation-cartridge';
 import {
   normaliseOutputMode,
   type MotivationOutputMode,
@@ -112,6 +124,16 @@ const INTERVIEW_VERSION = '2026-10-29a';
 const MAX_TRANSCRIPT = 40;
 /** How long a phrased card is reused, so a refresh costs no model call. */
 const CARD_PHRASING_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long `finish()` waits for the narrative draft before falling back.
+ *
+ * ⚠️ THE BACKSTOP, NOT THE PATH. The draft normally lands during the review
+ * screen's poll (the state already reports `drafting`), so finish usually gets
+ * a finished promise. This bound exists for the case where a model call is slow
+ * or hung: the member must not sit on a spinner because a paragraph is late,
+ * and `fallbackDraft` covers the two fields the gate refuses without.
+ */
+const FINISH_DRAFT_WAIT_MS = 75_000;
 
 
 /**
@@ -179,6 +201,13 @@ export class MotivationIntakeService {
     private readonly motivations: MotivationsService,
     private readonly agent: MotivationIntakeAgentService,
     private readonly briefs: MotivationIntakeBriefService,
+    /**
+     * The narrative drafter. See intake-draft.service.ts: the shooting history,
+     * the threat circumstances, the hunting/sport record and the renewal's
+     * continued use are composed from the file and reviewed by the member,
+     * never asked on a card.
+     */
+    private readonly drafts: MotivationNarrativeDraftService,
   ) {}
 
   async state(userId: string, id: string): Promise<IntakeState> {
@@ -240,6 +269,43 @@ export class MotivationIntakeService {
           stored: row,
         });
       }
+    }
+    /**
+     * ⚠️ THE NARRATIVE IS DRAFTED IN THE BACKGROUND, NEVER AWAITED HERE — AND
+     * ONLY ONCE THE FILE HAS EVERY FACT THE DOCUMENT NEEDS.
+     *
+     * Operator decision 2026-11-26: the shooting history, the threat
+     * circumstances, the hunting/sport record and the renewal's continued use
+     * are composed from the documents and the application and reviewed by the
+     * member — they are not interview questions any more.
+     *
+     * ⚠️ WHY WAIT FOR THE FACTS. Drafting at "documents confirmed" was the
+     * first cut and it wrote the history from a file that had no firearm and no
+     * association yet. That paragraph was generic, and a non-forced run never
+     * rewrites its own DRAFTED values, so the generic text stayed and the
+     * member reviewed a history that was not about their application. When
+     * every gap `missingDetail()` names is a narrative one, the factual file is
+     * complete: the paragraph is specific, the call runs while the member is on
+     * the completion card, and an abandoned interview costs nothing.
+     *
+     * A REVIEW-stage row with a factual gap is not drafted yet either: the
+     * review screen collects that fact, and the save's `ensureIfDrafted` hook
+     * starts the first draft. For a completed row with no factual gap (the
+     * operator's own MO000158 once its safe is in) this fires on the next load
+     * of the review screen.
+     *
+     * `IntakeDraftService` owns the throttling, the in-flight de-duplication
+     * and the fail-soft path, so a page refresh cannot become a model call and
+     * a model outage cannot cost the member an answer.
+     */
+    if (
+      !blocked &&
+      row.intakeDocumentsAt &&
+      EDITABLE.includes(row.status) &&
+      draftTargets(row.licenceType, answers).length > 0 &&
+      onlyNarrativeGapsRemain(row.licenceType, answers)
+    ) {
+      void this.drafts.ensure(userId, id);
     }
     const grouped = inInterview
       ? await this.phrasedGroup(
@@ -384,6 +450,26 @@ export class MotivationIntakeService {
       evidence,
       question,
       acknowledgement: phrased?.acknowledgement,
+      /**
+       * ⚠️ THE NARRATIVE DRAFT IS IN FLIGHT. The review screen shows "Writing
+       * your draft from your documents…" and polls while this is true; the
+       * interview itself never waits on it.
+       */
+      drafting: this.drafts.isDrafting(id),
+      /**
+       * WHERE BACK GOES — computed from the answers, never from browser state,
+       * so a refresh or a reopened tab cannot disagree about it. Null outside
+       * the interview.
+       */
+      navigation: grouped
+        ? navigationFor({
+            type: row.licenceType,
+            answers,
+            sheet,
+            provenance: parseProvenance(row.answerProvenance),
+            brief: briefForCard,
+          })
+        : null,
       /**
        * ⚠️ THE RESEARCH STRIP IS FACTS ONLY, AND ONLY NON-SENSITIVE ONES. It
        * tells the member what the file already holds before they answer the
@@ -674,6 +760,38 @@ export class MotivationIntakeService {
         currentKey: key,
         candidates,
       });
+      /**
+       * ⚠️ THE EXTRACTOR NEVER "UPGRADES" A TYPED CALIBRE — THE SHEET ASKS.
+       *
+       * The cross-field extractor fills other fields from a typed sentence, and
+       * for the calibre that means it could replace what the member typed with
+       * a variant it inferred ("6.5" -> "6.5 Creedmoor"). That defeats the
+       * whole cartridge question: the applicant must choose the round, not have
+       * one silently chosen for them, and a wrong variant prints the wrong
+       * drawing and dimension page under their signature.
+       *
+       * Two refusals, both narrow:
+       *   - any extracted calibre that differs from the typed text is dropped;
+       *   - if the typed text is a FAMILY ("6.5", "9mm", ".38"), no same-key
+       *     extraction is accepted at all, so the follow-up question is what
+       *     resolves it.
+       *
+       * Measured on MO000158 (2026-11-26): the stored calibre was already the
+       * typed "6.5" and no cartridge had been written — the real root cause of
+       * "no variant question" was the planner never asking it (firearm_cartridge
+       * is CASE_KEYS now). This guard is defence in depth for the paths that
+       * have not been measured yet.
+       */
+      if (key === 'firearm_calibre') {
+        const typed = sourceText.trim();
+        const extractedCalibre = (extracted.firearm_calibre ?? '').trim();
+        const differs =
+          Boolean(extractedCalibre) &&
+          extractedCalibre.toLowerCase() !== typed.toLowerCase();
+        if (differs || familyVariantsFor(typed).length) {
+          delete extracted.firearm_calibre;
+        }
+      }
     }
 
     const patch: Record<string, string> = {};
@@ -1193,13 +1311,28 @@ export class MotivationIntakeService {
     const row = await this.load(userId, id);
     this.assertEditable(row);
     /**
-     * ⚠️ THE INTERVIEW CANNOT BE CLOSED WHILE A FACT THE DOCUMENT NEEDS IS
-     * MISSING. Without this, "finish" marked the interview complete, the pack
-     * page offered to write, and generation refused — the member was told they
-     * were done and then told they were not. Same list, same words.
+     * ⚠️ THE NARRATIVE IS DRAFTED BEFORE THE GATE IS ASKED.
+     *
+     * The shooting history (every type) and a renewal's continued use used to
+     * be interview questions; they are drafted now, and `missingDetail()` is
+     * the same gate generation refuses on. So the draft must land — or fall
+     * back deterministically — BEFORE the gaps are counted, or a member who
+     * answered every card would be refused for two paragraphs the system was
+     * meant to write for them.
+     *
+     * The wait is bounded: a slow model must not hold the button, and
+     * `ensureDeterministic` covers the two gated fields if the race times out.
      */
-    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
-    const gaps = missingDetail(answers, row.licenceType);
+    await this.draftBeforeFinish(userId, id);
+    let answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    let gaps = missingDetail(answers, row.licenceType);
+    if (gaps.some((gap) => NARRATIVE_GAP_CODES.has(gap.code))) {
+      // The race timed out, the model failed, or it produced nothing usable.
+      // The deterministic fallback is the last line before the gate.
+      await this.drafts.ensureDeterministic(userId, id);
+      answers = await this.shared.answersFor(userId, row.answersEncrypted);
+      gaps = missingDetail(answers, row.licenceType);
+    }
     if (gaps.length) {
       throw new ConflictException({
         message: missingDetailMessage(gaps),
@@ -1212,6 +1345,184 @@ export class MotivationIntakeService {
       data: { intakeCompletedAt: new Date() },
     });
     return this.state(userId, id);
+  }
+
+  /**
+   * Wait for a draft run, but never longer than a member would.
+   *
+   * ⚠️ `ensure` IS FAIL-SOFT, SO NO REJECTION HANDLING IS NEEDED HERE. What the
+   * race bounds is a model call that hangs inside its own timeout; the timer is
+   * cleared and unref'd so a fast draft does not leave a 75 s handle behind in
+   * a spec or in the process.
+   */
+  private async draftBeforeFinish(userId: string, id: string): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.drafts.ensure(userId, id, { force: true }),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, FINISH_DRAFT_WAIT_MS);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * ONE TOPIC'S CARD, FOR EDITING AN EARLIER ANSWER.
+   *
+   * ⚠️ BACK IS A READ, NOT A CURSOR. The page asks for the topic it wants to
+   * edit; the server rebuilds that card from the saved answers with every
+   * question prefilled (`value`/`values`), through the same phrased/enrich path
+   * as a forward card so the labels and chips match. Saving goes through
+   * `patchAnswers` / `POST :id/intake/answers`, which stamps MEMBER and
+   * re-derives the plan, so the questions after the edit follow the new facts.
+   *
+   * A topic with no askable field (an id the page invented, or one this type
+   * never asks) falls back to the normal next card instead of 400-ing: a stale
+   * tab must never dead-end the member.
+   */
+  async cardForTopic(
+    userId: string,
+    id: string,
+    topic: string,
+  ): Promise<{
+    group: IntakeGroup | null;
+    navigation: { back: { id: IntakeTopicId; title: string } | null };
+  }> {
+    const row = await this.load(userId, id);
+    const sheet = await this.sheets.sheetFor(userId, id);
+    const answers = await this.shared.answersFor(userId, row.answersEncrypted);
+    const provenance = parseProvenance(row.answerProvenance);
+    const brief = this.briefs.current(row, briefHash(row.licenceType, answers));
+    const input = {
+      type: row.licenceType,
+      answers,
+      sheet,
+      provenance,
+      brief,
+    };
+    const navigation = navigationFor(input);
+    const plan = planCard(input, topic as IntakeTopicId);
+    if (!plan) {
+      const state = await this.stateInternal(userId, id);
+      return { group: state.group ?? null, navigation: state.navigation ?? navigation };
+    }
+    const bases: IntakeQuestion[] = [];
+    for (const entry of plan.questions) {
+      const base = questionForField(input, entry.key);
+      if (base && !bases.some((existing) => existing.fieldKey === base.fieldKey)) {
+        bases.push(base);
+      }
+    }
+    if (!bases.length) {
+      const state = await this.stateInternal(userId, id);
+      return { group: state.group ?? null, navigation: state.navigation ?? navigation };
+    }
+    const card = await this.phrasedCard(row, answers, null, null, brief, bases);
+    return {
+      group: {
+        id: plan.id,
+        title: plan.title,
+        index: plan.index,
+        total: plan.total,
+        answered: plan.answered,
+        totalInGroup: plan.totalInGroup,
+        questions: card.questions,
+      },
+      navigation,
+    };
+  }
+
+  /**
+   * SAVE THE CORRECTIONS FROM AN EDITED CARD.
+   *
+   * ⚠️ ONLY REAL, VISIBLE ANSWERS FOR THIS APPLICATION. Unknown keys, non-strings
+   * and form-only boxes are dropped rather than stored; the registry's own
+   * `sanitiseAnswers` then validates what is left through `saveAnswers`, which
+   * also stamps exactly the keys whose value MOVED as MEMBER.
+   *
+   * ⚠️ AND CORRECTING A FACT RE-DERIVES THE NARRATIVE. A drafted paragraph was
+   * written from the facts as they were; the moment the member changes a fact,
+   * the drafts that were never touched must follow it. That runs in the
+   * background (`force`, so only values still stamped DRAFTED are re-written —
+   * never one the member has edited), and the state's `drafting` flag tells the
+   * screen to wait.
+   */
+  async patchAnswers(
+    userId: string,
+    id: string,
+    answers: Record<string, string>,
+  ): Promise<IntakeState> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    const current = await this.shared.answersFor(userId, row.answersEncrypted);
+    const patch: Record<string, string> = {};
+    for (const [key, value] of Object.entries(answers ?? {})) {
+      if (typeof value !== 'string') continue;
+      const field = fieldByKey(row.licenceType, key);
+      if (!field || field.formOnly) continue;
+      /**
+       * ⚠️ `internal` IS A SHEET DECISION, NOT AN EDIT DECISION. The narrative
+       * fields and the purpose cards are hidden from the review sheet by
+       * `internal`, but the whole point of drafting them is that the member can
+       * correct them. Visibility is tested without that flag — exactly as the
+       * interview's own visibleFields does — while showIf still applies.
+       */
+      if (!isVisible({ ...field, internal: undefined }, { ...current, ...patch })) {
+        continue;
+      }
+      patch[key] = value;
+    }
+    if (!Object.keys(patch).length) {
+      throw new BadRequestException('There is nothing on that card to save.');
+    }
+    const provenance = parseProvenance(row.answerProvenance);
+    await this.motivations.saveAnswers(userId, id, patch);
+    /**
+     * ⚠️ THE EDIT MAY HAVE BEEN THE LAST FACT, OR IT MAY HAVE MOVED ONE THE
+     * DRAFT WAS WRITTEN FROM. Register the run before returning so the state
+     * this method returns already carries `drafting: true` and the screen polls
+     * — the model pass itself stays in the background.
+     */
+    const next = { ...current, ...patch };
+    if (onlyNarrativeGapsRemain(row.licenceType, next)) {
+      const draftedRemain = draftedFields(row.licenceType, next).some(
+        (field) =>
+          !(next[field.key] ?? '').trim() &&
+          provenance[field.key]?.source !== 'MEMBER',
+      );
+      const writeOurDrafts = Object.values(provenance).some(
+        (entry) => entry.source === 'DRAFTED',
+      );
+      if (writeOurDrafts && affectsDraftFacts(Object.keys(patch))) {
+        void this.drafts.ensure(userId, id, { force: true });
+      } else if (draftedRemain) {
+        void this.drafts.ensure(userId, id);
+      }
+    }
+    return this.state(userId, id);
+  }
+
+  /**
+   * The explicit "write the narrative again" button.
+   *
+   * ⚠️ FORCE, AND STILL NEVER OVER A MEMBER. `ensure(force)` re-drafts only the
+   * answers stamped DRAFTED — a paragraph the member has edited is theirs and
+   * is left exactly as it is. The awaited call is the point here (the button
+   * should feel like it did something); the GET path never waits.
+   */
+  async draftNarrative(
+    userId: string,
+    id: string,
+  ): Promise<{ state: IntakeState; drafted: number; failed: number }> {
+    const row = await this.load(userId, id);
+    this.assertEditable(row);
+    const result = await this.drafts.ensure(userId, id, { force: true });
+    const state = await this.state(userId, id);
+    return { state, drafted: result.drafted, failed: result.failed };
   }
 
   // â”€â”€ document + evidence state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

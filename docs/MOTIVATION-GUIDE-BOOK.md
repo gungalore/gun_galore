@@ -43,7 +43,7 @@ The Act and Regulations require surprisingly little on paper: the prescribed for
 
 These apply to every document for every section. A pack that breaks one of them is not released.
 
-1. Truth only. Every fact in the motivation comes from the applicant's answers or from a document in the pack. The writer never invents a date, place, distance, figure, qualification, incident, membership, discipline, species, farm, employer, security measure or firearm specification. Where a fact is missing the writer says less; it never fills the gap.
+1. Truth only. Every fact in the motivation comes from the applicant's answers or from a document in the pack. The fact pack may also contain narrative answers **drafted by the assistant from the documents and the application and approved by the applicant** before the pack is written — the applicant reviews, edits and confirms every drafted sentence on the review screen, and a sentence they have changed is theirs and is never re-drafted. The writer itself never invents a date, place, distance, figure, qualification, incident, membership, discipline, species, farm, employer, security measure or firearm specification. Where a fact is missing the writer says less; it never fills the gap.
 2. First person, applicant's voice, no service name anywhere in the lodged pack. No "prepared by", no footer brand, no "we". The applicant signs it as their own letter.
 3. English, plain South African usage: licence (noun), license (verb), calibre, centre-fire, self-defence, authorisation, favourable, metres, programme. Afrikaans species and equipment names the applicant used are kept as given.
 4. No outcome language. Never "should succeed", "will be approved", "meets the threshold", "the Registrar must grant", "favourable consideration". The document ends by asking for the licence, which is a request, not a prediction.
@@ -246,6 +246,18 @@ The writer receives, and may use, only this:
 12. Annexure index: letter and exact title for every annexure in the pack.
 
 The writer is never given: phone numbers, spouse ID, postal address, licence numbers of held firearms, a competency expiry, firearm or cartridge research, manufacturer descriptions, discipline rule books, national crime statistics, or any document the applicant did not attach.
+
+#### Drafted answers — what the applicant is asked, and what is written for them
+
+The interview asks only facts a document or a person can supply: the firearm (including the exact cartridge), competency, association, address and residence, safe, premises, declarations, intended quarry, discipline exercise and the purpose route. It never asks the applicant to compose prose: the shooting history, training history, threat circumstances, routine and movements, hunting and sport record, and a renewal's continued use are **drafted by the assistant** from the documents and the answers already given, then shown to the applicant on the review screen as "Drafted for you — check it".
+
+A drafted paragraph is packed under the following rules, which are enforced by a deterministic validator and not only by the prompt:
+
+- **No checkable specifics.** No digits at all (dates, years, ages, counts, distances, scores), no measurements, no incident, case, serial or licence numbers, no farm, club, range, town or organisation names, no person's name, no match results or credentials.
+- **First person, plain South African English.** Never "you". Calm, factual, no drama and no praise for the applicant.
+- **Only the supplied facts.** The drafter is given the firearm, the purpose, the quarry, the association, the premises taps, the battery (without serials or sections) and the document kinds — never the ID number, the address, the declarations or a sensitive narrative answer.
+- **The applicant decides.** A drafted answer is stamped as a suggestion and rendered with a Confirm action; editing it stamps it as the applicant's own words, and no later draft may overwrite it. If the applicant has written their own answer it is never drafted again.
+- **A model outage never blocks the application.** The shooting history (every section) and a renewal's continued use fall back to a short deterministic paragraph, so generation is never refused for a paragraph the system was meant to write.
 
 ---
 ## Part 4. Anatomy of the pack and of the motivation

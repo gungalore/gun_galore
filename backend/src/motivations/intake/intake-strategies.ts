@@ -210,6 +210,19 @@ const S24_FIELDS = [
  */
 export const CASE_KEYS: ReadonlySet<string> = new Set([
   /**
+   * ⚠️ THE CARTRIDGE IS ASKED ONCE, WHEN THE SHEET SAYS IT IS OUTSTANDING.
+   *
+   * It is not in `missingDetail` (the pack does not need it to be writeable)
+   * and the registry marks it `internal`, so before this it was filtered out of
+   * `planGroup().asked()` entirely — the review sheet showed "Which cartridge
+   * is it?" and the interview never put it on a card. On the operator's own
+   * MO000158 the calibre was typed as "6.5", the Bench held 12+ 6.5 cartridges,
+   * and the member was never asked which one. `isPending` already gates it on
+   * the sheet item's `needs_you` state, so a resolved calibre is still never
+   * asked, and a member who skips it settles it like every other case key.
+   */
+  'firearm_cartridge',
+  /**
    * ⚠️ OFFERED, NEVER FORCED. "What else did you consider" stays on the card
    * for every type, but a member with nothing to compare must be able to Skip
    * it — it was `required: true` and held the whole card behind a red cross.

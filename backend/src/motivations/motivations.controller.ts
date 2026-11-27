@@ -35,6 +35,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { DocumentEngineService } from '../common/document-filing/document-engine.service';
 import { MotivationReasonService } from './motivation-reason.service';
+import { MotivationNarrativeDraftService } from './intake/intake-draft.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
@@ -120,6 +121,14 @@ export class MotivationsController {
      * would add a delegate that does nothing but forward.
      */
     private readonly reasonService: MotivationReasonService,
+    /**
+     * ⚠️ HERE FOR ONE HOOK, NOT AS A PUBLIC API. The review screen saves edited
+     * facts through PATCH :id/answers, and a drafted narrative paragraph has to
+     * follow a corrected fact — so after that save we ask the drafter (in the
+     * background) to re-derive the values that are still ours. See
+     * ensureIfDrafted: no drafted values means no model call.
+     */
+    private readonly drafts: MotivationNarrativeDraftService,
     private readonly engine: DocumentEngineService,
     // The paygate, direct for the same reason as `generation` above: two routes
     // and no facade behaviour to add.
@@ -294,14 +303,59 @@ export class MotivationsController {
   /**
    * Autosaved from the wizard, so it is called often and deliberately not
    * throttled below the global default.
+   *
+   * ⚠️ IT ALSO RE-DERIVES THE DRAFTED NARRATIVE, in the background. A fact the
+   * member corrects here is exactly the kind of fact a drafted paragraph was
+   * written from; leaving the paragraph on the old facts was the gap the
+   * review screen's editable rows exposed. The call is fire-and-forget and
+   * free when no DRAFTED value exists.
    */
   @Patch(':id/answers')
-  saveAnswers(
+  async saveAnswers(
     @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: SaveAnswersDto,
   ) {
-    return this.motivations.saveAnswers(userId, id, dto.answers ?? {});
+    const saved = await this.motivations.saveAnswers(userId, id, dto.answers ?? {});
+    // ⚠️ `saved.changed` IS KEYS ONLY and is the guard that keeps a debounced
+    // autosave from paying for a model pass: the drafter re-runs only when a
+    // fact it consumed moved, never when the member retyped a drafted
+    // paragraph. In-flight de-duplication and the background cooldown live in
+    // the drafter.
+    // ⚠️ AWAITED FOR THE REGISTRATION ONLY, NOT FOR THE MODEL. The drafter's
+    // `ensure` records the in-flight run before returning, so by the time this
+    // response lands the next `GET :id/intake` already reports `drafting: true`
+    // and the screen starts polling. The model pass itself stays in the
+    // background — an autosave must never wait a minute for a paragraph.
+    await this.drafts.ensureIfDrafted(userId, id, saved.changed);
+    return saved;
+  }
+
+  /**
+   * "Yes, that drafted answer is right" — confirm a suggested value without
+   * changing it.
+   *
+   * ⚠️ IT EXISTS BECAUSE A DRAFTED ANSWER IS REVIEWED, NOT SUBMITTED. The
+   * narrative paragraphs are written for the member from their documents and
+   * application (see intake-draft.service.ts) and land stamped DRAFTED +
+   * inferred; the review screen renders that as "Drafted for you — check it"
+   * with a Confirm button. Confirming is the member adopting the sentence as
+   * their own, so the provenance flips to MEMBER and no later automatic pass
+   * may touch it.
+   *
+   * Owner-gated inside confirmAnswer (the WHERE clause carries the user id), so
+   * a wrong id and somebody else's id are the same 404.
+   */
+  @Post(':id/answers/confirm')
+  async confirmAnswer(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() body: { key?: string },
+  ): Promise<{ ok: true }> {
+    const key = (body?.key ?? '').trim();
+    if (!key) throw new BadRequestException('Choose an answer to confirm.');
+    await this.motivations.confirmAnswer(userId, id, key);
+    return { ok: true };
   }
 
   /**

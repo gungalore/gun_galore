@@ -15,6 +15,7 @@ import {
   CASE_KEYS,
   strategyFor,
 } from './intake-strategies';
+import { DRAFTED_KEYS } from './intake-draft';
 import type { InterviewBrief } from './intake-brief';
 import { chipsFor, rankCardOptions, type ChipContext } from './interview-chips';
 import type {
@@ -192,6 +193,18 @@ function visibleFields(
   for (const key of keys) {
     if (seen.has(key)) continue;
     seen.add(key);
+    /**
+     * ⚠️ NARRATIVE FIELDS ARE FILLED BY IntakeDraftService, NEVER ASKED.
+     *
+     * Operator decision 2026-11-26: intake asks only facts no document can
+     * supply. The shooting history, the threat circumstances, the hunting and
+     * sport record and the renewal's continued use are paragraphs the writer
+     * composes from the application and the member reviews — asking for them
+     * was what left the interview serving the same card twice. This exclusion
+     * is why `shooting_history` can never appear in a plan for ANY licence
+     * type.
+     */
+    if (DRAFTED_KEYS.has(key)) continue;
     const field = fieldByKey(type, key);
     if (!field) continue;
     /**
@@ -224,6 +237,9 @@ function visibleFields(
   const covered = new Set(out.map((entry) => entry.key));
   for (const field of fieldsFor(type)) {
     if (covered.has(field.key)) continue;
+    // Narrative fields are drafted, never asked — including from this
+    // catch-all required loop, which otherwise puts a required history back.
+    if (DRAFTED_KEYS.has(field.key)) continue;
     if (!field.required || field.internal) continue;
     if (field.formOnly || field.key.startsWith('history_')) continue;
     if (!isVisible({ ...field, internal: undefined }, answers)) continue;
@@ -411,6 +427,57 @@ function buildQuestion(args: {
       : isPrimaryQuarry
         ? `What game or species do you intend to hunt with this ${calibre || 'firearm'}?`
         : field.label;
+  const choices = mergeBriefChoices(
+    field,
+    baseChoices,
+    // Research first, catalogue second; a closed field ignores both because
+    // its allowed values are fixed.
+    sensitive ? undefined : chipsFor(field, chipContext),
+  );
+  /**
+   * ⚠️ A CARD SERVED FOR EDITING ARRIVES PREFILLED WITH WHAT WAS SAVED.
+   *
+   * Back navigation re-opens an earlier topic's card (IntakeState.navigation ->
+   * GET :id/intake/card), and the member must see their own answers in the
+   * controls rather than a blank form that looks like the answer was lost. The
+   * frontend seeds its per-question state from `value` / `values`; a new card
+   * is a new group object, so nothing leaks between turns.
+   *
+   * For a multi/cards question the stored value is a comma list of option KEYS;
+   * only the values the current choices actually offer become `values` (a
+   * retired option is kept as free text in `value` rather than silently
+   * dropped). A single-choice answer is just `value`.
+   */
+  const stored = valueOf(key, merged, items);
+  const multiChoice = field.kind === 'cards' || field.kind === 'multi';
+  let value: string | undefined;
+  let values: string[] | undefined;
+  if (stored) {
+    if (multiChoice) {
+      const matched: string[] = [];
+      const unmatched: string[] = [];
+      for (const part of stored
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)) {
+        const hit = choices.find(
+          (choice) =>
+            choice.value.toLowerCase() === part.toLowerCase() ||
+            choice.label.toLowerCase() === part.toLowerCase(),
+        );
+        if (hit) {
+          if (!matched.includes(hit.value)) matched.push(hit.value);
+        } else {
+          unmatched.push(part);
+        }
+      }
+      if (matched.length) values = matched;
+      if (unmatched.length) value = unmatched.join(', ');
+      if (!values && !value) value = stored;
+    } else {
+      value = stored;
+    }
+  }
   return {
     id: key,
     fieldKey: key,
@@ -430,13 +497,7 @@ function buildQuestion(args: {
         ? 'This is typed here and never sent to the writing assistant.'
         : ''),
     kind: field.kind,
-    choices: mergeBriefChoices(
-      field,
-      baseChoices,
-      // Research first, catalogue second; a closed field ignores both because
-      // its allowed values are fixed.
-      sensitive ? undefined : chipsFor(field, chipContext),
-    ),
+    choices,
     ...(details.length ? { details } : {}),
     multi,
     sensitive,
@@ -444,11 +505,8 @@ function buildQuestion(args: {
       field.kind === 'date' ? 'Choose a date' : 'Or type your own answer…',
     progress: { answered, total },
     optional: field.required !== true,
-    ...(key === 'shooting_history'
-      ? { minWords: MIN_HISTORY_WORDS }
-      : key === 'continued_use'
-        ? { minWords: 8 }
-        : {}),
+    ...(value !== undefined ? { value } : {}),
+    ...(values !== undefined ? { values } : {}),
   };
 }
 
@@ -672,11 +730,26 @@ export interface PlannedGroup {
  */
 export const GROUP_CAP = 7;
 
-export function planGroup(
+/**
+ * The fields the interview is allowed to ask, plus the two key sets its order
+ * consults.
+ *
+ * ⚠️ ONE RULE, THREE CALLERS. `planGroup` (the next card), `planCard` (an
+ * earlier topic re-opened for editing) and `navigationFor` (where Back goes)
+ * must agree exactly about what is askable, or Back can point at a topic the
+ * walk never serves. The `asked()` predicate below lived inline in planGroup
+ * and is lifted out for that reason, not for tidiness.
+ */
+interface AskablePlan {
+  detailKeys: Set<string>;
+  briefKeys: Set<string>;
+  askable: { key: string; field: MotivationField }[];
+}
+
+function askablePlan(
   input: PlannerInput,
-  cap: number = GROUP_CAP,
-): PlannedGroup | null {
-  const { merged, items, fields } = plannerContext(input);
+  fields: { key: string; field: MotivationField }[],
+): AskablePlan {
   /**
    * ⚠️ THE DOCUMENT'S OWN GATE DECIDES WHAT THE CONVERSATION ASKS.
    *
@@ -729,6 +802,57 @@ export function planGroup(
       CASE_KEYS.has(entry.key)
     );
   };
+  return { detailKeys, briefKeys, askable: fields.filter(asked) };
+}
+
+/**
+ * The fields in one topic that its progress counter is built from.
+ *
+ * ⚠️ THE COUNTER MUST NOT SHRINK WHEN A DETAIL QUESTION IS ANSWERED.
+ * `detailKeys` is what is missing right now, so counting the group's total
+ * from it turned "Question 3 of 3" into "Question 3 of 2" the moment the last
+ * detail question landed. This set is the same gate with every value blanked
+ * — what this type and this purpose could ask — so the total is stable and
+ * still never counts a question the walk will not put.
+ */
+function countedInTopic(
+  input: PlannerInput,
+  merged: Record<string, string>,
+  fields: { key: string; field: MotivationField }[],
+  id: IntakeTopicId,
+  briefKeys: ReadonlySet<string>,
+): { key: string; field: MotivationField }[] {
+  const purpose =
+    (merged.firearm_use_kind ?? '').trim() ||
+    resolveSportingPurpose(merged);
+  const countedDetail = new Set(
+    missingDetail({ firearm_use_kind: purpose }, input.type).map((gap) =>
+      gap.code.slice(gap.code.indexOf(':') + 1),
+    ),
+  );
+  return fields.filter(
+    (f) =>
+      topicForField(f.key) === id &&
+      (f.field.required === true ||
+        countedDetail.has(f.key) ||
+        CASE_KEYS.has(f.key) ||
+        ((CASE_NOTE_KEYS as readonly string[]).includes(f.key) &&
+          briefKeys.has(f.key))),
+  );
+}
+
+function requiredEntry(
+  detailKeys: ReadonlySet<string>,
+): (entry: { key: string; field: MotivationField }) => boolean {
+  return (entry) => entry.field.required === true || detailKeys.has(entry.key);
+}
+
+export function planGroup(
+  input: PlannerInput,
+  cap: number = GROUP_CAP,
+): PlannedGroup | null {
+  const { merged, items, fields } = plannerContext(input);
+  const { detailKeys, briefKeys, askable } = askablePlan(input, fields);
 
   /**
    * ⚠️ OPTIONAL QUESTIONS ARE NOT ASKED — EXCEPT THE CASE ONES.
@@ -742,11 +866,10 @@ export function planGroup(
    * settles them for good. Everything else optional stays on the sheet.
    */
   const pending = orderPending(
-    fields.filter(
-      (entry) =>
-        asked(entry) && isPending(entry.key, merged, items, input.provenance),
+    askable.filter((entry) =>
+      isPending(entry.key, merged, items, input.provenance),
     ),
-    (entry) => entry.field.required === true || detailKeys.has(entry.key),
+    requiredEntry(detailKeys),
     input.brief,
   );
   if (!pending.length) return null;
@@ -765,31 +888,7 @@ export function planGroup(
   const order = TOPIC_ORDER.filter((id) => byTopic.has(id));
   const id = order[0];
   const groupPending = byTopic.get(id) ?? [];
-  /**
-   * ⚠️ THE COUNTER MUST NOT SHRINK WHEN A DETAIL QUESTION IS ANSWERED.
-   * `detailKeys` is what is missing right now, so counting the group's total
-   * from it turned "Question 3 of 3" into "Question 3 of 2" the moment the last
-   * detail question landed. This set is the same gate with every value blanked
-   * — what this type and this purpose could ask — so the total is stable and
-   * still never counts a question the walk will not put.
-   */
-  const purpose =
-    (merged.firearm_use_kind ?? '').trim() ||
-    resolveSportingPurpose(merged);
-  const countedDetail = new Set(
-    missingDetail({ firearm_use_kind: purpose }, input.type).map((gap) =>
-      gap.code.slice(gap.code.indexOf(':') + 1),
-    ),
-  );
-  const inTopic = fields.filter(
-    (f) =>
-      topicForField(f.key) === id &&
-      (f.field.required === true ||
-        countedDetail.has(f.key) ||
-        CASE_KEYS.has(f.key) ||
-        ((CASE_NOTE_KEYS as readonly string[]).includes(f.key) &&
-          briefKeys.has(f.key))),
-  );
+  const inTopic = countedInTopic(input, merged, fields, id, briefKeys);
   return {
     id,
     title: TOPIC_TITLES[id],
@@ -799,6 +898,76 @@ export function planGroup(
     totalInGroup: inTopic.length,
     questions: groupPending.slice(0, Math.max(1, cap)),
   };
+}
+
+/**
+ * ONE TOPIC'S CARD, ANSWERED OR NOT — the Back button's destination.
+ *
+ * ⚠️ IT IS THE SAME `asked()` SET THE WALK USES, WITH NOTHING FILTERED FOR
+ * BEING ANSWERED. Back re-opens the previous topic so the member can correct a
+ * fact; the answers arrive prefilled on each question (buildQuestion), and the
+ * card is built through the same phrased/enriched path as the forward one, so
+ * the labels and chips match what they saw the first time.
+ *
+ * `index`/`total` count the topics that HAVE askable fields, not the topics
+ * still pending: editing the first topic of an almost-finished application
+ * must not show "Step 0 of 1".
+ */
+export function planCard(
+  input: PlannerInput,
+  topicId: IntakeTopicId,
+  cap: number = GROUP_CAP,
+): PlannedGroup | null {
+  const { merged, items, fields } = plannerContext(input);
+  const { detailKeys, briefKeys, askable } = askablePlan(input, fields);
+  const inTopic = askable.filter(
+    (entry) => topicForField(entry.key) === topicId,
+  );
+  if (!inTopic.length) return null;
+
+  const ordered = orderPending(inTopic, requiredEntry(detailKeys), input.brief);
+  const pendingInTopic = ordered.filter((entry) =>
+    isPending(entry.key, merged, items, input.provenance),
+  );
+  const counted = countedInTopic(input, merged, fields, topicId, briefKeys);
+  const askableTopics = TOPIC_ORDER.filter((id) =>
+    askable.some((entry) => topicForField(entry.key) === id),
+  );
+  return {
+    id: topicId,
+    title: TOPIC_TITLES[topicId],
+    index: Math.max(1, askableTopics.indexOf(topicId) + 1),
+    total: askableTopics.length,
+    answered: Math.max(0, counted.length - pendingInTopic.length),
+    totalInGroup: counted.length,
+    questions: ordered.slice(0, Math.max(1, cap)),
+  };
+}
+
+/**
+ * Where the Back button goes: the askable topic immediately before the first
+ * topic with pending work.
+ *
+ * ⚠️ STATELESS ON PURPOSE. The browser holds no history and the server holds no
+ * cursor: the same answers always produce the same back target, so a refresh,
+ * a new tab or a stale page cannot disagree about where Back goes. Null when
+ * the current topic is the first one with work left, and null when the
+ * interview has nothing left to ask.
+ */
+export function navigationFor(input: PlannerInput): {
+  back: { id: IntakeTopicId; title: string } | null;
+} {
+  const { fields } = plannerContext(input);
+  const { askable } = askablePlan(input, fields);
+  const plan = planGroup(input);
+  if (!plan) return { back: null };
+  const askableTopics = TOPIC_ORDER.filter((id) =>
+    askable.some((entry) => topicForField(entry.key) === id),
+  );
+  const at = askableTopics.indexOf(plan.id);
+  if (at <= 0) return { back: null };
+  const previous = askableTopics[at - 1];
+  return { back: { id: previous, title: TOPIC_TITLES[previous] } };
 }
 
 /** The branch the document is going to argue, for the evidence picker. */

@@ -1602,12 +1602,106 @@ only on the sporting sections (the registry retired it as a question for the
 others); `safe_type`/`safe_mounted`/`safe_key_holder` only when
 `safe_present = Yes`; `safe_mounted_to` only when `safe_mounted = Yes`. The
 detail gate names the security paragraph (`premises_enclosure`) on S13/S14 and
-`continued_use` on S24. Every gap has a question in the walk — asserted by a
-property test in `intake-planner.spec.ts`.
+`continued_use` on S24. Every **factual** gap has a question in the walk —
+asserted by a property test in `intake-planner.spec.ts`; the two narrative gaps
+(`shooting_history`, `continued_use`) are filled by the drafter below.
 
 Everything the motivation still argues with stays: identity, the firearm,
 competency, association, safe storage, the premises block and the purpose
 sections.
+
+### The narrative is drafted, never asked
+
+Operator decision, 2026-11-26: **intake asks only facts no document can supply.**
+The multi-paragraph personal history an applicant cannot reasonably compose in a
+box is written by the assistant from the documents and the application, then
+reviewed by the applicant. `intake-draft.ts` (pure) owns the targets, the
+projection and the validator; `intake-draft.service.ts` owns the one model call.
+
+- **The drafted fields.** `DRAFTED_KEYS` — `shooting_history`,
+  `training_history`, `threat_circumstances`, `daily_movements`,
+  `s13_movements`, `s13_carry_style`, `hunting_history`, `hunting_locations`,
+  `hunt_reasons`, `hunt_terrain`, `hunt_where`, `hunt_game_class`,
+  `sport_reasons`, `sport_formats`, `activity_record`, `competition_record`,
+  `continued_use`. `visibleFields()` excludes every one of them, in the
+  single-question path and the grouped one, so **no interview plan can ask a
+  narrative field for any licence type**. The hunting/sport branch is chosen
+  with `resolveSportingPurpose()` — the same resolver the document uses, so a
+  handgun gets its sport narrative and never a hunting paragraph.
+- **What the model may see.** `draftFacts()` projects the licence type label,
+  the firearm (type/action/make/model/calibre/cartridge), the resolved purpose,
+  the quarry, the game class, the exercise, the association (name/joined/
+  dedicated-since), the province, the residence type, the occupation, the
+  battery as type/make/model/calibre/use rows, the non-sensitive premises taps,
+  the attached document KINDS/LABELS, and any narrative already present. It
+  never carries an ID number, address, serial, licence number, declaration
+  answer or contact detail.
+- **The validator.** `validateDraft()` runs `southAfricanise()` first and then
+  refuses digits, measurements, month/day names, "approximately + number",
+  second person, record/outcome claims ("no criminal record", "guaranteed",
+  "will be approved", "stopping power", "as an AI") and invented proper nouns;
+  long answers are 60–190 words (`continued_use` 40–190) and `cards` answers
+  are 1–4 keys from the field's own options. One retry is made with the
+  rejection list appended; a draft that still fails is dropped, never stored.
+- **How it is stored.** One `prisma.motivation.update`, stamped
+  `source: 'DRAFTED'`, `from: 'your documents and your application'`,
+  `inferred: true`. The sheet renders an inferred value as `suggested` — gold
+  wash, "Drafted for you — check it", Confirm — so the applicant approves every
+  drafted sentence. `stamp()` refuses to overwrite a `MEMBER` value, and an
+  empty `MEMBER` field (a deliberate clear) is not a target either. A
+  `force` re-draft replaces only values still stamped `DRAFTED`.
+- **Fail-soft.** No targets, a model outage, a timeout or a reply the validator
+  rejects all leave answers untouched rather than throwing. The two fields the
+  gate refuses without (`shooting_history` on every type, `continued_use` on
+  S24) fall back to `fallbackDraft()` — a deterministic, checkable-fact-free
+  paragraph — so `finish()` can never dead-end. The fallback is worded for the
+  document (no hunting words in a section 13, no association in a renewal).
+- **Throttled in process.** `stateInternal()` fires `ensure()` in the background
+  (never awaited) only once every factual gap `missingDetail()` names is filled
+  and a narrative target is still empty — including for an application whose
+  intake is already complete and sitting in REVIEW. Drafting before the firearm
+  and association are in would write a generic paragraph that a non-forced run
+  never rewrites, so the trigger is "only the narrative is missing", not
+  "documents confirmed". The same readiness test lets a review-screen save start
+  the first draft when that save filled the last fact. A non-forced run is
+  attempted at most once per 20 s per application, a target set that already
+  produced nothing is not retried until the facts change, and one run at a time
+  per application (a second caller gets the same promise).
+  `IntakeState.drafting` reports the in-flight run so the review screen can
+  poll.
+- **`finish()` drafts first.** It awaits the draft against a 75 s race, then (if
+  a narrative gap is still named) applies the deterministic fallback, and only
+  then evaluates `missingDetail()`. A real non-narrative gap — the firearm, the
+  competency, the safe, the quarry — still refuses with the existing message.
+- **New routes.** `GET /motivations/:id/intake/card?topic=` serves one earlier
+  topic's card with every question prefilled (`question.value` /
+  `question.values`) and returns `{ group, navigation }`;
+  `PATCH /motivations/:id/intake/answers` saves corrections (visible,
+  non-form-only fields only, stamped `MEMBER` by `saveAnswers`) and, when a
+  drafted value exists, re-drafts in the background; `POST
+  /motivations/:id/intake/draft` is the explicit "write it again" button
+  (throttled 6/min like `POST :id/reason`) and returns
+  `{ state, drafted, failed }`; `POST /motivations/:id/answers/confirm` confirms
+  one suggested value without changing it (`{ key }` → `{ ok: true }`). A
+  `PATCH :id/answers` save also re-drafts when — and only when — a fact
+  `draftFacts()` actually consumes changed, so a debounced autosave that only
+  retypes a drafted paragraph never pays for a model pass.
+- **Back is stateless.** `IntakeState.navigation.back` names the askable topic
+  just before the first topic with pending work (`null` on the first / when
+  nothing is left). The browser fetches that card from the route above and
+  saves through the intake PATCH; edits are stamped `MEMBER` and the later
+  cards and drafts re-derive from the corrected facts.
+- **Ambiguous calibre families.** A typed family ("6.5", "9mm", ".38", "308",
+  "223", "357", "44", "300") is never resolved to a variant by
+  `findCartridge()`, and the cross-field extractor drops any calibre it would
+  have substituted for the typed text. The cartridge question is a `CASE_KEYS`
+  entry: it is offered once, only when the review sheet says it is outstanding
+  (`firearm_cartridge` item state `needs_you`), with the Bench's own cartridge
+  names first and a curated `CALIBRE_FAMILY_VARIANTS` backstop (cap 8) so a
+  family the catalogue holds thinly still arrives with real variant chips. The
+  answer is stored as `firearm_cartridge` and `cartridgeSource()` makes it beat
+  the typed calibre everywhere the cartridge is resolved. Nothing is ever
+  chosen for the member.
 
 ### The motivation itself — a FIXED skeleton, not a varied one
 

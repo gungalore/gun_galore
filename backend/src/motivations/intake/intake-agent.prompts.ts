@@ -181,6 +181,12 @@ export function factSystemPrompt(): string {
     'If a field has choices, return the exact choice VALUE, not its label.',
     'If the applicant gives a value outside the choices for a short/long/date field, transcribe it as written.',
     'If nothing in the message answers a listed field, leave it out.',
+    '',
+    '⚠️ A CALIBRE FAMILY IS NEVER EXPANDED TO A VARIANT.',
+    'If the applicant typed a family such as "6.5", "9mm", ".38", "308", "223", "357", "44" or "300", transcribe it EXACTLY as typed.',
+    'Never write "6.5 Creedmoor" for "6.5", and never write "9 mm Luger" for "9mm". The review sheet asks the applicant which variant it is, and a variant chosen here would print the wrong cartridge and dimension page under their signature.',
+    'The same rule applies to a family typed as part of a longer answer: extract the family text, not the round you think it means.',
+    '',
     'Return JSON only, matching the schema.',
   ].join('\n');
 }

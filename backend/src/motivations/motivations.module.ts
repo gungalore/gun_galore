@@ -4,6 +4,7 @@ import { MotivationsIntakeController } from './intake/intake.controller';
 import { MotivationIntakeService } from './intake/intake.service';
 import { MotivationIntakeAgentService } from './intake/intake-agent.service';
 import { MotivationIntakeBriefService } from './intake/intake-brief.service';
+import { MotivationNarrativeDraftService } from './intake/intake-draft.service';
 import { MotivationWriterAgentService } from './motivation-writer-agent.service';
 import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
@@ -129,6 +130,14 @@ import { MotivationPrintService } from './motivation-print.service';
     // intake-brief.service.ts. Provided here and not exported: the intake
     // service is its only caller.
     MotivationIntakeBriefService,
+    /**
+     * ⚠️ THE NARRATIVE DRAFTER. The shooting history, the threat
+     * circumstances, the hunting/sport record and the renewal's continued use
+     * are composed from the member's documents and application and reviewed by
+     * them, not asked in the interview (2026-11-26). Provided here and not
+     * exported: the intake service is its only caller.
+     */
+    MotivationNarrativeDraftService,
     MotivationWriterAgentService,
     MotivationSharedService,
     MemberProfileAnswersService,

@@ -23,6 +23,55 @@ interface Draft {
 const EMPTY: Draft = { picked: [], typed: '', details: {} };
 
 /**
+ * The card as it opens on a topic that is already answered.
+ *
+ * ⚠️ EVERY QUESTION ON THE CARD IS PREFILLED, NOT JUST THE FIRST. Back re-opens
+ * the whole topic, and an editor whose second box is blank over a saved answer
+ * would either look unanswered or, worse, submit the blank over the real value.
+ * The server computes `value`/`values` from the stored answers — see
+ * IntakeQuestion in lib/motivations-api.ts — so this only has to distribute
+ * them back into the controls the member used.
+ *
+ * ⚠️ SINGLE-CHOICE SAVED VALUES BECOME A TICKED CHIP. The server only splits
+ * `values` for multi/cards; a single choice still arrives as `value`. Ticking
+ * the chip keeps "tap it again to unchoose" working, which is how the member
+ * got there in the first place.
+ */
+function draftFromQuestion(question: IntakeQuestion): Draft {
+  const choices = new Set(question.choices.map((choice) => choice.value));
+  const saved = question.value ?? '';
+  if (question.multi || question.kind === 'cards') {
+    return {
+      picked: (question.values ?? []).filter((value) => choices.has(value)),
+      // Kept: buildQuestion leaves a typed "something else" in `value`.
+      typed: choices.has(saved) ? '' : saved,
+      details: {},
+    };
+  }
+  if (question.choices.length && choices.has(saved)) {
+    return { picked: [saved], typed: '', details: {} };
+  }
+  return {
+    picked: question.values?.length ? [...question.values] : [],
+    typed: saved,
+    details: {},
+  };
+}
+
+function draftsForGroup(group: IntakeGroup): Record<string, Draft> {
+  const out: Record<string, Draft> = {};
+  for (const question of group.questions) {
+    out[question.fieldKey] = draftFromQuestion(question);
+  }
+  return out;
+}
+
+/** The questions on the card, in order — a new card is a new list. */
+function signatureOf(group: IntakeGroup): string {
+  return group.questions.map((question) => question.fieldKey).join('|');
+}
+
+/**
  * ⚠️ THE TICK AND THE CROSS ARE THE "DID MY TAP REGISTER" SIGNAL. A card of
  * six questions gives no feedback between the tap and Continue; a member who
  * cannot see that an answer landed taps again. Green tick = this question has
@@ -101,14 +150,32 @@ export default function IntakeGroupCard({
   busy,
   onSubmit,
   onStuck,
+  onBack,
+  mode = 'ask',
 }: {
   group: IntakeGroup;
   busy: boolean;
   onSubmit: (answers: GroupAnswer[]) => void | Promise<void>;
   /** Called when the answer did not land and the field came back unchanged. */
   onStuck?: (message: string) => void;
+  /**
+   * Re-open the previous topic with its saved answers prefilled.
+   *
+   * ⚠️ ABSENT IN EDIT MODE. The page supplies its own "Back to current
+   * question", and two different backs on one card is how a member loses the
+   * card they were editing.
+   */
+  onBack?: () => void;
+  /**
+   * `edit` = an earlier topic re-opened from the review flow. The primary
+   * action becomes "Save changes"; the card never says Continue, because it
+   * does not move the interview on — it changes what the plan is derived from.
+   */
+  mode?: 'ask' | 'edit';
 }) {
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() =>
+    draftsForGroup(group),
+  );
   const [stuck, setStuck] = useState(false);
 
   const submittedKey = useRef<string | null>(null);
@@ -130,15 +197,23 @@ export default function IntakeGroupCard({
     onStuck?.('We could not save that answer. Try again.');
   }, [group, first, onStuck]);
 
-  // A new card means the previous one landed; drop drafts for questions that
-  // are no longer here and clear the slate.
+  /**
+   * A new card means the previous one landed: prefill it from its own saved
+   * answers.
+   *
+   * ⚠️ COMPARED BY QUESTION KEYS, NOT BY OBJECT IDENTITY. The page re-renders
+   * with a NEW group object on every server reply — including the reply that
+   * did not move the card — and the member's draft has to survive that, or
+   * "we could not save that answer, your answer is still here" becomes a lie.
+   */
+  const signature = signatureOf(group);
+  const signatureRef = useRef(signature);
   useEffect(() => {
-    if (!first) return;
-    if (submittedKey.current && group.questions[0]?.fieldKey !== submittedKey.current) {
-      setStuck(false);
-      setDrafts({});
-    }
-  }, [group, first]);
+    if (signatureRef.current === signature) return;
+    signatureRef.current = signature;
+    setStuck(false);
+    setDrafts(draftsForGroup(group));
+  }, [group, signature]);
 
   function draftFor(key: string): Draft {
     return drafts[key] ?? EMPTY;
@@ -251,8 +326,9 @@ export default function IntakeGroupCard({
           {group.title}
         </h2>
         <span className="text-[12px] text-[var(--text-tertiary)]">
-          Step {group.index} of {group.total} · {group.answered}/
-          {group.totalInGroup} answered
+          {mode === 'edit'
+            ? `Step ${group.index} of ${group.total} · editing`
+            : `Step ${group.index} of ${group.total} · ${group.answered}/${group.totalInGroup} answered`}
         </span>
       </div>
 
@@ -415,14 +491,40 @@ export default function IntakeGroupCard({
         })}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="text-[12px] text-[var(--text-tertiary)]">
-          {answered.length === 0
-            ? 'Tap an answer to carry on.'
-            : missingRequired.length
-              ? `${missingRequired.length} still to answer — Continue saves what you have.`
-              : 'Tap Continue to save these answers.'}
-        </span>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {/*
+            ⚠️ BACK LIVES IN THE CARD FOOTER, LEFT OF THE PRIMARY ACTION, and it
+            is a real button, not a text link: on a phone the footer is where the
+            thumb already is. It re-opens the previous topic with its saved
+            answers prefilled, so a wrong answer made three cards ago costs one
+            tap rather than a restart.
+          */}
+          {onBack && mode !== 'edit' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onBack}
+              className="min-h-[44px] rounded-lg border px-3 text-[13px] font-medium disabled:opacity-50"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              Back
+            </button>
+          ) : null}
+          <span className="text-[12px] text-[var(--text-tertiary)]">
+            {mode === 'edit'
+              ? 'Change what you answered earlier; we re-check the rest.'
+              : answered.length === 0
+                ? 'Tap an answer to carry on.'
+                : missingRequired.length
+                  ? `${missingRequired.length} still to answer — Continue saves what you have.`
+                  : 'Tap Continue to save these answers.'}
+          </span>
+        </div>
         <button
           type="button"
           disabled={!canContinue}
@@ -430,7 +532,7 @@ export default function IntakeGroupCard({
           className="rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50"
           style={{ background: 'var(--action-primary-bg)' }}
         >
-          Continue
+          {mode === 'edit' ? 'Save changes' : 'Continue'}
         </button>
       </div>
     </section>

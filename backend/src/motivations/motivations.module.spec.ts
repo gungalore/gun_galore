@@ -3,6 +3,7 @@ import { MotivationsModule } from './motivations.module';
 import { MotivationsIntakeController } from './intake/intake.controller';
 import { MotivationIntakeService } from './intake/intake.service';
 import { MotivationIntakeAgentService } from './intake/intake-agent.service';
+import { MotivationNarrativeDraftService } from './intake/intake-draft.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { UsersModule } from '../users/users.module';
@@ -58,6 +59,20 @@ describe('module wiring', () => {
     );
     expect(meta(MotivationsModule, 'providers')).toContain(
       MotivationIntakeAgentService,
+    );
+  });
+
+  it('provides the narrative drafter the intake service injects', () => {
+    // MotivationIntakeService now takes MotivationNarrativeDraftService in its
+    // constructor. A missing provider here type-checks clean and crash-loops
+    // Nest at boot — the class of bug this spec exists for. The drafter itself
+    // injects only Prisma, LlmService and the shared service, so no extra
+    // module edge is needed (LlmModule is @Global).
+    expect(meta(MotivationsModule, 'providers')).toContain(
+      MotivationNarrativeDraftService,
+    );
+    expect(meta(MotivationsModule, 'providers')).toContain(
+      MotivationIntakeService,
     );
   });
 

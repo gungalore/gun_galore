@@ -1,9 +1,11 @@
 import {
+  CALIBRE_FAMILY_VARIANTS,
   calibreCandidates,
   calibreKey,
   cartridgeFacts,
   cartridgeOptionsFor,
   cartridgeSource,
+  familyVariantsFor,
   findCartridge,
   type CartridgeRow,
 } from './motivation-cartridge';
@@ -319,5 +321,78 @@ describe('which value resolves the cartridge', () => {
   it('falls back to the calibre when no choice was made', () => {
     expect(cartridgeSource({ firearm_calibre: '9mm Luger' })).toBe('9mm Luger');
     expect(cartridgeSource({})).toBe('');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE CALIBRE FAMILIES.
+//
+// Operator decision 2026-11-26: an ambiguous family ("6.5", "9mm", ".38") is
+// resolved from the documents when they name the variant, otherwise ASKED once
+// with the real variants — never guessed, never skipped. This list is the
+// chips half, and it is also the extractor's guard: a typed family must never
+// be silently expanded to a variant the member did not choose.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the calibre family variants', () => {
+  it('offers the real variants of every family the operator named', () => {
+    expect(familyVariantsFor('6.5')).toEqual([
+      '6,5 Creedmoor',
+      '6.5x55 Swedish',
+      '6.5 PRC',
+      '6.5 Grendel',
+    ]);
+    expect(familyVariantsFor('9mm')).toEqual([
+      '9 mm Luger',
+      '9 mm Makarov',
+      '9 mm Browning court',
+    ]);
+    expect(familyVariantsFor('.38')).toEqual(['.38 Special', '.380 ACP']);
+    expect(familyVariantsFor('38')).toEqual(['.38 Special', '.380 ACP']);
+    expect(familyVariantsFor('308')).toEqual([
+      '.308 Winchester',
+      '.30-06 Springfield',
+    ]);
+    expect(familyVariantsFor('30')).toEqual([
+      '.308 Winchester',
+      '.30-06 Springfield',
+    ]);
+    expect(familyVariantsFor('223')).toEqual(['223 Remington', '5.56x45mm NATO']);
+    expect(familyVariantsFor('357')).toEqual(['.357 Magnum', '.357 SIG']);
+    expect(familyVariantsFor('44')).toEqual(['.44 Magnum', '.44 Special']);
+    expect(familyVariantsFor('300')).toEqual([
+      '.300 Winchester Magnum',
+      '.300 Blackout',
+    ]);
+    // The map the operator signed off on, so a future edit is visible.
+    expect(Object.keys(CALIBRE_FAMILY_VARIANTS)).toEqual(
+      expect.arrayContaining(['6.5', '9', '38', '30', '308', '223', '357', '44', '300']),
+    );
+  });
+
+  it('reduces a typed family but never a NAMED variant', () => {
+    // "6.5mm" is the member typing the family, not the cartridge.
+    expect(familyVariantsFor('6.5mm')).not.toHaveLength(0);
+    expect(familyVariantsFor('.308')).not.toHaveLength(0);
+    // A full name is a cartridge and must not be treated as ambiguous.
+    expect(familyVariantsFor('6.5 Creedmoor')).toEqual([]);
+    expect(familyVariantsFor('6,5 Creedmoor')).toEqual([]);
+    expect(familyVariantsFor('9 mm Luger')).toEqual([]);
+    expect(familyVariantsFor('.308 Winchester')).toEqual([]);
+    expect(familyVariantsFor('')).toEqual([]);
+  });
+
+  it('never lets findCartridge resolve a bare family, even with one row on file', () => {
+    // The uniqueness rule happens to refuse most families; this pins the
+    // explicit guard, because a catalogue holding a single 6.5 row would
+    // otherwise resolve "6.5" to it and silently expand the typed family.
+    const oneFamilyRow = [
+      { name: '6,5 Creedmoor', slug: '65-creedmoor', aliases: [] },
+    ];
+    expect(findCartridge(oneFamilyRow, '6,5 Creedmoor')?.name).toBe(
+      '6,5 Creedmoor',
+    );
+    expect(findCartridge(oneFamilyRow, '6.5')).toBeNull();
+    expect(findCartridge(oneFamilyRow, '6.5mm')).toBeNull();
   });
 });

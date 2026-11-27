@@ -522,6 +522,127 @@ describe('the grouped interview card', () => {
   });
 });
 
+describe('the grouped interview card — prefill, Back and edit mode', () => {
+  // ?? THE REVIEW FLOW'S EDIT DOOR. Back re-opens the previous topic through
+  // the server-built card; the card must open on what the member already said,
+  // or "back" would silently blank half the answers it is there to protect.
+  it('prefills every saved answer on the card', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({ value: 'Gerhard Fourie' }),
+          question({
+            fieldKey: 'firearm_make',
+            id: 'firearm_make',
+            label: 'Make',
+            value: 'CZ',
+          }),
+        ])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('Gerhard Fourie')).toBeDefined();
+    expect(screen.getByDisplayValue('CZ')).toBeDefined();
+    // Prefilled counts as answered: the footer does not demand a tap.
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+  });
+
+  it('ticks the saved chips of a multi answer, and sends them back unchanged', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({
+            fieldKey: 'hunt_terrain',
+            id: 'hunt_terrain',
+            label: 'Where do you hunt?',
+            kind: 'multi',
+            multi: true,
+            choices: [
+              { value: 'kalahari', label: 'Kalahari' },
+              { value: 'bushveld', label: 'Bushveld' },
+            ],
+            values: ['kalahari'],
+          }),
+        ])}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Kalahari' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'Bushveld' }).getAttribute('aria-pressed'),
+    ).toBe('false');
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'hunt_terrain', values: ['kalahari'] },
+    ]);
+  });
+
+  it('offers Back in the footer when there is an earlier topic', async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([question()])}
+        busy={false}
+        onSubmit={() => undefined}
+        onBack={onBack}
+      />,
+    );
+
+    const back = screen.getByRole('button', { name: 'Back' });
+    expect(back).toHaveProperty('disabled', false);
+    await user.click(back);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no Back on the first topic with work', () => {
+    render(
+      <IntakeGroupCard
+        group={group([question()])}
+        busy={false}
+        onSubmit={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+  });
+
+  it('labels an earlier card as editing and saves instead of continuing', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <IntakeGroupCard
+        group={group([question({ value: 'Gerhard Fourie' })])}
+        busy={false}
+        onSubmit={onSubmit}
+        onBack={vi.fn()}
+        mode="edit"
+      />,
+    );
+
+    expect(screen.getByText('Step 1 of 3 · editing')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+    // The page supplies its own way back while editing.
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { fieldKey: 'full_name', message: 'Gerhard Fourie' },
+    ]);
+  });
+});
+
 describe('the grouped interview card - closed choices', () => {
   /**
    * ?? A CLOSED CHOICE HAS NO TYPED ANSWER. "Type of firearm" accepts four

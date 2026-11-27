@@ -3,7 +3,7 @@ import { MotivationLicenceType } from '@prisma/client';
 import type { SheetResponse } from '../motivation-sheet.service';
 import { fieldsFor } from '../motivation-fields';
 import { MotivationIntakeService } from './intake.service';
-import { planGroup } from './intake-planner';
+import { pendingFields, planGroup } from './intake-planner';
 
 const SHEET = {
   application: {
@@ -211,5 +211,70 @@ describe('answering a group', () => {
     });
     expect(writes[0]).not.toHaveProperty('firearm_make');
     expect(writes[0]).not.toHaveProperty('firearm_model');
+  });
+
+  /**
+   * ⚠️ THE EXTRACTOR NEVER "UPGRADES" A TYPED CALIBRE — THE SHEET ASKS.
+   *
+   * The cross-field extractor reads a typed sentence for facts about other
+   * fields. For the calibre that used to mean a typed family could be replaced
+   * by a variant the model inferred, which defeats the cartridge question: the
+   * applicant must choose the round. "6.5 mm" is a multi-word family, so it
+   * passes the "more than one word" gate into the extractor; the guard drops
+   * the extracted variant and the typed text is what is stored. The follow-up
+   * question is then pending, per the sheet.
+   */
+  it('never lets the extractor expand a typed calibre family', async () => {
+    const answers: Record<string, string> = {
+      full_name: 'A B',
+      id_number: '8001015009087',
+      licence_holder_type: 'Main firearm licence holder',
+      occupation: 'Engineer',
+      marital_status: 'Married',
+      spouse_name: 'C D',
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      firearm_make: 'Tikka',
+      firearm_model: 'T3x',
+      firearm_serial: 'S1',
+    };
+    const { svc, writes } = makeService(answers);
+    const extract = jest.fn(async () => ({
+      firearm_calibre: '6.5 Creedmoor',
+    }));
+    (svc as unknown as { agent: { extractFacts: typeof extract } }).agent.extractFacts =
+      extract;
+
+    await svc.answerBatch('user-1', 'mo-1', [
+      { fieldKey: 'firearm_calibre', value: '6.5 mm' },
+    ]);
+
+    expect(extract).toHaveBeenCalled();
+    expect(writes[0].firearm_calibre).toBe('6.5 mm');
+    // ...and the cartridge question is then the outstanding one, not a silent
+    // expansion: the sheet builds the item, the planner offers the choices.
+    const withItem = {
+      ...SHEET,
+      items: [
+        {
+          key: 'firearm_cartridge',
+          label: 'Which cartridge is it?',
+          kind: 'short',
+          state: 'needs_you',
+          value: '',
+          provenance: null,
+          section: 'firearm',
+          scope: 'application',
+          required: false,
+          choices: ['6,5 Creedmoor', '6.5x55 Swedish', '6.5 PRC'],
+        },
+      ],
+    } as unknown as SheetResponse;
+    const pending = pendingFields({
+      type: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      answers: { ...answers, firearm_calibre: '6.5 mm' },
+      sheet: withItem,
+    }).map((entry) => entry.key);
+    expect(pending).toContain('firearm_cartridge');
   });
 });

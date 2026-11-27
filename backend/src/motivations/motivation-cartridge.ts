@@ -228,6 +228,63 @@ export function calibreCandidates(raw: string): string[] {
 }
 
 /**
+ * The cartridges a calibre FAMILY could mean — the real variants the member
+ * must be asked about.
+ *
+ * ⚠️ A TYPED FAMILY IS NOT A CARTRIDGE, AND THE INTERVIEW MUST ALWAYS BE ABLE
+ * TO ASK. `cartridgeOptionsFor` can only offer rows the Bench catalogue
+ * actually holds; a family the catalogue has not imported yet, or one whose
+ * rows were imported under names the reduction misses, came back with fewer
+ * than two choices — or none — so the review sheet's "Which cartridge is it?"
+ * arrived with no buttons, and the member typed the answer by hand or not at
+ * all. This list is the curated backstop: real, standard cartridge names a
+ * Southern African dealer actually stocks, used ONLY as chips. Nothing here is
+ * ever selected or stored automatically.
+ *
+ * ⚠️ IT IS ALSO THE EXTRACTOR'S GUARD. The cross-field extractor reads a typed
+ * sentence and fills other fields; a member who types "6.5" must not have that
+ * silently "upgraded" to "6.5 Creedmoor" — the whole point of the follow-up
+ * question is that the applicant, not the model, picks the variant.
+ */
+export const CALIBRE_FAMILY_VARIANTS: Readonly<Record<string, readonly string[]>> = {
+  '6.5': ['6,5 Creedmoor', '6.5x55 Swedish', '6.5 PRC', '6.5 Grendel'],
+  '9': ['9 mm Luger', '9 mm Makarov', '9 mm Browning court'],
+  '38': ['.38 Special', '.380 ACP'],
+  '30': ['.308 Winchester', '.30-06 Springfield'],
+  '308': ['.308 Winchester', '.30-06 Springfield'],
+  '223': ['223 Remington', '5.56x45mm NATO'],
+  '357': ['.357 Magnum', '.357 SIG'],
+  '44': ['.44 Magnum', '.44 Special'],
+  '300': ['.300 Winchester Magnum', '.300 Blackout'],
+};
+
+/**
+ * Reduce a typed calibre to the FAMILY key it names, or ''.
+ *
+ * ⚠️ A NAMED VARIANT MUST NEVER REDUCE TO ITS FAMILY. ".308 Winchester" is a
+ * cartridge and resolves normally; "308" is a family. So the comparison is on
+ * the whole reduced string: lower case, spaces removed, one leading dot
+ * removed, a trailing "mm" removed. "6.5mm" reduces to "6.5" (a family the
+ * member typed), while "6.5 Creedmoor" reduces to "6.5creedmoor" and does not
+ * match anything here.
+ */
+function familyKey(raw: string): string {
+  return (raw ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/^\./, '')
+    .replace(/mm$/, '');
+}
+
+/** The real variants of the calibre family the member typed, if it is one. */
+export function familyVariantsFor(calibre: string): string[] {
+  const key = familyKey(calibre);
+  if (!key) return [];
+  const variants = CALIBRE_FAMILY_VARIANTS[key];
+  return variants ? [...variants] : [];
+}
+
+/**
  * The cartridge block for the fact pack, or null when we hold no sheet.
  *
  * ⚠️ EVERY LINE IS A MEASUREMENT WE HOLD. A field the sheet does not carry is
@@ -289,6 +346,20 @@ export function findCartridge<T extends NameableCartridge>(
     const hit = rows.find((c) => keysOf(c).includes(want));
     if (hit) return hit;
   }
+
+  /**
+   * ⚠️ A BARE FAMILY IS A QUESTION, NEVER A MATCH. "6.5" is not a cartridge:
+   * it is six-point-five millimetre anything, and the Bench holds several rows
+   * whose names begin with it. The uniqueness rule below would refuse most of
+   * them by accident, but a catalogue that happens to hold one 6.5 variant
+   * would resolve "6.5" to it and silently expand the member's typed family.
+   * The follow-up question exists for exactly this, so the family stops here
+   * and the shortlist (`familyVariantsFor` + `cartridgeOptionsFor`) asks.
+   *
+   * The exact-name pass above still wins: a member who typed the full variant
+   * name is not typing a family.
+   */
+  if (familyVariantsFor(printed).length) return null;
 
   /**
    * 2 and 3. A UNIQUE prefix, then a UNIQUE substring.

@@ -233,6 +233,71 @@ describe('parseProvenance', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────────────
+// DRAFTED — a narrative written FOR the member, from their file.
+//
+// Operator decision 2026-11-26: the shooting history, the threat
+// circumstances, the hunting/sport record and a renewal's continued use are
+// drafted by the assistant from the documents and application and approved by
+// the applicant. It is an automatic fill like the others — it renders as
+// "Drafted for you — check it" because it is stamped inferred — and the member
+// still wins the moment they edit it.
+// ────────────────────────────────────────────────────────────────────
+describe('the DRAFTED source', () => {
+  const drafted = (): AnswerProvenance => ({
+    source: 'DRAFTED',
+    from: 'your documents and your application',
+    at: AT.toISOString(),
+    inferred: true,
+  });
+
+  it('has the approved label and is in the persisted source list', () => {
+    expect(SOURCE_LABELS.DRAFTED).toBe('Drafted for you from your file — check it');
+    expect(PROVENANCE_SOURCES).toContain('DRAFTED');
+    expect(isProvenanceSource('DRAFTED')).toBe(true);
+  });
+
+  it('round-trips inferred: true through the persisted column', () => {
+    const map = stamp({}, ['shooting_history'], {
+      source: 'DRAFTED',
+      from: 'your documents and your application',
+      inferred: true,
+    }, AT);
+    const parsed = parseProvenance(JSON.parse(JSON.stringify(map)));
+    expect(parsed.shooting_history).toEqual(drafted());
+  });
+
+  it('counts as an automatic fill, so the sheet suggests it', () => {
+    expect(isAutomatic('DRAFTED')).toBe(true);
+    expect(automaticCount({ shooting_history: drafted() })).toBe(1);
+    expect(automaticSources({ shooting_history: drafted() })).toEqual([
+      'DRAFTED',
+    ]);
+  });
+
+  it('is REFUSED over a MEMBER answer — a paragraph they edited is theirs', () => {
+    const member = markMember({}, ['shooting_history'], AT);
+    const after = stamp(member, ['shooting_history'], {
+      source: 'DRAFTED',
+      from: 'your documents and your application',
+      inferred: true,
+    }, AT);
+    expect(after.shooting_history?.source).toBe('MEMBER');
+  });
+
+  it('may be replaced by another automatic source, like any fill', () => {
+    const first = stamp({}, ['shooting_history'], {
+      source: 'DRAFTED',
+      from: 'your documents and your application',
+    }, AT);
+    const second = stamp(first, ['shooting_history'], {
+      source: 'DERIVED',
+      from: 'the firearm, your licences and what you told us',
+    }, AT);
+    expect(second.shooting_history?.source).toBe('DERIVED');
+  });
+});
+
 describe('counting, for the banner', () => {
   const filled: ProvenanceMap = {
     a: { source: 'PROFILE', from: 'Your profile', at: AT.toISOString() },
