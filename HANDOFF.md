@@ -7,6 +7,46 @@ overwritten.
 
 Last updated: **2026-11-27**.
 
+## 2026-11-27 — ROUND 4: ONE CARD FOR THE OWNED FIREARMS, A NONE MODEL, COMPACT REVIEW (FULL DEPLOY `fd50abd1`)
+
+Operator on the new S16 app **MO000160** (08:29): "there is no … None option for firearms I already own. And the
+repetitive asking the model for each firearm is annoying. Also [the review screen] is an endless scrolling
+exercise — find a way to condense or compact this."
+
+Live data explained it: six vault-read firearms, Make/Calibre/Serial pre-filled, only `existing_firearm_N_model`
+empty on each — and the one-firearm-per-card rule served six separate near-empty Model cards. The operator
+skipped all six (`SKIPPED` provenance), which is the repetition they were describing.
+
+- **The owned rows are one card again.** `planGroup` serves every pending owned-row question in one card,
+  ordered firearm → Make/Model/Calibre/Serial, capped by `GROUP_CAP`. The "Firearm n of N" title and
+  `ownedIndex` survive only when the served card happens to cover one firearm; a combined card keeps
+  "Firearms you already hold" and serves `ownedTotal` only.
+- **A `None` answer for an owned Model.** `existing_firearm_N_model` questions lead with
+  "None — the licence prints NONE" (the free-text box stays). A stored `None` is an answer on the sheet
+  (`state: filled`, not re-asked) and is still stripped before prose, so a battery summary never says a
+  firearm's model is "None".
+- **Honest help.** Owned-row fields no longer say "typed here and never sent to the writing assistant" —
+  those facts are the writer's battery. They show the registry help or "Exactly as it appears on your licence
+  card."
+- **Compact interview card.** A firearm box holding one question renders as a tight two-line row (Firearm N +
+  label + control), not a full fieldset; multi-field boxes drop the per-field help paragraphs.
+- **Compact review.** Sections auto-open only for MISSING answers now — drafted paragraphs no longer blow the
+  page open (the attention panel counts them and the section summary says "N to check"). Each owned firearm is
+  a collapsed one-line summary (make · model · calibre · serial + "N to fill"/"complete") that expands to
+  Make/Model/Calibre/Serial, with a nested "More details" fold for type/expiry/section/serials. First paint at
+  the live shape (six firearms, ten drafted answers, six licence cards) is one to two phone screens.
+
+**Deployed `fd50abd1` (full, 2026-11-27 09:06 SAST); rollback `alloutdoor-20261127-090602.dump`.**
+Backend/frontend/warden online; health OK both checks; gate 307 → `/gate` and `/gate` 200. Checks: backend tsc
+clean + **465 suites / 6,884 passed / 8 skipped / 0 failed**; frontend typecheck clean + **211 files / 2,374
+passed / 1 skipped** + production build clean.
+
+Next: hard-refresh and reopen MO000160's review — it should be a short page (attention counts + folded
+sections, six collapsed firearm lines) and the six skipped Model rows should simply read as optional. A fresh
+application should show all missing owned fields on one card with the None chip. Known edges: the review row's
+free-text editor has no None chip (only the interview does), and a lowered owned count still leaves extra vault
+rows in the stored answers/ battery (noted last round).
+
 ## 2026-11-27 — ROUND 3: OWNED FIREARMS ASKED ONE AT A TIME, REVIEW BOXES, PRINT-READY LICENCES, RESUME (FULL DEPLOY `1b691852`)
 
 Operator, 06:54: "the applicant must be asked how many firearms they currently own. Then asked for Make, Model
