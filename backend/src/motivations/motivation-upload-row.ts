@@ -7,6 +7,7 @@ import {
   parseUnitStandards,
   readStatementOfResults,
 } from '../common/sa-competency';
+import { decryptJson } from '../common/blob-crypto';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT A ROW IN THE DOCUMENT LIST HAS TO SAY ABOUT ITSELF.
@@ -215,6 +216,54 @@ export interface PackProficiencyPage {
   text: string;
   /** 'front' (provider certificate) | 'back' (statement of results) | null. */
   side: string | null;
+}
+
+/**
+ * Read one attached proficiency page for the pack check.
+ *
+ * ⚠️ ONE READER, TWO CALLERS. Generation refuses a print-ready pack whose
+ * attached proficiency pages do not carry 117705 or the applied firearm's unit
+ * standard; the review sheet now SHOWS the same verdict. Two implementations of
+ * "what does this page say" would let the screen and the gate disagree — the
+ * member told the documents are fine and then refused at Generate, which is the
+ * exact failure `documentStatus` exists to prevent one level up.
+ *
+ * The parsed `unit_standard` is preferred; the raw OCR text is the fallback
+ * (parseUnitStandards reads digits out of either). A row we cannot decrypt is a
+ * page we could not read — null text, which the gap check treats as unread
+ * rather than missing.
+ */
+export interface ProficiencyUploadRow {
+  kind: string;
+  extractionEncrypted?: string | null;
+  ocrTextEncrypted?: string | null;
+}
+
+export function proficiencyPagesFromUploads(
+  rows: readonly ProficiencyUploadRow[],
+): PackProficiencyPage[] {
+  return rows
+    .filter((u) => u.kind === 'PROFICIENCY_CERTIFICATE')
+    .map((u) => {
+      let fields: Record<string, string> | null = null;
+      try {
+        fields = u.extractionEncrypted
+          ? decryptJson<Record<string, string>>(u.extractionEncrypted)
+          : null;
+      } catch {
+        fields = null;
+      }
+      let text = (fields?.unit_standard ?? '').trim();
+      if (!text && u.ocrTextEncrypted) {
+        try {
+          text =
+            decryptJson<{ text?: string }>(u.ocrTextEncrypted)?.text ?? '';
+        } catch {
+          text = '';
+        }
+      }
+      return { text, side: fields?.document_side ?? null };
+    });
 }
 
 /**

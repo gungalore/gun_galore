@@ -103,16 +103,12 @@ export interface SheetItem {
   scope: 'profile' | 'application';
   required: boolean;
   /**
-   * A box that only exists on the SAPS 271 form.
+   * A registry flag for boxes that only existed on the old SAPS 271 form.
    *
-   * ⚠️ NOT A QUESTION THIS PRODUCT ASKS. Form boxes are read off a document
-   * when the member supplies one; the product does not fill in the 271, so an
-   * empty formOnly row is never a gap and must never disable writing. The review
-   * screen files them into one collapsed "SAPS 271 details (optional)" block at
-   * the bottom instead of letting twelve of them lengthen the main page.
-   *
-   * Optional on the wire so an older sheet (or a server that has not yet been
-   * rolled forward) renders as it did before rather than throwing.
+   * ⚠️ SERVED BUT NO LONGER RENDERED. The operator retired the 271 from this
+   * product ("we are never filling in 271 forms"), so the backend no longer
+   * serves those rows on the sheet. The flag is kept on the mirror so an older
+   * sheet response still type-checks; nothing in the review screen reads it.
    */
   formOnly?: boolean;
   help?: string;
@@ -271,6 +267,29 @@ export interface PreviewSection {
   fromCards: string[];
 }
 
+/**
+ * One compliance document the server checks before a print-ready pack is written.
+ *
+ * Mirrors the backend's SheetCompliance block. `unread` is NOT a blocker — the
+ * document is attached, we just could not read a unit-standard code off it — so
+ * the UI shows it in gold/attention rather than red and never gates on it.
+ */
+export interface SheetComplianceCheck {
+  key: 'PROFICIENCY' | 'KNOWLEDGE_OF_ACT';
+  label: string;
+  state: 'have' | 'missing' | 'unread';
+  /** The server's own line: what to do about it, in the member's words. */
+  note: string;
+}
+
+export interface SheetCompliance {
+  /** True for a print-ready pack; false where nothing is required. */
+  required: boolean;
+  /** The server's generation gate, as it sees it. Never re-derived here. */
+  ready: boolean;
+  checks: SheetComplianceCheck[];
+}
+
 export interface SheetResponse {
   application: {
     id: string;
@@ -368,6 +387,18 @@ export interface SheetResponse {
      */
     missingRequired?: string[];
   };
+  /**
+   * Whether the pack's own compliance documents are in place.
+   *
+   * ⚠️ `ready` IS THE SERVER'S GENERATION GATE — never re-derived here. It can
+   * be false for a dedicated-status proficiency of the wrong class or a missing
+   * unit standard, neither of which is an "answer". The review screen counts it
+   * once when `required && !ready` and shows the server's own note; `unread`
+   * does NOT block (the backend treats an unread card as on file).
+   *
+   * Optional on the wire so an older sheet renders exactly as before.
+   */
+  compliance?: SheetCompliance;
   credentials: SheetCredentials;
   overlap: {
     verdict: { kind: string; withCalibres?: string[]; withTypes?: string[] };

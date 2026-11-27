@@ -173,9 +173,10 @@ export default function LicenceProfilePage() {
         >
           Document Centre
         </a>
-        . The 271-only facts — postal address, spouse details, employer address,
-        reloading and existing-firearm rows — are asked on the application that
-        needs them and are not remembered here.
+        . Details a police form asks for — postal address, spouse details,
+        employer address — are not needed for the motivation and are not
+        remembered here. Your existing firearms are asked once and remembered
+        with the application.
       </p>
       <p className="mt-1 text-[12.5px] text-[var(--text-tertiary)]">
         {filled} detail{filled === 1 ? '' : 's'} remembered

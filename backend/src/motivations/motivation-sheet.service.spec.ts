@@ -6,7 +6,7 @@ import {
 } from './motivation-sheet.service';
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
-import { missingRequired } from './motivation-fields';
+import { fieldsFor, missingRequired } from './motivation-fields';
 import { missingDetail } from './motivation-completeness';
 
 // ────────────────────────────────────────────────────────────────────
@@ -48,11 +48,23 @@ function build(
       extractionOk: boolean;
       /** The second role one document plays — see the good-standing suite. */
       coversKinds?: string[];
+      /** Parsed reader output (unit standards, holder, document side). */
+      extractionEncrypted?: string | null;
+      /** Raw OCR text fallback. */
+      ocrTextEncrypted?: string | null;
     }[];
     licenceType?: MotivationLicenceType;
     seller?: { status: string; invitedName?: string } | null;
-    /** Document Centre rows, for the competency/proficiency pair. */
-    credentials?: { id: string; kind: string; otherSideId: string | null }[];
+    /**
+     * Document Centre rows, for the competency/proficiency pair AND the
+     * compliance block (vault `details.unit_standard`).
+     */
+    credentials?: {
+      id: string;
+      kind: string;
+      otherSideId: string | null;
+      detailsEncrypted?: string | null;
+    }[];
     /** Statements of results, for the 117705 read. */
     statements?: { ocrTextEncrypted: string | null }[];
     /** The cartridge catalogue the paygate's drawing resolves against. */
@@ -185,8 +197,8 @@ describe('the four item states', () => {
   });
 
   it('na — a field behind an unmet showIf', async () => {
-    const { svc } = build({ marital_status: 'Single' });
-    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'spouse_name');
+    const { svc } = build({ safe_present: 'No' });
+    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'safe_type');
     expect(item.state).toBe('na');
   });
 
@@ -289,20 +301,20 @@ describe('one number, three views', () => {
 
 describe('the profile layers underneath the application', () => {
   it('offers a profile answer the application has not overridden', async () => {
-    const { svc } = build({}, { profile: { marital_status: 'Married' } });
-    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'marital_status');
-    expect(item.value).toBe('Married');
+    const { svc } = build({}, { profile: { safe_present: 'Yes' } });
+    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'safe_present');
+    expect(item.value).toBe('Yes');
     expect(item.state).toBe('filled');
     expect(item.scope).toBe('profile');
   });
 
   it('lets this application win where the member changed it here', async () => {
     const { svc } = build(
-      { marital_status: 'Divorced' },
-      { profile: { marital_status: 'Married' } },
+      { safe_present: 'No' },
+      { profile: { safe_present: 'Yes' } },
     );
-    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'marital_status');
-    expect(item.value).toBe('Divorced');
+    const item = itemFor((await svc.sheetFor('c1', 'mo-1')).items, 'safe_present');
+    expect(item.value).toBe('No');
   });
 });
 
@@ -560,14 +572,14 @@ describe('the profile is part of what the application says', () => {
     // having changed it here. Reversing that would silently overwrite a
     // correction with the value it corrected.
     return build(
-      { marital_status: 'Married' },
-      { profile: { marital_status: 'Single' } },
+      { safe_present: 'No' },
+      { profile: { safe_present: 'Yes' } },
     )
       .svc.sheetFor('user_1', 'mo-1')
       .then((sheet) => {
         expect(
-          sheet.items.find((i) => i.key === 'marital_status')?.value,
-        ).toBe('Married');
+          sheet.items.find((i) => i.key === 'safe_present')?.value,
+        ).toBe('No');
       });
   });
 });
@@ -628,20 +640,38 @@ describe('a certificate that is also the letter of good standing', () => {
   });
 });
 
-describe('the sheet marks SAPS 271-only rows so the screen can collapse them', () => {
-  it('serves formOnly on the 271 boxes and not on ordinary arguments', async () => {
-    const { svc } = build({ marital_status: 'Married', spouse_name: 'A B' });
+// ────────────────────────────────────────────────────────────────────
+// THE SAPS 271 IS GONE (operator, 2026-11-27).
+//
+// The product never fills in a 271, so its form boxes must not appear on the
+// product's own review sheet at all — not even in a collapsed block. The
+// registry keeps them (an uploaded 271 still has to be readable and a stored
+// value still saves), and this is the assertion that they are not SERVED.
+// ────────────────────────────────────────────────────────────────────
+describe('the SAPS 271 boxes are not served at all', () => {
+  it('serves no formOnly row and marks no item formOnly', async () => {
+    const { svc } = build({
+      marital_status: 'Married',
+      spouse_name: 'A B',
+      licence_holder_type: 'Main firearm licence holder',
+    });
     const sheet = await svc.sheetFor('user-1', 'mo-1');
-    // ⚠️ The product does not fill in a 271; these rows stay served (a stored
-    // value must be correctable) but carry formOnly so the review screen moves
-    // them into a collapsed "SAPS 271 details (optional)" block instead of
-    // showing them as open "still needed" editors.
-    expect(itemFor(sheet.items, 'marital_status')?.formOnly).toBe(true);
-    expect(itemFor(sheet.items, 'spouse_name')?.formOnly).toBe(true);
-    expect(itemFor(sheet.items, 'licence_holder_type')?.formOnly).toBe(true);
-    // Ordinary motivation fields are untouched by the flag.
-    expect(itemFor(sheet.items, 'firearm_make')?.formOnly).toBeUndefined();
-    expect(itemFor(sheet.items, 'residence_type')?.formOnly).toBeUndefined();
+    const formOnly = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE)
+      .filter((field) => field.formOnly)
+      .map((field) => field.key);
+    expect(formOnly.length).toBeGreaterThan(10);
+    for (const key of formOnly) {
+      expect({
+        key,
+        served: sheet.items.some((item) => item.key === key),
+      }).toEqual({ key, served: false });
+    }
+    // ⚠️ SheetItem.formOnly stays in the type for an older bundle; it is never
+    // set now.
+    expect(sheet.items.some((item) => item.formOnly)).toBe(false);
+    // Ordinary motivation rows are untouched.
+    expect(itemFor(sheet.items, 'firearm_make')).toBeDefined();
+    expect(itemFor(sheet.items, 'residence_type')).toBeDefined();
   });
 });
 
@@ -943,5 +973,130 @@ describe('the owned-firearm Model None answer', () => {
     // answerValue, so it names the make and calibre, never "NONE".
     expect(sheet.ownedRows[0].summary).toBe('Marlin · .45-70 Government');
     expect(sheet.ownedRows[0].summary).not.toContain('NONE');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE TRAINING THE PRINT-READY GATE CHECKS, MADE VISIBLE (operator,
+// 2026-11-27): "It does not show my proficiency for the firearm or the
+// knowledge of the firearm act."
+//
+// Generation refuses a print-ready pack whose ATTACHED proficiency pages lack
+// 117705 or the applied firearm's unit standard. The sheet now shows the same
+// verdict from the same reader, and folds in the member's vault evidence so a
+// statement they already gave us counts as "have".
+// ────────────────────────────────────────────────────────────────────
+describe('the compliance block', () => {
+  const RIFLE = { firearm_type: 'Rifle', firearm_action: 'Bolt action' };
+  const page = (
+    id: string,
+    unitStandard: string | null,
+  ) => ({
+    id,
+    kind: 'PROFICIENCY_CERTIFICATE',
+    mimeType: 'image/jpeg',
+    extractionOk: true,
+    extractionEncrypted: encryptJson(
+      unitStandard ? { unit_standard: unitStandard } : { full_name: 'A B', id_number: '8001015009087' },
+    ),
+    ocrTextEncrypted: null,
+  });
+  const check = (
+    sheet: Awaited<ReturnType<MotivationSheetService['sheetFor']>>,
+    key: 'PROFICIENCY' | 'KNOWLEDGE_OF_ACT',
+  ) => sheet.compliance.checks.find((entry) => entry.key === key)!;
+
+  it('have/have when one statement carries 117705 and the rifle unit', async () => {
+    const { svc } = build(RIFLE, { uploads: [page('u1', '117705, 119651')] });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(sheet.compliance.required).toBe(true);
+    expect(sheet.compliance.ready).toBe(true);
+    expect(check(sheet, 'PROFICIENCY')).toMatchObject({
+      state: 'have',
+      label:
+        'Proficiency statement of results for the Rifle or carbine - manually operated',
+    });
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT')).toMatchObject({
+      state: 'have',
+      label: 'Knowledge of the Firearms Control Act (unit standard 117705)',
+    });
+  });
+
+  it('missing law when the page has the rifle unit but not 117705', async () => {
+    const { svc } = build(RIFLE, { uploads: [page('u1', '119651')] });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').state).toBe('missing');
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').note).toContain('117705');
+    expect(check(sheet, 'PROFICIENCY').state).toBe('have');
+    expect(sheet.compliance.ready).toBe(false);
+  });
+
+  it('missing firearm class when the page carries the handgun unit instead', async () => {
+    const { svc } = build(RIFLE, { uploads: [page('u1', '117705, 119649')] });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(check(sheet, 'PROFICIENCY')).toMatchObject({ state: 'missing' });
+    expect(check(sheet, 'PROFICIENCY').note).toContain(
+      'Rifle or carbine - manually operated',
+    );
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').state).toBe('have');
+    expect(sheet.compliance.ready).toBe(false);
+  });
+
+  it('unread when pages exist but no unit-standard code can be read', async () => {
+    const { svc } = build(RIFLE, { uploads: [page('u1', null)] });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    const note =
+      "We couldn't read a unit-standard code on the proficiency pages we hold — upload a clearer statement of results in the Document Centre and re-attach it.";
+    expect(check(sheet, 'PROFICIENCY')).toMatchObject({ state: 'unread', note });
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT')).toMatchObject({
+      state: 'unread',
+      note,
+    });
+    // ⚠️ Unread does not block — generation behaves the same way.
+    expect(sheet.compliance.ready).toBe(true);
+  });
+
+  it('folds in the vault when the attached page was read without unit standards (MO000161)', async () => {
+    const { svc } = build(RIFLE, {
+      uploads: [page('u1', null)],
+      credentials: [
+        {
+          id: 'cred-1',
+          kind: 'PROFICIENCY',
+          otherSideId: null,
+          detailsEncrypted: encryptJson({ unit_standard: '117705, 119651' }),
+        },
+      ],
+    });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(check(sheet, 'PROFICIENCY').state).toBe('have');
+    expect(check(sheet, 'PROFICIENCY').note).toContain('document history');
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').state).toBe('have');
+  });
+
+  it('is have/have from the vault alone, and ready because nothing attached was refused', async () => {
+    const { svc } = build(RIFLE, {
+      credentials: [
+        {
+          id: 'cred-1',
+          kind: 'PROFICIENCY',
+          otherSideId: null,
+          detailsEncrypted: encryptJson({ unit_standard: '117705, 119651' }),
+        },
+      ],
+    });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(check(sheet, 'PROFICIENCY').state).toBe('have');
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').state).toBe('have');
+    expect(sheet.compliance.ready).toBe(true);
+  });
+
+  it('motivation-only reports required:false, ready:true, and still computes the checks', async () => {
+    const { svc } = build(RIFLE, { outputMode: 'MOTIVATION_ONLY' });
+    const sheet = await svc.sheetFor('user-1', 'mo-1');
+    expect(sheet.compliance.required).toBe(false);
+    expect(sheet.compliance.ready).toBe(true);
+    expect(check(sheet, 'PROFICIENCY').state).toBe('missing');
+    expect(check(sheet, 'KNOWLEDGE_OF_ACT').state).toBe('missing');
   });
 });

@@ -451,6 +451,47 @@ describe('state() drafts the narrative in the background', () => {
     ).stateInternal('user-1', 'mo-1');
     expect(h.ensureCalls).toHaveLength(0);
   });
+
+  /**
+   * ⚠️ THE "ASKS QUESTIONS THEN JUST JUMPS AWAY" BUG (operator, 2026-11-27).
+   * The draft used to start the moment only narrative gaps remained — while an
+   * optional/case question was still pending — and the 2-second poll flipped the
+   * screen into drafting mid-interview. The trigger now waits until `planGroup`
+   * has nothing left to serve.
+   */
+  it('does not start drafting while the interview still has a question', async () => {
+    const answers = completeAnswers();
+    // The owned-firearms gate is a pending case question, not a detail gap, so
+    // `onlyNarrativeGapsRemain` is true and the old trigger would have fired.
+    delete answers.has_existing_firearms;
+    const h = harness({ answers });
+
+    const state = await (
+      h.svc as unknown as {
+        stateInternal: (u: string, i: string) => Promise<IntakeState>;
+      }
+    ).stateInternal('user-1', 'mo-1');
+
+    expect(h.ensureCalls).toHaveLength(0);
+    expect(state.drafting).toBe(false);
+  });
+
+  it('does fire once the interview is complete (review-stage row)', async () => {
+    const answers = completeAnswers();
+    delete answers.shooting_history;
+    const h = harness({
+      answers,
+      intakeCompletedAt: new Date(),
+      drafting: true,
+    });
+    const state = await (
+      h.svc as unknown as {
+        stateInternal: (u: string, i: string) => Promise<IntakeState>;
+      }
+    ).stateInternal('user-1', 'mo-1');
+    expect(h.ensureCalls.length).toBeGreaterThanOrEqual(1);
+    expect(state.drafting).toBe(true);
+  });
 });
 
 describe('finish() drafts before it refuses', () => {

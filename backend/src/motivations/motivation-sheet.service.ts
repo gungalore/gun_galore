@@ -31,6 +31,19 @@ import {
   credentialSlots,
   type SheetCredentials,
 } from './motivation-credential-slots';
+import {
+  hasProficiencyPackGap,
+  proficiencyPackGap,
+  proficiencyPagesFromUploads,
+  type PackProficiencyPage,
+} from './motivation-upload-row';
+import {
+  MANDATORY_UNIT_STANDARD,
+  endorsementSpec,
+  parseUnitStandards,
+  type Endorsement,
+} from '../common/sa-competency';
+import type { ProficiencyCover } from '../common/sa-proficiency-cover';
 import { overlapFromAnswers } from './motivation-overlap';
 import { motivationTitle } from './motivation-title';
 import { previewFor, type PreviewSection } from './motivation-preview';
@@ -164,20 +177,12 @@ export interface SheetItem {
   scope: 'profile' | 'application';
   required: boolean;
   /**
-   * A SAPS 271 form box, not a motivation argument.
+   * ⚠️ DEPRECATED AND ABSENT IN PRACTICE (2026-11-27).
    *
-   * ⚠️ SERVED SO THE REVIEW SCREEN CAN COLLAPSE IT. The product no longer fills
-   * in a 271, but the registry still carries the form's boxes because an
-   * applicant may upload one and because a stored value must stay correctable.
-   * The review screen moves `formOnly` rows into a collapsed "SAPS 271 details
-   * (optional)" block instead of showing them as open "still needed" editors —
-   * the operator's live S16 test (MO000159) met "Will you be the main licence
-   * holder?" as an interview question and that is exactly the confusion this
-   * flag removes.
-   *
-   * ⚠️ FORM-ONLY IS NOT "HIDDEN". The row is still served, still editable and
-   * still validated through the ordinary save path; the owned-firearm serial and
-   * licence rows and the 271 declarations must stay correctable.
+   * The product never fills in a SAPS 271, so form-only registry rows are no
+   * longer served on this sheet at all — this optional field stays in the type
+   * only so an older bundle reading it does not break, and no item ever carries
+   * it now. See the `served` filter in sheetFor.
    */
   formOnly?: boolean;
   help?: string;
@@ -204,6 +209,161 @@ export interface SheetSection {
   blurb: string;
   /** Required keys in this section that are still empty. */
   missing: string[];
+}
+
+/**
+ * Whether the training evidence the PRINT-READY gate needs is on the file.
+ *
+ * ⚠️ THE GENERATOR HAS ALWAYS REFUSED A PACK WHOSE ATTACHED PROFICIENCY PAGES
+ * LACK 117705 OR THE APPLIED FIREARM'S UNIT STANDARD — and the review screen
+ * never said so. The operator found out at Generate: "It does not show my
+ * proficiency for the firearm or the knowledge of the firearm act." This block
+ * is that gate, made visible where the documents live.
+ *
+ * Evidence is read from BOTH places a member's training can sit: the vault
+ * credentials they have ever given us (`credentials.knowledge` / the cover's
+ * endorsements) and the PROFICIENCY_CERTIFICATE pages attached to this
+ * application (`proficiencyPagesFromUploads`, the same reader generation uses).
+ * Best evidence wins; unread is not missing.
+ */
+export type ComplianceKey = 'PROFICIENCY' | 'KNOWLEDGE_OF_ACT';
+
+export interface ComplianceCheck {
+  key: ComplianceKey;
+  label: string;
+  /** 'unread' is not an accusation — a bad scan must not read as "never did it". */
+  state: 'have' | 'missing' | 'unread';
+  note: string;
+}
+
+export interface SheetCompliance {
+  /** True for a PRINT_READY pack; false for MOTIVATION_ONLY (which carries no annexures). */
+  required: boolean;
+  /** True when nothing the generation gate would refuse is missing. */
+  ready: boolean;
+  checks: ComplianceCheck[];
+}
+
+/** The honest, actionable line for "we could not read a code". */
+const COMPLIANCE_UNREAD_NOTE =
+  "We couldn't read a unit-standard code on the proficiency pages we hold — upload a clearer statement of results in the Document Centre and re-attach it.";
+
+/**
+ * Compose the compliance block from the vault cover and the attached pages.
+ *
+ * ⚠️ `ready` IS EXACTLY THE GENERATION GATE (`hasProficiencyPackGap`) — unread
+ * pages and a missing optional certificate do not block, matching generation.
+ * The more detailed `checks` are for the member to act on, not a second gate.
+ * For MOTIVATION_ONLY the block is always ready and still computed for display.
+ */
+export function complianceFor(input: {
+  required: boolean;
+  needed: Endorsement | null;
+  cover: ProficiencyCover;
+  pages: readonly PackProficiencyPage[];
+}): SheetCompliance {
+  const gap = proficiencyPackGap(input.pages, input.needed);
+  const neededLabel = input.needed
+    ? (endorsementSpec(input.needed)?.label ?? input.needed)
+    : null;
+  const classLabel = neededLabel ?? 'the firearm you are applying for';
+
+  const vaultReadable =
+    input.cover.held.length > 0 || input.cover.unknown.length > 0;
+  const appReadable = !gap.unread;
+  const readable = appReadable || vaultReadable;
+  const evidenceExists =
+    input.pages.length > 0 || input.cover.unreadable > 0 || vaultReadable;
+
+  /**
+   * ⚠️ "HAVE" MEANS THE APPLIED FIREARM'S CLASS IS COVERED SOMEWHERE. The pack
+   * gate only reads the attached pages, so a statement still in the Document
+   * Centre can make the check 'have' while `ready` stays false — the screen then
+   * says to attach it, which is exactly what the member has to do.
+   */
+  const vaultCovers = input.needed
+    ? input.cover.endorsements.includes(input.needed)
+    : vaultReadable;
+  const appCovers = !gap.unread && !gap.missingFirearm;
+  const coversFirearm = appCovers || vaultCovers;
+
+  const proficiency: ComplianceCheck = coversFirearm
+    ? {
+        key: 'PROFICIENCY',
+        label: `Proficiency statement of results for the ${classLabel}`,
+        state: 'have',
+        note: gap.certificateMissing
+          ? 'The statement of results is here. Add the provider certificate too if you have it.'
+          : appCovers
+            ? `The statement of results for the ${classLabel} is on the application.`
+            : `We can see the statement of results for the ${classLabel} in your document history — add it to this application so the pack carries it.`,
+      }
+    : !readable && evidenceExists
+      ? {
+          key: 'PROFICIENCY',
+          label: `Proficiency statement of results for the ${classLabel}`,
+          state: 'unread',
+          note: COMPLIANCE_UNREAD_NOTE,
+        }
+      : evidenceExists
+        ? {
+            key: 'PROFICIENCY',
+            label: `Proficiency statement of results for the ${classLabel}`,
+            state: 'missing',
+            note: `The statement of results we could read does not cover the ${classLabel}. Add the page that does.`,
+          }
+        : {
+            key: 'PROFICIENCY',
+            label: `Proficiency statement of results for the ${classLabel}`,
+            state: 'missing',
+            note: `Attach the statement of results for the ${classLabel}. The pack is checked for it before it is written.`,
+          };
+
+  /**
+   * ⚠️ THE LAW UNIT CAN SIT ON THE ATTACHED PAGES' PARSED EXTRACTION, WHICH
+   * THE VAULT COVER DOES NOT READ. `proficiencyFor` reads vault
+   * `details.unit_standard` and upload OCR text; generation's pack check prefers
+   * the extraction's `unit_standard`. Both are evidence of the same fact, so the
+   * block folds them together — otherwise a statement whose parsed extraction
+   * carries 117705 would read 'unread' on the screen while generation accepts
+   * it.
+   */
+  const pageCodes = input.pages.flatMap((p) => parseUnitStandards(p.text ?? ''));
+  const pageReadable = pageCodes.length > 0;
+  const pageHasLaw = pageCodes.includes(MANDATORY_UNIT_STANDARD);
+  const lawReadable = vaultReadable || pageReadable;
+  const hasLaw = input.cover.state === 'CONFIRMED' || pageHasLaw;
+
+  const knowledge: ComplianceCheck = {
+    key: 'KNOWLEDGE_OF_ACT',
+    label: 'Knowledge of the Firearms Control Act (unit standard 117705)',
+    ...(hasLaw
+      ? {
+          state: 'have' as const,
+          note: 'Unit standard 117705 was read on your documents.',
+        }
+      : lawReadable
+        ? {
+            state: 'missing' as const,
+            note:
+              input.cover.state === 'MISSING'
+                ? (input.cover.alert ??
+                  'Add the statement of results showing 117705 (Knowledge of the Firearms Control Act).')
+                : 'We read the proficiency pages on this application but did not find 117705 (Knowledge of the Firearms Control Act).',
+          }
+        : evidenceExists
+          ? { state: 'unread' as const, note: COMPLIANCE_UNREAD_NOTE }
+          : {
+              state: 'missing' as const,
+              note: 'Attach the statement of results showing 117705 (Knowledge of the Firearms Control Act).',
+            }),
+  };
+
+  return {
+    required: input.required,
+    ready: input.required ? !hasProficiencyPackGap(gap) : true,
+    checks: [proficiency, knowledge],
+  };
 }
 
 export interface SheetResponse {
@@ -295,6 +455,11 @@ export interface SheetResponse {
    * competency from the same catogory. One can't be without the other."
    */
   credentials: SheetCredentials;
+  /**
+   * The training the PRINT-READY gate checks — 117705 and the applied firearm's
+   * unit standard — read across the vault and this application's attached pages.
+   */
+  compliance: SheetCompliance;
   overlap: ReturnType<typeof overlapFromAnswers>;
   preview: PreviewSection[];
   /**
@@ -619,7 +784,12 @@ export class MotivationSheetService {
       }[];
       letterFor: (kind: string) => string | null;
     },
-  ): Promise<SheetCredentials> {
+  ): Promise<{
+    credentials: SheetCredentials;
+    /** The whole member-history read, reused by the compliance block. */
+    cover: ProficiencyCover;
+    needed: Endorsement | null;
+  }> {
     const [rows, knowledge] = await Promise.all([
       this.prisma.credential.findMany({
         where: {
@@ -656,20 +826,26 @@ export class MotivationSheetService {
       return n;
     };
 
-    return credentialSlots({
+    return {
+      credentials: credentialSlots({
+        needed: requiredEndorsement(answers),
+        attached: ctx.uploads.map((u) => ({
+          kind: u.kind,
+          letter: ctx.letterFor(u.kind),
+          origin: u.sourceCredentialId
+            ? ('vault' as const)
+            : ('member' as const),
+          unread: !u.extractionOk,
+        })),
+        inCentre: {
+          COMPETENCY_CERTIFICATE: countFor('COMPETENCY_CERTIFICATE'),
+          PROFICIENCY_CERTIFICATE: countFor('PROFICIENCY'),
+        },
+        knowledge: { state: knowledge.state, alert: knowledge.alert },
+      }),
+      cover: knowledge,
       needed: requiredEndorsement(answers),
-      attached: ctx.uploads.map((u) => ({
-        kind: u.kind,
-        letter: ctx.letterFor(u.kind),
-        origin: u.sourceCredentialId ? ('vault' as const) : ('member' as const),
-        unread: !u.extractionOk,
-      })),
-      inCentre: {
-        COMPETENCY_CERTIFICATE: countFor('COMPETENCY_CERTIFICATE'),
-        PROFICIENCY_CERTIFICATE: countFor('PROFICIENCY'),
-      },
-      knowledge: { state: knowledge.state, alert: knowledge.alert },
-    });
+    };
   }
 
   async sheetFor(userId: string, id: string): Promise<SheetResponse> {
@@ -711,6 +887,15 @@ export class MotivationSheetService {
             coversKinds: true,
             mimeType: true,
             extractionOk: true,
+            /**
+             * ⚠️ THE COMPLIANCE BLOCK READS THESE. Generation already refuses a
+             * print-ready pack whose attached proficiency pages lack 117705 or
+             * the applied firearm's unit standard; the sheet now shows the same
+             * verdict from the same reader, so these two encrypted columns must
+             * be selected here too.
+             */
+            extractionEncrypted: true,
+            ocrTextEncrypted: true,
             // Which Document Centre credential this page is a copy of, or null
             // when the member added it here. It is the whole of `origin`.
             sourceCredentialId: true,
@@ -830,6 +1015,17 @@ export class MotivationSheetService {
 
     const served = expandFields(fieldsFor(row.licenceType)).filter(
       (f) =>
+        /**
+         * ⚠️ FORM-ONLY ROWS ARE SAPS 271 BOXES AND ARE NOT SERVED AT ALL
+         * (operator, 2026-11-27). The product never fills in a 271: marital
+         * status, the licence-holder type, the spouse's IDs, postal codes,
+         * dialling codes, the barrel/frame/receiver component rows and the
+         * declaration detail boxes are form boxes, not arguments. They stay in
+         * the registry, in `sanitiseAnswers` (an uploaded 271 must still be
+         * readable) and in `factPackFields`, but this review sheet — the
+         * product's own document — no longer shows them.
+         */
+        !f.formOnly &&
         (componentsRead || !COMPONENT_ROWS.includes(f.key)) &&
         // The cartridge field is internal: the conditional item below is the
         // only way it reaches the sheet, so the registry row must not also
@@ -854,7 +1050,6 @@ export class MotivationSheetService {
         section: SECTION_OF[f.section] ?? 'case',
         scope: f.scope ?? 'application',
         required: !!f.required,
-        ...(f.formOnly ? { formOnly: true } : {}),
       };
       if (f.help) item.help = f.help;
       // ⚠️ THE OVERLAP-ANGLE FILTERING THAT USED TO LIVE HERE IS GONE WITH THE
@@ -939,9 +1134,27 @@ export class MotivationSheetService {
     const annexures = buildAnnexures((row.uploads ?? []).map((u) => u.kind));
     const byKind = new Map(annexures.map((a) => [a.kind, a.letter]));
 
-    const credentials = await this.credentialsFor(user.id, answers, {
+    const {
+      credentials,
+      cover: credentialCover,
+      needed: complianceNeeded,
+    } = await this.credentialsFor(user.id, answers, {
       uploads: row.uploads ?? [],
       letterFor: (kind: string) => byKind.get(kind as never) ?? null,
+    });
+
+    /**
+     * ⚠️ THE COMPLIANCE BLOCK IS THE GENERATION GATE, MADE VISIBLE. It reads the
+     * SAME attached proficiency pages generation reads (one shared reader) and
+     * additionally folds in the member's vault credentials, so a statement of
+     * results they already gave us still counts as "have" — best evidence wins.
+     * `ready` stays exactly `!hasProficiencyPackGap(attached pages)`.
+     */
+    const compliance = complianceFor({
+      required: !motivationOnly,
+      needed: complianceNeeded,
+      cover: credentialCover,
+      pages: proficiencyPagesFromUploads(row.uploads ?? []),
     });
 
     // What the pack screen needs to decide between "Pay R295 and write" and
@@ -1083,6 +1296,7 @@ export class MotivationSheetService {
         ),
       ),
       credentials,
+      compliance,
       overlap,
       preview: previewFor(row.licenceType, displayAnswers).sections,
       missing: [...missingSet],

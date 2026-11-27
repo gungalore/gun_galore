@@ -142,6 +142,13 @@ export default function AnswerReviewRow({
   const [draft, setDraft] = useState(item.value);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  /**
+   * ⚠️ FROZEN WHEN A WRITE IS IN FLIGHT. A save on this row, or the page saving
+   * another row, must not leave a control editable: the member could type into a
+   * value that has already been sent. A disabled control keeps its text, so the
+   * pending editor survives rather than being closed or reset.
+   */
+  const frozen = saving || busy;
   const [error, setError] = useState<string | null>(null);
   /** What the server last confirmed, so an unchanged value writes nothing. */
   const saved = useRef(item.value);
@@ -232,12 +239,14 @@ export default function AnswerReviewRow({
   }, [chips, draft, open, saving, flush]);
 
   function edit(value: string) {
+    if (frozen) return;
     setError(null);
     setEditing(true);
     setDraft(value);
   }
 
   function toggleChip(key: string) {
+    if (frozen) return;
     setError(null);
     setEditing(true);
     setDraft((current) => {
@@ -314,6 +323,7 @@ export default function AnswerReviewRow({
 
   return (
     <div
+      aria-busy={frozen}
       className={`border-b border-[var(--border-divider)] py-[11px] last:border-b-0 ${
         suggested
           ? '-mx-4 bg-gradient-to-r from-[var(--gold-wash)] to-transparent px-4'
@@ -334,6 +344,7 @@ export default function AnswerReviewRow({
                       key={option.key}
                       type="button"
                       aria-pressed={on}
+                      disabled={frozen}
                       onClick={() => toggleChip(option.key)}
                       className="flex min-h-[44px] items-start gap-[10px] rounded-[var(--r-md)] border px-[13px] py-[11px] text-left text-[13.5px] leading-[1.35] text-[var(--text-primary)]"
                       style={{
@@ -385,6 +396,7 @@ export default function AnswerReviewRow({
             <textarea
               value={draft}
               rows={5}
+              disabled={frozen}
               onChange={(e) => edit(e.target.value)}
               onBlur={leave}
               className={`${CONTROL} min-h-[88px] leading-[1.45]`}
@@ -393,6 +405,7 @@ export default function AnswerReviewRow({
           ) : item.kind === 'choice' || item.kind === 'yesno' ? (
             <select
               value={draft}
+              disabled={frozen}
               onChange={(e) => {
                 edit(e.target.value);
                 if (e.target.value) void flush(e.target.value, false);
@@ -416,6 +429,7 @@ export default function AnswerReviewRow({
                   if (value) void flush(value, false);
                 }}
                 label={item.label}
+                disabled={frozen}
                 allowClear
               />
             </div>
@@ -423,6 +437,7 @@ export default function AnswerReviewRow({
             <input
               type="text"
               value={draft}
+              disabled={frozen}
               onChange={(e) => edit(e.target.value)}
               onBlur={leave}
               placeholder={item.help ?? ''}

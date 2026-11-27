@@ -368,3 +368,69 @@ describe('autosave', () => {
   });
 });
 
+describe('frozen while a write is in flight', () => {
+  /**
+   * ⚠️ A CLICK ON SAVE OR CONFIRM MUST FREEZE THE EDITOR COMPLETELY. The value
+   * has already gone to the server; a keystroke after that is a draft nobody
+   * will save. The typed text must survive the freeze rather than the editor
+   * resetting or closing.
+   */
+  it('disables the text editor and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <AnswerReviewRow item={filled()} onSave={onSave} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    await user.type(screen.getByRole('textbox'), 'X');
+    rerender(<AnswerReviewRow item={filled()} onSave={onSave} busy />);
+
+    const box = screen.getByRole('textbox') as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(box.value).toBe('CZX');
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+
+  it('disables the chip editor while busy, keeping the chosen set', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AnswerReviewRow
+        item={cardsItem({ state: 'filled', value: 'night_travel' })}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    const rent = screen.getByRole('button', { name: /I rent, so I cannot/ });
+    await user.click(rent);
+    rerender(
+      <AnswerReviewRow
+        item={cardsItem({ state: 'filled', value: 'night_travel' })}
+        onSave={vi.fn()}
+        busy
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: /I rent, so I cannot/ }),
+    ).toHaveProperty('disabled', true);
+    expect(
+      screen
+        .getByRole('button', { name: /I rent, so I cannot/ })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+});
+

@@ -1630,14 +1630,17 @@ projection and the validator; `intake-draft.service.ts` owns the one model call.
   resolver the document uses, so a handgun gets its sport narrative and never a
   hunting paragraph. The comparison is a `short` target (one sentence from the
   battery, no word band) and is stored by the same single update.
-- **SAPS 271-only boxes are never asked.** `licence_holder_type`,
-  `marital_status`, `spouse_name` (with `spouse_id_type` /
-  `spouse_id_number`) are `formOnly`: `visibleFields()` skips formOnly in every
-  path and `requiredKeys()` excludes it, so they cannot gate a pack. The review
-  sheet still serves them — `SheetItem.formOnly` is true and the screen moves
-  those rows into a collapsed "SAPS 271 details (optional)" block, still
-  editable, so an uploaded 271 read-back and the owned-firearm rows stay
-  correctable.
+- **SAPS 271-only boxes are never asked AND NEVER SERVED.** Every `formOnly`
+  registry field — `licence_holder_type`, `marital_status`, `spouse_name` and the
+  spouse IDs, postal/dialling codes, the barrel/frame/receiver component rows and
+  the declaration detail boxes — is a form box on the SAPS 271, and the product
+  does not fill in a 271. `visibleFields()` skips formOnly in every interview
+  path, `requiredKeys()` excludes it so it cannot gate a pack, and
+  `MotivationSheetService.sheetFor()` no longer serves it at all: the review
+  sheet is this product's document and shows only motivation arguments. The
+  registry keeps the fields, `sanitiseAnswers` still accepts them (an uploaded
+  271 must remain readable) and `factPackFields` is unchanged. `SheetItem.formOnly`
+  remains in the type for older bundles but is never set now.
 - **The security paragraph is self-defence only.** `premises_*`,
   `alarm_present`, `armed_response`, `burglar_bars`, `security_gates` and
   `travelled_areas_text` are askable only on S13/S14 (`SELF_DEFENCE_ONLY_KEYS`,
@@ -1682,18 +1685,36 @@ projection and the validator; `intake-draft.service.ts` owns the one model call.
   paragraph — so `finish()` can never dead-end. The fallback is worded for the
   document (no hunting words in a section 13, no association in a renewal).
 - **Throttled in process.** `stateInternal()` fires `ensure()` in the background
-  (never awaited) only once every factual gap `missingDetail()` names is filled
-  and a narrative target is still empty — including for an application whose
-  intake is already complete and sitting in REVIEW. Drafting before the firearm
-  and association are in would write a generic paragraph that a non-forced run
-  never rewrites, so the trigger is "only the narrative is missing", not
-  "documents confirmed". The same readiness test lets a review-screen save start
-  the first draft when that save filled the last fact. A non-forced run is
-  attempted at most once per 20 s per application, a target set that already
-  produced nothing is not retried until the facts change, and one run at a time
-  per application (a second caller gets the same promise).
-  `IntakeState.drafting` reports the in-flight run so the review screen can
-  poll.
+  (never awaited) only when `planGroup()` has nothing left to ask — the card,
+  brief and provenance included — so a draft can never start mid-interview while
+  a question is still pending (the operator's "asks questions then just jumps
+  away"; the 2-second poll flipped the screen into drafting under them). It also
+  requires that every factual gap `missingDetail()` names is filled and a
+  narrative target is still empty; an application whose intake is already
+  complete and sitting in REVIEW has no interview left, so it still drafts. The
+  same readiness test lets a review-screen save start the first draft when that
+  save filled the last fact. A non-forced run is attempted at most once per 20 s
+  per application, a target set that already produced nothing is not retried
+  until the facts change, and one run at a time per application (a second caller
+  gets the same promise). `IntakeState.drafting` reports the in-flight run so the
+  review screen can poll.
+- **The training the print-ready pack gates on is shown.** The generation gate
+  has always refused a PRINT_READY pack whose attached proficiency pages lack
+  unit standard 117705 (Knowledge of the Firearms Control Act) or the applied
+  firearm's unit standard, and the review screen never said so. `GET
+  /motivations/:id/sheet` now serves a `compliance` block:
+  `{ required, ready, checks: [{ key: 'PROFICIENCY' |
+  'KNOWLEDGE_OF_ACT', label, state: 'have' | 'missing' | 'unread', note }] }`.
+  It reads both sources a member's training can sit in — the vault credentials
+  (`MotivationSharedService.proficiencyFor`, the same member-wide cover the
+  competency section uses) and the application's attached
+  `PROFICIENCY_CERTIFICATE` pages through `proficiencyPagesFromUploads()` in
+  `motivation-upload-row.ts`, the same reader generation uses. Best evidence
+  wins; `unread` is not `missing` (a bad scan is not an accusation) and gets an
+  actionable note. `ready` is exactly generation's test
+  (`!hasProficiencyPackGap` from the attached pages), so unread pages and the
+  optional provider certificate do not block; `required` is false for
+  MOTIVATION_ONLY, which carries no annexures.
 - **`finish()` drafts first.** It awaits the draft against a 75 s race, then (if
   a narrative gap is still named) applies the deterministic fallback, and only
   then evaluates `missingDetail()`. A real non-narrative gap — the firearm, the

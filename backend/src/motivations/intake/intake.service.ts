@@ -299,10 +299,32 @@ export class MotivationIntakeService {
      * and the fail-soft path, so a page refresh cannot become a model call and
      * a model outage cannot cost the member an answer.
      */
+    /**
+     * ⚠️ AND NOT WHILE THE INTERVIEW STILL HAS A QUESTION TO ASK (2026-11-27).
+     *
+     * The draft used to start the moment only narrative gaps remained, while
+     * optional questions were still pending. The member was mid-interview when
+     * the 2-second poll turned on `drafting`, and the screen's behaviour changed
+     * under them — the operator's "asks questions then just jumps away". The
+     * condition below is the whole fix: fire only when `planGroup` has nothing
+     * left to serve (same input as the card, brief included). A refused/review
+     * row whose intake is already complete has no interview left at all, so it
+     * still drafts.
+     */
+    const interviewHasQuestions = inInterview
+      ? planGroup({
+          type: row.licenceType,
+          answers,
+          sheet,
+          provenance: parseProvenance(row.answerProvenance),
+          brief: briefForCard,
+        }) !== null
+      : false;
     if (
       !blocked &&
       row.intakeDocumentsAt &&
       EDITABLE.includes(row.status) &&
+      !interviewHasQuestions &&
       draftTargets(row.licenceType, answers).length > 0 &&
       onlyNarrativeGapsRemain(row.licenceType, answers)
     ) {

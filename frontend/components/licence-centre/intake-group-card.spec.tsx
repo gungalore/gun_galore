@@ -898,3 +898,103 @@ describe('the grouped interview card — owned firearm boxes', () => {
     ]);
   });
 });
+
+describe('the grouped interview card — frozen while submitting', () => {
+  /**
+   * ⚠️ "ONCE NEXT OR SUBMIT IS CLICKED THE EDITING MUST FREEZE COMPLETELY."
+   * The model is thinking on the answers that were sent; a keystroke landing now
+   * would be a draft the server never saw. Every control is disabled, the values
+   * stay visible, and the card is flagged `aria-busy` rather than remounted.
+   */
+  it('disables every control while busy and keeps the values on screen', () => {
+    render(
+      <IntakeGroupCard
+        group={group([
+          question({ value: 'typed before' }),
+          question({
+            fieldKey: 'firearm_type',
+            id: 'firearm_type',
+            label: 'Type of firearm',
+            kind: 'choice',
+            choices: [
+              { value: 'Rifle', label: 'Rifle' },
+              { value: 'Shotgun', label: 'Shotgun' },
+            ],
+            value: 'Rifle',
+          }),
+          question({
+            fieldKey: 'alarm_present',
+            id: 'alarm_present',
+            label: 'Is there an alarm?',
+            kind: 'yesno',
+            optional: true,
+            choices: [
+              { value: 'Yes', label: 'Yes' },
+              { value: 'No', label: 'No' },
+            ],
+            value: 'Yes',
+            details: [
+              {
+                key: 'alarm_company',
+                label: 'Which company monitors it?',
+                kind: 'short',
+                help: '',
+                choices: [],
+                multi: false,
+                customPlaceholder: 'Type your answer…',
+              },
+            ],
+          }),
+          question({
+            fieldKey: 'competency_issued',
+            id: 'competency_issued',
+            label: 'Competency issued on',
+            kind: 'date',
+            optional: true,
+            value: '2024-03-05',
+          }),
+        ])}
+        busy
+        onSubmit={() => undefined}
+        onBack={vi.fn()}
+      />,
+    );
+
+    // The card says it is busy, and the member's values are still readable.
+    expect(document.querySelector('section[aria-busy="true"]')).not.toBeNull();
+    expect(screen.getByDisplayValue('typed before')).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByPlaceholderText('yyyy-mm-dd')).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(
+      screen.getByLabelText('Which company monitors it?'),
+    ).toHaveProperty('disabled', true);
+
+    // Chips, Skip, Back and Continue are all inert.
+    expect(screen.getByRole('button', { name: 'Shotgun' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(
+      screen.getAllByRole('button', { name: 'Skip this one' }).every(
+        (button) => button.hasAttribute('disabled'),
+      ),
+    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'Back' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+});

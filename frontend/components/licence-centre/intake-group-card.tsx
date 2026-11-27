@@ -256,6 +256,12 @@ export default function IntakeGroupCard({
   }
 
   function update(key: string, patch: Partial<Draft>): void {
+    /**
+     * ⚠️ FROZEN WHILE SUBMITTING. Once Next/Continue is pressed the card must
+     * not accept another keystroke: the model is thinking on the answers that
+     * were sent, and an edit landing now would be a draft the server never saw.
+     */
+    if (busy) return;
     setStuck(false);
     setDrafts((current) => ({
       ...current,
@@ -264,6 +270,7 @@ export default function IntakeGroupCard({
   }
 
   function toggle(question: IntakeQuestion, value: string): void {
+    if (busy) return;
     const draft = draftFor(question.fieldKey);
     update(question.fieldKey, {
       picked: question.multi
@@ -456,12 +463,14 @@ export default function IntakeGroupCard({
               onChange={(iso) => update(question.fieldKey, { typed: iso })}
               label={labelOverride ?? question.label}
               placeholder="yyyy-mm-dd"
+              disabled={busy}
             />
           </div>
         ) : (
           <input
             value={draft.typed}
             type="text"
+            disabled={busy}
             onChange={(e) => update(question.fieldKey, { typed: e.target.value })}
             placeholder={
               question.choices.length
@@ -489,6 +498,7 @@ export default function IntakeGroupCard({
                 </span>
                 <input
                   value={draft.details[detail.key] ?? ''}
+                  disabled={busy}
                   onChange={(e) =>
                     update(question.fieldKey, {
                       details: {
@@ -577,6 +587,7 @@ export default function IntakeGroupCard({
           onChange={(iso) => update(question.fieldKey, { typed: iso })}
           label={question.label}
           placeholder="yyyy-mm-dd"
+          disabled={busy}
         />
       );
     }
@@ -584,6 +595,7 @@ export default function IntakeGroupCard({
       <input
         value={draft.typed}
         type="text"
+        disabled={busy}
         onChange={(e) => update(question.fieldKey, { typed: e.target.value })}
         placeholder={question.customPlaceholder}
         className="min-h-[44px] w-full rounded-lg border px-3 text-[13.5px]"
@@ -634,6 +646,7 @@ export default function IntakeGroupCard({
 
   return (
     <section
+      aria-busy={busy}
       className="mt-4 rounded-2xl border p-4"
       style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
     >
@@ -731,12 +744,14 @@ export default function IntakeGroupCard({
                     }
                     label={question.label}
                     placeholder="yyyy-mm-dd"
+                    disabled={busy}
                   />
                 </div>
               ) : (
                 <input
                   value={draft.typed}
                   type="text"
+                  disabled={busy}
                   onChange={(e) =>
                     update(question.fieldKey, { typed: e.target.value })
                   }
@@ -763,6 +778,7 @@ export default function IntakeGroupCard({
                       </span>
                       <input
                         value={draft.details[detail.key] ?? ''}
+                        disabled={busy}
                         onChange={(e) =>
                           update(question.fieldKey, {
                             details: {

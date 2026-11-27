@@ -4,8 +4,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AnswersReview, {
   canContinueToWrite,
+  documentLedger,
   reviewStats,
-  reviewFormOnly,
 } from './answers-review';
 import { filled, needsYou, sheet, suggested } from './__fixtures__/sheet.fixture';
 import type { SheetItem, SheetResponse } from './contract';
@@ -17,8 +17,8 @@ import type { SheetItem, SheetResponse } from './contract';
 // And why do I have to scroll and fill in this endless page?" So the cases that
 // matter here are (1) a finished section is shut, (2) an optional empty field
 // does not open a box by itself, (3) a drafted answer is still visible and
-// flagged, and (4) the 271's own boxes never count as missing and never gate
-// Continue.
+// flagged, and (4) a satisfied document can never read as outstanding.
+// The 271 is retired: there is no block for it any more.
 // ────────────────────────────────────────────────────────────────────
 
 const section = (id: string, title: string) => ({
@@ -131,88 +131,11 @@ describe('folds — only what needs a person is open', () => {
   });
 });
 
-describe('the SAPS 271 block', () => {
-  const formBox = (over: Partial<SheetItem> = {}): SheetItem =>
-    needsYou({
-      key: 'spouse_id_number',
-      label: 'Spouse ID number',
-      section: 'you',
-      required: true,
-      formOnly: true,
-      help: undefined,
-      ...over,
-    });
-
-  it('puts form boxes in one collapsed, optional block at the bottom', () => {
-    const { container } = renderReview(
-      withItems([
-        filled({ key: 'full_name', label: 'Full name', section: 'you' }),
-        formBox(),
-      ]),
-    );
-
-    const summary = screen.getByText('SAPS 271 details (optional)');
-    expect(summary).toBeDefined();
-    const block = summary.closest('details') as HTMLDetailsElement;
-    expect(block.hasAttribute('open')).toBe(false);
-    expect(
-      screen.getByText(
-        /form boxes we read from a document if you supply one.*not needed to write/,
-      ),
-    ).toBeDefined();
-    // Editable inside, once they open the block.
-    expect(within(block).getByText('Spouse ID number')).toBeDefined();
-    expect(
-      within(block).getByRole('button', { name: 'Change' }),
-    ).toBeDefined();
-    // The one section fold plus the 271 block — it is not in a section fold.
-    expect(container.querySelectorAll('details')).toHaveLength(2);
-  });
-
-  it('is hidden entirely when the sheet has no formOnly rows', () => {
-    renderReview(
-      withItems([filled({ key: 'full_name', label: 'Full name', section: 'you' })]),
-    );
-    expect(screen.queryByText('SAPS 271 details (optional)')).toBeNull();
-  });
-
-  it('never counts as missing and never disables Continue', () => {
-    const next = withItems([formBox()], {
-      // The registry can list a 271 box as required; it is not required to
-      // write the motivation, so the count and the button ignore it.
-      missing: ['spouse_id_number'],
-    });
-
-    expect(reviewFormOnly(next)).toHaveLength(1);
-    const stats = reviewStats(next);
-    expect(stats.missingAnswers).toBe(0);
-    expect(stats.missingCount).toBe(0);
-    expect(canContinueToWrite(stats, false)).toBe(true);
-    expect(canContinueToWrite(stats, true)).toBe(false);
-    renderReview(next);
-    expect(
-      screen.queryByText(/still needed — open the sections below/),
-    ).toBeNull();
-    expect(
-      screen.getByText('Nothing is missing. Your motivation is ready to write.'),
-    ).toBeDefined();
-  });
-});
-
 describe('the attention panel', () => {
-  it('counts a normal missing answer but not the 271 box beside it', () => {
+  it('counts the missing answers the sheet is holding out for', () => {
     const next = withItems(
-      [
-        needsYou({ key: 'firearm_calibre', section: 'you' }),
-        needsYou({
-          key: 'spouse_id_number',
-          label: 'Spouse ID number',
-          section: 'you',
-          formOnly: true,
-          help: undefined,
-        }),
-      ],
-      { missing: ['firearm_calibre', 'spouse_id_number'] },
+      [needsYou({ key: 'firearm_calibre', section: 'you' })],
+      { missing: ['firearm_calibre'] },
     );
 
     const stats = reviewStats(next);
@@ -275,6 +198,204 @@ describe('the attention panel', () => {
       />,
     );
     expect(screen.getByText(/1 document still needed/)).toBeDefined();
+  });
+});
+
+describe('the pack-documents ledger', () => {
+  const printReady = (over: Partial<SheetResponse> = {}): SheetResponse =>
+    sheet({
+      application: { ...sheet().application, outputMode: 'PRINT_READY' },
+      sections: [section('you', 'You')],
+      items: [filled({ key: 'a', label: 'A', section: 'you' })],
+      missing: [],
+      needs: {
+        needs: [
+          {
+            kind: 'CURRENT_LICENCE',
+            label: "Each firearm's licence",
+            tier: 'required',
+            why: 'A print-ready pack shows the DFO every firearm we mention.',
+            have: true,
+            minFiles: 6,
+            haveFiles: 6,
+            minFilesNote: 'One photo or scan per firearm.',
+          },
+          {
+            kind: 'COMPETENCY_CERTIFICATE',
+            label: 'Competency certificate',
+            tier: 'required',
+            why: 'SAPS wants a copy.',
+            have: false,
+          },
+          {
+            kind: 'ASSOCIATION_ENDORSEMENT',
+            label: 'Association endorsement',
+            tier: 'expected',
+            why: 'A DFO usually asks.',
+            have: true,
+          },
+          {
+            kind: 'EXTRA_PHOTO',
+            label: 'Extra photo',
+            tier: 'extra',
+            why: 'Not asked for the pack.',
+            have: false,
+          },
+        ],
+      },
+      compliance: {
+        required: true,
+        ready: true,
+        checks: [
+          {
+            key: 'PROFICIENCY',
+            label: 'Proficiency statement of results',
+            state: 'unread',
+            note: 'Upload a clearer statement of results in the Document Centre and re-attach it.',
+          },
+          {
+            key: 'KNOWLEDGE_OF_ACT',
+            label: 'Knowledge of the Act (unit standard 117705)',
+            state: 'have',
+            note: 'Read from your certificate.',
+          },
+        ],
+      },
+      ...over,
+    });
+
+  it('puts satisfied documents under “On file”, never under “Still needed”', () => {
+    renderReview(printReady());
+
+    const outstanding = screen.getByRole('list', { name: 'Still needed' });
+    const onFile = screen.getByRole('list', { name: 'On file' });
+
+    // A licence already added is ON FILE, with its count line — the operator's
+    // "why is A firearm licence I already hold shown here?".
+    expect(within(onFile).getByText("Each firearm's licence")).toBeDefined();
+    expect(within(onFile).getByText('6 of 6 licence cards added')).toBeDefined();
+    expect(within(onFile).getAllByText('✓ Added').length).toBeGreaterThan(0);
+    expect(within(onFile).getByText('Association endorsement')).toBeDefined();
+    expect(within(outstanding).queryByText("Each firearm's licence")).toBeNull();
+
+    // The genuinely outstanding competency sits under Still needed, with reason.
+    expect(within(outstanding).getByText('Competency certificate')).toBeDefined();
+    expect(within(outstanding).getByText('Still needed')).toBeDefined();
+    expect(within(outstanding).getByText('SAPS wants a copy.')).toBeDefined();
+
+    // Only required/expected rows are ledged.
+    expect(screen.queryByText('Extra photo')).toBeNull();
+
+    // The instruction and the primary Document Centre action.
+    expect(
+      screen.getByText(/Upload or scan it in the Document Centre/),
+    ).toBeDefined();
+    expect(
+      screen
+        .getByRole('link', { name: 'Go to the Document Centre' })
+        .getAttribute('href'),
+    ).toBe('/documents');
+  });
+
+  it('shows compliance checks with their three states and the per-row Document Centre action', () => {
+    const ledger = documentLedger(printReady());
+    expect(
+      ledger.find((row) => row.label === 'Proficiency statement of results')
+        ?.status,
+    ).toBe('unread');
+    expect(
+      ledger.find((row) => row.label.startsWith('Knowledge of the Act'))?.status,
+    ).toBe('added');
+
+    renderReview(printReady());
+    const onFile = screen.getByRole('list', { name: 'On file' });
+    expect(within(onFile).getByText("Couldn't read")).toBeDefined();
+    expect(
+      within(onFile).getByText(/Upload a clearer statement of results/),
+    ).toBeDefined();
+    // Unread/missing rows carry the Document Centre as their primary action.
+    expect(
+      within(onFile)
+        .getByRole('link', { name: 'Upload in the Document Centre' })
+        .getAttribute('href'),
+    ).toBe('/documents');
+  });
+
+  it('counts a blocked compliance gate in reviewStats and shows the server reason', () => {
+    const next = sheet({
+      application: { ...sheet().application, outputMode: 'PRINT_READY' },
+      sections: [section('you', 'You')],
+      items: [filled({ key: 'a', label: 'A', section: 'you' })],
+      missing: [],
+      needs: { needs: [] },
+      compliance: {
+        required: true,
+        ready: false,
+        checks: [
+          {
+            key: 'PROFICIENCY',
+            label: 'Proficiency statement of results',
+            state: 'missing',
+            note: 'Upload your proficiency statement of results in the Document Centre.',
+          },
+          {
+            key: 'KNOWLEDGE_OF_ACT',
+            label: 'Knowledge of the Act (unit standard 117705)',
+            state: 'have',
+            note: 'Read from your certificate.',
+          },
+        ],
+      },
+    });
+
+    const stats = reviewStats(next);
+    expect(stats.complianceBlocked).toBe(true);
+    expect(stats.missingCount).toBe(1);
+    expect(canContinueToWrite(stats, false)).toBe(false);
+    render(
+      <AnswersReview
+        sheet={next}
+        busyKey={null}
+        confirmingKey={null}
+        onSave={onSave}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByText('Needs your attention')).toBeDefined();
+    // Shown both in the attention panel and on the ledger row.
+    expect(
+      screen.getAllByText(
+        'Upload your proficiency statement of results in the Document Centre.',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole('list', { name: 'Still needed' })).toBeDefined();
+  });
+
+  it('does not block on an unread card when the server says the pack is ready', () => {
+    const next = printReady({ needs: { needs: [] } });
+    const stats = reviewStats(next);
+    expect(stats.complianceBlocked).toBe(false);
+    expect(canContinueToWrite(stats, false)).toBe(true);
+  });
+
+  it('shows one line and no ledger for a motivation-only draft', () => {
+    renderReview(
+      sheet({
+        application: {
+          ...sheet().application,
+          outputMode: 'MOTIVATION_ONLY',
+        },
+      }),
+    );
+    expect(
+      screen.getByText('A motivation-only draft needs no documents.'),
+    ).toBeDefined();
+    expect(
+      screen.queryByText('Documents for your print-ready pack'),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: 'Go to the Document Centre' }),
+    ).toBeNull();
   });
 });
 

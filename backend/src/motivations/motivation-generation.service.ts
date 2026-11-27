@@ -29,6 +29,7 @@ import {
 import {
   hasProficiencyPackGap,
   proficiencyPackGap,
+  proficiencyPagesFromUploads,
 } from './motivation-upload-row';
 import { endorsementSpec } from '../common/sa-competency';
 import {
@@ -863,27 +864,7 @@ export class MotivationGenerationService {
      * member holds 117705 ANYWHERE (vault included). This is about the pack
      * about to be submitted, and a pack can be short while that answer is yes.
      */
-    const proficiencyPages = uploads
-      .filter((u) => u.kind === 'PROFICIENCY_CERTIFICATE')
-      .map((u) => {
-        let fields: Record<string, string> | null = null;
-        try {
-          fields = u.extractionEncrypted
-            ? decryptJson<Record<string, string>>(u.extractionEncrypted)
-            : null;
-        } catch {
-          fields = null;
-        }
-        let text = (fields?.unit_standard ?? '').trim();
-        if (!text && u.ocrTextEncrypted) {
-          try {
-            text = decryptJson<{ text?: string }>(u.ocrTextEncrypted)?.text ?? '';
-          } catch {
-            text = '';
-          }
-        }
-        return { text, side: fields?.document_side ?? null };
-      });
+    const proficiencyPages = proficiencyPagesFromUploads(uploads);
     const needed = requiredEndorsement(answers);
     const proficiencyGap = proficiencyPackGap(proficiencyPages, needed);
     if (!motivationOnly && hasProficiencyPackGap(proficiencyGap)) {

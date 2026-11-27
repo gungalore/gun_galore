@@ -2,37 +2,50 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { SheetItem, SheetResponse } from './contract';
+import type {
+  SheetComplianceCheck,
+  SheetItem,
+  SheetResponse,
+} from './contract';
 import AnswerReviewRow from './answer-review-row';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ANSWERS, AS FOLDED SECTIONS RATHER THAN ONE ENDLESS FORM.
 //
 // ⚠️ THE OPERATOR'S REPORT: "These seem to be 271 form questions? And why do I
-// have to scroll and fill in this endless page?" The screen was rendering every
-// sheet item — 271 form boxes included — as an always-open control in one
-// scroll. It now shows what the MOTIVATION needs first: attention counts at the
-// top, one folded section per answer group, and the 271's own boxes filed away
-// in a collapsed block that never gates writing.
+// have to scroll and fill in this endless page?" The 271 is retired from this
+// product entirely ("we are never filling in 271 forms") and its rows are no
+// longer served. The screen now shows what the MOTIVATION needs: attention counts
+// at the top, one folded section per answer group, a folded owned-firearm box per
+// firearm, and an honest pack-documents ledger.
 //
-// ⚠️ FOLDS OPEN WHERE THEY MATTER. A section the backend marked missing, or one
-// holding a drafted answer to check, opens by itself; a finished section stays
-// shut until the member taps its summary. Native <details>, so keyboard and
-// screen-reader users get the disclosure they already know.
+// ⚠️ FOLDS OPEN ONLY FOR A GAP. A section the server marked missing opens by
+// itself; a section holding only drafted answers stays shut ("N to check" in its
+// summary, gold flag inside). Ten drafted paragraphs auto-opening was the
+// endless scroll.
 //
-// ⚠️ THE SAPS 271 IS THE DFO'S FORM, NOT THIS PRODUCT'S OUTPUT. Those rows are
-// read from a supplied document, never asked; an empty one is not a gap and must
-// not disable Continue. They live in their own block at the bottom, editable but
-// collapsed, and they are excluded from every count.
+// ⚠️ NOTHING SATISFIED IS LISTED AS OUTSTANDING. The pack ledger puts "Still
+// needed" and "On file" apart, with a status word on every row — the operator
+// read "6 of 6 licence cards added" under a "Documents still needed" heading and
+// rightly objected.
 // ────────────────────────────────────────────────────────────────────
 
 /** What the attention panel and the footer need, counted once. */
 export interface ReviewStats {
-  /** Required answers still empty, EXCLUDING 271 form boxes. */
+  /** Required answers still empty. */
   missingAnswers: number;
   /** Required documents still outstanding. */
   missingDocuments: number;
-  /** The two above — the number Continue is gated on. */
+  /**
+   * The server's compliance gate would refuse a print-ready write.
+   *
+   * ⚠️ COUNTED ONCE, FROM `compliance.required && !compliance.ready`. An `unread`
+   * card does NOT block — the backend already encodes that in `ready`.
+   */
+  complianceBlocked: boolean;
+  /** The server's own explanation for `complianceBlocked`. */
+  complianceNote: string | null;
+  /** The number Continue is gated on. */
   missingCount: number;
   /** Suggested (drafted) answers the member has not checked yet. */
   draftedAnswers: number;
@@ -42,13 +55,12 @@ export interface ReviewStats {
  * One answer the sheet is actually holding out for.
  *
  * ⚠️ A DRAFTED VALUE IS NOT MISSING. It is present and flagged for checking —
- * a decision, not a gap. A 271 form box is never a gap either.
+ * a decision, not a gap.
  */
 export function isMissingAnswer(
   item: SheetItem,
   missingKeys: Set<string>,
 ): boolean {
-  if (item.formOnly === true) return false;
   if (item.state === 'na') return false;
   if (item.state === 'suggested') return false;
   if (item.state === 'needs_you') {
@@ -60,26 +72,34 @@ export function isMissingAnswer(
 /**
  * The counts on the attention panel.
  *
- * ⚠️ `sheet.missing` CAN NAME A 271 BOX, AND MUST NOT COUNT. The backend keeps
- * the field registry's required flags; several form boxes are required ON THE
- * FORM, not for the motivation we write. Filtering by the item's own `formOnly`
- * is what keeps an unfilled 271 box from blocking Continue.
+ * ⚠️ `compliance.ready` IS THE SERVER'S GENERATION GATE. It is counted here, not
+ * re-derived from the checks' states — an `unread` proficiency is on file and
+ * the backend decides whether that enough is enough.
  */
 export function reviewStats(sheet: SheetResponse): ReviewStats {
-  const byKey = new Map(sheet.items.map((item) => [item.key, item]));
-  const missingAnswers = sheet.missing.filter(
-    (key) => byKey.get(key)?.formOnly !== true,
-  ).length;
+  const missingAnswers = sheet.missing.length;
   const missingDocuments = sheet.needs.needs.filter(
     (need) => need.tier === 'required' && !need.have,
   ).length;
+  const compliance = sheet.compliance;
+  const complianceBlocked = Boolean(compliance?.required && !compliance.ready);
+  const complianceNote = complianceBlocked
+    ? complianceChecksNeedingAttention(compliance?.checks ?? [])
+        .map((check) => check.note?.trim() || check.label)
+        .filter(Boolean)
+        .join(' ') ||
+      'A compliance document is still needed before we can write a print-ready pack.'
+    : null;
   const draftedAnswers = sheet.items.filter(
-    (item) => item.state === 'suggested' && item.formOnly !== true,
+    (item) => item.state === 'suggested',
   ).length;
   return {
     missingAnswers,
     missingDocuments,
-    missingCount: missingAnswers + missingDocuments,
+    complianceBlocked,
+    complianceNote,
+    missingCount:
+      missingAnswers + missingDocuments + (complianceBlocked ? 1 : 0),
     draftedAnswers,
   };
 }
@@ -92,12 +112,19 @@ export function canContinueToWrite(
   return !drafting && stats.missingCount === 0;
 }
 
+/** Compliance checks that are not `have` — missing or unread. */
+function complianceChecksNeedingAttention(
+  checks: SheetComplianceCheck[],
+): SheetComplianceCheck[] {
+  return checks.filter((check) => check.state !== 'have');
+}
+
 /** One folded section, with its rows already ordered gaps-first. */
 export interface ReviewSectionView {
   section: SheetResponse['sections'][number];
   missing: SheetItem[];
   rest: SheetItem[];
-  /** Opens itself: it holds a gap or a drafted answer. */
+  /** Opens itself: it holds a gap. */
   autoOpen: boolean;
   answers: number;
   toCheck: number;
@@ -110,7 +137,7 @@ export function reviewSections(sheet: SheetResponse): ReviewSectionView[] {
   }
   const bySection = new Map<string, SheetItem[]>();
   for (const item of sheet.items) {
-    if (item.state === 'na' || item.formOnly === true) continue;
+    if (item.state === 'na') continue;
     const list = bySection.get(item.section) ?? [];
     list.push(item);
     bySection.set(item.section, list);
@@ -128,13 +155,7 @@ export function reviewSections(sheet: SheetResponse): ReviewSectionView[] {
         section,
         missing,
         rest,
-        /**
-         * ⚠️ MISSING ONLY. A drafted/suggested answer used to auto-open its
-         * section; with ten drafted paragraphs that turned the review screen
-         * into an endless scroll. The attention panel already counts them and
-         * the summary says "N to check" — the member opens the section when they
-         * are ready to.
-         */
+        /** ⚠️ MISSING ONLY. A drafted answer does not open its section. */
         autoOpen: missing.length > 0,
         answers: items.length,
         toCheck: items.filter((item) => item.state === 'suggested').length,
@@ -143,11 +164,59 @@ export function reviewSections(sheet: SheetResponse): ReviewSectionView[] {
     .filter((view) => view.answers > 0);
 }
 
-/** The 271's own boxes, for the collapsed block at the bottom. */
-export function reviewFormOnly(sheet: SheetResponse): SheetItem[] {
-  return sheet.items.filter(
-    (item) => item.formOnly === true && item.state !== 'na',
-  );
+// ── the pack-documents ledger ───────────────────────────────────────
+
+export type DocumentLedgerStatus = 'added' | 'needed' | 'unread';
+
+/**
+ * One line of the pack ledger: a document the server wants, and where it stands.
+ *
+ * ⚠️ THE MEMBER'S WORDS, AND THE SERVER'S STATUS. `detail` is the count line
+ * ("6 of 6 licence cards added"); `note` is the one-line reason. Nothing here is
+ * derived from upload counts — the sheet already says `have` and `haveFiles`.
+ */
+export interface DocumentsLedgerRow {
+  key: string;
+  label: string;
+  status: DocumentLedgerStatus;
+  detail?: string;
+  note?: string;
+}
+
+export function documentLedger(sheet: SheetResponse): DocumentsLedgerRow[] {
+  const rows: DocumentsLedgerRow[] = [];
+  for (const need of sheet.needs.needs) {
+    if (need.tier !== 'required' && need.tier !== 'expected') continue;
+    const total = need.minFiles;
+    const detail = total
+      ? need.kind === 'CURRENT_LICENCE'
+        ? `${need.haveFiles ?? 0} of ${total} licence cards added`
+        : `${need.haveFiles ?? 0} of ${total} files added`
+      : undefined;
+    rows.push({
+      key: `need:${need.kind}`,
+      label: need.label,
+      status: need.have ? 'added' : 'needed',
+      detail,
+      note: need.have
+        ? undefined
+        : (need.minFilesNote || need.why || undefined),
+    });
+  }
+  for (const check of sheet.compliance?.checks ?? []) {
+    rows.push({
+      key: `compliance:${check.key}`,
+      label: check.label,
+      status:
+        check.state === 'have'
+          ? 'added'
+          : check.state === 'unread'
+            ? 'unread'
+            : 'needed',
+      note: check.state === 'have' ? undefined : check.note?.trim() || undefined,
+    });
+  }
+  return rows;
 }
 
 // ── owned firearms: one box per firearm, in the section they belong to ──
@@ -255,7 +324,8 @@ function AttentionPanel({ stats }: { stats: ReviewStats }) {
     stats.missingAnswers ? plural(stats.missingAnswers, 'answer') : '',
     stats.missingDocuments ? plural(stats.missingDocuments, 'document') : '',
   ].filter(Boolean);
-  const nothing = missing.length === 0 && stats.draftedAnswers === 0;
+  const nothing =
+    missing.length === 0 && !stats.draftedAnswers && !stats.complianceBlocked;
   return (
     <section
       className="mt-4 rounded-[var(--r-lg)] border px-4 py-3"
@@ -272,12 +342,20 @@ function AttentionPanel({ stats }: { stats: ReviewStats }) {
       }
     >
       <p className="m-0 text-[13.5px] font-medium text-[var(--text-primary)]">
-        {nothing ? 'Nothing is missing. Your motivation is ready to write.' : 'Needs your attention'}
+        {nothing
+          ? 'Nothing is missing. Your motivation is ready to write.'
+          : 'Needs your attention'}
       </p>
       {missing.length ? (
         <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
           {missing.join(' and ')} still needed — open the sections below, or add
-          the missing documents in the interview.
+          the missing documents in the pack list.
+        </p>
+      ) : null}
+      {stats.complianceBlocked ? (
+        <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+          {stats.complianceNote ??
+            'A compliance document is still needed before we can write a print-ready pack.'}
         </p>
       ) : null}
       {stats.draftedAnswers ? (
@@ -291,6 +369,134 @@ function AttentionPanel({ stats }: { stats: ReviewStats }) {
           Check the sections below once more, then continue.
         </p>
       ) : null}
+    </section>
+  );
+}
+
+// ── the pack-documents ledger, as rendered ───────────────────────────
+
+const LEDGER_STATUS_WORD: Record<DocumentLedgerStatus, string> = {
+  added: 'Added',
+  needed: 'Still needed',
+  unread: "Couldn't read",
+};
+
+const LEDGER_STATUS_STYLE: Record<DocumentLedgerStatus, string> = {
+  // Green tick for a document we hold and have read.
+  added: 'text-[var(--success)]',
+  // Gold, not red: the document is there, we just could not read it.
+  unread: 'text-[var(--gold-strong)]',
+  needed: 'text-[var(--warning)]',
+};
+
+function LedgerRow({ row }: { row: DocumentsLedgerRow }) {
+  return (
+    <li className="border-b border-[var(--border-divider)] py-2 last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="m-0 text-[13px] font-medium text-[var(--text-primary)]">
+            {row.label}
+          </p>
+          {row.detail ? (
+            <p className="m-0 mt-0.5 text-[12px] leading-4 text-[var(--text-secondary)]">
+              {row.detail}
+            </p>
+          ) : null}
+          {row.note ? (
+            <p className="m-0 mt-0.5 text-[11.5px] leading-4 text-[var(--text-tertiary)]">
+              {row.note}
+            </p>
+          ) : null}
+        </div>
+        <span
+          className={`shrink-0 text-[12px] font-medium ${LEDGER_STATUS_STYLE[row.status]}`}
+        >
+          {row.status === 'added' ? '✓ Added' : LEDGER_STATUS_WORD[row.status]}
+        </span>
+      </div>
+      {/* ⚠️ THE DOCUMENT CENTRE IS THE PRIMARY ACTION PER ROW. A missing or
+          unread document is fixed there, not in the interview. */}
+      {row.status !== 'added' ? (
+        <Link
+          href="/documents"
+          className="mt-1.5 inline-flex min-h-[36px] items-center rounded-lg px-2.5 text-[12px] font-medium text-white"
+          style={{ background: 'var(--action-primary-bg)' }}
+        >
+          Upload in the Document Centre
+        </Link>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The pack ledger: what a print-ready pack needs, grouped so a satisfied row can
+ * never read as outstanding.
+ */
+function DocumentsLedger({ sheet, interviewHref }: {
+  sheet: SheetResponse;
+  interviewHref?: string;
+}) {
+  const rows = documentLedger(sheet);
+  const outstanding = rows.filter((row) => row.status === 'needed');
+  const onFile = rows.filter((row) => row.status !== 'needed');
+  return (
+    <section className="mt-6">
+      <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
+        Documents for your print-ready pack
+      </h2>
+
+      {outstanding.length ? (
+        <>
+          <p className="m-0 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--warning)]">
+            Still needed
+          </p>
+          <ul
+            aria-label="Still needed"
+            className="m-0 mt-1 list-none p-0"
+          >
+            {outstanding.map((row) => (
+              <LedgerRow key={row.key} row={row} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {onFile.length ? (
+        <>
+          <p className="m-0 mt-3 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            On file
+          </p>
+          <ul aria-label="On file" className="m-0 mt-1 list-none p-0">
+            {onFile.map((row) => (
+              <LedgerRow key={row.key} row={row} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      <p className="m-0 mt-3 text-[12.5px] leading-5 text-[var(--text-secondary)]">
+        Upload or scan it in the Document Centre — documents there are re-used on
+        every application.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Link
+          href="/documents"
+          className="inline-flex min-h-[44px] items-center rounded-lg px-4 text-[13px] font-medium text-white"
+          style={{ background: 'var(--action-primary-bg)' }}
+        >
+          Go to the Document Centre
+        </Link>
+        {interviewHref ? (
+          <Link
+            href={interviewHref}
+            className="inline-flex min-h-[44px] items-center rounded-lg border px-3 text-[12.5px] font-medium text-[var(--text-primary)]"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            Upload these in the interview
+          </Link>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -409,8 +615,8 @@ function SectionFold({
   onConfirm: (key: string) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(view.autoOpen);
-  // A fold that has just acquired a gap or a drafted answer opens itself, even
-  // if the member had closed it before the last reload.
+  // A fold that has just acquired a gap opens itself, even if the member had
+  // closed it before the last reload.
   useEffect(() => {
     if (view.autoOpen) setOpen(true);
   }, [view.autoOpen]);
@@ -481,7 +687,6 @@ function SectionFold({
   );
 }
 
-
 export interface AnswersReviewProps {
   sheet: SheetResponse;
   busyKey: string | null;
@@ -494,8 +699,8 @@ export interface AnswersReviewProps {
 
 /**
  * Everything below "Check your answers": the attention counts, every folded
- * section, the missing-document list, and — at the very bottom, folded — the
- * optional 271 block.
+ * section, and the pack-documents ledger (or the one-line no-documents note for
+ * a motivation-only draft).
  */
 export default function AnswersReview({
   sheet,
@@ -507,25 +712,7 @@ export default function AnswersReview({
 }: AnswersReviewProps) {
   const stats = reviewStats(sheet);
   const sections = reviewSections(sheet);
-  const formOnly = reviewFormOnly(sheet);
-  const ownedCount = ownedFirearmCount(sheet);
-  const missingDocuments = sheet.needs.needs.filter(
-    (need) => need.tier === 'required' && !need.have,
-  );
-  /**
-   * ⚠️ A PRINT-READY PACK WANTS A LICENCE CARD PER OWNED FIREARM. That is a
-   * count, not a tick: the backend's CURRENT_LICENCE need carries minFiles /
-   * haveFiles and decides `have` itself. This only renders the progress line —
-   * it never changes what Continue is gated on.
-   */
-  const licenceNeed =
-    sheet.application.outputMode === 'PRINT_READY' && ownedCount > 0
-      ? sheet.needs.needs.find((need) => need.kind === 'CURRENT_LICENCE')
-      : undefined;
-  const documentRows = licenceNeed
-    ? missingDocuments.filter((need) => need.kind !== 'CURRENT_LICENCE')
-    : missingDocuments;
-  const showDocuments = documentRows.length > 0 || Boolean(licenceNeed);
+  const printReady = sheet.application.outputMode !== 'MOTIVATION_ONLY';
   return (
     <>
       <AttentionPanel stats={stats} />
@@ -542,87 +729,13 @@ export default function AnswersReview({
         />
       ))}
 
-      {showDocuments ? (
-        <section className="mt-6">
-          <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[17px] font-medium text-[var(--text-primary)]">
-            {missingDocuments.length ? 'Documents still needed' : 'Licence cards for the pack'}
-          </h2>
-          {documentRows.length ? (
-            <ul className="m-0 grid gap-1.5 pl-5 text-[13px] text-[var(--text-secondary)]">
-              {documentRows.map((need) => (
-                <li key={need.kind}>{need.label}</li>
-              ))}
-            </ul>
-          ) : null}
-          {licenceNeed ? (
-            <div
-              className="mt-3 rounded-lg border px-3 py-2"
-              style={{
-                borderColor: 'var(--border)',
-                background: 'var(--bg-inset)',
-              }}
-            >
-              <p className="m-0 text-[13px] font-medium text-[var(--text-primary)]">
-                {licenceNeed.label}
-              </p>
-              <p className="m-0 mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-                {licenceNeed.haveFiles ?? 0} of{' '}
-                {licenceNeed.minFiles ?? ownedCount} licence cards added
-              </p>
-              {licenceNeed.minFilesNote ? (
-                <p className="m-0 mt-1 text-[11.5px] leading-4 text-[var(--text-tertiary)]">
-                  {licenceNeed.minFilesNote}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {interviewHref ? (
-            <Link
-              href={interviewHref}
-              className="mt-3 inline-flex rounded-lg border px-3 py-2 text-[12.5px] font-medium text-[var(--text-primary)]"
-              style={{ borderColor: 'var(--border)' }}
-            >
-              Upload these in the interview
-            </Link>
-          ) : null}
-        </section>
-      ) : null}
-
-      {formOnly.length ? (
-        <details
-          className="mt-6 rounded-[var(--r-lg)] border"
-          style={{
-            borderColor: 'var(--border)',
-            background: 'var(--bg-card)',
-          }}
-        >
-          <summary className="cursor-pointer list-none px-4 py-3">
-            <span className="block font-[family-name:var(--font-head)] text-[17px] font-medium leading-[1.25] text-[var(--text-primary)]">
-              SAPS 271 details (optional)
-            </span>
-            <span className="mt-1 block text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              These are form boxes we read from a document if you supply one. The
-              product does not fill in the 271, so they are not needed to write
-              the motivation.
-            </span>
-          </summary>
-          <div
-            className="border-t px-4"
-            style={{ borderColor: 'var(--border-divider)' }}
-          >
-            {formOnly.map((item) => (
-              <AnswerReviewRow
-                key={item.key}
-                item={item}
-                autoOpen={false}
-                busy={busyKey === item.key || confirmingKey === item.key}
-                onSave={onSave}
-                onConfirm={item.state === 'suggested' ? onConfirm : undefined}
-              />
-            ))}
-          </div>
-        </details>
-      ) : null}
+      {printReady ? (
+        <DocumentsLedger sheet={sheet} interviewHref={interviewHref} />
+      ) : (
+        <p className="m-0 mt-6 text-[13px] leading-5 text-[var(--text-secondary)]">
+          A motivation-only draft needs no documents.
+        </p>
+      )}
     </>
   );
 }

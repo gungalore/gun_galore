@@ -24,10 +24,10 @@ import AnswersReview, {
 //
 // ⚠️ NOT AN ENDLESS FORM ANY MORE. The operator's live report was "These seem to
 // be 271 form questions? And why do I have to scroll and fill in this endless
-// page?" The rows below are FOLDED (see answers-review.tsx): an attention panel
-// at the top, one section per group opening only where it has a gap or a drafted
-// answer, and the 271's own boxes in a collapsed optional block that never
-// counts and never gates "Continue to write".
+// page?" The 271 is retired from the product — its rows are no longer served —
+// and the rows below are FOLDED (see answers-review.tsx): an attention panel at
+// the top, one section per group opening only where it has a gap, and an honest
+// pack-documents ledger that never lists a held document as outstanding.
 //
 // ⚠️ DRAFTED ANSWERS ARE FLAGGED, NOT HIDDEN. The personal history is composed
 // by the writer from the applicant's own documents and application; the gold
@@ -188,9 +188,10 @@ export default function CheckAnswersPage() {
   /**
    * ONE SOURCE FOR THE COUNTS AND THE GATING.
    *
-   * ⚠️ 271 FORM BOXES ARE EXCLUDED THERE, IN ONE PLACE. `reviewStats` filters
-   * them out of `missingCount`, which is both what the attention panel says and
-   * what enables Continue — a second count on this page is how the two drift.
+   * ⚠️ THE COMPLIANCE GATE IS COUNTED IN ONE PLACE, THERE. `reviewStats` adds the
+   * server's `compliance.required && !compliance.ready` to `missingCount`, which
+   * is both what the attention panel says and what enables Continue — a second
+   * count on this page is how the two drift.
    */
   const stats = useMemo(() => (sheet ? reviewStats(sheet) : null), [sheet]);
   const canContinue =
@@ -259,8 +260,8 @@ export default function CheckAnswersPage() {
       {/*
         ⚠️ THE PRIMARY ACTION WRITES NOTHING. It goes to the pack, where the
         declaration is confirmed and payment happens. Disabled while a drafted
-        answer is landing or while the sheet is actually holding out for a
-        required answer or document — a 271 form box is never one of those.
+        answer is landing, while the sheet is holding out for a required answer
+        or document, or while the server's compliance gate would refuse.
       */}
       <div className="mt-8 border-t border-[var(--border-divider)] pt-5">
         <button

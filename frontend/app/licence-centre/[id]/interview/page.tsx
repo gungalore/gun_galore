@@ -111,16 +111,29 @@ export default function IntakeInterviewPage() {
   } | null>(null);
   /** The writer's drafting pass finished; the sheet is refreshed exactly once. */
   const wasDrafting = useRef(false);
+  /** Monotonic request id — the newest intake read always wins. */
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    /**
+     * ⚠️ A REQUEST SEQUENCE, SO A STALE POLL CANNOT WIN A RACE. The drafting
+     * poll and the answer submit both call this; a response that was built
+     * before the submit landed must never replace the card the member is now
+     * answering, and an older response must not overwrite a newer one.
+     */
+    const seq = loadSeq.current + 1;
+    loadSeq.current = seq;
     try {
       const next = await motivationsApi.intake(getToken, id);
+      if (seq !== loadSeq.current) return;
+      if (submitting.current) return;
       setData(next);
       for (const item of next.documents.items) {
         if (item.source === 'upload') seenUploads.current.add(item.sourceId);
       }
       setError(null);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError((err as Error).message);
     }
   }, [getToken, id]);
@@ -207,6 +220,15 @@ export default function IntakeInterviewPage() {
   }, [id, refreshSheet]);
 
   const drafting = data?.drafting === true;
+  /**
+   * ⚠️ THE DRAFTING POLL ONLY RUNS ON THE COMPLETION CARD. The backend no longer
+   * starts a drafting pass while questions are pending, and a poll fired under a
+   * live card could only ever replace the card the member is answering (or arrive
+   * stale). On the completion card there is nothing to lose and the count line
+   * needs the refresh.
+   */
+  const draftingOnCompletionCard =
+    drafting && !data?.group && !data?.question;
 
   /**
    * While the writer is drafting, keep asking — quietly.
@@ -218,7 +240,7 @@ export default function IntakeInterviewPage() {
    * as usable as it was.
    */
   useEffect(() => {
-    if (!drafting) return;
+    if (!draftingOnCompletionCard) return;
     const deadline = Date.now() + DRAFT_POLL_MS;
     const timer = window.setInterval(() => {
       if (Date.now() > deadline) {
@@ -230,7 +252,7 @@ export default function IntakeInterviewPage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [drafting, load]);
+  }, [draftingOnCompletionCard, load]);
 
   /**
    * The drafting pass just finished: the sheet now holds the drafted answers,
@@ -1775,7 +1797,7 @@ export default function IntakeInterviewPage() {
               {detailFor.label}
             </h2>
             <p className="mt-1 text-[12.5px] leading-5 text-[var(--text-secondary)]">
-              You answered Yes. Give the particulars the SAPS 271 asks for. They
+              You answered Yes. Give the particulars the police ask for. They
               are typed here and never sent to the writing assistant.
             </p>
             <div className="mt-3 grid gap-3">
