@@ -11,6 +11,7 @@
 // prefers-reduced-motion support. Scoped under #ggw-root so nothing leaks.
 
 import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { storeCampaignAttrib } from '@/lib/campaign-attrib';
 import { useScrollLock } from '@/lib/use-scroll-lock';
 
@@ -27,6 +28,7 @@ const POINTS: { text: React.ReactNode }[] = [
 ];
 
 export function WelcomeBanner() {
+  const pathname = usePathname();
   const [headline, setHeadline] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -36,6 +38,9 @@ export function WelcomeBanner() {
   // Resolve the ?c= key on mount, once. Strips the param from the URL either
   // way (valid or not) so it never lingers or gets shared onward.
   useEffect(() => {
+    // The new full-screen gate is itself a welcome experience; never stack a
+    // second campaign overlay on top of it.
+    if (pathname === '/gate') return;
     const params = new URLSearchParams(window.location.search);
     const key = params.get('c');
     if (!key) return;
@@ -88,7 +93,7 @@ export function WelcomeBanner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
 
   // Freeze the page behind this full-viewport banner while it's open.
   useScrollLock(visible);
@@ -150,7 +155,7 @@ export function WelcomeBanner() {
     window.setTimeout(() => setVisible(false), reduce ? 0 : 380);
   }
 
-  if (!visible) return null;
+  if (pathname === '/gate' || !visible) return null;
 
   return (
     <div

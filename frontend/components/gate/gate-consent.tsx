@@ -15,7 +15,20 @@ import { apiFetch } from '@/lib/api';
  * this button; that is the entire mechanism. Adding an "if bot" branch would
  * turn an age gate into cloaking.
  */
-export function GateConsent({ next }: { next: string }) {
+export function GateConsent({
+  next,
+  describedBy,
+  onAccepted,
+}: {
+  next: string;
+  /** The visible 18+ declaration line the button is confirming. */
+  describedBy?: string;
+  /**
+   * Test seam: production always full-navigates so the follow-up document
+   * request carries the freshly minted cookie.
+   */
+  onAccepted?: (next: string) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +42,8 @@ export function GateConsent({ next }: { next: string }) {
         body: JSON.stringify({ accept: true }),
       });
       // Full navigation so the follow-up request carries the new cookie.
-      window.location.replace(next);
+      if (onAccepted) onAccepted(next);
+      else window.location.replace(next);
     } catch {
       setBusy(false);
       setError(
@@ -44,17 +58,25 @@ export function GateConsent({ next }: { next: string }) {
         type="button"
         onClick={accept}
         disabled={busy}
-        className="gg-press w-full py-3 rounded-[6px] text-[15px] font-medium"
+        aria-describedby={describedBy}
+        className="gg-press w-full py-3.5 rounded-[7px] text-[16px] font-semibold"
         style={{
           background: 'var(--action-primary-bg)',
           color: '#fff',
           border: 'none',
           cursor: busy ? 'progress' : 'pointer',
           opacity: busy ? 0.7 : 1,
+          letterSpacing: '0.01em',
         }}
       >
-        {busy ? 'Confirming…' : 'I am 18 or older — continue'}
+        {busy ? 'Entering…' : 'Enter'}
       </button>
+      <p
+        className="text-[11px] text-center mt-2"
+        style={{ color: 'var(--text-tertiary)' }}
+      >
+        By entering you confirm you are 18 or older.
+      </p>
       {error && (
         <p
           role="alert"
