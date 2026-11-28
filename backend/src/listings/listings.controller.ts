@@ -153,6 +153,14 @@ export class ListingsController {
     return this.listingsService.findMine(userId);
   }
 
+  // Removed + expired listings for the seller's archive tab. MUST stay above
+  // @Get(':id') for the same route-order reason as /mine above.
+  @Get('mine/archive')
+  @UseGuards(AuthGuard)
+  mineArchive(@CurrentUser() userId: string) {
+    return this.listingsService.findMineArchive(userId);
+  }
+
   // Live browse refresh token. Polled by the discovery grids; one small,
   // viewer-scoped string, so a changed catalogue or a new save can trigger a
   // silent re-render without re-sending the whole browse payload. MUST stay

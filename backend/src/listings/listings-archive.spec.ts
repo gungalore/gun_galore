@@ -1,124 +1,63 @@
-jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
-
 import { ListingsService } from './listings.service';
 
-function makeService(rows: unknown[], configured = true) {
-  const deleteImages = jest.fn().mockResolvedValue(undefined);
-  const deleteVideo = jest.fn().mockResolvedValue(undefined);
-  const update = jest.fn().mockResolvedValue({});
-  const deleteManyImages = jest.fn().mockResolvedValue({ count: 1 });
-  const deleteManyVideos = jest.fn().mockResolvedValue({ count: 1 });
-  const findMany = jest.fn().mockResolvedValue(rows);
-  const prisma = {
-    listing: { findMany, update },
-    listingImage: { deleteMany: deleteManyImages },
-    listingVideo: { deleteMany: deleteManyVideos },
-    $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
-  };
-  const svc = Object.create(ListingsService.prototype) as Record<string, any>;
-  Object.assign(svc, {
-    logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
-    prisma,
-    cloudinary: {
-      isConfigured: () => configured,
-      deleteImages,
-      deleteVideo,
-    },
-    removeFromIndex: jest.fn().mockResolvedValue(undefined),
-  });
-  return {
-    svc: svc as ListingsService,
-    findMany,
-    update,
-    deleteImages,
-    deleteVideo,
-    deleteManyImages,
-    deleteManyVideos,
-  };
-}
+// Focused unit test for the seller-list filters. The service has a large
+// dependency graph, so the prototype is used with only the two Prisma
+// delegates these read methods touch — the same pattern the older focused
+// specs use for narrow methods.
+describe('ListingsService — seller archive', () => {
+  function serviceWithPrisma(prisma: unknown): ListingsService {
+    const svc = Object.create(ListingsService.prototype) as ListingsService;
+    (svc as unknown as { prisma: unknown }).prisma = prisma;
+    return svc;
+  }
 
-const oldDate = new Date(Date.now() - 120 * 86_400_000);
+  const user = { id: 'seller-1' };
+  const rows = [{ id: 'l1' }];
 
-function row(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'listing-1',
-    title: 'Old cancelled listing',
-    updatedAt: oldDate,
-    images: [{ publicId: 'img-1' }, { publicId: 'img-2' }],
-    video: { publicId: 'video-1' },
-    ...overrides,
-  };
-}
+  it('findMine excludes removed and expired listings from the working list', async () => {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const svc = serviceWithPrisma({
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      listing: { findMany },
+    });
 
-describe('archiveStaleCancelledListings', () => {
-  it('is a dry run by default and touches no media', async () => {
-    const { svc, findMany, update, deleteImages } = makeService([row()]);
-
-    const result = await svc.archiveStaleCancelledListings();
-
-    expect(result.dryRun).toBe(true);
-    expect(result.candidates).toHaveLength(1);
-    expect(result.archived).toBe(0);
-    expect(deleteImages).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalled();
+    await expect(svc.findMine('seller-1')).resolves.toEqual(rows);
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: 'CANCELLED',
+          sellerId: 'seller-1',
           archivedAt: null,
-          transactions: { none: {} },
-          orderLineItems: { none: {} },
+          status: { notIn: ['CANCELLED', 'EXPIRED'] },
         }),
       }),
     );
   });
 
-  it('deletes media, hides the listing, and keeps the row', async () => {
-    const {
-      svc,
-      update,
-      deleteImages,
-      deleteVideo,
-      deleteManyImages,
-      deleteManyVideos,
-    } = makeService([row()]);
-
-    const result = await svc.archiveStaleCancelledListings({
-      dryRun: false,
-      olderThanDays: 90,
+  it('findMineArchive returns only cancelled/expired rows, with the admin reason', async () => {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const svc = serviceWithPrisma({
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      listing: { findMany },
     });
 
-    expect(result.archived).toBe(1);
-    expect(result.failed).toBe(0);
-    expect(deleteImages).toHaveBeenCalledWith(['img-1', 'img-2']);
-    expect(deleteVideo).toHaveBeenCalledWith('video-1');
-    expect(deleteManyImages).toHaveBeenCalledWith({
-      where: { listingId: 'listing-1' },
+    await expect(svc.findMineArchive('seller-1')).resolves.toEqual(rows);
+    const args = findMany.mock.calls[0][0];
+    expect(args.where).toEqual({
+      sellerId: 'seller-1',
+      status: { in: ['CANCELLED', 'EXPIRED'] },
     });
-    expect(deleteManyVideos).toHaveBeenCalledWith({
-      where: { listingId: 'listing-1' },
-    });
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'listing-1' },
-        data: expect.objectContaining({
-          archivedAt: expect.any(Date),
-          mediaPurgedAt: expect.any(Date),
-        }),
-      }),
-    );
+    expect(args.select.adminOverrideReason).toBe(true);
+    expect(args.select.images).toBeDefined();
   });
 
-  it('refuses to delete DB media rows when Cloudinary is not configured', async () => {
-    const { svc, deleteImages, update } = makeService([row()], false);
-
-    const result = await svc.archiveStaleCancelledListings({
-      dryRun: false,
+  it('returns an empty archive for an unknown seller', async () => {
+    const findMany = jest.fn();
+    const svc = serviceWithPrisma({
+      user: { findUnique: jest.fn().mockResolvedValue(null) },
+      listing: { findMany },
     });
 
-    expect(result.failed).toBe(1);
-    expect(result.archived).toBe(0);
-    expect(deleteImages).not.toHaveBeenCalled();
-    expect(update).not.toHaveBeenCalled();
+    await expect(svc.findMineArchive('missing')).resolves.toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

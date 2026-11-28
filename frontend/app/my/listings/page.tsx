@@ -60,17 +60,32 @@ export default async function MyListingsPage() {
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <PageReveal variant="slide-up">
-      <div data-reveal className="flex items-center justify-between mb-6">
+      <div data-reveal className="flex items-center justify-between mb-6 gap-2">
         <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
           My Listings
         </h1>
-        <Link
-          href="/listings/new"
-          className="px-3 py-1.5 rounded-[6px] text-sm font-medium"
-          style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
-        >
-          + New listing
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Removed + expired listings live here, not in the working list. */}
+          <Link
+            href="/my/listings/archive"
+            className="px-3 py-1.5 rounded-[6px] text-sm font-medium"
+            style={{
+              background: 'var(--bg-inset)',
+              color: 'var(--text-secondary)',
+              border: '0.5px solid var(--border)',
+              textDecoration: 'none',
+            }}
+          >
+            Archive
+          </Link>
+          <Link
+            href="/listings/new"
+            className="px-3 py-1.5 rounded-[6px] text-sm font-medium"
+            style={{ background: 'var(--action-primary-bg)', color: '#fff' }}
+          >
+            + New listing
+          </Link>
+        </div>
       </div>
 
       {failed ? (
@@ -123,27 +138,42 @@ export default async function MyListingsPage() {
             className="text-base mb-2"
             style={{ color: 'var(--text-primary)', fontWeight: 500 }}
           >
-            You haven&apos;t listed anything yet
+            No active listings
           </p>
           <p
             className="text-sm mb-5"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            Create your first listing in under 5 minutes — photos,
-            price, shipping. We&apos;ll guide you through each step.
+            Live, draft and sold listings appear here. Removed and expired
+            listings are kept in your archive.
           </p>
-          <Link
-            href="/listings/new"
-            className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
-            style={{
-              background: 'var(--action-primary-bg)',
-              color: '#fff',
-              fontWeight: 500,
-              textDecoration: 'none',
-            }}
-          >
-            Create your first listing →
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href="/listings/new"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--action-primary-bg)',
+                color: '#fff',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Create a listing →
+            </Link>
+            <Link
+              href="/my/listings/archive"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Open archive
+            </Link>
+          </div>
         </div>
       ) : (
         /* Card layout — works on mobile (single column) and desktop

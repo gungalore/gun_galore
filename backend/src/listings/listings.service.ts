@@ -4768,9 +4768,16 @@ export class ListingsService {
     if (!user) return [];
 
     return this.prisma.listing.findMany({
-      // Archived cancelled listings stay in the DB for history/audit but drop
-      // out of the seller's working list after their media is retired.
-      where: { sellerId: user.id, archivedAt: null },
+      // The working list is for things a seller can still act on. Removed
+      // (CANCELLED) and expired listings live in /my/listings/archive so they
+      // stop crowding the live rows; archivedAt additionally hides the older
+      // media-retired cancelled rows the retention sweep has already dealt
+      // with.
+      where: {
+        sellerId: user.id,
+        archivedAt: null,
+        status: { notIn: [ListingStatus.CANCELLED, ListingStatus.EXPIRED] },
+      },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
@@ -4782,6 +4789,50 @@ export class ListingsService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  /**
+   * Removed + expired listings, kept for the seller's records without
+   * cluttering the working list.
+   *
+   * Deliberately status-based rather than `archivedAt`-based: `archivedAt` is
+   * the media-retention marker set by archiveStaleCancelledListings, so an
+   * older test listing whose photos were retired must still appear here.
+   * CANCELLED covers seller cancellations and admin take-downs (the admin
+   * reason rides along); EXPIRED covers the 90-day stale sweep and ended
+   * auctions. Read-only: the archive page offers Relist where it is legal,
+   * never edit/cancel.
+   */
+  async findMineArchive(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return [];
+
+    return this.prisma.listing.findMany({
+      where: {
+        sellerId: user.id,
+        status: { in: [ListingStatus.CANCELLED, ListingStatus.EXPIRED] },
+      },
+      select: {
+        id: true,
+        title: true,
+        price: true,
+        status: true,
+        listingType: true,
+        condition: true,
+        createdAt: true,
+        updatedAt: true,
+        endedAt: true,
+        auctionSettledAt: true,
+        archivedAt: true,
+        mediaPurgedAt: true,
+        adminOverrideReason: true,
+        images: { where: { isPrimary: true }, take: 1, select: { url: true } },
+        category: { select: { name: true } },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+  }
+
 
   /**
    * Marketplace-integrity gate — locks listing edits once a buyer
