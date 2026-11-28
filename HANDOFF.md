@@ -5,7 +5,34 @@ pick up. **Rules do not live here — they live in `AGENTS.md` and
 `docs/project-reference.md`.** This file is state, and it is meant to be
 overwritten.
 
-Last updated: **2026-11-27**.
+Last updated: **2026-11-28**.
+
+## 2026-11-28 — SELLER LISTING ARCHIVE (FULL `5545bfc4`)
+
+Operator: removed and expired listings clutter My Listings; create an archive for them.
+
+**Deployed:** full `5545bfc4` at 08:36 SAST (rollback `alloutdoor-20261128-083634.dump`); HEAD 5545bfc4.
+Health 200; both seller endpoints 401 unauthenticated (routes registered); backend/frontend/warden online.
+
+- `GET /listings/mine` now returns the working list only: it excludes `CANCELLED` and `EXPIRED`
+  (in addition to `archivedAt != null`). Drafts, review, live, payment-pending and sold stay.
+- New authenticated `GET /listings/mine/archive` returns the seller's cancelled/expired rows newest first
+  (cap 200), including media-retired rows, with `adminOverrideReason`, `archivedAt`/`endedAt`/
+  `auctionSettledAt`, price, category and optional image.
+- New `/my/listings/archive` page: “Listing archive” with an explanation that these are not buyer-visible,
+  compact cards with Removed/Expired pills, admin take-down reason (or honest cancelled/expired copy),
+  date, price, photo-or-“No photo”, and Relist for expired listings. Header/back links + New listing.
+- `/my/listings` header gains an Archive button; its empty state now says “No active listings” and links to
+  both New listing and the archive, so a seller whose only rows are archived is not told they never listed.
+- Pure helpers `lib/listing-archive.ts` (classification, labels, reason fallback, Relist eligibility, date/
+  media fallback) with 6 tests; backend `listings-archive.spec.ts` covers both seller-list filters (3 tests).
+
+**Data check:** turbosnail now has 3 working rows and 10 archived rows in the archive (Cleaning kit carries
+the operator-removal reason; the rest are cancelled tests/older listings). Main My Listings no longer shows
+cancelled/expired cards.
+
+**Checks:** backend tsc clean + **476 suites / 6,993 tests passed**; frontend typecheck clean + **230 files /
+2,525 passed / 1 skipped** + production build clean.
 
 ## 2026-11-27 — MULTI-ITEM CHECKOUT LIVE (FULL `533ef5d2`, BACKEND `6abd1e3c`)
 
