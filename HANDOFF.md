@@ -7,6 +7,29 @@ overwritten.
 
 Last updated: **2026-11-28**.
 
+## 2026-11-28 — WHATSAPP UTILITY WELCOME TEMPLATE (FULL DEPLOY `d1e67d25`)
+
+Operator: create a WhatsApp welcome with the AllOutdoor logo and the alloutdoor.co.za link, worded to register
+as utility rather than marketing.
+
+- Created + **Meta-approved** `account_verified_profile` (ID **1651190533368587**) in the ALLOutdoor WABA:
+  **UTILITY**, `en`. Header: 1125×600 ALL Outdoor logo image. Body:
+  `Hi {{1}}, your ALL Outdoor account has been verified. Open alloutdoor.co.za to finish setting up your profile and manage your account.`
+  Footer `ALL Outdoor`; static URL button `Open ALL Outdoor` → `https://alloutdoor.co.za/`.
+- Deliberately an account-status update after phone verification — no welcome/campaign, buy/sell, catalogue or
+  offer language. The old `welcome_complete_profile` remains MARKETING and is no longer sent.
+- Wired: `WHATSAPP_TEMPLATES.account_verified_profile` (`headerImageUrl`, username variable, static button);
+  `WhatsappService` now sends the Cloud API image-header component; `welcomeWhatsapp` uses the new template
+  with the member's public username. Public header asset:
+  `/brand/account-verified-profile-header.png` (deployed and verified 200 image/png).
+- Docs + logo/header assets committed under `docs/whatsapp/`.
+
+**Deployed:** `d1e67d25` frontend then backend-only; production HEAD `d1e67d25`, health 200, latest dump
+`alloutdoor-20261128-152839.dump`. Template still APPROVED/UTILITY. Checks: backend tsc clean + targeted
+173 tests; full backend **476 suites / 7,000 tests passed**; frontend production build clean (new public asset).
+No new template was broadcast to existing users — the utility template fires on the existing post-phone-
+verification welcome event.
+
 ## 2026-11-28 — FULL-SCREEN WELCOME GATE (FRONTEND `a76650b3` → `68b53ec3`)
 
 Operator: replace the 18+ entrance with this welcome screen, full screen, a pop-up window with an Enter button.
