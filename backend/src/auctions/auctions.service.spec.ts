@@ -767,4 +767,33 @@ describe('settleAuctionEnded + recoverAuctionSettlements', () => {
     // Never ACTIVE: the ended-auction zombie rule.
     expect(claim.data.status).toBeUndefined();
   });
+
+  it('settles a terminal CANCELLED auction whose marker never landed', async () => {
+    const { service, prisma } = makeMocks();
+    // No stranded PAYMENT_PENDING row; one terminal CANCELLED row missing its
+    // auctionSettledAt marker (the production Arken EP5 shape).
+    prisma.listing.findMany
+      .mockResolvedValueOnce([] as never) // stranded scan
+      .mockResolvedValueOnce([{ id: 'L1' }] as never); // settlement replay scan
+    prisma.listing.findUnique.mockResolvedValue(
+      endedAuction({
+        status: 'CANCELLED',
+        bidCount: 0,
+        currentBid: null,
+        currentBidderId: null,
+        endedAt: new Date(),
+      }) as never,
+    );
+    prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
+
+    const res = await service.recoverAuctionSettlements();
+
+    expect(res.replayed).toBe(1);
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'L1' },
+        data: { auctionSettledAt: expect.any(Date) },
+      }),
+    );
+  });
 });

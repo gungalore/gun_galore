@@ -1286,7 +1286,14 @@ export class AuctionsService {
       const unsettled = await this.prisma.listing.findMany({
         where: {
           listingType: 'AUCTION',
-          status: { in: ['PAYMENT_PENDING', 'EXPIRED'] },
+          // Any terminal auction whose settlement marker never landed. A
+          // CANCELLED auction still owes the marker even though its bidder
+          // fan-out is announceAuctionCancelled's job — without this, a
+          // seller-cancelled endpoint row sits forever at auctionSettledAt
+          // null and the invariant "every ended auction is settled" is false.
+          status: {
+            in: ['PAYMENT_PENDING', 'EXPIRED', 'CANCELLED', 'SOLD'],
+          },
           endedAt: { not: null, lt: new Date(now - 2 * 60_000) },
           auctionSettledAt: null,
         },
