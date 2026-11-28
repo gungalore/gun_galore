@@ -62,12 +62,13 @@ export default async function GatePage({
           priority
           sizes="100vw"
           className="object-cover"
+          style={{ filter: 'blur(2px) brightness(0.72)' }}
         />
         <div
           className="absolute inset-0"
           style={{
             background:
-              'linear-gradient(180deg, rgba(6,8,11,0.38) 0%, rgba(6,8,11,0.62) 52%, rgba(6,8,11,0.82) 100%)',
+              'linear-gradient(180deg, rgba(6,8,11,0.50) 0%, rgba(6,8,11,0.72) 52%, rgba(6,8,11,0.86) 100%)',
           }}
         />
       </div>
