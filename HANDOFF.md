@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-11-28**.
 
+## 2026-11-28 — YOCO MOTIVATION PAYGATE LIVE + WEBHOOK SUBSCRIPTION
+
+Operator installed the live Yoco credentials and asked for the webhook subscription.
+
+- Production `backend/.env`: live `sk_live_` secret, live public key stored as `YOCO_PUBLIC_KEY` (current hosted
+  checkout consumes the secret only), `YOCO_ALLOW_TEST_IN_PRODUCTION=false`; env backup
+  `/var/backups/alloutdoor/env-20261128-092602.env` (0600). YocoService reports
+  `configured=true testKey=false usable=true allowTest=false`; a safe checkout-status probe accepts the key
+  (invalid-key control returns 401).
+- Webhook subscription created via the Yoco API:
+  **`ep_3Mj9xZfOcj4yxXaD5h4wfYg5dQp` — “ALL Outdoor Motivation Payments (Live)”**, enabled, URL
+  `https://alloutdoor.co.za/api/payments/webhook/yoco`, events `payment.created` + `payment.refunded`.
+  The one-time signing secret was installed as `YOCO_WEBHOOK_SECRET` (env backup
+  `/var/backups/alloutdoor/env-20261128-100916.env`); backend reloaded; the Yoco test-webhook endpoint returned
+  200 and the backend logged `Yoco webhook received` with no signature rejection (the sample reference matched
+  no motivation payment — expected).
+- The Developer Console API key used to create the subscription was temporary: it was never written to the repo
+  and both the local/remote temp copies were removed. Rotate/revoke it in the Yoco Developer Console now that the
+  subscription exists.
+- No application code was deployed for this change.
+
 ## 2026-11-28 — SELLER LISTING ARCHIVE (FULL `5545bfc4`)
 
 Operator: removed and expired listings clutter My Listings; create an archive for them.
