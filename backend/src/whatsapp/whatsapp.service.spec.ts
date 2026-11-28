@@ -115,6 +115,44 @@ describe('WhatsappService', () => {
     },
   );
 
+  it('sends the image-header component for the approved account-verified welcome', async () => {
+    setConfigured(true);
+    const prisma = makePrisma();
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [{ id: 'wamid.WELCOME1' }] }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new WhatsappService(prisma as never, makeSms() as never);
+
+    const result = await svc.sendTemplate({
+      to: '0821234567',
+      templateKey: 'account_verified_profile',
+      vars: { username: 'alex' },
+    });
+
+    expect(result).toEqual({ success: true, messageId: 'wamid.WELCOME1' });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body.template.name).toBe('account_verified_profile');
+    expect(body.template.components).toEqual([
+      {
+        type: 'header',
+        parameters: [
+          {
+            type: 'image',
+            image: {
+              link: 'https://alloutdoor.co.za/brand/account-verified-profile-header.png',
+            },
+          },
+        ],
+      },
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: 'alex' }],
+      },
+    ]);
+  });
+
   it('200 response: writes a SENT row with the returned messageId', async () => {
     setConfigured(true);
     const prisma = makePrisma();

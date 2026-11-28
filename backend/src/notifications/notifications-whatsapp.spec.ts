@@ -244,11 +244,15 @@ describe('welcomeWhatsapp', () => {
 
   it('sends the welcome template when eligible', async () => {
     const svc = makeService();
-    await svc.welcomeWhatsapp({ userId: 'u1', phone: '0820000000' });
+    await svc.welcomeWhatsapp({
+      userId: 'u1',
+      phone: '0820000000',
+      name: 'alex',
+    });
     expect(svc.whatsapp.sendTemplate).toHaveBeenCalledWith({
       to: '0820000000',
-      templateKey: 'welcome_complete_profile',
-      vars: {},
+      templateKey: 'account_verified_profile',
+      vars: { username: 'alex' },
       reference: 'welcome-u1',
     });
   });

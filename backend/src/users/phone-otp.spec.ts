@@ -44,6 +44,7 @@ function build(row: Record<string, unknown> | null, smsOver = {}) {
 function pending(over: Record<string, unknown> = {}) {
   return {
     id: 'u1',
+    username: 'alex',
     phone: '+27821234567',
     phoneVerified: false,
     phoneOtpHash: sha256(CODE),
@@ -209,6 +210,7 @@ describe('checking a phone code', () => {
     expect(notifications.welcomeWhatsapp).toHaveBeenCalledWith({
       userId: 'u1',
       phone: '+27821234567',
+      name: 'alex',
     });
   });
 

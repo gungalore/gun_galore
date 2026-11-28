@@ -102,6 +102,16 @@ export class WhatsappService {
     const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
 
     const components: Record<string, unknown>[] = [];
+    // An approved IMAGE-header template requires the media parameter on every
+    // send; the sample handle is only for review, not a default.
+    if (def.headerImageUrl) {
+      components.push({
+        type: 'header',
+        parameters: [
+          { type: 'image', image: { link: def.headerImageUrl } },
+        ],
+      });
+    }
     if (def.requiredVars.length > 0) {
       components.push({
         type: 'body',

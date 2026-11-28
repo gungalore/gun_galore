@@ -7,11 +7,11 @@ Created in Meta on **2026-11-28** for the ALLOutdoor WhatsApp Business Account.
 | Template ID | `1651190533368587` |
 | Name | `account_verified_profile` |
 | Language | `en` |
-| Category | **UTILITY** (submitted; Meta's final review can still reclassify) |
-| Status | **PENDING** at submission time — not sendable until Meta approves it |
-| Header | IMAGE — `account-verified-profile-header.png` in this folder (ALL Outdoor horizontal logo on white, 1125 × 600) |
+| Category | **UTILITY** (Meta approved as UTILITY on 2026-11-28) |
+| Status | **APPROVED** |
+| Header | IMAGE — `account-verified-profile-header.png` in this folder (ALL Outdoor horizontal logo on white, 1125 × 600); public send URL `https://alloutdoor.co.za/brand/account-verified-profile-header.png` |
 | Body | `Hi {{1}}, your ALL Outdoor account has been verified. Open alloutdoor.co.za to finish setting up your profile and manage your account.` |
-| Body example | `{{1}}` = `Alex` |
+| Body example | `{{1}}` = `Alex` (the app sends the member's public `username`) |
 | Footer | `ALL Outdoor` |
 | Button | URL: `Open ALL Outdoor` → `https://alloutdoor.co.za/` (fully static) |
 
@@ -58,8 +58,9 @@ the final category decision during review — if it reclassifies this as marketi
 }
 ```
 
-The image header needs a **Resumable Upload API** handle, not a phone-number media ID. The logo is deliberately
-hosted here for submission; at send time the app must supply the approved template's image-header parameter
-(either a public HTTPS logo URL from the site or a fresh Meta media handle). This template is **not wired into
-`WHATSAPP_TEMPLATES` yet** — the existing approved `welcome_complete_profile` remains the live welcome send until
-this one is approved and the send path supports the image header.
+The image header needs a **Resumable Upload API** handle for submission; at send time the app supplies the
+approved template's image-header parameter via the public HTTPS logo URL above. The app is wired to this
+template: `WHATSAPP_TEMPLATES.account_verified_profile` carries `headerImageUrl`, and
+`welcomeWhatsapp` sends it after phone verification with the member's public username. The old
+`welcome_complete_profile` (MARKETING) remains in the registry only as a historical/log reference and is no
+longer sent.

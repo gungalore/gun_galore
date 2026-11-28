@@ -1102,6 +1102,7 @@ export class UsersService {
       where: { id: userId },
       select: {
         id: true,
+        username: true,
         phone: true,
         phoneVerified: true,
         phoneOtpHash: true,
@@ -1182,7 +1183,11 @@ export class UsersService {
     // `.catch()` entirely and would surface to the member as a failed phone
     // verification — the one thing this must never cost them.
     void Promise.resolve()
-      .then(() => this.notifications.welcomeWhatsapp({ userId, phone: user.phone }))
+      .then(() => this.notifications.welcomeWhatsapp({
+        userId,
+        phone: user.phone,
+        name: user.username,
+      }))
       .catch(() => undefined);
 
     return { verified: true };

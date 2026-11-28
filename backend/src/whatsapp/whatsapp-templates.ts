@@ -59,6 +59,13 @@ export interface WhatsappTemplateDef {
    */
   buttonParam?: boolean;
   /**
+   * Public HTTPS URL for an approved IMAGE header sample. When set, every
+   * send includes the Cloud API header component. The image must remain
+   * reachable (no auth, no expiring signed URL) for as long as the template
+   * is in use.
+   */
+  headerImageUrl?: string;
+  /**
    * 'url' (default) → a URL button component is sent, filling `linkCode`.
    * 'quick_reply' → the buttons are baked into the approved Meta template
    * (e.g. the Private Arrangement "Item delivered / Item received / Dispute"
@@ -293,6 +300,31 @@ export const WHATSAPP_TEMPLATES: Record<string, WhatsappTemplateDef> = {
   },
 
   // ── Welcome ─────────────────────────────────────────────────────────
+  // Meta-APPROVED UTILITY (2026-11-28). Sent after phone verification, when
+  // the account has just become usable. The wording is deliberately an
+  // ACCOUNT-STATUS update, not a promotional welcome: no buy/sell/deal
+  // language, no offer, no catalogue. Reviewers still make the final call,
+  // but this is the copy Meta approved as UTILITY.
+  //
+  // ⚠️ The template has an IMAGE header. Every send must include the header
+  // component (public logo URL); omitting it is a 132000 parameter-count
+  // error. The static URL button takes no parameter.
+  account_verified_profile: {
+    key: 'account_verified_profile',
+    metaName: 'account_verified_profile',
+    lang: 'en',
+    requiredVars: ['username'],
+    linkVars: [],
+    linkCode: () => '',
+    buttonParam: false,
+    headerImageUrl:
+      'https://alloutdoor.co.za/brand/account-verified-profile-header.png',
+    render: (v) =>
+      `Hi ${v.username}, your ALL Outdoor account has been verified. Open alloutdoor.co.za to finish setting up your profile and manage your account.`,
+  },
+  // Legacy MARKETING welcome. Kept in the registry because existing log rows
+  // reference it and its Meta template is still approved; no code sends it
+  // after the switch above.
   welcome_complete_profile: {
     key: 'welcome_complete_profile',
     metaName: 'welcome_complete_profile',

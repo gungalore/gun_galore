@@ -6544,11 +6544,19 @@ export class NotificationsService {
   // (auth.service.ts, inside verifyEmail) — a notification failure must
   // never block a login.
   // ---------------------------------------------------------------
-  async welcomeWhatsapp(d: { userId: string; phone: string | null }): Promise<void> {
+  async welcomeWhatsapp(d: {
+    userId: string;
+    phone: string | null;
+    /** Public handle used in the body; never a real name. */
+    name?: string | null;
+  }): Promise<void> {
     if (!d.phone) return;
     await this.tryWhatsapp(
       d.phone,
-      { templateKey: 'welcome_complete_profile', vars: {} },
+      {
+        templateKey: 'account_verified_profile',
+        vars: { username: d.name?.trim() || 'there' },
+      },
       `welcome-${d.userId}`,
     );
   }

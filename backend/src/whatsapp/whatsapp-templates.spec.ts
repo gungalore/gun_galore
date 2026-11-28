@@ -13,6 +13,7 @@ const FULL_VARS: Record<string, string> = {
   txId: 'cktxid1234567890',
   code: 'aQ2x7Yk9mN4pR8sT2vW6zB',
   acceptToken: 'safe-action-token',
+  username: 'alex',
   title: FIXTURE_TITLE,
   listingTitle: FIXTURE_TITLE,
   item: FIXTURE_TITLE,
@@ -125,6 +126,20 @@ describe('WHATSAPP_TEMPLATES — the hard rule', () => {
     ).toBe('p');
   });
 
+  it('account_verified_profile is the approved utility welcome with the logo header', () => {
+    const def = WHATSAPP_TEMPLATES.account_verified_profile;
+    expect(def).toBeDefined();
+    expect(def.requiredVars).toEqual(['username']);
+    expect(def.buttonParam).toBe(false);
+    expect(def.headerImageUrl).toBe(
+      'https://alloutdoor.co.za/brand/account-verified-profile-header.png',
+    );
+    const body = def.render({ username: 'alex' });
+    expect(body).toContain('account has been verified');
+    expect(body).toContain('alloutdoor.co.za');
+    expect(body).not.toMatch(/buy|sell|catalogue|deal|offer/i);
+  });
+
   // ⚠️ REGRESSION: the live Meta template for welcome is /t/{{1}}, so the
   // button parameter MUST be sent. Only the five fully-static sales buttons
   // omit it. Getting this backwards is a silent 132001 + SMS fallback.
@@ -204,6 +219,12 @@ describe('WHATSAPP_TEMPLATES — the hard rule', () => {
         Object.fromEntries(def.linkVars.map((k) => [k, 'SENTINEL'])),
       );
       expect(suffix).not.toContain('undefined');
+      if (def.buttonParam === false && def.headerImageUrl) {
+        // The account-verified welcome has a FULLY STATIC URL button and an
+        // image header, so no button parameter is sent at all.
+        expect(suffix).toBe('');
+        return;
+      }
       expect(suffix.length).toBeGreaterThan(0);
     },
   );
