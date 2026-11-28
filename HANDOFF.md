@@ -7,6 +7,33 @@ overwritten.
 
 Last updated: **2026-11-28**.
 
+## 2026-11-28 — FULL-SCREEN WELCOME GATE (FRONTEND `a76650b3` → `68b53ec3`)
+
+Operator: replace the 18+ entrance with this welcome screen, full screen, a pop-up window with an Enter button.
+The earlier marketing-popup/cookie idea is **superseded** — this is the `/gate` route itself and uses only the
+existing 30-day `ao_cat` declaration cookie.
+
+- `/gate` is now a full-viewport ALL Outdoor collage (new asset
+  `frontend/public/gate/all-outdoor-welcome.jpg`, 1920×1080, ~366 KB, softened/darkened for legibility)
+  with one centred white/dark-theme card — no close button, no backdrop dismissal. **Enter is the only way
+  through**, which keeps the age gate legally intact.
+- Copy: “Welcome to the all-new ALL Outdoor marketplace.” / “Sign up and list for free — or take a look
+  around.” Explicit 18+/lawful/Terms line with button `aria-describedby`; secondary Create account / Sign in
+  links carry the validated `next`.
+- Enter keeps the existing flow unchanged: POST `/auth/catalogue-declare`, mint the HttpOnly 30-day `ao_cat`,
+  full-navigate to `next`. Invalid/absolute/protocol-relative `next` falls back to `/` (new
+  `lib/gate-next.ts`).
+- Gate copy/metadata stay neutral and `noindex,nofollow`; same HTML/image for crawlers and humans, no
+  user-agent branch; neutral image alt/filename. `/gate` already has no public header/footer (chromeless), and
+  the SMS campaign `WelcomeBanner` is suppressed there so two full-screen welcomes cannot stack.
+- Tests: `gate-next` 4 cases; `GateConsent` 3 (Enter/aria/POST/redirect/retry); full suite **232 files /
+  2,532 passed / 1 skipped**; typecheck + production build clean.
+
+**Deployed:** `a76650b3` then style-only `68b53ec3` frontend-only; production HEAD **68b53ec3**, latest dump
+`alloutdoor-20261128-134725.dump`. Verified: `/gate?next=%2F` 200 with new copy + `>Enter<`, image 200
+`image/jpeg`, `noindex` metadata; `POST /api/auth/catalogue-declare` 200 sets `ao_cat`, declared `/` 200 and
+undeclared `/` 307 → gate. No backend/schema changes.
+
 ## 2026-11-28 — AUCTION SETTLEMENT GAP CLOSED (BACKEND `79643240`)
 
 Operator: “attend to the gaps” from the auction readiness answer. The one code-side gap found was real:
