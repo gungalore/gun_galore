@@ -7,6 +7,27 @@ overwritten.
 
 Last updated: **2026-11-28**.
 
+## 2026-11-28 — AUCTION SETTLEMENT GAP CLOSED (BACKEND `79643240`)
+
+Operator: “attend to the gaps” from the auction readiness answer. The one code-side gap found was real:
+
+- The every-minute `recoverAuctionSettlements` sweep only replayed `PAYMENT_PENDING` and `EXPIRED` auctions. A
+  terminal **CANCELLED** (or **SOLD**) auction whose settlement marker never landed could therefore sit at
+  `auctionSettledAt = null` forever. Production had exactly that shape: **Arken EP5** was CANCELLED with
+  `endedAt` set and no settlement marker.
+- Fix: the recovery scan now includes `CANCELLED` and `SOLD` terminal auctions; `settleAuctionEnded` marks them
+  settled (the cancellation fan-out remains `announceAuctionCancelled`’s job). Spec added for a terminal
+  cancelled auction.
+- Deployed backend-only **`79643240`** (rollback `alloutdoor-20261128-111452.dump`); health OK, cron advanced.
+  The next auction-end tick stamped Arken EP5 `auctionSettledAt = 2026-11-28T09:16:00Z`; production invariant
+  “terminal auctions without a settlement marker” is now **0**.
+- Checks: auction suites **40 passed**; full backend **476 suites / 6,994 tests passed**; tsc clean.
+
+**Still not live-proven (requires operator participation, not code):** production has no paid auction sale and
+no active auction. The remaining readiness gate is the three controlled auctions — two-account reserve/proxy +
+anti-snipe, reserve-not-met, and unpaid-winner strike/runner-up — with one real winner payment. The engine’s
+code, cron and recovery paths are green; only live money evidence is missing.
+
 ## 2026-11-28 — YOCO MOTIVATION PAYGATE LIVE + WEBHOOK SUBSCRIPTION
 
 Operator installed the live Yoco credentials and asked for the webhook subscription.
